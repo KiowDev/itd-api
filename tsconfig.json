@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+
+    "declaration": true,
+    "emitDeclarationOnly": false,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    // Запрещает enum и namespace: код обязан стираться без остатка, чтобы работать
+    // в средах, которые просто срезают типы (node --experimental-strip-types).
+    "erasableSyntaxOnly": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Примеры импортируют пакет по его публичному имени. Сопоставление с исходниками
+    // позволяет проверять их вместе с остальным кодом, чтобы в репозиторий
+    // не попал пример, который не компилируется.
+    "paths": {
+      "itd-api": ["./src/index.ts"],
+      "itd-api/node": ["./src/node.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts", "*.config.ts"]
+}

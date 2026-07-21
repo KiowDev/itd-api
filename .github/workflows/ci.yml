@@ -1,0 +1,18 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  # Позволяет запустить проверку вручную из вкладки Actions.
+  workflow_dispatch:
+
+# Новый пуш в ту же ветку отменяет предыдущий прогон.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Сами проверки описаны в checks.yml — тот же набор вызывает release.yml.
+  checks:
+    uses: ./.github/workflows/checks.yml

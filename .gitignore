@@ -1,0 +1,21 @@
+node_modules/
+dist/
+docs/
+coverage/
+pack/
+*.tgz
+
+# Сессии клиента: внутри токены доступа
+.itd-session.json
+*.itd-session.json
+.env
+.env.local
+
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# Токен для локальной проверки
+.token
+.token2

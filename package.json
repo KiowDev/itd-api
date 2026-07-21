@@ -1,0 +1,96 @@
+{
+  "name": "itd-api",
+  "version": "0.0.1",
+  "description": "Клиент REST и realtime API социальной сети итд.com для JavaScript и TypeScript",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KiowDev/itd-api.git"
+  },
+  "homepage": "https://github.com/KiowDev/itd-api",
+  "bugs": {
+    "url": "https://github.com/KiowDev/itd-api/issues"
+  },
+  "author": "Kiow",
+  "keywords": [
+    "itd",
+    "api",
+    "client",
+    "sdk",
+    "social",
+    "typescript"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "NOTICE",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "node": [
+        "./dist/node.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./node": {
+      "import": {
+        "types": "./dist/node.d.ts",
+        "default": "./dist/node.js"
+      },
+      "require": {
+        "types": "./dist/node.d.cts",
+        "default": "./dist/node.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src test",
+    "lint:fix": "biome check --write src test",
+    "docs": "typedoc",
+    "check:pack": "publint && attw --pack .",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@biomejs/biome": "^2.5.5",
+    "@types/node": "^26.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eventsource-parser": "^3.1.0",
+    "publint": "^0.3.21",
+    "set-cookie-parser": "^3.1.2",
+    "tsup": "^8.5.1",
+    "typedoc": "^0.28.20",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

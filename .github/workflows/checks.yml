@@ -1,0 +1,103 @@
+name: Проверки
+
+# Переиспользуемый воркфлоу: единственное описание проверок для репозитория.
+# Вызывается из ci.yml (на пуш и pull request) и из release.yml (перед публикацией),
+# чтобы релиз проходил ровно тот же набор проверок, что и обычная сборка.
+on:
+  workflow_call:
+
+# Проверкам достаточно чтения. Вызывающий воркфлоу не может расширить эти права.
+permissions:
+  contents: read
+
+jobs:
+  # Инструментарий разработки (vitest 4, vite 8, attw) требует Node 20+, поэтому
+  # проверки гоняются только на поддерживаемых им версиях. Совместимость библиотеки
+  # с Node 18 проверяет отдельная задача smoke — на собранном пакете.
+  check:
+    name: Проверки на Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 — текущая LTS, 20 — предыдущая, 24 — следующая.
+        node: [20, 22, 24]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Типы
+        run: npm run typecheck
+
+      - name: Линтер и форматирование
+        run: npm run lint
+
+      - name: Тесты
+        run: npm test
+
+      - name: Сборка
+        run: npm run build
+
+      - name: Корректность пакета
+        run: npm run check:pack
+
+      - name: Упаковка тарболла
+        if: matrix.node == 22
+        # --pack-destination не создаёт каталог сам.
+        run: |
+          mkdir -p pack
+          npm pack --pack-destination ./pack
+
+      - name: Публикация тарболла как артефакта
+        if: matrix.node == 22
+        uses: actions/upload-artifact@v7
+        with:
+          name: pack
+          path: pack/*.tgz
+          retention-days: 1
+
+  # Минимальная поддерживаемая версия — Node 18 (см. engines в package.json).
+  # Проверяется ровно то, что получит пользователь: установка собранного тарболла
+  # и импорт обеих точек входа в обоих форматах.
+  smoke:
+    name: Собранный пакет на Node ${{ matrix.node }}
+    needs: check
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22, 24]
+
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: pack
+          path: pack
+
+      - name: Установка пакета в чистый проект
+        run: |
+          mkdir smoke
+          cd smoke
+          npm init -y > /dev/null
+          npm install ../pack/*.tgz
+
+      - name: Импорт собранного пакета
+        working-directory: smoke
+        run: |
+          node -e "const m = require('itd-api'); if (typeof m.ItdClient !== 'function') { throw new Error('CJS-сборка не отдаёт ItdClient'); }"
+          node --input-type=module -e "import { ItdClient } from 'itd-api'; if (typeof ItdClient !== 'function') { throw new Error('ESM-сборка не отдаёт ItdClient'); }"
+          node -e "require('itd-api/node');"
+          node --input-type=module -e "await import('itd-api/node');"

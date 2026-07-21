@@ -1,0 +1,77 @@
+name: Публикация в npm
+
+# Запускается при пуше тега вида v1.2.3.
+# Порядок выпуска:
+#   npm version patch   (создаёт коммит и тег)
+#   git push --follow-tags
+on:
+  push:
+    tags: ['v*']
+
+# Прогоны релиза не отменяют друг друга: публикация не должна прерываться на полпути.
+
+jobs:
+  # Отдельной задачей и первой в цепочке: самая частая ошибка выпуска обнаруживается
+  # за считанные секунды, не занимая раннеры полной матрицей проверок.
+  verify-tag:
+    name: Тег совпадает с версией в package.json
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Сверка тега и версии
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Тег v$TAG не совпадает с версией $PKG в package.json"
+            exit 1
+          fi
+          echo "Публикуется версия $PKG"
+
+  # Тот же набор проверок, что и в CI, включая smoke на Node 18.
+  # Без этого релиз мог уехать в npm, ни разу не проверенный на минимальной
+  # поддерживаемой версии: тег пушится напрямую, и прогон CI публикацию не блокирует.
+  checks:
+    needs: verify-tag
+    uses: ./.github/workflows/checks.yml
+
+  publish:
+    name: Публикация
+    needs: checks
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      # Без этого права раннер не получит OIDC-токен и Trusted Publishing не сработает.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # Trusted Publishing требует Node не ниже 22.14.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          # Кеш пакетного менеджера в задаче публикации отключён по рекомендации npm.
+          package-manager-cache: false
+
+      # Node 24 приносит npm 11.x, но Trusted Publishing требует не ниже 11.5.1,
+      # поэтому версия поднимается явно, а не выводится из версии Node.
+      - name: Обновление npm до версии с поддержкой Trusted Publishing
+        run: |
+          npm install -g npm@latest
+          npm -v
+
+      - run: npm ci
+
+      # Проверки здесь не повторяются намеренно: их уже прогнала задача checks,
+      # а перед самой упаковкой npm выполнит prepublishOnly из package.json
+      # (typecheck, тесты, сборка, check:pack) — он же и создаёт dist.
+      - name: Публикация
+        run: npm publish
