@@ -1,6 +1,6 @@
 {
   "name": "itd-api",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Клиент REST и realtime API социальной сети итд.com для JavaScript и TypeScript",
   "repository": {
     "type": "git",
