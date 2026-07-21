@@ -107,11 +107,20 @@ export class AuthManager {
   /**
    * Есть ли признак живой refresh-сессии.
    *
-   * Сайт итд.com ставит рядом с refresh-токеном незакрытую cookie `is_auth` — по ней клиент
-   * понимает, что обновление вообще имеет смысл, и не дёргает API у анонимов.
+   * Рядом с refresh-токеном сервер ставит незакрытую cookie `is_auth` — по ней видно,
+   * что продлевать сессию вообще есть смысл, и API не дёргается у анонимов.
    * В браузере cookie ведёт сама среда, поэтому там ответ всегда `true`.
+   *
+   * Асинхронный, потому что признак может лежать в {@link TokenStorage}: до чтения оттуда
+   * ответ был бы `false` даже при полностью рабочей сохранённой сессии.
    */
-  hasRefreshSession(): boolean {
+  async hasRefreshSession(): Promise<boolean> {
+    await this.#loadSession();
+    return this.#hasRefreshSession();
+  }
+
+  /** То же самое, но без чтения хранилища — для вызовов, где сессия уже загружена. */
+  #hasRefreshSession(): boolean {
     if (!this.#config.useCookieJar) return true;
     if (this.#jar.has(AUTH_FLAG_COOKIE)) return true;
 
@@ -354,7 +363,7 @@ export class AuthManager {
   async #performRefresh(): Promise<string | null> {
     await this.#loadSession();
 
-    if (!this.hasRefreshSession()) {
+    if (!this.#hasRefreshSession()) {
       // Нет признаков сессии — обновлять нечего. При наличии логина и пароля
       // пробуем войти заново.
       return this.#reloginOrNull();

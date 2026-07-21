@@ -228,11 +228,20 @@ export class AuthResource extends BaseResource {
   /**
    * Есть ли признак живой сессии обновления.
    *
-   * Проверяет cookie `is_auth`, которую сервер ставит рядом с refresh-токеном. Позволяет
-   * не дёргать API у неавторизованного пользователя. В браузере всегда `true`:
-   * cookie ведёт сама среда, и прочитать её из JS нельзя.
+   * Проверяет cookie `is_auth`, которую сервер ставит рядом с refresh-токеном, а также
+   * refresh-токен, переданный строкой. Позволяет не дёргать API у неавторизованного
+   * пользователя. В браузере всегда `true`: cookie ведёт сама среда, и прочитать её
+   * из JS нельзя.
+   *
+   * Читает {@link TokenStorage}, поэтому результат верен и до первого запроса.
+   *
+   * @example
+   * ```ts
+   * if (await itd.auth.hasRefreshSession()) await itd.auth.refresh();
+   * else redirectToLogin();
+   * ```
    */
-  hasRefreshSession(): boolean {
+  hasRefreshSession(): Promise<boolean> {
     return this.#auth.hasRefreshSession();
   }
 

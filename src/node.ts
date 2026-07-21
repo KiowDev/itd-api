@@ -10,10 +10,8 @@
  * ```ts
  * import { ItdClient, FileTokenStorage } from 'itd-api/node';
  *
- * const itd = new ItdClient({
- *   auth: { email, password },
- *   storage: new FileTokenStorage('./.itd-session.json'),
- * });
+ * // Когда сессия уже сохранена, `auth` не нужен — токен возьмётся из хранилища.
+ * const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });
  *
  * await itd.posts.create((p) => p.content('привет').attach('./photo.jpg'));
  * ```
@@ -42,8 +40,9 @@ export const nodeFileReader: FileReader = async (path) => {
 /**
  * Хранит сессию в файле.
  *
- * Нужна долгоживущим процессам: без неё бот при каждом запуске входит заново, а серия
- * входов подряд может привести к временной блокировке аккаунта.
+ * Нужна долгоживущим процессам: без неё бот при каждом запуске входит заново — а вход
+ * требует решённой капчи, да и серия входов подряд может привести к временной блокировке
+ * аккаунта. С сохранённой сессией опция `auth` не нужна вовсе.
  *
  * Файл создаётся с правами `0600` (чтение и запись только владельцу) — в нём лежат токены.
  * Запись идёт через временный файл с последующим переименованием, поэтому падение процесса
@@ -51,10 +50,7 @@ export const nodeFileReader: FileReader = async (path) => {
  *
  * @example
  * ```ts
- * const itd = new ItdClient({
- *   auth: { email, password },
- *   storage: new FileTokenStorage('./.itd-session.json'),
- * });
+ * const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });
  * ```
  */
 export class FileTokenStorage implements TokenStorage {

@@ -44,6 +44,8 @@ import type { FileInput } from './types/params.js';
  * import { FileTokenStorage } from 'itd-api/node';
  *
  * const itd = new ItdClient({
+ *   // `auth` не обязателен: когда хранилище уже содержит сессию, токен берётся оттуда,
+ *   // а истёкший продлевается сам. Здесь он нужен на первый запуск.
  *   // Вход по паролю требует токена капчи — см. AuthInput и TURNSTILE_SITE_KEY.
  *   auth: { email, password, getTurnstileToken },
  *   storage: new FileTokenStorage('./.itd-session.json'),

@@ -36,10 +36,9 @@ for await (const post of itd.posts.iterate({ tab: FeedTab.Following })) {
 ```ts
 import { ItdClient, FileTokenStorage } from 'itd-api/node';
 
-const itd = new ItdClient({
-  auth: { email, password, getTurnstileToken },   // вход требует капчи, см. ниже
-  storage: new FileTokenStorage('./.itd-session.json'),
-});
+// Сессия из файла: продлевается сама, `auth` не нужен. Как её туда положить —
+// в разделе «Авторизация»: вход требует капчи, поэтому делается один раз.
+const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });
 
 await itd.posts.create((p) => p.content('привет').attach('./photo.jpg'));
 ```
@@ -50,20 +49,65 @@ await itd.posts.create((p) => p.content('привет').attach('./photo.jpg'));
 
 ## Авторизация
 
-Четыре формы на выбор:
+Откуда клиент берёт доступ к API — либо из опции `auth`, либо из `storage`, либо
+из явного вызова входа. Всё это взаимозаменяемо, и **обязательного варианта нет**.
 
 ```ts
 new ItdClient({ auth: '<accessToken>' });                    // разовый вызов
-new ItdClient({ auth: { accessToken, refreshToken } });      // восстановить сессию
+new ItdClient({ auth: { accessToken, refreshToken } });      // восстановить сессию строками
 new ItdClient({ auth: { email, password, getTurnstileToken } });  // войти самому
 new ItdClient({ auth: { getToken: () => vault.read() } });   // токен извне
+
+new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });  // сессия с прошлого раза
+new ItdClient();                                             // войти позже, через itd.auth
 ```
+
+`auth` и `storage` не конкурируют, а дополняют друг друга: **хранилище главнее** — оно
+отражает текущее состояние сессии, — а недостающие поля берутся из `auth`. Типичный случай:
+в хранилище лежит только `accessToken`, а `refreshToken` приходит из настроек приложения.
+
+### Сессия из хранилища — `auth` не нужен
+
+Если предыдущий запуск сохранил сессию, для работы достаточно одного `storage`:
+
+```ts
+import { ItdClient, FileTokenStorage } from 'itd-api/node';
+
+const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });
+
+const me = await itd.users.me();   // токен подставится сам
+```
+
+Более того, сохранённого `accessToken` не требуется вовсе. Хватает cookie: первый запрос
+получит `401`, библиотека продлит сессию и повторит его — вызывающий код ничего не заметит.
+
+Refresh-токен живёт 30 суток и обновляется при каждом продлении, поэтому регулярно
+работающему боту капчу достаточно решить один раз, при первом запуске.
+
+Проверить, есть ли что продлевать, можно заранее:
+
+```ts
+if (await itd.auth.hasRefreshSession()) await itd.auth.refresh();
+else redirectToLogin();
+```
+
+### Продление токена
 
 При ответе `401` библиотека продлевает сессию и повторяет запрос. Параллельные запросы,
 одновременно получившие `401`, ждут **одного** обновления, а не запускают своё — иначе сервер
 увидел бы десяток одновременных `refresh` и отверг бы все, кроме первого.
 
 Отключить автоматику: `autoRefresh: false`, дальше `await itd.auth.refresh()` вручную.
+
+Когда продлить не удалось, `refresh()` бросает ошибку **сервера** — по её коду видно, что
+именно случилось: `SESSION_NOT_FOUND` (сессия отозвана или истекла), `SESSION_REVOKED`,
+`REFRESH_TOKEN_MISSING` (продлевать нечем). Та же ошибка приходит в событии `authError`:
+
+```ts
+itd.on('authError', ({ error }) => {
+  if (isItdApiError(error)) console.error('Сессия потеряна:', error.code);
+});
+```
 
 ### Капча обязательна при входе
 
@@ -123,24 +167,33 @@ await itd.auth.resetPasswordWithOtp({
 | `FileTokenStorage` | `itd-api/node` | Node, Bun, Deno |
 | `createTokenStorage({ get, set, clear })` | `itd-api` | своё: Redis, БД, AsyncStorage |
 
-Refresh-токен приходит в cookie `refresh_token`, а `fetch` вне браузера их не хранит —
-библиотека ведёт собственный cookie-jar и сохраняет его вместе с сессией. В браузере
-используется `credentials: 'include'`, в React Native cookie ведёт нативный слой.
+По умолчанию сессия живёт в памяти процесса и теряется при перезапуске. Укажите `storage` —
+и библиотека сама запишет туда всё нужное после входа и после каждого продления; отдельно
+сохранять ничего не надо.
 
-Токен можно передать и строкой (`auth: { accessToken, refreshToken }`) — вне браузера
-библиотека сама подставит его нужной cookie. В браузере так не выйдет: настоящая cookie
-помечена `HttpOnly`, и из JS её не выставить.
+В сессию попадают `accessToken`, `refreshToken`, cookie и `deviceId`. Сохранять её целиком
+важно: refresh-токен приходит в cookie `refresh_token`, а `fetch` вне браузера их не хранит,
+поэтому библиотека ведёт собственный cookie-jar. В браузере используется
+`credentials: 'include'`, в React Native cookie ведёт нативный слой.
 
-Сервер выдаёт при каждом обновлении **новый** refresh-токен взамен прежнего, поэтому
-сохранять сессию нужно после обновления, а не один раз при входе:
+`deviceId` — идентификатор устройства из заголовка `X-Device-Id`. Сервер различает по нему
+записи в списке сессий (`itd.auth.sessions()`), поэтому при постоянном хранилище он переживает
+перезапуск и бот не плодит по новой сессии на каждый старт. Своё значение — опцией `deviceId`.
+
+Refresh-токен можно передать и строкой (`auth: { accessToken, refreshToken }`) — вне браузера
+библиотека сама подставит его нужной cookie. В браузере так не выйдет: cookie помечена
+`HttpOnly`, и из JS её не выставить.
+
+**Сервер выдаёт при каждом продлении новый refresh-токен взамен прежнего.** Со штатным
+`storage` это происходит само. Если же вы храните сессию сами, снимайте её после каждого
+обновления, а не один раз при входе, — иначе сохранённое значение протухнет:
 
 ```ts
 itd.on('tokens', async () => saveSomewhere(await itd.getSession()));
-```
 
-Вместе с сессией хранится `deviceId` — идентификатор устройства из заголовка `X-Device-Id`.
-Сервер различает по нему записи в списке сессий, поэтому при постоянном хранилище он
-переживает перезапуск, а бот не плодит по новой сессии на каждый старт.
+// при следующем запуске
+await itd.setSession(await loadFromSomewhere());
+```
 
 ---
 
@@ -283,11 +336,14 @@ try {
 ```ts
 const itd = new ItdClient({
   baseUrl: 'https://xn--d1ah4a.com',   // свой прокси, если работаете из браузера
-  auth: { email, password },
+  auth: { email, password, getTurnstileToken },
   storage: new FileTokenStorage('./.itd-session.json'),
   timeout: 30_000,
   retry: { attempts: 3, retryWrites: false },
   rateLimit: { concurrency: 4, rps: 8 },
+  // Заголовки латиницей: кириллица в них запрещена самим HTTP.
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',             // по умолчанию itd-api/<версия>; false — не слать
+  deviceId: '3f2a…-uuid',              // по умолчанию заводится сам и живёт в сессии
   logger: true,                        // токены и пароли в логах маскируются
   hooks: {
     onRequest: (ctx) => console.log(ctx.method, ctx.path),

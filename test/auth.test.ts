@@ -314,11 +314,53 @@ describe('капча при входе по паролю', () => {
   });
 });
 
+describe('сессия из хранилища без опции auth', () => {
+  it('токен берётся из хранилища', async () => {
+    const storage = new MemoryTokenStorage({ accessToken: 'from-storage' });
+    const { auth } = makeAuth([], { storage });
+
+    expect(await auth.getAuthHeaders()).toEqual({ Authorization: 'Bearer from-storage' });
+  });
+
+  it('одних cookie хватает, чтобы поднять сессию через 401', async () => {
+    // Токена доступа в хранилище нет вовсе — только cookie после прошлого запуска.
+    const storage = new MemoryTokenStorage({
+      cookies: [
+        'https://itd.test is_auth=1; Path=/',
+        'https://itd.test refresh_token=rt; Path=/api/v1/auth',
+      ],
+    });
+
+    const { http, mock } = makeAuth(
+      (request) =>
+        request.url.endsWith('/refresh')
+          ? json({ accessToken: 'refreshed' })
+          : request.headers.get('authorization') === 'Bearer refreshed'
+            ? json({ data: { id: 'u1' } })
+            : json({ error: { code: 'UNAUTHORIZED' } }, { status: 401 }),
+      { storage },
+    );
+
+    await expect(http.request({ method: 'GET', path: '/api/users/me' })).resolves.toEqual({
+      id: 'u1',
+    });
+    expect(mock.calls[1]?.headers.get('cookie')).toContain('refresh_token=rt');
+  });
+
+  it('признак сессии верен ещё до первого запроса', async () => {
+    const storage = new MemoryTokenStorage({ cookies: ['https://itd.test is_auth=1; Path=/'] });
+    const { auth } = makeAuth([], { storage });
+
+    // Признак лежит в хранилище: без его чтения ответ был бы ложным «нет сессии».
+    expect(await auth.hasRefreshSession()).toBe(true);
+  });
+});
+
 describe('признак refresh-сессии', () => {
   it('без cookie is_auth обновление не запрашивается', async () => {
     const { auth, mock } = makeAuth([], { auth: 'token-1' });
 
-    expect(auth.hasRefreshSession()).toBe(false);
+    expect(await auth.hasRefreshSession()).toBe(false);
     await expect(auth.refresh()).rejects.toThrow(ItdAuthError);
     expect(mock.callCount).toBe(0);
   });
@@ -329,7 +371,7 @@ describe('признак refresh-сессии', () => {
     });
     jar.setFromStrings('https://itd.test/', ['is_auth=1; Path=/']);
 
-    expect(auth.hasRefreshSession()).toBe(true);
+    expect(await auth.hasRefreshSession()).toBe(true);
     expect(await auth.refresh()).toBe('refreshed');
     expect(mock.callCount).toBe(1);
   });
@@ -337,7 +379,7 @@ describe('признак refresh-сессии', () => {
   it('в браузере признак всегда положительный — cookie ведёт среда', async () => {
     const { auth } = makeAuth([], { auth: 'token-1', mode: 'browser' });
 
-    expect(auth.hasRefreshSession()).toBe(true);
+    expect(await auth.hasRefreshSession()).toBe(true);
   });
 });
 
