@@ -27,6 +27,7 @@ function makeAuth(handler: MockHandler | Response[], options: ItdClientOptions =
 
   http.setCollaborators({
     getAuthHeaders: () => auth.getAuthHeaders(),
+    getDeviceId: () => auth.getDeviceId(),
     onUnauthorized: () => auth.onUnauthorized(),
     getCookieHeader: (url) => jar.getHeader(url),
     saveCookies: (url, response) => jar.setFromResponse(url, response),
@@ -75,7 +76,7 @@ describe('получение токена', () => {
 describe('отложенный вход по логину и паролю', () => {
   it('входит при первом обращении за токеном', async () => {
     const { auth, mock } = makeAuth([json({ accessToken: 'new-token' })], {
-      auth: { email: 'a@b.c', password: 'p' },
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
     });
 
     expect(await auth.getAccessToken()).toBe('new-token');
@@ -84,7 +85,7 @@ describe('отложенный вход по логину и паролю', () =
 
   it('объединяет параллельные входы в один запрос', async () => {
     const { auth, mock } = makeAuth(() => json({ accessToken: 'new-token' }), {
-      auth: { email: 'a@b.c', password: 'p' },
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
     });
 
     await Promise.all([auth.getAccessToken(), auth.getAccessToken(), auth.getAccessToken()]);
@@ -95,7 +96,7 @@ describe('отложенный вход по логину и паролю', () =
   it('объясняет, что при запросе OTP автоматический вход невозможен', async () => {
     // Сервер вместо токена просит подтверждение — отвечаем так на любой запрос.
     const { auth } = makeAuth(() => json({ flowToken: 'f' }), {
-      auth: { email: 'a@b.c', password: 'p' },
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
     });
 
     const error = await auth.getAccessToken().catch((e: unknown) => e);
@@ -165,6 +166,154 @@ describe('обновление токена', () => {
   });
 });
 
+describe('refresh-токен, переданный строкой', () => {
+  it('уходит cookie, а не телом запроса', async () => {
+    const { auth, mock } = makeAuth([json({ accessToken: 'refreshed' })], {
+      auth: { accessToken: 'old-token', refreshToken: 'secret-rt' },
+    });
+
+    await auth.refresh();
+
+    // Тела нет вовсе: сервер читает токен только из cookie.
+    expect(mock.calls[0]?.body).toBeUndefined();
+    expect(mock.calls[0]?.headers.get('cookie')).toContain('refresh_token=secret-rt');
+  });
+
+  it('не подставляется на посторонние пути', async () => {
+    const { auth, http, mock } = makeAuth([json({ data: {} })], {
+      auth: { accessToken: 'a', refreshToken: 'secret-rt' },
+    });
+    await auth.getAccessToken();
+
+    await http.request({ method: 'GET', path: '/api/users/me' });
+
+    // Path=/api/v1/auth — на остальные эндпоинты refresh-токен утекать не должен.
+    expect(mock.calls[0]?.headers.get('cookie') ?? '').not.toContain('refresh_token');
+  });
+
+  it('заменяется новым, когда сервер его ротировал', async () => {
+    const headers = new Headers({ 'content-type': 'application/json' });
+    headers.append('set-cookie', 'refresh_token=; Path=/api/v1/auth; Max-Age=0');
+    headers.append('set-cookie', 'refresh_token=rotated-rt; Path=/api/v1/auth; Max-Age=2592000');
+
+    const { auth } = makeAuth([new Response(JSON.stringify({ accessToken: 'r' }), { headers })], {
+      auth: { accessToken: 'a', refreshToken: 'old-rt' },
+    });
+
+    await auth.refresh();
+
+    expect((await auth.getSession())?.refreshToken).toBe('rotated-rt');
+  });
+});
+
+describe('диагностика неудачного обновления', () => {
+  it('отдаёт ошибку сервера, а не подменяет её своей', async () => {
+    const { auth } = makeAuth(
+      [
+        json(
+          { error: { code: 'SESSION_NOT_FOUND', message: 'Session not found' } },
+          { status: 401 },
+        ),
+      ],
+      { auth: { accessToken: 'a', refreshToken: 'r' } },
+    );
+
+    const error = await auth.refresh().catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ItdAuthError);
+    expect((error as ItdAuthError).code).toBe('SESSION_NOT_FOUND');
+    expect((error as ItdAuthError).message).toBe('Session not found');
+  });
+
+  it('говорит про отсутствие сессии, только когда обновление не начиналось', async () => {
+    const { auth, mock } = makeAuth([], { auth: 'only-token' });
+
+    const error = await auth.refresh().catch((e: unknown) => e);
+
+    expect((error as ItdAuthError).code).toBe('SESSION_EXPIRED');
+    expect(mock.callCount).toBe(0);
+  });
+});
+
+describe('идентификатор устройства', () => {
+  it('уходит заголовком и не меняется между запросами', async () => {
+    const { http, mock } = makeAuth(() => json({ data: {} }));
+
+    await http.request({ method: 'GET', path: '/api/users/me' });
+    await http.request({ method: 'GET', path: '/api/posts' });
+
+    const first = mock.calls[0]?.headers.get('x-device-id');
+    expect(first).toMatch(/^[0-9a-f-]{36}$/);
+    expect(mock.calls[1]?.headers.get('x-device-id')).toBe(first);
+  });
+
+  it('берётся из сохранённой сессии', async () => {
+    const storage = new MemoryTokenStorage({ accessToken: 'a', deviceId: 'stored-device' });
+    const { http, mock } = makeAuth([json({ data: {} })], { storage });
+
+    await http.request({ method: 'GET', path: '/api/users/me' });
+
+    expect(mock.calls[0]?.headers.get('x-device-id')).toBe('stored-device');
+  });
+
+  it('явное значение из конфигурации важнее сохранённого', async () => {
+    const storage = new MemoryTokenStorage({ accessToken: 'a', deviceId: 'stored-device' });
+    const { http, mock } = makeAuth([json({ data: {} })], { storage, deviceId: 'config-device' });
+
+    await http.request({ method: 'GET', path: '/api/users/me' });
+
+    expect(mock.calls[0]?.headers.get('x-device-id')).toBe('config-device');
+  });
+
+  it('сохраняется в сессию, чтобы пережить перезапуск', async () => {
+    const storage = new MemoryTokenStorage();
+    const { http } = makeAuth([json({ data: {} })], { storage });
+
+    await http.request({ method: 'GET', path: '/api/users/me' });
+
+    expect(storage.get()?.deviceId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe('капча при входе по паролю', () => {
+  it('уходит в теле запроса', async () => {
+    const { auth, mock } = makeAuth([json({ accessToken: 't' })], {
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'капча' },
+    });
+
+    await auth.getAccessToken();
+
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      password: 'p',
+      turnstileToken: 'капча',
+    });
+  });
+
+  it('спрашивается заново перед каждым входом', async () => {
+    const getTurnstileToken = vi.fn().mockReturnValueOnce('первая').mockReturnValueOnce('вторая');
+    const { auth, mock } = makeAuth(() => json({ accessToken: 't' }), {
+      auth: { email: 'a@b.c', password: 'p', getTurnstileToken },
+    });
+
+    await auth.getAccessToken();
+    await auth.clear();
+    await auth.getAccessToken();
+
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}').turnstileToken).toBe('вторая');
+  });
+
+  it('без токена капчи вход не начинается', async () => {
+    const { auth, mock } = makeAuth([], { auth: { email: 'a@b.c', password: 'p' } });
+
+    const error = await auth.getAccessToken().catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ItdConfigError);
+    expect((error as Error).message).toMatch(/Turnstile/);
+    expect(mock.callCount).toBe(0);
+  });
+});
+
 describe('признак refresh-сессии', () => {
   it('без cookie is_auth обновление не запрашивается', async () => {
     const { auth, mock } = makeAuth([], { auth: 'token-1' });
@@ -196,7 +345,7 @@ describe('повторный вход после неудачного обнов
   it('входит заново, если есть логин и пароль', async () => {
     const { auth, mock } = makeAuth(
       [json({ code: 'SESSION_EXPIRED' }, { status: 401 }), json({ accessToken: 'after-signin' })],
-      { auth: { email: 'a@b.c', password: 'p' } },
+      { auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' } },
     );
     // Сессия уже есть, иначе обновление даже не начнётся.
     await auth.setSession({ accessToken: 'old-token', refreshToken: 'r' });
@@ -207,7 +356,7 @@ describe('повторный вход после неудачного обнов
 
   it('reloginOnRefreshFailure: false отключает повторный вход', async () => {
     const { auth, mock } = makeAuth([json({ code: 'SESSION_EXPIRED' }, { status: 401 })], {
-      auth: { email: 'a@b.c', password: 'p' },
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
       reloginOnRefreshFailure: false,
     });
     await auth.setSession({ accessToken: 'old-token', refreshToken: 'r' });
@@ -280,7 +429,7 @@ describe('связка с транспортом', () => {
 describe('события', () => {
   it('сообщает о новом токене и о входе', async () => {
     const { auth } = makeAuth([json({ accessToken: 'new-token' })], {
-      auth: { email: 'a@b.c', password: 'p' },
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
     });
 
     const tokens = vi.fn();

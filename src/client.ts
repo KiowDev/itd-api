@@ -44,7 +44,8 @@ import type { FileInput } from './types/params.js';
  * import { FileTokenStorage } from 'itd-api/node';
  *
  * const itd = new ItdClient({
- *   auth: { email, password },
+ *   // Вход по паролю требует токена капчи — см. AuthInput и TURNSTILE_SITE_KEY.
+ *   auth: { email, password, getTurnstileToken },
  *   storage: new FileTokenStorage('./.itd-session.json'),
  *   rateLimit: { concurrency: 4, rps: 8 },
  * });
@@ -102,6 +103,7 @@ export class ItdClient {
 
     this.#http.setCollaborators({
       getAuthHeaders: () => this.#authManager.getAuthHeaders(),
+      getDeviceId: () => this.#authManager.getDeviceId(),
       onUnauthorized: () => this.#authManager.onUnauthorized(),
       getCookieHeader: (url) => this.#jar.getHeader(url),
       saveCookies: (url, response) => this.#jar.setFromResponse(url, response),

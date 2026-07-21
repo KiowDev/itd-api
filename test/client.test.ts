@@ -312,7 +312,7 @@ describe('авторизация', () => {
       auth: undefined,
     });
 
-    const result = await itd.auth.signIn({ email: 'a@b.c', password: 'p' });
+    const result = await itd.auth.signIn({ email: 'a@b.c', password: 'p', turnstileToken: 'cap' });
 
     expect(result).toEqual({ status: 'authenticated', accessToken: 'signed-in' });
     await itd.users.me();
@@ -322,10 +322,12 @@ describe('авторизация', () => {
   it('сообщает о требовании кода подтверждения', async () => {
     const { itd } = makeClient([json({ flowToken: 'flow-1' })], { auth: undefined });
 
-    expect(await itd.auth.signIn({ email: 'a@b.c', password: 'p' })).toEqual({
-      status: 'otp_required',
-      flowToken: 'flow-1',
-    });
+    expect(await itd.auth.signIn({ email: 'a@b.c', password: 'p', turnstileToken: 'cap' })).toEqual(
+      {
+        status: 'otp_required',
+        flowToken: 'flow-1',
+      },
+    );
   });
 
   it('проходит полный вход с кодом', async () => {
@@ -337,6 +339,7 @@ describe('авторизация', () => {
     const token = await itd.auth.signInWithOtp({
       email: 'a@b.c',
       password: 'p',
+      turnstileToken: 'cap',
       getOtp: () => '123456',
     });
 
@@ -347,12 +350,15 @@ describe('авторизация', () => {
     });
   });
 
-  it('очищает сессию при выходе', async () => {
+  it('очищает сессию при выходе, но помнит устройство', async () => {
     const { itd } = makeClient([noContent()]);
 
     await itd.auth.logout();
 
-    expect(await itd.getSession()).toBeNull();
+    const session = await itd.getSession();
+    expect(session?.accessToken).toBeUndefined();
+    // Идентификатор устройства выход переживает — иначе каждый вход плодил бы новую сессию.
+    expect(session?.deviceId).toEqual(expect.any(String));
   });
 
   it('строит адрес внешнего входа', () => {
@@ -366,7 +372,7 @@ describe('авторизация', () => {
     const onTokens = vi.fn();
     itd.on('tokens', onTokens);
 
-    await itd.auth.signIn({ email: 'a@b.c', password: 'p' });
+    await itd.auth.signIn({ email: 'a@b.c', password: 'p', turnstileToken: 'cap' });
 
     expect(onTokens).toHaveBeenCalledWith({ accessToken: 'новый' });
   });
@@ -375,6 +381,72 @@ describe('авторизация', () => {
     const { itd } = makeClient([json({ sessions: [{ id: 's1', isCurrent: true }] })]);
 
     expect(await itd.auth.sessions()).toHaveLength(1);
+  });
+
+  it('завершает все сессии отзывом и выходом', async () => {
+    const { itd, mock } = makeClient([noContent(), noContent()]);
+
+    await itd.auth.logoutAll();
+
+    // Единого logout-all на сервере нет, поэтому вызов собран из двух запросов.
+    expect(mock.calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+      'DELETE /api/v1/auth/sessions',
+      'POST /api/v1/auth/logout',
+    ]);
+  });
+
+  it('сбрасывает пароль кодом из письма', async () => {
+    const { itd, mock } = makeClient([json({ flowToken: 'flow-1' }), noContent()], {
+      auth: undefined,
+    });
+
+    await itd.auth.resetPasswordWithOtp({
+      email: 'a@b.c',
+      turnstileToken: 'cap',
+      newPassword: 'Xx12345678!',
+      getOtp: () => '123456',
+    });
+
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      turnstileToken: 'cap',
+    });
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      otp: '123456',
+      flowToken: 'flow-1',
+      newPassword: 'Xx12345678!',
+    });
+  });
+});
+
+describe('заголовки запросов', () => {
+  it('шлёт User-Agent по умолчанию', async () => {
+    const { itd, mock } = makeClient([json({ data: {} })]);
+
+    await itd.users.me();
+
+    expect(mock.calls[0]?.headers.get('user-agent')).toMatch(/itd-api\//);
+    expect(mock.calls[0]?.headers.get('x-requested-with')).toBe('XMLHttpRequest');
+  });
+
+  it('userAgent: false убирает заголовок', async () => {
+    const { itd, mock } = makeClient([json({ data: {} })], { userAgent: false });
+
+    await itd.users.me();
+
+    expect(mock.calls[0]?.headers.get('user-agent')).toBeNull();
+  });
+
+  it('заголовки из настроек важнее умолчаний', async () => {
+    const { itd, mock } = makeClient([json({ data: {} })], {
+      headers: { 'User-Agent': 'my-bot/1.0' },
+      userAgent: 'default-ua',
+    });
+
+    await itd.users.me();
+
+    expect(mock.calls[0]?.headers.get('user-agent')).toBe('my-bot/1.0');
   });
 });
 

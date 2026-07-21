@@ -8,8 +8,10 @@ const SECRET_FIELDS = new Set([
   'newpassword',
   'accesstoken',
   'refreshtoken',
+  'currentpassword',
   'flowtoken',
   'token',
+  'turnstiletoken',
   'otp',
 ]);
 

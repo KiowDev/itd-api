@@ -12,6 +12,7 @@ import {
   ItdServerError,
   ItdValidationError,
 } from './errors.js';
+import { redactBody } from './redact.js';
 
 /** Разобранное тело ошибки, приведённое к одной форме. */
 export interface ParsedErrorBody {
@@ -211,6 +212,10 @@ const CODE_TO_CLASS: Record<string, new (init: never) => ItdApiError> = {
   SESSION_EXPIRED: ItdAuthError,
   SESSION_REVOKED: ItdAuthError,
   SESSION_INVALID_REFRESH_TOKEN: ItdAuthError,
+  // Оба приходят с `/auth/refresh`: первый — когда cookie refresh_token не долетела,
+  // второй — когда она есть, но сессия за ней уже мертва.
+  REFRESH_TOKEN_MISSING: ItdAuthError,
+  SESSION_NOT_FOUND: ItdAuthError,
   ACCOUNT_INVALID_CREDENTIALS: ItdAuthError,
   ACCESS_DENIED: ItdForbiddenError,
   ENTITY_NOT_FOUND: ItdNotFoundError,
@@ -229,6 +234,20 @@ function classByStatus(status: number): new (init: never) => ItdApiError {
   if (status === 429) return ItdRateLimitError;
   if (status >= 500) return ItdServerError;
   return ItdApiErrorClass;
+}
+
+/**
+ * Готовит тело ответа к сохранению в `ItdApiError.raw`.
+ *
+ * При `422` сервер возвращает присланное тело эхом: `{ type: 'validation', on: 'body',
+ * found: { email: '…', password: '…' } }`. Ошибка обычно доезжает до логов и систем сбора
+ * вроде Sentry — пароль в ней оказаться не должен. Имена полей для диагностики остаются,
+ * значения секретов заменяются заглушкой.
+ */
+function safeRawBody(body: unknown): unknown {
+  if (!isRecord(body) || body.type !== 'validation' || !isRecord(body.found)) return body;
+
+  return { ...body, found: redactBody(body.found) };
 }
 
 /** Что нужно знать о запросе, чтобы построить ошибку. */
@@ -265,7 +284,7 @@ export function createApiError(context: ErrorContext): ItdApiError {
     requestId: getRequestId(context.headers),
     method: context.method,
     path: context.path,
-    raw: context.body,
+    raw: safeRawBody(context.body),
     response: context.response,
     retryAfter: parseRetryAfter(context.headers?.get('retry-after')),
   };

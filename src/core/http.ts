@@ -23,6 +23,13 @@ export interface HttpCollaborators {
    * Повтор выполняется ровно один раз.
    */
   onUnauthorized?(): Promise<boolean>;
+  /**
+   * Идентификатор устройства для заголовка `X-Device-Id`.
+   *
+   * Отдельно от {@link getAuthHeaders}, потому что нужен и на анонимных запросах —
+   * например на `sign-in`, где заголовка авторизации ещё нет.
+   */
+  getDeviceId?(): Promise<string> | string;
   /** Значение заголовка `Cookie` для указанного URL. */
   getCookieHeader?(url: string): string | undefined;
   /** Приём `Set-Cookie` из ответа. */
@@ -232,7 +239,18 @@ export class HttpClient {
     const headers = new Headers();
 
     headers.set('Accept', 'application/json');
+    // Сервер этот заголовок не требует, но ожидает: дешевле отправить, чем разбираться,
+    // почему часть запросов не проходит фильтры.
+    headers.set('X-Requested-With', 'XMLHttpRequest');
 
+    // В браузере это запрещённый заголовок: среда молча его игнорирует, ошибки не будет.
+    if (this.#config.userAgent) setHeader(headers, 'User-Agent', this.#config.userAgent);
+
+    if (this.#collaborators.getDeviceId) {
+      setHeader(headers, 'X-Device-Id', await this.#collaborators.getDeviceId());
+    }
+
+    // Пользовательские заголовки идут после умолчаний, чтобы их можно было переопределить.
     for (const [name, value] of Object.entries(this.#config.headers))
       setHeader(headers, name, value);
 

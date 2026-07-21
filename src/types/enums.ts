@@ -175,8 +175,15 @@ export const ItdErrorCode = Object.freeze({
   BUSINESS_RULE_VIOLATION: 'BUSINESS_RULE_VIOLATION',
   RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
   UNKNOWN_ERROR: 'UNKNOWN_ERROR',
+  /** Сервер отвечает так на `404`, `ENTITY_NOT_FOUND` в этом случае не приходит. */
+  NOT_FOUND: 'NOT_FOUND',
+  /** На практике не приходит: вместо него сервер шлёт `TURNSTILE_VERIFICATION_FAILED`. */
   CAPTCHA_FAILED: 'CAPTCHA_FAILED',
+  /** Капча не пройдена: токен Turnstile недействителен, просрочен или уже использован. */
+  TURNSTILE_VERIFICATION_FAILED: 'TURNSTILE_VERIFICATION_FAILED',
   OTP_INVALID: 'OTP_INVALID',
+  /** `flowToken` неизвестен или просрочен — поток подтверждения нужно начинать заново. */
+  INVALID_FLOW_TOKEN: 'INVALID_FLOW_TOKEN',
   ACCOUNT_DEACTIVATED: 'ACCOUNT_DEACTIVATED',
   ACCOUNT_EMAIL_DOMAIN_NOT_ALLOWED: 'ACCOUNT_EMAIL_DOMAIN_NOT_ALLOWED',
   ACCOUNT_INVALID_CREDENTIALS: 'ACCOUNT_INVALID_CREDENTIALS',
@@ -185,6 +192,10 @@ export const ItdErrorCode = Object.freeze({
   SESSION_EXPIRED: 'SESSION_EXPIRED',
   SESSION_REVOKED: 'SESSION_REVOKED',
   SESSION_INVALID_REFRESH_TOKEN: 'SESSION_INVALID_REFRESH_TOKEN',
+  /** Запрос обновления пришёл без cookie `refresh_token` — продлевать нечего. */
+  REFRESH_TOKEN_MISSING: 'REFRESH_TOKEN_MISSING',
+  /** Cookie `refresh_token` есть, но сессии за ней уже нет: отозвана или истекла. */
+  SESSION_NOT_FOUND: 'SESSION_NOT_FOUND',
   MISSING_FLOW_TOKEN: 'MISSING_FLOW_TOKEN',
   PROFILE_USERNAME_TAKEN: 'PROFILE_USERNAME_TAKEN',
   PROFILE_RESTRICTION_ACTIVE: 'PROFILE_RESTRICTION_ACTIVE',

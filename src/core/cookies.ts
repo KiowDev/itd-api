@@ -13,6 +13,18 @@ interface StoredCookie {
 /** Имя cookie-флага «есть refresh-сессия». Ставится сайтом итд.com рядом с refresh-токеном. */
 export const AUTH_FLAG_COOKIE = 'is_auth';
 
+/**
+ * Имя cookie с refresh-токеном.
+ *
+ * `POST /api/v1/auth/refresh` читает токен **только отсюда** — тело запроса сервер игнорирует.
+ * Cookie помечена `HttpOnly`, поэтому в браузере её не прочитать и не выставить; вне браузера
+ * она проходит через jar, и туда же кладётся токен, переданный строкой.
+ */
+export const REFRESH_COOKIE = 'refresh_token';
+
+/** Путь, которым сервер ограничивает {@link REFRESH_COOKIE}. */
+export const REFRESH_COOKIE_PATH = '/api/v1/auth';
+
 /** Разделитель origin и содержимого cookie при сериализации. В origin пробелов не бывает. */
 const SERIALIZED_SEPARATOR = ' ';
 
@@ -82,6 +94,16 @@ export class CookieJar {
     if (raw.length > 0) this.setFromStrings(url, raw);
   }
 
+  /**
+   * Кладёт cookie напрямую, минуя `Set-Cookie`.
+   *
+   * Нужно ровно в одном случае: пользователь передал refresh-токен строкой, а сервер читает
+   * его только из cookie. Значение не кодируется — оно уходит в заголовок как есть.
+   */
+  set(url: string, name: string, value: string, path = '/'): void {
+    this.setFromStrings(url, [`${name}=${value}; Path=${path}`]);
+  }
+
   /** Сохраняет cookie из готовых строк `Set-Cookie`. */
   setFromStrings(url: string, setCookieStrings: string[]): void {
     const origin = originOf(url);
@@ -129,6 +151,25 @@ export class CookieJar {
     const cookies = this.#matching(url);
     if (cookies.length === 0) return undefined;
     return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+  }
+
+  /**
+   * Значение действующей cookie.
+   *
+   * Нужно, чтобы забрать обновлённый refresh-токен: сервер ротирует его при каждом
+   * продлении сессии, и сохранять надо именно новое значение.
+   *
+   * @param url если указан, учитываются origin, путь и флаг `Secure`
+   */
+  getValue(name: string, url?: string): string | undefined {
+    if (url) return this.#matching(url).find((cookie) => cookie.name === name)?.value;
+
+    const now = Date.now();
+    for (const jar of this.#byOrigin.values()) {
+      const cookie = jar.get(name);
+      if (cookie && (cookie.expires === undefined || cookie.expires > now)) return cookie.value;
+    }
+    return undefined;
   }
 
   /**

@@ -78,6 +78,38 @@ export function supportsStreamingBody(): boolean {
   return typeof ReadableStream !== 'undefined' && typeof TextDecoder !== 'undefined';
 }
 
+/**
+ * Создаёт идентификатор устройства для заголовка `X-Device-Id` — UUID v4.
+ *
+ * `crypto.randomUUID` есть в Node 19+, браузерах и Deno, но отсутствует в Node 18 вне
+ * защищённого контекста, поэтому предусмотрен запасной путь.
+ */
+export function createDeviceId(): string {
+  const webCrypto = (globalThis as { crypto?: Crypto }).crypto;
+
+  if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID();
+
+  // Форма UUID v4 собирается вручную: серверу важна стабильность значения, а не его энтропия.
+  const bytes = new Uint8Array(16);
+  if (typeof webCrypto?.getRandomValues === 'function') webCrypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+
+  // biome-ignore lint/style/noNonNullAssertion: длина массива фиксирована выше
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  // biome-ignore lint/style/noNonNullAssertion: длина массива фиксирована выше
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-');
+}
+
 /** Есть ли в среде `localStorage`. Проверка безопасна: доступ к нему может бросать. */
 export function hasLocalStorage(): boolean {
   try {

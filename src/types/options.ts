@@ -3,6 +3,23 @@ import type { TokenStorage } from '../core/storage.js';
 import type { QueryParams } from '../core/url.js';
 
 /**
+ * Вход по логину и паролю.
+ *
+ * Вход требует токен капчи Cloudflare Turnstile, поэтому полностью автоматическим он быть
+ * не может: капчу должен решить кто-то снаружи. Токен одноразовый и живёт несколько минут,
+ * так что долгоживущему клиенту нужен `getTurnstileToken` — он спрашивается заново перед
+ * каждой попыткой входа. Одиночный `turnstileToken` годится для разового скрипта.
+ */
+export interface CredentialsAuth {
+  email: string;
+  password: string;
+  /** Разовый токен капчи. Для повторного входа после истечения сессии не подойдёт. */
+  turnstileToken?: string | undefined;
+  /** Источник свежего токена капчи. Спрашивается перед каждым входом. */
+  getTurnstileToken?: (() => string | Promise<string>) | undefined;
+}
+
+/**
  * Как клиент получает доступ к API.
  *
  * Поддерживаются четыре формы — от разового вызова с готовым токеном до полноценной
@@ -12,14 +29,14 @@ import type { QueryParams } from '../core/url.js';
  * ```ts
  * new ItdClient({ auth: '<accessToken>' });                    // разовый вызов
  * new ItdClient({ auth: { accessToken, refreshToken } });      // восстановить сессию
- * new ItdClient({ auth: { email, password } });                // залогиниться самому
+ * new ItdClient({ auth: { email, password, getTurnstileToken } });  // залогиниться самому
  * new ItdClient({ auth: { getToken: () => vault.read() } });   // токен из внешнего источника
  * ```
  */
 export type AuthInput =
   | string
   | { accessToken: string; refreshToken?: string | undefined }
-  | { email: string; password: string }
+  | CredentialsAuth
   | { getToken: () => string | null | Promise<string | null> };
 
 /** Куда библиотека пишет отладочные сообщения. Совместим с `console`. */
@@ -174,6 +191,22 @@ export interface ItdClientOptions {
   logger?: Logger | boolean | undefined;
   /** Заголовки, добавляемые ко всем запросам, — например `User-Agent` для бота. */
   headers?: Record<string, string> | undefined;
+  /**
+   * Значение заголовка `X-Device-Id`, который уходит с каждым запросом.
+   *
+   * Сервер различает по нему записи в списке сессий, поэтому значение должно быть стабильным.
+   * Если не задать, библиотека заведёт идентификатор сама и сохранит его в {@link ItdSession},
+   * так что при постоянном хранилище он переживёт перезапуск процесса.
+   */
+  deviceId?: string | undefined;
+  /**
+   * Значение заголовка `User-Agent`. `false` — не отправлять его вовсе.
+   *
+   * По умолчанию `Mozilla/5.0 (compatible; itd-api/<версия>; …)`: `fetch` в Node не шлёт
+   * `User-Agent` сам, а сайт стоит за DDoS-Guard, который такие запросы может не пропустить.
+   * В браузере опция не действует — там заголовок менять запрещено.
+   */
+  userAgent?: string | false | undefined;
   /** Как обращаться с cookie. По умолчанию определяется по среде исполнения. */
   mode?: RuntimeMode | undefined;
 }

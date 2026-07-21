@@ -13,7 +13,14 @@ export { type PollBuilder, type PollInput, poll } from './builders/poll.js';
 export { type PostBuilder, type PostInput, post } from './builders/post.js';
 export { type ReportBuilder, type ReportInput, report } from './builders/report.js';
 export { createClient, ItdClient } from './client.js';
-export { DEFAULT_BASE_URL, DEFAULT_TIMEOUT } from './core/config.js';
+export { AUTH_PATHS, DEVICE_ID_HEADER, TURNSTILE_SITE_KEY } from './core/auth.js';
+export {
+  DEFAULT_BASE_URL,
+  DEFAULT_TIMEOUT,
+  DEFAULT_USER_AGENT,
+  LIBRARY_VERSION,
+} from './core/config.js';
+export { AUTH_FLAG_COOKIE, REFRESH_COOKIE, REFRESH_COOKIE_PATH } from './core/cookies.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';
 export {
   ItdAbortError,
@@ -87,8 +94,11 @@ export {
 export type { RealtimeTransport, TransportContext, TransportEvent } from './realtime/transport.js';
 export type {
   AuthResource,
+  CaptchaCredentials,
   Credentials,
+  ForgotPasswordInput,
   OAuthProvider,
+  ResetPasswordInput,
   SignInResult,
 } from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
@@ -181,6 +191,7 @@ export { isMyProfile, toDate } from './types/models.js';
 export type {
   AuthInput,
   ClientHooks,
+  CredentialsAuth,
   ErrorContextHook,
   ItdClientOptions,
   Logger,

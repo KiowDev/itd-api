@@ -2,17 +2,23 @@
  * Бот на Node: вход по логину и паролю, сохранение сессии, публикация с опросом.
  *
  * Запуск:
- *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret node examples/02-bot-with-session.mjs
+ *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret ITD_TURNSTILE=... \
+ *     node examples/02-bot-with-session.mjs
  *
- * Сессия сохраняется в `.itd-session.json`, поэтому при следующем запуске повторный вход
- * не понадобится. Добавьте этот файл в .gitignore — в нём лежат токены.
+ * Вход требует токен капчи Cloudflare Turnstile: получите его в браузере на странице входа
+ * (ключ виджета — TURNSTILE_SITE_KEY) и передайте в ITD_TURNSTILE. Токен одноразовый
+ * и живёт несколько минут, поэтому нужен только при первом запуске.
+ *
+ * Дальше сессия сохраняется в `.itd-session.json`, и повторный вход не понадобится:
+ * библиотека продлевает её сама. Добавьте этот файл в .gitignore — в нём лежат токены.
  */
 
 import { createInterface } from 'node:readline/promises';
 import { FileTokenStorage, ItdClient, isItdApiError } from 'itd-api/node';
 
 const itd = new ItdClient({
-  auth: { email: process.env.ITD_EMAIL, password: process.env.ITD_PASSWORD },
+  // auth здесь не задаём: вход по паролю требует свежей капчи, поэтому он делается
+  // явно и только когда сохранённая сессия не подошла — см. ensureSignedIn().
 
   // Без хранилища бот входил бы заново при каждом запуске, а серия входов подряд
   // может привести к временной блокировке аккаунта.
@@ -35,11 +41,16 @@ async function ensureSignedIn() {
     if (!isItdApiError(error) || error.status !== 401) throw error;
   }
 
+  if (!process.env.ITD_TURNSTILE) {
+    throw new Error('Сохранённая сессия не подошла — нужен новый токен капчи в ITD_TURNSTILE');
+  }
+
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     await itd.auth.signInWithOtp({
       email: process.env.ITD_EMAIL,
       password: process.env.ITD_PASSWORD,
+      turnstileToken: process.env.ITD_TURNSTILE,
       getOtp: () => rl.question('Код из письма: '),
     });
   } finally {

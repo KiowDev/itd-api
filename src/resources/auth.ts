@@ -1,4 +1,4 @@
-import type { AuthManager } from '../core/auth.js';
+import type { AuthManager, TURNSTILE_SITE_KEY } from '../core/auth.js';
 import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/http.js';
 import { pickArray, pickString } from '../core/unwrap.js';
@@ -11,6 +11,36 @@ import { BaseResource } from './base.js';
 export interface Credentials {
   email: string;
   password: string;
+}
+
+/**
+ * Учётные данные вместе с токеном капчи.
+ *
+ * `turnstileToken` обязателен: без него сервер отвечает `VALIDATION_ERROR`, с недействительным —
+ * `TURNSTILE_VERIFICATION_FAILED`. Токен даёт виджет Cloudflare Turnstile с ключом
+ * {@link TURNSTILE_SITE_KEY}; он одноразовый и живёт несколько минут.
+ */
+export interface CaptchaCredentials extends Credentials {
+  turnstileToken: string;
+}
+
+/** Запрос письма для сброса пароля. Капча обязательна, как и при входе. */
+export interface ForgotPasswordInput {
+  email: string;
+  turnstileToken: string;
+}
+
+/**
+ * Установка нового пароля.
+ *
+ * Сброс идёт тем же потоком с кодом, что и вход: {@link AuthResource.forgotPassword} выдаёт
+ * `flowToken`, письмо приносит `otp`, и всё это вместе с новым паролем уходит сюда.
+ */
+export interface ResetPasswordInput {
+  email: string;
+  otp: string;
+  flowToken: string;
+  newPassword: string;
 }
 
 /**
@@ -44,7 +74,7 @@ export class AuthResource extends BaseResource {
    *
    * @returns `flowToken`, который нужно передать в {@link verifyOtp}
    */
-  async signUp(credentials: Credentials, options: RequestOptions = {}): Promise<string> {
+  async signUp(credentials: CaptchaCredentials, options: RequestOptions = {}): Promise<string> {
     const body = await this.http.request({
       method: 'POST',
       path: '/api/v1/auth/sign-up',
@@ -69,8 +99,13 @@ export class AuthResource extends BaseResource {
    * тогда продолжайте через {@link verifyOtp} либо воспользуйтесь {@link signInWithOtp}.
    *
    * При успешном входе токен сохраняется в клиенте автоматически.
+   *
+   * @param credentials email, пароль и обязательный токен капчи — см. {@link CaptchaCredentials}
    */
-  async signIn(credentials: Credentials, options: RequestOptions = {}): Promise<SignInResult> {
+  async signIn(
+    credentials: CaptchaCredentials,
+    options: RequestOptions = {},
+  ): Promise<SignInResult> {
     const body = await this.http.request({
       method: 'POST',
       path: '/api/v1/auth/sign-in',
@@ -151,7 +186,7 @@ export class AuthResource extends BaseResource {
    * ```
    */
   async signInWithOtp(
-    input: Credentials & { getOtp: () => string | Promise<string> },
+    input: CaptchaCredentials & { getOtp: () => string | Promise<string> },
     options: RequestOptions = {},
   ): Promise<string> {
     const { getOtp, ...credentials } = input;
@@ -167,7 +202,17 @@ export class AuthResource extends BaseResource {
 
     const otp = await getOtp();
 
-    return this.verifyOtp({ ...credentials, otp, flowToken: result.flowToken }, options);
+    // Токен капчи сюда не передаётся: он одноразовый и уже потрачен на sign-in,
+    // а verify-otp капчу не требует.
+    return this.verifyOtp(
+      {
+        email: credentials.email,
+        password: credentials.password,
+        otp,
+        flowToken: result.flowToken,
+      },
+      options,
+    );
   }
 
   /**
@@ -203,16 +248,17 @@ export class AuthResource extends BaseResource {
     await this.#auth.clear();
   }
 
-  /** Завершает все сессии пользователя и очищает локальную. */
+  /**
+   * Завершает все сессии пользователя и очищает локальную.
+   *
+   * Собран из двух запросов, потому что единого эндпоинта на сервере нет:
+   * `POST /api/v1/auth/logout-all` отвечает `404`. Сначала отзываются все прочие сессии
+   * (`DELETE /api/v1/auth/sessions`), затем завершается текущая — в обратном порядке
+   * отзывать было бы уже нечем.
+   */
   async logoutAll(options: RequestOptions = {}): Promise<void> {
-    await this.http.request<void>({
-      method: 'POST',
-      path: '/api/v1/auth/logout-all',
-      skipAuthRefresh: true,
-      ...this.requestOptions(options),
-    });
-
-    await this.#auth.clear();
+    await this.revokeOtherSessions(options);
+    await this.logout(options);
   }
 
   /** Забывает сессию локально, не обращаясь к серверу. */
@@ -220,23 +266,36 @@ export class AuthResource extends BaseResource {
     return this.#auth.clear();
   }
 
-  /** Запрашивает письмо для сброса пароля. */
-  forgotPassword(email: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
+  /**
+   * Запрашивает письмо с кодом для сброса пароля.
+   *
+   * @returns `flowToken`, который нужно передать в {@link resetPassword}
+   */
+  async forgotPassword(input: ForgotPasswordInput, options: RequestOptions = {}): Promise<string> {
+    const body = await this.http.request({
       method: 'POST',
       path: '/api/v1/auth/forgot-password',
-      body: { email },
+      body: input,
       skipAuth: true,
       skipAuthRefresh: true,
       ...this.requestOptions(options),
     });
+
+    const flowToken = pickString(body, 'flowToken');
+    if (!flowToken) {
+      throw new ItdConfigError('Сервер не вернул flowToken при запросе сброса пароля');
+    }
+
+    return flowToken;
   }
 
-  /** Устанавливает новый пароль по токену из письма. */
-  resetPassword(
-    input: { token: string; newPassword: string },
-    options: RequestOptions = {},
-  ): Promise<void> {
+  /**
+   * Устанавливает новый пароль по коду из письма.
+   *
+   * Сервер ждёт все четыре поля сразу — `email`, `otp`, `flowToken` и `newPassword`;
+   * при нехватке любого отвечает `422`.
+   */
+  resetPassword(input: ResetPasswordInput, options: RequestOptions = {}): Promise<void> {
     return this.http.request<void>({
       method: 'POST',
       path: '/api/v1/auth/reset-password',
@@ -247,7 +306,47 @@ export class AuthResource extends BaseResource {
     });
   }
 
-  /** Меняет пароль. Требует действующей сессии обновления. */
+  /**
+   * Полный сброс пароля с кодом из письма.
+   *
+   * Тот же приём, что и {@link signInWithOtp}: код запрашивается функцией `getOtp`,
+   * остальное библиотека делает сама.
+   *
+   * @example
+   * ```ts
+   * await itd.auth.resetPasswordWithOtp({
+   *   email,
+   *   turnstileToken,
+   *   newPassword,
+   *   getOtp: () => rl.question('Код из письма: '),
+   * });
+   * ```
+   */
+  async resetPasswordWithOtp(
+    input: ForgotPasswordInput & {
+      newPassword: string;
+      getOtp: () => string | Promise<string>;
+    },
+    options: RequestOptions = {},
+  ): Promise<void> {
+    const flowToken = await this.forgotPassword(
+      { email: input.email, turnstileToken: input.turnstileToken },
+      options,
+    );
+
+    const otp = await input.getOtp();
+
+    await this.resetPassword(
+      { email: input.email, otp, flowToken, newPassword: input.newPassword },
+      options,
+    );
+  }
+
+  /**
+   * Меняет пароль. Требует действующей сессии.
+   *
+   * При неверном текущем пароле сервер отвечает `ACCOUNT_CURRENT_PASSWORD_INCORRECT`.
+   */
   changePassword(
     input: { oldPassword: string; newPassword: string },
     options: RequestOptions = {},
@@ -255,7 +354,9 @@ export class AuthResource extends BaseResource {
     return this.http.request<void>({
       method: 'POST',
       path: '/api/v1/auth/change-password',
-      body: input,
+      // Текущий пароль уходит под двумя именами: какое из них ждёт сервер, снаружи
+      // не проверить, а лишнее поле он игнорирует.
+      body: { ...input, currentPassword: input.oldPassword },
       ...this.requestOptions(options),
     });
   }

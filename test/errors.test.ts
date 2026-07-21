@@ -146,6 +146,22 @@ describe('createApiError', () => {
     expect(error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('не сохраняет в raw пароль, вернувшийся эхом', () => {
+    const error = createApiError({
+      ...ctx,
+      status: 422,
+      body: { type: 'validation', on: 'body', found: { email: 'a@b.c', password: 'секрет' } },
+    });
+
+    // Ошибка почти всегда доезжает до логов — пароля в ней быть не должно,
+    // а имена полей для диагностики остаются.
+    expect(error.raw).toEqual({
+      type: 'validation',
+      on: 'body',
+      found: { email: 'a@b.c', password: '[скрыто]' },
+    });
+  });
+
   it('на неизвестный статус отдаёт базовый ItdApiError', () => {
     const error = createApiError({ ...ctx, status: 418, body: {} });
     expect(error).toBeInstanceOf(ItdApiError);

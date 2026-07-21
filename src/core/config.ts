@@ -15,6 +15,21 @@ export const DEFAULT_BASE_URL = 'https://xn--d1ah4a.com';
 /** Таймаут запроса по умолчанию. Столько же использует официальный клиент итд.com. */
 export const DEFAULT_TIMEOUT = 30_000;
 
+/** Версия библиотеки. Держится в синхронизации с `package.json` вручную — см. `npm version`. */
+export const LIBRARY_VERSION = '0.0.2';
+
+/**
+ * `User-Agent` по умолчанию.
+ *
+ * Сайт стоит за DDoS-Guard, и запросы вовсе без `User-Agent` (так делает `fetch` в Node)
+ * имеют шанс не пройти фильтр. Префикс `Mozilla/5.0` — дань традиции таких фильтров,
+ * дальше идёт честное имя библиотеки: подделываться под браузер она не должна.
+ *
+ * В браузере заголовок не выставляется — `User-Agent` там запрещён к изменению, и среда
+ * молча его игнорирует.
+ */
+export const DEFAULT_USER_AGENT = `Mozilla/5.0 (compatible; itd-api/${LIBRARY_VERSION}; +https://github.com/KiowDev/itd-api)`;
+
 /**
  * Настройки повторов со всеми значениями по умолчанию.
  *
@@ -61,6 +76,10 @@ export interface ResolvedConfig {
   hooks: ClientHooks;
   logger: Logger | undefined;
   headers: Record<string, string>;
+  /** Значение заголовка `X-Device-Id`, если задано вручную. Иначе заводится само. */
+  deviceId: string | undefined;
+  /** Значение заголовка `User-Agent`. `undefined` — заголовок не выставляется. */
+  userAgent: string | undefined;
   mode: RuntimeMode;
   /** Вести ли собственный cookie-jar (вне браузера и React Native). */
   useCookieJar: boolean;
@@ -187,13 +206,31 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
   }
 
   if ('email' in auth || 'password' in auth) {
-    const { email, password } = auth as { email?: unknown; password?: unknown };
+    const { email, password, turnstileToken, getTurnstileToken } = auth as {
+      email?: unknown;
+      password?: unknown;
+      turnstileToken?: unknown;
+      getTurnstileToken?: unknown;
+    };
     if (typeof email !== 'string' || email.trim() === '') {
       throw new ItdConfigError('auth.email должен быть непустой строкой');
     }
     if (typeof password !== 'string' || password === '') {
       throw new ItdConfigError('auth.password должен быть непустой строкой');
     }
+    if (getTurnstileToken !== undefined && typeof getTurnstileToken !== 'function') {
+      throw new ItdConfigError('auth.getTurnstileToken должен быть функцией');
+    }
+    if (
+      turnstileToken !== undefined &&
+      (typeof turnstileToken !== 'string' || turnstileToken.trim() === '')
+    ) {
+      throw new ItdConfigError('auth.turnstileToken должен быть непустой строкой');
+    }
+
+    // Отсутствие капчи — не ошибка конфигурации: сессия может быть восстановлена из
+    // хранилища, и до входа по паролю дело вообще не дойдёт. Ошибка возникнет в момент
+    // входа, где её текст может объяснить, что именно нужно сделать.
     return auth;
   }
 
@@ -220,6 +257,13 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
 
   const timeout = requirePositive(options.timeout ?? DEFAULT_TIMEOUT, 'timeout');
 
+  if (
+    options.deviceId !== undefined &&
+    (typeof options.deviceId !== 'string' || options.deviceId.trim() === '')
+  ) {
+    throw new ItdConfigError('deviceId должен быть непустой строкой');
+  }
+
   return {
     baseUrl: normalizeBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL),
     auth: validateAuth(options.auth),
@@ -233,6 +277,9 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
     hooks: options.hooks ?? {},
     logger: options.logger === true ? consoleLogger() : options.logger || undefined,
     headers: { ...options.headers },
+    deviceId: options.deviceId,
+    // `false` — способ не слать заголовок вовсе; строка заменяет умолчание.
+    userAgent: options.userAgent === false ? undefined : (options.userAgent ?? DEFAULT_USER_AGENT),
     mode,
     useCookieJar: shouldUseCookieJar(mode),
     sendCredentials: shouldSendCredentials(mode),
