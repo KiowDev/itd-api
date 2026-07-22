@@ -420,6 +420,67 @@ describe('авторизация', () => {
   });
 });
 
+describe('очередь и авторизация', () => {
+  /**
+   * Запросы авторизации идут мимо очереди намеренно.
+   *
+   * Продление токена запускается изнутри запроса, который уже занял место в очереди
+   * и ждёт его результата. Если поставить продление в ту же очередь, оба будут ждать
+   * друг друга: при `concurrency: 1` намертво с первого же 401, при умолчании — как
+   * только столько запросов разом получат 401, сколько мест в очереди.
+   */
+  function makeExpiring(rateLimit: ItdClientOptions['rateLimit']) {
+    let refreshes = 0;
+    const { itd, mock } = makeClient(
+      (request) => {
+        if (request.url.endsWith('/refresh')) {
+          refreshes += 1;
+          return json({ accessToken: 'refreshed' });
+        }
+        return request.headers.get('authorization') === 'Bearer refreshed'
+          ? json({ data: { ok: true } })
+          : json({ error: { code: 'UNAUTHORIZED' } }, { status: 401 });
+      },
+      { auth: { accessToken: 'expired', refreshToken: 'rt' }, rateLimit },
+    );
+
+    return { itd, mock, refreshes: () => refreshes };
+  }
+
+  it('продление не встаёт в очередь за собственным запросом', async () => {
+    const { itd, refreshes } = makeExpiring({ concurrency: 1 });
+
+    await expect(itd.users.me()).resolves.toEqual({ ok: true });
+    expect(refreshes()).toBe(1);
+  });
+
+  it('очередь не блокируется, когда все места заняты запросами с 401', async () => {
+    // Запросов ровно столько же, сколько мест: каждый держит место и ждёт продления.
+    const { itd, refreshes } = makeExpiring({ concurrency: 3 });
+
+    const all = await Promise.all(Array.from({ length: 3 }, () => itd.users.me()));
+
+    expect(all).toHaveLength(3);
+    expect(refreshes()).toBe(1);
+  });
+
+  it('отложенный вход не блокирует очередь', async () => {
+    const { itd, mock } = makeClient(
+      (request) =>
+        request.url.endsWith('/sign-in')
+          ? json({ accessToken: 'at' })
+          : json({ data: { ok: true } }),
+      {
+        auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+        rateLimit: { concurrency: 1 },
+      },
+    );
+
+    await expect(itd.users.me()).resolves.toEqual({ ok: true });
+    expect(mock.calls[0]?.url).toContain('/sign-in');
+  });
+});
+
 describe('заголовки запросов', () => {
   it('шлёт User-Agent по умолчанию', async () => {
     const { itd, mock } = makeClient([json({ data: {} })]);

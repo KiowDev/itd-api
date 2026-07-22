@@ -378,6 +378,9 @@ export class AuthManager {
         skipAuth: true,
         // Без этого 401 на самом обновлении вызвал бы новое обновление — и так по кругу.
         skipAuthRefresh: true,
+        // Обновление почти всегда запускается изнутри запроса, который занимает место
+        // в очереди и ждёт его результата. Встать в ту же очередь — значит зависнуть.
+        skipQueue: true,
       });
 
       const accessToken = readAccessToken(payload);
@@ -485,6 +488,9 @@ export class AuthManager {
       body: { email: credentials.email, password: credentials.password, turnstileToken },
       skipAuth: true,
       skipAuthRefresh: true,
+      // Отложенный вход происходит при сборке заголовков уже начатого запроса — тот держит
+      // место в очереди и ждёт токена. См. `skipQueue` в RawRequestOptions.
+      skipQueue: true,
     });
 
     const accessToken = readAccessToken(payload);

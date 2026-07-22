@@ -199,7 +199,13 @@ export class HttpClient {
    */
   async request<T = unknown>(options: RawRequestOptions): Promise<T> {
     const task = () => this.#withRetries<T>(options);
-    return this.#collaborators.schedule ? this.#collaborators.schedule(task) : task();
+
+    // `skipQueue` разрывает круговое ожидание: запрос, порождённый изнутри другого запроса
+    // (продление токена, отложенный вход), не может ждать места в очереди — это место
+    // занято тем самым запросом, который ждёт его результата.
+    if (!this.#collaborators.schedule || options.skipQueue) return task();
+
+    return this.#collaborators.schedule(task);
   }
 
   async #withRetries<T>(options: RawRequestOptions): Promise<T> {
