@@ -21,9 +21,16 @@ import type {
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource, withPageState } from './base.js';
 
-/** Постраничные параметры списков пользователей. */
+/**
+ * Параметры списков пользователей.
+ *
+ * ⚠️ Списки подписчиков, подписок и заблокированных на сервере **не листаются**:
+ * `page` он игнорирует, а `limit` зажимает на 20. Подробности — в {@link UsersResource.followers}.
+ */
 export interface UserListParams extends RequestOptions {
+  /** Сколько записей вернуть. Значения больше 20 сервер молча уменьшает до 20. */
   limit?: number;
+  /** Номер страницы. Сервер его игнорирует — оставлен на случай, если пагинацию починят. */
   page?: number;
   maxPages?: number;
 }
@@ -189,22 +196,37 @@ export class UsersResource extends BaseResource {
     });
   }
 
-  /** Загружает страницу подписчиков. */
+  /**
+   * Загружает подписчиков пользователя.
+   *
+   * ⚠️ **Сервер этот список не листает.** Возвращаются первые 20 записей и только они:
+   * параметр `page` игнорируется (любая страница отдаёт те же записи и `pagination.page: 1`),
+   * `limit` больше 20 молча уменьшается, а `hasMore` всегда `false`. Последнее честно —
+   * получить продолжение нечем.
+   *
+   * Числу `total` доверять тоже не стоит: оно расходится с `followersCount` из профиля —
+   * на проверенных аккаунтах занижено примерно на 1–4%.
+   */
   followers(user: UserRef, params: UserListParams = {}): Promise<Page<UserSummary>> {
     return this.#userPage(`/api/users/${encodePathSegment(user, 'user')}/followers`, params);
   }
 
-  /** Перебирает подписчиков. */
+  /**
+   * Перебирает подписчиков.
+   *
+   * ⚠️ Перебор закончится после первых 20 записей: сервер список не листает —
+   * см. {@link followers}. Метод оставлен на случай, если пагинацию починят.
+   */
   iterateFollowers(user: UserRef, params: UserListParams = {}): Paginator<UserSummary> {
     return this.#userPaginator(`/api/users/${encodePathSegment(user, 'user')}/followers`, params);
   }
 
-  /** Загружает страницу подписок. */
+  /** Загружает подписки пользователя. Ограничения те же, что у {@link followers}. */
   following(user: UserRef, params: UserListParams = {}): Promise<Page<UserSummary>> {
     return this.#userPage(`/api/users/${encodePathSegment(user, 'user')}/following`, params);
   }
 
-  /** Перебирает подписки. */
+  /** Перебирает подписки. Закончится после первых 20 записей — см. {@link followers}. */
   iterateFollowing(user: UserRef, params: UserListParams = {}): Paginator<UserSummary> {
     return this.#userPaginator(`/api/users/${encodePathSegment(user, 'user')}/following`, params);
   }
@@ -248,12 +270,12 @@ export class UsersResource extends BaseResource {
     });
   }
 
-  /** Загружает страницу заблокированных пользователей. */
+  /** Загружает заблокированных пользователей. Ограничения те же, что у {@link followers}. */
   blocked(params: UserListParams = {}): Promise<Page<UserSummary>> {
     return this.#userPage('/api/users/me/blocked', params);
   }
 
-  /** Перебирает заблокированных пользователей. */
+  /** Перебирает заблокированных. Закончится после первых 20 записей — см. {@link followers}. */
   iterateBlocked(params: UserListParams = {}): Paginator<UserSummary> {
     return this.#userPaginator('/api/users/me/blocked', params);
   }
@@ -321,6 +343,9 @@ export class UsersResource extends BaseResource {
    * Имена полей перечислены с запасом: списки подписчиков и заблокированных приходят
    * под `users`, но альтернативное имя ничего не стоит и спасает, если эндпоинт назовёт
    * список по-своему.
+   *
+   * `page` уходит в запрос, хотя сервер его сейчас не читает (см. {@link followers}):
+   * когда пагинацию починят, работать начнёт само.
    */
   async #loadUserPage(
     path: string,

@@ -288,7 +288,16 @@ export class PostsResource extends BaseResource {
     return pickArray<PostStats>(body, 'posts');
   }
 
-  /** Загружает страницу постов пользователя (его стену). */
+  /**
+   * Загружает страницу стены пользователя.
+   *
+   * Это **не только его собственные посты**: сюда попадают и записи, которые другие
+   * оставили на его стене — у них `author` чужой, а `wallRecipient` указывает на владельца
+   * стены. Поэтому число записей обычно больше, чем `postsCount` из профиля; чтобы
+   * получить только авторские посты, отфильтруйте по `post.author.id`.
+   *
+   * Принимает и UUID, и имя пользователя.
+   */
   async byUser(user: UserRef, params: UserPostsParams = {}): Promise<Page<Post>> {
     const body = await this.http.request({
       method: 'GET',
@@ -305,7 +314,7 @@ export class PostsResource extends BaseResource {
     return readCursorPage<Post>(body, 'posts');
   }
 
-  /** Перебирает посты пользователя. */
+  /** Перебирает стену пользователя. Что именно в неё входит — см. {@link byUser}. */
   iterateByUser(user: UserRef, params: UserPostsParams = {}): Paginator<Post> {
     const path = `/api/posts/user/${encodePathSegment(user, 'user')}`;
 
