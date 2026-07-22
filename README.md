@@ -111,9 +111,8 @@ itd.on('authError', ({ error }) => {
 
 ### Капча обязательна при входе
 
-`signIn`, `signUp` и `forgotPassword` требуют токен Cloudflare Turnstile. Полностью
-автоматического входа по логину и паролю поэтому не бывает: капчу должен решить кто-то
-снаружи, а библиотека принимает готовый токен.
+`signIn`, `signUp` и `forgotPassword` требуют токен Cloudflare Turnstile. Сам клиент капчу
+не решает — он принимает готовый токен, а решает его кто-то снаружи.
 
 ```ts
 import { TURNSTILE_SITE_KEY } from 'itd-api';
@@ -131,6 +130,24 @@ turnstile.render('#captcha', {
 ```ts
 new ItdClient({
   auth: { email, password, getTurnstileToken: () => captchaSolver.solve() },
+});
+```
+
+В Node таким источником может быть [`itd-api-turnstile`](./turnstile) — отдельный пакет,
+который поднимает браузер и приносит токен. Отдельный он намеренно: тянет за собой Playwright
+и требует графической оболочки, а нужен далеко не всем — с сохранённой сессией до входа
+по паролю дело обычно вообще не доходит.
+
+```sh
+npm i itd-api-turnstile playwright
+```
+
+```ts
+import { createTurnstileSolver } from 'itd-api-turnstile';
+
+new ItdClient({
+  storage: new FileTokenStorage('./.itd-session.json'),
+  auth: { email, password, getTurnstileToken: createTurnstileSolver() },
 });
 ```
 

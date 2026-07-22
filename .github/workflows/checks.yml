@@ -49,6 +49,14 @@ jobs:
       - name: Корректность пакета
         run: npm run check:pack
 
+      # Скрипты в пакетах workspace названы так же, как в корневом.
+      - name: Проверки пакетов workspace
+        run: |
+          npm run typecheck --workspaces --if-present
+          npm run test --workspaces --if-present
+          npm run build --workspaces --if-present
+          npm run check:pack --workspaces --if-present
+
       - name: Упаковка тарболла
         if: matrix.node == 22
         # --pack-destination не создаёт каталог сам.
