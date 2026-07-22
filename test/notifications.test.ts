@@ -11,6 +11,7 @@ import {
   isKnownNotificationType,
 } from '../src/notifications/type-map.js';
 import { resolveNotificationUrl } from '../src/notifications/url.js';
+import { InteractionType, ViewReason, ViewSource } from '../src/types/enums.js';
 import type { ItdClientOptions } from '../src/types/options.js';
 import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';
 
@@ -507,13 +508,60 @@ describe('прочие ресурсы', () => {
     expect(mock.calls.every((call) => !call.url.includes('/api/v1/x'))).toBe(true);
   });
 
-  it('телеметрия сжимает имена полей', async () => {
+  it('просмотр шлёт конверт { sid, e } с полями провода', async () => {
     const { itd, mock } = makeClient([json({ ok: true })]);
 
-    await itd.telemetry.dwell([{ postId: 'p1', duration: 1500, vs: 'метка' }]);
+    await itd.telemetry.dwell([
+      {
+        vs: 'метка',
+        enterAt: 1000,
+        exitAt: 3500,
+        reason: ViewReason.ThresholdMet,
+        source: ViewSource.PostPage,
+        sourceContext: 'ctx',
+        repeat: true,
+      },
+    ]);
 
-    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
-      items: [{ ai: 'p1', v: 1500, s: 'метка' }],
+    const body = JSON.parse(mock.calls[0]?.body ?? '{}');
+    expect(typeof body.sid).toBe('string');
+    expect(body.e).toEqual([
+      { md: 2500, et: 1000, xt: 3500, r: 5, v: 'метка', sc: 'ctx', s: 6, b: 1 },
+    ]);
+  });
+
+  it('длительность просмотра вычисляется из enterAt/exitAt', async () => {
+    const { itd, mock } = makeClient([json({ ok: true })]);
+
+    await itd.telemetry.dwell([{ vs: 'v', enterAt: 500, exitAt: 900, reason: ViewReason.Normal }]);
+
+    const body = JSON.parse(mock.calls[0]?.body ?? '{}');
+    expect(body.e[0]).toEqual({ md: 400, et: 500, xt: 900, r: 0, v: 'v' });
+  });
+
+  it('взаимодействие шлёт { t, v, ai, mi } числовым типом', async () => {
+    const { itd, mock } = makeClient([json({ ok: true })]);
+
+    await itd.telemetry.interaction([
+      { type: InteractionType.PhotoOpen, vs: 'vs1', postId: 'p1', mediaIndex: 0 },
+    ]);
+
+    const body = JSON.parse(mock.calls[0]?.body ?? '{}');
+    expect(typeof body.sid).toBe('string');
+    expect(body.e).toEqual([{ t: 1, v: 'vs1', ai: 'p1', mi: 0 }]);
+  });
+
+  it('sid стабилен между вызовами и переопределяется опцией', async () => {
+    const { itd, mock } = makeClient([json({ ok: true }), json({ ok: true })]);
+
+    await itd.telemetry.interaction([{ type: InteractionType.PhotoOpen, vs: 'a', postId: 'p1' }]);
+    await itd.telemetry.interaction([{ type: InteractionType.PhotoOpen, vs: 'b', postId: 'p2' }], {
+      sid: 'custom',
     });
+
+    const first = JSON.parse(mock.calls[0]?.body ?? '{}');
+    const second = JSON.parse(mock.calls[1]?.body ?? '{}');
+    expect(first.sid).toBe(itd.telemetry.sessionId);
+    expect(second.sid).toBe('custom');
   });
 });

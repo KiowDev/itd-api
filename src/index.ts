@@ -120,16 +120,13 @@ export { OAuthProvider, SignInStatus } from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export type { FilesResource, UploadedFile, UploadOptions } from './resources/files.js';
 export type {
-  DwellEntry,
   HashtagPostsParams,
   HashtagsResource,
-  InteractionEntry,
   PlatformResource,
   ReportsResource,
   SearchResource,
   SearchResult,
   SubscriptionResource,
-  TelemetryResource,
   VerificationResource,
 } from './resources/misc.js';
 export type {
@@ -144,6 +141,12 @@ export type {
   UserPostsParams,
 } from './resources/posts.js';
 export type {
+  DwellEntry,
+  InteractionEntry,
+  TelemetryOptions,
+  TelemetryResource,
+} from './resources/telemetry.js';
+export type {
   UpdatePrivacyInput,
   UpdateProfileInput,
   UserListParams,
@@ -153,9 +156,11 @@ export type { Loose } from './types/enums.js';
 // Перечисления экспортируются парой «значение + тип» под одним именем:
 // FeedTab.Popular работает как константа, FeedTab — как тип. Подробности — в types/enums.ts.
 export {
+  AccessType,
   AttachmentType,
   CommentSort,
   FeedTab,
+  InteractionType,
   ItdErrorCode,
   LikesVisibility,
   NotificationType,
@@ -163,6 +168,8 @@ export {
   ReportReason,
   ReportTargetType,
   SpanType,
+  ViewReason,
+  ViewSource,
   WallAccess,
 } from './types/enums.js';
 export type {

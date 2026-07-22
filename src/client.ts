@@ -18,11 +18,11 @@ import {
   ReportsResource,
   SearchResource,
   SubscriptionResource,
-  TelemetryResource,
   VerificationResource,
 } from './resources/misc.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { PostsResource } from './resources/posts.js';
+import { TelemetryResource } from './resources/telemetry.js';
 import { UsersResource } from './resources/users.js';
 import type { ItdClientOptions, RawRequestOptions, RequestOptions } from './types/options.js';
 import type { FileInput } from './types/params.js';

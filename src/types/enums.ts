@@ -131,23 +131,30 @@ export const RealtimeStatus = Object.freeze({
 export type RealtimeStatus = (typeof RealtimeStatus)[keyof typeof RealtimeStatus];
 
 /**
- * Кто может писать на стену профиля.
+ * Уровень доступа к разделу профиля.
  *
- * Документация перечисляет значения не полностью, поэтому тип открытый: объект ниже —
- * справочник известных значений, но сервер может прислать и другое.
+ * Общий набор значений для полей `wallAccess` и `likesVisibility` настроек приватности.
+ * Тип открытый: сервер может прислать значение вне этого перечня.
  */
-export const WallAccess = Object.freeze({
-  Everyone: 'everyone',
-} as const);
-export type WallAccess = Loose<(typeof WallAccess)[keyof typeof WallAccess]>;
-
-/** Кто видит реакции пользователя. Список в документации неполный. */
-export const LikesVisibility = Object.freeze({
-  Everyone: 'everyone',
+export const AccessType = Object.freeze({
+  /** Никто. */
+  Nobody: 'nobody',
   /** Только взаимные подписки. */
   Mutual: 'mutual',
+  /** Подписчики. */
+  Followers: 'followers',
+  /** Все. */
+  Everyone: 'everyone',
 } as const);
-export type LikesVisibility = Loose<(typeof LikesVisibility)[keyof typeof LikesVisibility]>;
+export type AccessType = Loose<(typeof AccessType)[keyof typeof AccessType]>;
+
+/** Кто может писать на стену профиля. Псевдоним {@link AccessType}. */
+export const WallAccess = AccessType;
+export type WallAccess = AccessType;
+
+/** Кто видит реакции пользователя. Псевдоним {@link AccessType}. */
+export const LikesVisibility = AccessType;
+export type LikesVisibility = AccessType;
 
 /**
  * Канонический тип уведомления (новое поколение имён).
@@ -185,6 +192,58 @@ export const NotificationType = Object.freeze({
   VerificationRejected: 'verification_rejected',
 } as const);
 export type NotificationType = Loose<(typeof NotificationType)[keyof typeof NotificationType]>;
+
+/**
+ * Тип взаимодействия с контентом в телеметрии (`POST /api/v1/x`, поле `t`).
+ *
+ * Кодируется числом.
+ */
+export const InteractionType = Object.freeze({
+  /** Открытие фотографии. */
+  PhotoOpen: 1,
+  /** Прогресс просмотра видео. Несёт поля `pm`/`dm`. */
+  VideoProgress: 2,
+} as const);
+export type InteractionType = (typeof InteractionType)[keyof typeof InteractionType];
+
+/**
+ * Источник показа поста в телеметрии (поле `s`).
+ *
+ * Кодируется числом. Поле применимо к источникам `PostPage` и `Link`; для лент источник
+ * передаётся контекстом `sc`.
+ */
+export const ViewSource = Object.freeze({
+  FeedGlobal: 1,
+  FeedFollowing: 2,
+  FeedClan: 3,
+  Profile: 4,
+  Hashtag: 5,
+  PostPage: 6,
+  Link: 7,
+  Search: 8,
+} as const);
+export type ViewSource = (typeof ViewSource)[keyof typeof ViewSource];
+
+/**
+ * Причина завершения просмотра поста в телеметрии (`POST /api/v1/i`, поле `r`).
+ *
+ * Кодируется числом.
+ */
+export const ViewReason = Object.freeze({
+  /** Пост ушёл из зоны видимости при обычной прокрутке. */
+  Normal: 0,
+  /** Потеря фокуса окна. */
+  Blur: 1,
+  /** Вкладка скрыта. */
+  Hidden: 2,
+  /** Уход со страницы (`pagehide`). */
+  PageHide: 3,
+  /** Элемент перестал наблюдаться. */
+  Unobserve: 4,
+  /** Достигнут порог времени просмотра. */
+  ThresholdMet: 5,
+} as const);
+export type ViewReason = (typeof ViewReason)[keyof typeof ViewReason];
 
 /**
  * Строковые коды ошибок из поля `code`.
