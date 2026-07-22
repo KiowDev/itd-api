@@ -68,6 +68,40 @@ export const AttachmentType = Object.freeze({
 } as const);
 export type AttachmentType = (typeof AttachmentType)[keyof typeof AttachmentType];
 
+/**
+ * Тип фрагмента разметки в тексте поста или комментария.
+ *
+ * Первые два сервер расставляет сам при разборе текста, остальные приходят от редактора.
+ * Тип открытый: набор может пополниться.
+ *
+ * @example
+ * ```ts
+ * await itd.posts.update(postId, {
+ *   content: 'жирное слово',
+ *   spans: [{ type: SpanType.Bold, offset: 0, length: 6 }],
+ * });
+ * ```
+ */
+export const SpanType = Object.freeze({
+  /** Хэштег. Название без решётки лежит в `tag`. */
+  Hashtag: 'hashtag',
+  /** Упоминание. Имя пользователя лежит в `tag`. */
+  Mention: 'mention',
+  /** Ссылка. Адрес лежит в `url`, а не в `tag`. */
+  Link: 'link',
+  Bold: 'bold',
+  Italic: 'italic',
+  Underline: 'underline',
+  /** Зачёркнутый. */
+  Strike: 'strike',
+  /** Спойлер: текст скрыт до нажатия. */
+  Spoiler: 'spoiler',
+  /** Моноширинный. */
+  Monospace: 'monospace',
+  Quote: 'quote',
+} as const);
+export type SpanType = Loose<(typeof SpanType)[keyof typeof SpanType]>;
+
 /** На что подаётся жалоба. */
 export const ReportTargetType = Object.freeze({
   Post: 'post',

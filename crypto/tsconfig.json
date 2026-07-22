@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+
+    "declaration": true,
+    "emitDeclarationOnly": false,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Пакет собирается из того же репозитория, что и сам клиент, поэтому типы берутся
+    // из его исходников, а не из установленной сборки: иначе проверка типов зависела бы
+    // от того, собран ли соседний пакет. При сборке `itd-api` помечен как external
+    // и в бандл не попадает — см. tsup.config.ts.
+    "paths": {
+      "itd-api": ["../src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "*.config.ts"]
+}

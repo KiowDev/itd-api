@@ -35,7 +35,8 @@
     "access": "public"
   },
   "workspaces": [
-    "turnstile"
+    "turnstile",
+    "crypto"
   ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -78,8 +79,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src test turnstile/src turnstile/test",
-    "lint:fix": "biome check --write src test turnstile/src turnstile/test",
+    "lint": "biome check src test turnstile/src turnstile/test crypto/src crypto/test",
+    "lint:fix": "biome check --write src test turnstile/src turnstile/test crypto/src crypto/test",
     "docs": "typedoc",
     "check:pack": "publint && attw --pack .",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"

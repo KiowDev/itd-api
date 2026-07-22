@@ -6,7 +6,10 @@
       "test/**/*.ts",
       "*.config.ts",
       "turnstile/src/**/*.ts",
-      "turnstile/*.config.ts"
+      "turnstile/*.config.ts",
+      "crypto/src/**/*.ts",
+      "crypto/test/**/*.ts",
+      "crypto/*.config.ts"
     ]
   },
   "formatter": {

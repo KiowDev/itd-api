@@ -3,6 +3,7 @@ import type {
   LikesVisibility,
   Loose,
   NotificationType,
+  SpanType,
   WallAccess,
 } from './enums.js';
 
@@ -40,14 +41,16 @@ export type UserRef = string;
  * поэтому при работе с эмодзи проверяйте результат.
  */
 export interface Span {
-  /** Тип фрагмента: `hashtag`, `mention`, `link` и другие. */
-  type: Loose<'hashtag' | 'mention' | 'link'>;
+  /** Тип фрагмента — см. {@link SpanType}. */
+  type: SpanType;
   /** Смещение от начала текста. */
   offset: number;
   /** Длина фрагмента. */
   length: number;
-  /** Содержимое: имя хэштега без решётки, имя пользователя, адрес ссылки. */
+  /** Имя хэштега без решётки либо имя пользователя. */
   tag?: string;
+  /** Адрес ссылки. Только у `link`: у него вместо `tag` отдельное поле. */
+  url?: string;
 }
 
 /**

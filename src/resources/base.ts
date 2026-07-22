@@ -13,16 +13,35 @@ export class BaseResource {
     this.http = http;
   }
 
-  /** Переносит общие поля опций запроса в параметры транспорта. */
+  /**
+   * Переносит общие поля опций запроса в параметры транспорта.
+   *
+   * Поля перечислены поимённо, а не скопированы целиком: параметры методов наследуют
+   * {@link RequestOptions} и приносят с собой `limit`, `cursor` и прочее, чему в описании
+   * запроса делать нечего. Исключение — опции, заявленные плагинами: их библиотека
+   * не понимает, но обязана донести до обёрток нетронутыми.
+   */
   protected requestOptions(options: RequestOptions | undefined): Partial<RequestOptions> {
     if (!options) return {};
 
-    return {
+    const result: Partial<RequestOptions> = {
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
       ...(options.timeout !== undefined ? { timeout: options.timeout } : {}),
       ...(options.headers !== undefined ? { headers: options.headers } : {}),
       ...(options.retry !== undefined ? { retry: options.retry } : {}),
     };
+
+    const pluginKeys = this.http.pluginOptionKeys;
+    if (pluginKeys.size === 0) return result;
+
+    const source = options as Record<string, unknown>;
+    const target = result as Record<string, unknown>;
+    for (const key of pluginKeys) {
+      const value = source[key];
+      if (value !== undefined) target[key] = value;
+    }
+
+    return result;
   }
 
   /**

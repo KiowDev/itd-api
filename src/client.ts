@@ -4,6 +4,7 @@ import { CookieJar } from './core/cookies.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { isItdRateLimitError } from './core/errors.js';
 import { HttpClient } from './core/http.js';
+import { type ItdPlugin, PluginRegistry } from './core/plugins.js';
 import { RequestQueue } from './core/rate-limit.js';
 import { createRetryScheduler } from './core/retry.js';
 import type { ItdSession } from './core/storage.js';
@@ -63,6 +64,7 @@ export class ItdClient {
   readonly #authManager: AuthManager;
   readonly #jar: CookieJar;
   readonly #queue: RequestQueue | undefined;
+  readonly #plugins = new PluginRegistry();
 
   /** Авторизация, сессии и пароли. */
   readonly auth: AuthResource;
@@ -102,6 +104,10 @@ export class ItdClient {
     this.#authManager = new AuthManager(this.#config, this.#http, this.#jar);
 
     this.#queue = this.#config.rateLimit ? new RequestQueue(this.#config.rateLimit) : undefined;
+
+    // Реестр пуст и остаётся пустым, пока не вызовут `use()`: до этого момента запрос
+    // идёт ровно тем же путём, что и раньше.
+    this.#http.usePlugins(this.#plugins);
 
     this.#http.setCollaborators({
       getAuthHeaders: () => this.#authManager.getAuthHeaders(),
@@ -157,6 +163,28 @@ export class ItdClient {
    */
   request<T = unknown>(options: RawRequestOptions): Promise<T> {
     return this.#http.request<T>(options);
+  }
+
+  /**
+   * Подключает плагин.
+   *
+   * Плагин работает на уровне транспорта: видит запрос до отправки и разобранный ответ,
+   * поэтому одна обёртка охватывает сразу все методы клиента. Подключать можно в любой
+   * момент, но обычно это делают сразу после создания клиента.
+   *
+   * @throws {ItdConfigError} если плагин задан неверно или уже подключён
+   *
+   * @example
+   * ```ts
+   * import { crypt } from 'itd-api-crypto';
+   *
+   * itd.use(crypt());
+   * await itd.posts.create({ content: 'секрет' }, { encrypt: 'invis' });
+   * ```
+   */
+  use(plugin: ItdPlugin): this {
+    this.#plugins.add(plugin, { baseUrl: this.#config.baseUrl, logger: this.#config.logger });
+    return this;
   }
 
   /**

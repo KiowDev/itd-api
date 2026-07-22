@@ -64,6 +64,9 @@ export {
 } from './core/mime.js';
 export type { Page, PageState } from './core/pagination.js';
 export { PaginationMode, Paginator } from './core/pagination.js';
+// Плагины работают на уровне транспорта: обёртка вокруг запроса видит и тело запроса,
+// и разобранный ответ. Подробности — в core/plugins.ts.
+export type { ItdPlugin, PluginContext, Transformer } from './core/plugins.js';
 export { DetectedRuntime, RuntimeMode } from './core/runtime.js';
 export {
   createTokenStorage,
@@ -159,6 +162,7 @@ export {
   RealtimeStatus,
   ReportReason,
   ReportTargetType,
+  SpanType,
   WallAccess,
 } from './types/enums.js';
 export type {

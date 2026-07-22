@@ -2,6 +2,7 @@ import type { RawRequestOptions } from '../types/options.js';
 import type { ResolvedConfig } from './config.js';
 import { createApiError, readRateLimit } from './error-factory.js';
 import { ItdAbortError, ItdConfigError, ItdNetworkError, ItdTimeoutError } from './errors.js';
+import type { PluginRegistry } from './plugins.js';
 import { redactBody, redactHeaders } from './redact.js';
 import { isBlob } from './runtime.js';
 import { unwrapData } from './unwrap.js';
@@ -55,6 +56,9 @@ export interface HttpCollaborators {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/** Отдаётся, пока плагинов нет: заводить набор на каждый запрос незачем. */
+const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
 
 /**
  * Ставит заголовок, превращая ограничение HTTP в понятное сообщение.
@@ -168,6 +172,7 @@ function createAbortBundle(userSignal: AbortSignal | undefined, timeout: number)
 export class HttpClient {
   readonly #config: ResolvedConfig;
   #collaborators: HttpCollaborators;
+  #plugins: PluginRegistry | undefined;
 
   constructor(config: ResolvedConfig, collaborators: HttpCollaborators = {}) {
     this.#config = config;
@@ -177,6 +182,21 @@ export class HttpClient {
   /** Базовый URL, к которому обращается клиент. */
   get baseUrl(): string {
     return this.#config.baseUrl;
+  }
+
+  /**
+   * Имена опций запроса, заявленные плагинами.
+   *
+   * Читается ресурсами: они переносят в транспорт только известные поля, а чужие,
+   * если их никто не заявил, отсеивают.
+   */
+  get pluginOptionKeys(): ReadonlySet<string> {
+    return this.#plugins?.optionKeys ?? EMPTY_KEYS;
+  }
+
+  /** Подключает список плагинов. Реестр общий с клиентом и пополняется через `itd.use()`. */
+  usePlugins(plugins: PluginRegistry): void {
+    this.#plugins = plugins;
   }
 
   /**
@@ -199,7 +219,7 @@ export class HttpClient {
    * @throws {ItdNetworkError} если запрос не дошёл до сервера
    */
   async request<T = unknown>(options: RawRequestOptions): Promise<T> {
-    const task = () => this.#withRetries<T>(options);
+    const task = () => this.#withPlugins<T>(options);
 
     // `skipQueue` разрывает круговое ожидание: запрос, порождённый изнутри другого запроса
     // (продление токена, отложенный вход), не может ждать места в очереди — это место
@@ -207,6 +227,20 @@ export class HttpClient {
     if (!this.#collaborators.schedule || options.skipQueue) return task();
 
     return this.#collaborators.schedule(task);
+  }
+
+  /**
+   * Прогоняет запрос через обёртки плагинов.
+   *
+   * Цепочка стоит **снаружи повторов и внутри очереди**: плагин должен увидеть запрос
+   * и ответ по одному разу, независимо от того, сколько попыток понадобилось, — иначе,
+   * например, текст поста зашифруется повторно на второй попытке.
+   */
+  #withPlugins<T>(options: RawRequestOptions): Promise<T> {
+    const plugins = this.#plugins;
+    if (!plugins || plugins.size === 0) return this.#withRetries<T>(options);
+
+    return plugins.run(options, (request) => this.#withRetries<T>(request)) as Promise<T>;
   }
 
   async #withRetries<T>(options: RawRequestOptions): Promise<T> {

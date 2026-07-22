@@ -1,0 +1,157 @@
+import type { Logger, RawRequestOptions } from '../types/options.js';
+import { ItdConfigError } from './errors.js';
+
+/**
+ * Обёртка вокруг запроса.
+ *
+ * Получает описание запроса и продолжение цепочки. Может изменить запрос перед отправкой,
+ * посмотреть и подменить разобранный ответ или вовсе не вызывать `next` и вернуть своё.
+ *
+ * @param request что уходит на сервер; изменять сам объект не нужно — передайте копию в `next`
+ * @param next продолжение: либо следующая обёртка, либо настоящий запрос
+ * @returns тело ответа в том виде, в каком его получит вызывающий код
+ *
+ * @example Дописать заголовок ко всем запросам
+ * ```ts
+ * const transformer: Transformer = (request, next) =>
+ *   next({ ...request, headers: { ...request.headers, 'X-Trace': trace() } });
+ * ```
+ */
+export type Transformer = (
+  request: RawRequestOptions,
+  next: (request: RawRequestOptions) => Promise<unknown>,
+) => Promise<unknown>;
+
+/** Что плагин получает при подключении. */
+export interface PluginContext {
+  /** Базовый URL клиента — например чтобы разобрать абсолютные ссылки из ответа. */
+  baseUrl: string;
+  /** Отладочный вывод клиента, если он включён. */
+  logger: Logger | undefined;
+  /** Добавляет обёртку запроса. Подключённые раньше оказываются снаружи. */
+  use(transformer: Transformer): void;
+}
+
+/**
+ * Плагин клиента.
+ *
+ * Подключается через `itd.use(plugin)` и работает на уровне транспорта: видит запрос
+ * до отправки и разобранный ответ. Библиотека не знает, что именно делает плагин, —
+ * ей достаточно списка обёрток и имён опций, которые он читает.
+ *
+ * @example
+ * ```ts
+ * const logging: ItdPlugin = {
+ *   name: 'logging',
+ *   install({ use, logger }) {
+ *     use(async (request, next) => {
+ *       logger?.info(`${request.method} ${request.path}`);
+ *       return next(request);
+ *     });
+ *   },
+ * };
+ *
+ * itd.use(logging);
+ * ```
+ */
+export interface ItdPlugin {
+  /** Имя плагина. Должно быть уникальным: повторное подключение — ошибка. */
+  name: string;
+  /**
+   * Имена опций запроса, которые плагин читает у методов ресурсов.
+   *
+   * Библиотека этих опций не понимает и ничего с ними не делает — только доносит
+   * от вызова метода до обёртки нетронутыми. Без такого списка чужие поля отсеиваются,
+   * чтобы случайная опечатка в параметрах не уезжала на сервер.
+   *
+   * Типы для них плагин объявляет сам, дополняя `RequestOptions`:
+   * ```ts
+   * declare module 'itd-api' {
+   *   interface RequestOptions { encrypt?: string | undefined }
+   * }
+   * ```
+   */
+  optionKeys?: readonly string[];
+  /** Вызывается один раз при подключении. */
+  install(context: PluginContext): void;
+}
+
+/** Пустой набор — отдаётся, пока плагинов нет, чтобы не заводить объект на каждый запрос. */
+const NO_KEYS: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Список подключённых плагинов и собранная из них цепочка обёрток.
+ *
+ * Живёт в клиенте, а работает в транспорте: {@link HttpClient} прогоняет через `run`
+ * каждый запрос, если плагины есть.
+ */
+export class PluginRegistry {
+  readonly #transformers: Transformer[] = [];
+  readonly #optionKeys = new Set<string>();
+  readonly #names = new Set<string>();
+
+  /** Сколько обёрток подключено. Ноль означает, что запрос идёт прежним путём. */
+  get size(): number {
+    return this.#transformers.length;
+  }
+
+  /** Имена опций запроса, заявленные плагинами. */
+  get optionKeys(): ReadonlySet<string> {
+    return this.#optionKeys.size === 0 ? NO_KEYS : this.#optionKeys;
+  }
+
+  /**
+   * Подключает плагин.
+   *
+   * @throws {ItdConfigError} если плагин задан неверно или уже подключён
+   */
+  add(plugin: ItdPlugin, context: Omit<PluginContext, 'use'>): void {
+    if (typeof plugin?.install !== 'function') {
+      throw new ItdConfigError('Плагин должен быть объектом с методом install()');
+    }
+
+    const name = plugin.name;
+    if (typeof name !== 'string' || name.trim() === '') {
+      throw new ItdConfigError('У плагина должно быть непустое имя');
+    }
+
+    // Повторное подключение почти всегда означает недосмотр, а последствия у него
+    // молчаливые: обёртка отработает дважды — текст зашифруется два раза подряд.
+    if (this.#names.has(name)) {
+      throw new ItdConfigError(`Плагин «${name}» уже подключён`);
+    }
+    this.#names.add(name);
+
+    plugin.install({
+      ...context,
+      use: (transformer) => {
+        if (typeof transformer !== 'function') {
+          throw new ItdConfigError(`Плагин «${name}» передал в use() не функцию`);
+        }
+        this.#transformers.push(transformer);
+      },
+    });
+
+    for (const key of plugin.optionKeys ?? []) this.#optionKeys.add(key);
+  }
+
+  /**
+   * Прогоняет запрос через цепочку обёрток.
+   *
+   * Цепочка собирается на каждый запрос заново: плагин можно подключить в любой момент,
+   * а обёрток единицы — экономить тут не на чем.
+   *
+   * @param execute настоящий запрос, вызывается самой внутренней обёрткой
+   */
+  run(
+    request: RawRequestOptions,
+    execute: (request: RawRequestOptions) => Promise<unknown>,
+  ): Promise<unknown> {
+    const chain = this.#transformers.reduceRight<(r: RawRequestOptions) => Promise<unknown>>(
+      (next, transformer) => (current) => transformer(current, next),
+      execute,
+    );
+
+    return chain(request);
+  }
+}
