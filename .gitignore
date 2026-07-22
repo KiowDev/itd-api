@@ -1,6 +1,7 @@
 node_modules/
 dist/
 docs/
+sources/
 coverage/
 pack/
 *.tgz
