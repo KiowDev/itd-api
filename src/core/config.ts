@@ -13,7 +13,7 @@ export const DEFAULT_TIMEOUT = 30_000;
 /**
  * Версия библиотеки — попадает в `User-Agent`.
  */
-export const LIBRARY_VERSION = '0.0.5';
+export const LIBRARY_VERSION = '0.0.6';
 
 /**
  * `User-Agent` по умолчанию.
