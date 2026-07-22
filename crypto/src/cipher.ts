@@ -45,6 +45,14 @@ export interface EncodeOptions {
 export interface Cipher {
   /** Имя для опции `encrypt` и для поля {@link Secret.cipher}. */
   name: string;
+  /**
+   * Принимает ли шифр обложку и оставляет ли её **в начале результата нетронутой**.
+   *
+   * По этому признаку плагин решает, допустима ли разметка `spans`: её смещения считаются
+   * от начала видимого текста, а видимый текст — это обложка. При `false` или без значения
+   * видимой части не остаётся.
+   */
+  acceptsCover?: boolean | undefined;
   /** Прячет текст. */
   encode(text: string, options?: EncodeOptions): string;
   /** Достаёт спрятанное. `null` — в строке ничего нет. */
@@ -73,7 +81,7 @@ export interface EncryptSpec {
 export interface Secret {
   /** Имя шифра, который его прочитал. */
   cipher: string;
-  /** Поле объекта, где нашлась нагрузка: `content`, `bio`, `displayName`, `preview`. */
+  /** Поле объекта, где нашлась нагрузка — одно из {@link SECRET_FIELDS}. */
   field: string;
   /** Расшифрованный текст. */
   text: string;

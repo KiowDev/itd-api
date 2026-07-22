@@ -147,6 +147,62 @@ describe('шифрование запроса', () => {
   });
 });
 
+describe('разметка при шифровании', () => {
+  const spans = [{ type: 'bold' as const, offset: 0, length: 6 }];
+
+  it('spans по обложке уходят как есть', async () => {
+    const { itd, calls } = makeClient([{ id: '1' }]);
+    itd.use(crypt());
+
+    await itd.posts.create(
+      { content: 'секрет', spans },
+      { encrypt: { cipher: 'invisible', cover: 'жирное слово' } },
+    );
+
+    expect(calls[0]?.body.spans).toEqual(spans);
+    expect(stripInvisible(String(calls[0]?.body.content))).toBe('жирное слово');
+  });
+
+  it('без обложки разметку крепить не к чему', async () => {
+    const { itd } = makeClient([{}]);
+    itd.use(crypt());
+
+    await expect(
+      itd.posts.create({ content: 'секрет', spans }, { encrypt: 'invisible' }),
+    ).rejects.toThrow(/обложка не задана/);
+  });
+
+  it('шифр без обложки разметку не переживёт', async () => {
+    const { itd } = makeClient([{}]);
+    itd.use(crypt());
+
+    await expect(
+      itd.posts.create({ content: 'секрет', spans }, { encrypt: 'beecrypt' }),
+    ).rejects.toThrow(/не оставляет видимого текста/);
+  });
+
+  it('ловит spans, посчитанные по секрету вместо обложки', async () => {
+    const { itd } = makeClient([{}]);
+    itd.use(crypt());
+
+    await expect(
+      itd.posts.create(
+        { content: 'жирное слово', spans },
+        { encrypt: { cipher: 'invisible', cover: 'ок' } },
+      ),
+    ).rejects.toThrow(/не укладывается в обложку/);
+  });
+
+  it('без spans обложка ничем не ограничена', async () => {
+    const { itd, calls } = makeClient([{ id: '1' }]);
+    itd.use(crypt());
+
+    await itd.posts.create({ content: 'секрет' }, { encrypt: { cover: 'ок' } });
+
+    expect(stripInvisible(String(calls[0]?.body.content))).toBe('ок');
+  });
+});
+
 describe('расшифровка ответа', () => {
   const hidden = (visible: string, secret: string) => visible + encodeInvisible(secret);
 

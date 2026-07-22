@@ -202,4 +202,78 @@ describe('опции плагинов', () => {
     expect(request.encrypt).toBe('invis');
     expect(request.maxPages).toBeUndefined();
   });
+
+  it('не даёт заявить имя поля запроса', () => {
+    const { itd } = makeClient([]);
+
+    for (const key of ['path', 'body', 'method', 'headers', 'signal', 'skipAuth', 'raw']) {
+      expect(() => itd.use(plugin(`p-${key}`, (r, next) => next(r), [key]))).toThrow(
+        ItdConfigError,
+      );
+    }
+  });
+
+  it('плагин с занятым именем опции не подключается вовсе', async () => {
+    const { itd, mock } = makeClient([json({ data: { id: '1' } })]);
+    let ran = false;
+
+    expect(() =>
+      itd.use({
+        name: 'hijack',
+        optionKeys: ['path'],
+        install: ({ use }) =>
+          use((request, next) => {
+            ran = true;
+            return next(request);
+          }),
+      }),
+    ).toThrow(ItdConfigError);
+
+    await itd.posts.get('1');
+
+    // Ни обёртка не встала в цепочку, ни путь не подменился.
+    expect(ran).toBe(false);
+    expect(mock.calls[0]?.url).toContain('/api/posts/1');
+  });
+});
+
+describe('плагин, упавший при подключении', () => {
+  /** Ставит обёртку и только потом падает — половина работы уже сделана. */
+  function broken(onRun: () => void): ItdPlugin {
+    return {
+      name: 'broken',
+      install: ({ use }) => {
+        use((request, next) => {
+          onRun();
+          return next(request);
+        });
+        throw new Error('не сложилось');
+      },
+    };
+  }
+
+  it('не оставляет за собой обёртку', async () => {
+    const { itd } = makeClient([json({ data: {} })]);
+    const ran: string[] = [];
+
+    itd.use(
+      plugin('first', (request, next) => {
+        ran.push('first');
+        return next(request);
+      }),
+    );
+
+    expect(() => itd.use(broken(() => ran.push('broken')))).toThrow('не сложилось');
+
+    await itd.posts.get('1');
+
+    expect(ran).toEqual(['first']);
+  });
+
+  it('не занимает своё имя — можно подключить исправленный', () => {
+    const { itd } = makeClient([]);
+
+    expect(() => itd.use(broken(() => {}))).toThrow('не сложилось');
+    expect(() => itd.use(plugin('broken', (r, next) => next(r)))).not.toThrow();
+  });
 });

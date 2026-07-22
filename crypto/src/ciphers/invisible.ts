@@ -102,6 +102,10 @@ export function decodeInvisible(text: string): string | null {
       value =
         value * INVISIBLE_BASE + (INDEX.get(payload[byte * INVISIBLE_WIDTH + digit] ?? '') ?? 0);
     }
+
+    // Четыре цифры дают до 1295, а байт — до 255. Значений из верхнего диапазона
+    // кодировщик не выдаёт: такая четвёрка означает, что нагрузка чужая.
+    if (value > 0xff) return null;
     bytes[byte] = value;
   }
 
@@ -151,6 +155,7 @@ export function hasInvisible(text: string): boolean {
  */
 export const invisible: Cipher = {
   name: CipherName.Invisible,
+  acceptsCover: true,
   encode(text: string, options: EncodeOptions = {}): string {
     return (options.cover ?? '') + encodeInvisible(text);
   },

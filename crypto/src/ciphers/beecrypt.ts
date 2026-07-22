@@ -137,6 +137,7 @@ function fromBase64(text: string): Uint8Array {
  */
 export const beecrypt: Cipher = {
   name: CipherName.BeeCrypt,
+  acceptsCover: false,
   encode(text: string, options: EncodeOptions = {}): string {
     if (options.cover !== undefined && options.cover !== '') {
       throw new CryptError(

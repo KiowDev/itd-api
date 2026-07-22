@@ -99,6 +99,15 @@ describe('обычный текст', () => {
 
     expect(decodeInvisible(broken)).toBeNull();
   });
+
+  it('четвёрка вне диапазона байта не считается нагрузкой', () => {
+    // `⁯⁯⁯⁯` = 1295, кодировщик такого не выдаёт.
+    const last = INVISIBLE_ALPHABET[5] ?? '';
+
+    expect(decodeInvisible(last.repeat(4))).toBeNull();
+    expect(decodeInvisible(last.repeat(8))).toBeNull();
+    expect(decodeInvisible(encodeInvisible('привет') + last.repeat(4))).toBeNull();
+  });
 });
 
 describe('шифр как объект', () => {

@@ -39,13 +39,16 @@ function walk(value: unknown, ciphers: readonly Cipher[], depth: number, seen: W
   const record = value as Record<string, unknown>;
   const secrets = readSecrets(record, ciphers);
 
+  // Список полей снимается до присвоения: заходить внутрь собственных находок незачем.
+  const nested = Object.values(record);
+
   if (secrets.length > 0) {
     // Краткая форма для обычного случая — у поста и комментария текстовое поле одно.
     record.secret = secrets[0];
     record.secrets = secrets;
   }
 
-  for (const nested of Object.values(record)) walk(nested, ciphers, depth + 1, seen);
+  for (const item of nested) walk(item, ciphers, depth + 1, seen);
 }
 
 function readSecrets(record: Record<string, unknown>, ciphers: readonly Cipher[]): Secret[] {

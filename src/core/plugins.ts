@@ -64,6 +64,9 @@ export interface ItdPlugin {
    * от вызова метода до обёртки нетронутыми. Без такого списка чужие поля отсеиваются,
    * чтобы случайная опечатка в параметрах не уезжала на сервер.
    *
+   * Имена полей самого запроса (`path`, `body`, `headers`, `signal` и прочие из
+   * `RawRequestOptions`) заявить нельзя: подключение такого плагина завершится ошибкой.
+   *
    * Типы для них плагин объявляет сам, дополняя `RequestOptions`:
    * ```ts
    * declare module 'itd-api' {
@@ -78,6 +81,27 @@ export interface ItdPlugin {
 
 /** Пустой набор — отдаётся, пока плагинов нет, чтобы не заводить объект на каждый запрос. */
 const NO_KEYS: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Имена, которые плагин заявить не может.
+ *
+ * Заявленные опции ресурсы переносят в описание запроса поверх собранных полей, поэтому
+ * имя из {@link RawRequestOptions} подменило бы путь, тело или заголовки любого вызова.
+ */
+const RESERVED_OPTION_KEYS: ReadonlySet<string> = new Set([
+  'signal',
+  'timeout',
+  'headers',
+  'retry',
+  'method',
+  'path',
+  'query',
+  'body',
+  'skipAuth',
+  'skipAuthRefresh',
+  'skipQueue',
+  'raw',
+]);
 
 /**
  * Список подключённых плагинов и собранная из них цепочка обёрток.
@@ -103,7 +127,8 @@ export class PluginRegistry {
   /**
    * Подключает плагин.
    *
-   * @throws {ItdConfigError} если плагин задан неверно или уже подключён
+   * @throws {ItdConfigError} если плагин задан неверно, уже подключён или заявил занятое
+   * имя опции
    */
   add(plugin: ItdPlugin, context: Omit<PluginContext, 'use'>): void {
     if (typeof plugin?.install !== 'function') {
@@ -120,19 +145,40 @@ export class PluginRegistry {
     if (this.#names.has(name)) {
       throw new ItdConfigError(`Плагин «${name}» уже подключён`);
     }
+
+    const keys = plugin.optionKeys ?? [];
+    for (const key of keys) {
+      if (typeof key !== 'string' || key.trim() === '') {
+        throw new ItdConfigError(`Плагин «${name}» заявил пустое имя опции`);
+      }
+      if (RESERVED_OPTION_KEYS.has(key)) {
+        throw new ItdConfigError(
+          `Плагин «${name}» заявил опцию «${key}»: это поле запроса, имя занято. ` +
+            `Занятые имена: ${[...RESERVED_OPTION_KEYS].join(', ')}`,
+        );
+      }
+    }
+
+    // Реестр меняется только после того, как install() отработал целиком: иначе упавший
+    // на середине плагин оставит занятое имя и половину обёрток.
+    const before = this.#transformers.length;
+    try {
+      plugin.install({
+        ...context,
+        use: (transformer) => {
+          if (typeof transformer !== 'function') {
+            throw new ItdConfigError(`Плагин «${name}» передал в use() не функцию`);
+          }
+          this.#transformers.push(transformer);
+        },
+      });
+    } catch (error) {
+      this.#transformers.length = before;
+      throw error;
+    }
+
     this.#names.add(name);
-
-    plugin.install({
-      ...context,
-      use: (transformer) => {
-        if (typeof transformer !== 'function') {
-          throw new ItdConfigError(`Плагин «${name}» передал в use() не функцию`);
-        }
-        this.#transformers.push(transformer);
-      },
-    });
-
-    for (const key of plugin.optionKeys ?? []) this.#optionKeys.add(key);
+    for (const key of keys) this.#optionKeys.add(key);
   }
 
   /**

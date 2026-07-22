@@ -135,12 +135,64 @@ function encryptRequest(
     );
   }
 
+  // Разметка относится к тексту поста, поэтому и проверяется, только когда шифруется он.
+  if (targets.includes('content')) checkSpans(source.spans, spec.cover, cipher, where);
+
   const encrypted: Record<string, unknown> = { ...source };
   for (const field of targets) {
     encrypted[field] = cipher.encode(String(source[field]), { cover: spec.cover });
   }
 
   return { ...request, body: encrypted };
+}
+
+/**
+ * Проверяет, что разметка переживёт шифрование.
+ *
+ * `spans` уходят на сервер как есть — библиотека их не пересчитывает. Смещения в них
+ * считаются от начала видимого текста, а после шифрования видимым остаётся только обложка,
+ * и та лишь у шифров, которые её принимают. Поэтому разметка допустима в единственном
+ * случае: обложка задана и вмещает каждый фрагмент.
+ *
+ * @throws {CryptError} если разметку сохранить нельзя
+ */
+function checkSpans(
+  spans: unknown,
+  cover: string | undefined,
+  cipher: Cipher,
+  where: string,
+): void {
+  if (!Array.isArray(spans) || spans.length === 0) return;
+
+  if (cipher.acceptsCover !== true) {
+    throw new CryptError(
+      `У запроса ${where} есть spans, а шифр «${cipher.name}» не оставляет видимого текста: ` +
+        'разметку крепить не к чему. Уберите spans или возьмите шифр с обложкой — invisible',
+    );
+  }
+
+  if (cover === undefined || cover === '') {
+    throw new CryptError(
+      `У запроса ${where} есть spans, но обложка не задана: после шифрования от видимого ` +
+        'текста ничего не останется. Задайте cover — spans считаются по нему',
+    );
+  }
+
+  // Единицы смещений в API не определены (UTF-16 или кодовые точки), поэтому граница
+  // берётся по длине UTF-16: она не меньше числа кодовых точек.
+  const limit = cover.length;
+
+  for (const span of spans) {
+    const { offset, length } = (span ?? {}) as { offset?: unknown; length?: unknown };
+    if (typeof offset !== 'number' || typeof length !== 'number') continue;
+
+    if (offset < 0 || offset + length > limit) {
+      throw new CryptError(
+        `Разметка запроса ${where} не укладывается в обложку: фрагмент ${offset}…${offset + length} ` +
+          `при длине обложки ${limit}. spans считаются по cover, а не по секретному тексту`,
+      );
+    }
+  }
 }
 
 function pickCipher(name: string | undefined, ciphers: readonly Cipher[]): Cipher {
