@@ -1,9 +1,10 @@
 import { ItdConfigError } from '../core/errors.js';
-import { ReportReason, type ReportTargetType } from '../types/enums.js';
+import { ReportReason, ReportTargetType } from '../types/enums.js';
 import type { CreateReportInput } from '../types/params.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
 
 const REASONS = new Set<string>(Object.values(ReportReason));
+const TARGET_TYPES = new Set<string>(Object.values(ReportTargetType));
 
 /**
  * Проверяет данные жалобы.
@@ -15,13 +16,10 @@ export function validateReport(input: CreateReportInput): CreateReportInput {
     throw new ItdConfigError('Жалоба требует идентификатор объекта (targetId)');
   }
 
-  if (
-    input.targetType !== 'post' &&
-    input.targetType !== 'comment' &&
-    input.targetType !== 'user'
-  ) {
+  if (!TARGET_TYPES.has(input.targetType)) {
     throw new ItdConfigError(
-      `targetType должен быть 'post', 'comment' или 'user', получено: ${String(input.targetType)}`,
+      `targetType должен быть одним из ${[...TARGET_TYPES].join(', ')}, ` +
+        `получено: ${String(input.targetType)}`,
     );
   }
 
@@ -90,11 +88,11 @@ function start(targetType: ReportTargetType, targetId: string): ReportBuilder {
  */
 export const report = Object.freeze({
   /** Жалоба на пост. */
-  post: (postId: string) => start('post', postId),
+  post: (postId: string) => start(ReportTargetType.Post, postId),
   /** Жалоба на комментарий. */
-  comment: (commentId: string) => start('comment', commentId),
+  comment: (commentId: string) => start(ReportTargetType.Comment, commentId),
   /** Жалоба на пользователя. */
-  user: (userId: string) => start('user', userId),
+  user: (userId: string) => start(ReportTargetType.User, userId),
 });
 
 /** Что принимает параметр жалобы: объект, билдер или функция-настройщик. */

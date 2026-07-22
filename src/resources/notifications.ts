@@ -1,4 +1,4 @@
-import { type Page, type Paginator, readOffsetPage } from '../core/pagination.js';
+import { type Page, PaginationMode, type Paginator, readOffsetPage } from '../core/pagination.js';
 import { pickBoolean, pickNumber } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import { normalizeNotification } from '../notifications/normalize.js';
@@ -62,9 +62,12 @@ export class NotificationsResource extends BaseResource {
    * const next = await itd.notifications.list({ limit: 20, offset: page.nextOffset });
    * ```
    */
-  async list(params: NotificationListParams = {}): Promise<Page<Notification>> {
-    const offset = params.offset ?? 0;
+  list(params: NotificationListParams = {}): Promise<Page<Notification>> {
+    return this.#loadPage(params, params.offset ?? 0);
+  }
 
+  /** Общая загрузка страницы для {@link list} и {@link iterate}. */
+  async #loadPage(params: NotificationListParams, offset: number): Promise<Page<Notification>> {
     const body = await this.http.request({
       method: 'GET',
       // Завершающий слэш обязателен: без него сервер отвечает ошибкой.
@@ -90,21 +93,9 @@ export class NotificationsResource extends BaseResource {
    */
   iterate(params: NotificationListParams = {}): Paginator<Notification> {
     return this.paginate<Notification>(
-      'offset',
-      async (state) => {
-        const offset = state.offset ?? params.offset ?? 0;
-
-        const body = await this.http.request({
-          method: 'GET',
-          path: '/api/notifications/',
-          query: { limit: params.limit, offset },
-          ...this.requestOptions(params),
-        });
-
-        const page = readOffsetPage<unknown>(body, 'notifications', offset);
-        return { ...page, items: page.items.map(normalizeNotification) };
-      },
-      params,
+      PaginationMode.Offset,
+      (state) => this.#loadPage(params, state.offset ?? 0),
+      { ...params, ...(params.offset !== undefined ? { start: { offset: params.offset } } : {}) },
     );
   }
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   type Page,
   type PageState,
+  PaginationMode,
   Paginator,
   readCursorPage,
   readFlatCursorPage,
@@ -107,6 +108,41 @@ describe('перебор — курсорная схема', () => {
     ]);
 
     expect(await paginator.collect()).toEqual([1]);
+  });
+});
+
+describe('перебор с заданной позиции', () => {
+  it('начинает с переданного курсора, а не сначала', async () => {
+    const states: PageState[] = [];
+    const paginator = new Paginator<number>({
+      mode: PaginationMode.Cursor,
+      start: { cursor: 'сохранённый' },
+      load: (state) => {
+        states.push(state);
+        return Promise.resolve({ items: [1], hasMore: false, raw: null });
+      },
+    });
+
+    await paginator.collect();
+
+    // Без этого возобновление перебора молча начиналось бы с начала списка.
+    expect(states).toEqual([{ cursor: 'сохранённый' }]);
+  });
+
+  it('продолжает нумерацию страниц от заданной', async () => {
+    const states: PageState[] = [];
+    const paginator = new Paginator<number>({
+      mode: PaginationMode.Page,
+      start: { page: 3 },
+      load: (state) => {
+        states.push(state);
+        return Promise.resolve({ items: [1], hasMore: states.length < 2, raw: null });
+      },
+    });
+
+    await paginator.collect();
+
+    expect(states).toEqual([{ page: 3 }, { page: 4 }]);
   });
 });
 

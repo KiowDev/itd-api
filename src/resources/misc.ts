@@ -1,5 +1,5 @@
 import { type ReportInput, resolveReport } from '../builders/report.js';
-import { type Page, type Paginator, readCursorPage } from '../core/pagination.js';
+import { type Page, PaginationMode, type Paginator, readCursorPage } from '../core/pagination.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import type {
@@ -89,7 +89,7 @@ export class HashtagsResource extends BaseResource {
     const path = `/api/hashtags/${encodePathSegment(tag, 'tag')}/posts`;
 
     return this.paginate<Post>(
-      'cursor',
+      PaginationMode.Cursor,
       async (state) => {
         const body = await this.http.request({
           method: 'GET',
@@ -99,7 +99,7 @@ export class HashtagsResource extends BaseResource {
         });
         return readCursorPage<Post>(body, 'posts');
       },
-      params,
+      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
     );
   }
 }

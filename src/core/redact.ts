@@ -1,3 +1,5 @@
+import { isBlob } from './runtime.js';
+
 /** Заголовки, значение которых нельзя писать в лог целиком. */
 const SECRET_HEADERS = new Set(['authorization', 'cookie', 'set-cookie', 'x-api-key']);
 
@@ -62,7 +64,7 @@ export function redactBody(body: unknown): unknown {
   if (body === null || body === undefined) return body;
 
   if (typeof FormData !== 'undefined' && body instanceof FormData) return '[FormData]';
-  if (typeof Blob !== 'undefined' && body instanceof Blob) return '[Blob]';
+  if (isBlob(body)) return '[Blob]';
   if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) return '[binary]';
 
   if (Array.isArray(body)) return body.map(redactBody);

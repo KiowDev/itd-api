@@ -9,20 +9,28 @@ export const IMAGE_MIME_TYPES = Object.freeze([
   'image/avif',
   'image/heic',
   'image/heif',
-]);
+] as const);
+export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number];
 
 /** Видео, которые принимает `POST /api/files/upload`. */
-export const VIDEO_MIME_TYPES = Object.freeze(['video/mp4', 'video/webm', 'video/quicktime']);
+export const VIDEO_MIME_TYPES = Object.freeze([
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+] as const);
+export type VideoMimeType = (typeof VIDEO_MIME_TYPES)[number];
 
 /** Аудио для голосовых комментариев. */
-export const AUDIO_MIME_TYPES = Object.freeze(['audio/ogg']);
+export const AUDIO_MIME_TYPES = Object.freeze(['audio/ogg'] as const);
+export type AudioMimeType = (typeof AUDIO_MIME_TYPES)[number];
 
 /** Все типы, которые принимает загрузка. */
 export const ALLOWED_MIME_TYPES = Object.freeze([
   ...IMAGE_MIME_TYPES,
   ...VIDEO_MIME_TYPES,
   ...AUDIO_MIME_TYPES,
-]);
+] as const);
+export type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number];
 
 /**
  * Соответствие расширения и MIME-типа.
@@ -59,8 +67,8 @@ export function mimeFromFilename(filename: string): string | undefined {
 }
 
 /** Разрешён ли тип к загрузке. */
-export function isAllowedMime(mimeType: string): boolean {
-  return ALLOWED_MIME_TYPES.includes(mimeType.toLowerCase());
+export function isAllowedMime(mimeType: string): mimeType is AllowedMimeType {
+  return (ALLOWED_MIME_TYPES as readonly string[]).includes(mimeType.toLowerCase());
 }
 
 /**

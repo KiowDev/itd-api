@@ -1,7 +1,14 @@
-import { type Page, type Paginator, readPagedPage } from '../core/pagination.js';
+import {
+  type Page,
+  type PageState,
+  PaginationMode,
+  type Paginator,
+  readPagedPage,
+} from '../core/pagination.js';
 import { pickArray, pickBoolean, pickString } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import type {
+  Clan,
   FollowResult,
   MyProfile,
   PinsResult,
@@ -149,14 +156,14 @@ export class UsersResource extends BaseResource {
   }
 
   /** Загружает рейтинг кланов. */
-  async topClans(options: RequestOptions = {}): Promise<{ avatar: string; memberCount: number }[]> {
+  async topClans(options: RequestOptions = {}): Promise<Clan[]> {
     const body = await this.http.request({
       method: 'GET',
       path: '/api/users/stats/top-clans',
       ...this.requestOptions(options),
     });
 
-    return pickArray<{ avatar: string; memberCount: number }>(body, 'clans');
+    return pickArray<Clan>(body, 'clans');
   }
 
   /**
@@ -308,30 +315,40 @@ export class UsersResource extends BaseResource {
     });
   }
 
-  async #userPage(path: string, params: UserListParams): Promise<Page<UserSummary>> {
+  /**
+   * Загружает одну страницу списка пользователей.
+   *
+   * Имена полей перечислены с запасом: списки подписчиков и заблокированных приходят
+   * под `users`, но альтернативное имя ничего не стоит и спасает, если эндпоинт назовёт
+   * список по-своему.
+   */
+  async #loadUserPage(
+    path: string,
+    params: UserListParams,
+    state: PageState,
+  ): Promise<Page<UserSummary>> {
     const body = await this.http.request({
       method: 'GET',
       path,
-      query: { limit: params.limit, page: params.page },
+      query: withPageState({ limit: params.limit }, state),
       ...this.requestOptions(params),
     });
 
-    return readPagedPage<UserSummary>(body, 'users');
+    return readPagedPage<UserSummary>(body, 'users', 'followers', 'following', 'blocked');
+  }
+
+  #userPage(path: string, params: UserListParams): Promise<Page<UserSummary>> {
+    return this.#loadUserPage(path, params, {
+      ...(params.page !== undefined ? { page: params.page } : {}),
+    });
   }
 
   #userPaginator(path: string, params: UserListParams): Paginator<UserSummary> {
     return this.paginate<UserSummary>(
-      'page',
-      async (state) => {
-        const body = await this.http.request({
-          method: 'GET',
-          path,
-          query: withPageState({ limit: params.limit }, state),
-          ...this.requestOptions(params),
-        });
-        return readPagedPage<UserSummary>(body, 'users');
-      },
-      params,
+      PaginationMode.Page,
+      (state) => this.#loadUserPage(path, params, state),
+      // Без `start` перебор начинался бы с первой страницы, молча игнорируя `page`.
+      { ...params, ...(params.page !== undefined ? { start: { page: params.page } } : {}) },
     );
   }
 }

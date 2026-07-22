@@ -1,11 +1,6 @@
 import type { AuthInput, ClientHooks, ItdClientOptions, Logger } from '../types/options.js';
 import { ItdConfigError } from './errors.js';
-import {
-  type RuntimeMode,
-  resolveFetch,
-  shouldSendCredentials,
-  shouldUseCookieJar,
-} from './runtime.js';
+import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
 import { MemoryTokenStorage, type TokenStorage } from './storage.js';
 import { normalizeBaseUrl } from './url.js';
 
@@ -15,8 +10,10 @@ export const DEFAULT_BASE_URL = 'https://xn--d1ah4a.com';
 /** Таймаут запроса по умолчанию. Столько же использует официальный клиент итд.com. */
 export const DEFAULT_TIMEOUT = 30_000;
 
-/** Версия библиотеки. Держится в синхронизации с `package.json` вручную — см. `npm version`. */
-export const LIBRARY_VERSION = '0.0.2';
+/**
+ * Версия библиотеки — попадает в `User-Agent`.
+ */
+export const LIBRARY_VERSION = '0.0.3';
 
 /**
  * `User-Agent` по умолчанию.
@@ -249,10 +246,12 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
  * @throws {ItdConfigError} при некорректных значениях
  */
 export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
-  const mode: RuntimeMode = options.mode ?? 'auto';
+  const mode: RuntimeMode = options.mode ?? RuntimeMode.Auto;
 
-  if (mode !== 'auto' && mode !== 'browser' && mode !== 'server') {
-    throw new ItdConfigError(`mode должен быть 'auto', 'browser' или 'server', получено: ${mode}`);
+  if (!Object.values(RuntimeMode).includes(mode)) {
+    throw new ItdConfigError(
+      `mode должен быть одним из ${Object.values(RuntimeMode).join(', ')}, получено: ${mode}`,
+    );
   }
 
   const timeout = requirePositive(options.timeout ?? DEFAULT_TIMEOUT, 'timeout');

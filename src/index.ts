@@ -26,11 +26,12 @@ export {
   ItdAbortError,
   ItdApiError,
   type ItdApiErrorInit,
+  ItdApiErrorKind,
   ItdAuthError,
   ItdConfigError,
   ItdConflictError,
   ItdError,
-  type ItdErrorKind,
+  ItdErrorKind,
   type ItdFieldErrors,
   ItdForbiddenError,
   ItdNetworkError,
@@ -42,19 +43,28 @@ export {
   ItdValidationError,
   isItdApiError,
   isItdAuthError,
+  isItdConflictError,
   isItdError,
+  isItdForbiddenError,
+  isItdNotFoundError,
+  isItdPhoneVerificationError,
   isItdRateLimitError,
+  isItdServerError,
   isItdValidationError,
 } from './core/errors.js';
 export {
   ALLOWED_MIME_TYPES,
+  type AllowedMimeType,
   AUDIO_MIME_TYPES,
+  type AudioMimeType,
   IMAGE_MIME_TYPES,
+  type ImageMimeType,
   VIDEO_MIME_TYPES,
+  type VideoMimeType,
 } from './core/mime.js';
-export type { Page, PageState, PaginationMode } from './core/pagination.js';
-export { Paginator } from './core/pagination.js';
-export type { RuntimeMode } from './core/runtime.js';
+export type { Page, PageState } from './core/pagination.js';
+export { PaginationMode, Paginator } from './core/pagination.js';
+export { DetectedRuntime, RuntimeMode } from './core/runtime.js';
 export {
   createTokenStorage,
   type ItdSession,
@@ -89,18 +99,21 @@ export {
   ItdRealtime,
   type RealtimeEvents,
   type RealtimeOptions,
-  type RealtimeTransportKind,
+  RealtimeTransportKind,
 } from './realtime/stream.js';
 export type { RealtimeTransport, TransportContext, TransportEvent } from './realtime/transport.js';
+// Нужен тем, кто пишет свой транспорт: только этой ошибкой он сообщает потоку,
+// что токен пора обновить.
+export { UnauthorizedStreamError } from './realtime/transport.js';
 export type {
   AuthResource,
   CaptchaCredentials,
   Credentials,
   ForgotPasswordInput,
-  OAuthProvider,
   ResetPasswordInput,
   SignInResult,
 } from './resources/auth.js';
+export { OAuthProvider, SignInStatus } from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export type { FilesResource, UploadedFile, UploadOptions } from './resources/files.js';
 export type {

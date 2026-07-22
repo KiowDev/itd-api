@@ -4,6 +4,7 @@ import type { HttpClient } from '../core/http.js';
 import {
   type Page,
   type PageState,
+  PaginationMode,
   type Paginator,
   readCursorPage,
   readFlatCursorPage,
@@ -112,7 +113,7 @@ export class PostsResource extends BaseResource {
    */
   iterate(params: FeedParams = {}): Paginator<Post> {
     return this.paginate<Post>(
-      'cursor',
+      PaginationMode.Cursor,
       async (state: PageState) => {
         const body = await this.http.request({
           method: 'GET',
@@ -122,7 +123,7 @@ export class PostsResource extends BaseResource {
         });
         return readCursorPage<Post>(body, 'posts');
       },
-      params,
+      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
     );
   }
 
@@ -309,7 +310,7 @@ export class PostsResource extends BaseResource {
     const path = `/api/posts/user/${encodePathSegment(user, 'user')}`;
 
     return this.paginate<Post>(
-      'cursor',
+      PaginationMode.Cursor,
       async (state) => {
         const body = await this.http.request({
           method: 'GET',
@@ -322,7 +323,7 @@ export class PostsResource extends BaseResource {
         });
         return readCursorPage<Post>(body, 'posts');
       },
-      params,
+      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
     );
   }
 
@@ -343,7 +344,7 @@ export class PostsResource extends BaseResource {
     const path = `/api/posts/user/${encodePathSegment(user, 'user')}/liked`;
 
     return this.paginate<Post>(
-      'cursor',
+      PaginationMode.Cursor,
       async (state) => {
         const body = await this.http.request({
           method: 'GET',
@@ -353,7 +354,7 @@ export class PostsResource extends BaseResource {
         });
         return readCursorPage<Post>(body, 'posts');
       },
-      params,
+      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
     );
   }
 
@@ -379,7 +380,7 @@ export class PostsResource extends BaseResource {
     const path = `/api/posts/${encodePathSegment(postId, 'postId')}/comments`;
 
     return this.paginate<Comment>(
-      'cursor',
+      PaginationMode.Cursor,
       async (state) => {
         const body = await this.http.request({
           method: 'GET',
@@ -389,7 +390,7 @@ export class PostsResource extends BaseResource {
         });
         return readFlatCursorPage<Comment>(body, 'comments');
       },
-      params,
+      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
     );
   }
 

@@ -43,6 +43,20 @@ export interface ResetPasswordInput {
   newPassword: string;
 }
 
+/** Провайдер внешнего входа. */
+export const OAuthProvider = Object.freeze({
+  Yandex: 'yandex',
+  Google: 'google',
+} as const);
+export type OAuthProvider = (typeof OAuthProvider)[keyof typeof OAuthProvider];
+
+/** Чем закончился вход: сразу токеном или запросом кода подтверждения. */
+export const SignInStatus = Object.freeze({
+  Authenticated: 'authenticated',
+  OtpRequired: 'otp_required',
+} as const);
+export type SignInStatus = (typeof SignInStatus)[keyof typeof SignInStatus];
+
 /**
  * Результат входа.
  *
@@ -50,11 +64,8 @@ export interface ResetPasswordInput {
  * объединение делает оба случая явными.
  */
 export type SignInResult =
-  | { status: 'authenticated'; accessToken: string }
-  | { status: 'otp_required'; flowToken: string | undefined };
-
-/** Провайдер внешнего входа. */
-export type OAuthProvider = 'yandex' | 'google';
+  | { status: typeof SignInStatus.Authenticated; accessToken: string }
+  | { status: typeof SignInStatus.OtpRequired; flowToken: string | undefined };
 
 /**
  * Авторизация, сессии и пароли.
@@ -119,10 +130,10 @@ export class AuthResource extends BaseResource {
 
     if (accessToken) {
       await this.#auth.setAccessToken(accessToken);
-      return { status: 'authenticated', accessToken };
+      return { status: SignInStatus.Authenticated, accessToken };
     }
 
-    return { status: 'otp_required', flowToken: pickString(body, 'flowToken') };
+    return { status: SignInStatus.OtpRequired, flowToken: pickString(body, 'flowToken') };
   }
 
   /**
@@ -192,7 +203,7 @@ export class AuthResource extends BaseResource {
     const { getOtp, ...credentials } = input;
     const result = await this.signIn(credentials, options);
 
-    if (result.status === 'authenticated') return result.accessToken;
+    if (result.status === SignInStatus.Authenticated) return result.accessToken;
 
     if (!result.flowToken) {
       throw new ItdConfigError(

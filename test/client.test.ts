@@ -143,6 +143,15 @@ describe('посты', () => {
 });
 
 describe('загрузка файлов', () => {
+  it('перебор постов продолжается с переданного курсора', async () => {
+    const { itd, mock } = makeClient([feedPage(['1'], null)]);
+
+    await itd.posts.iterate({ cursor: 'сохранённый' }).collect();
+
+    // Раньше стартовый курсор терялся и перебор молча начинался сначала.
+    expect(mock.calls[0]?.url).toContain('cursor=%D1%81%D0%BE%D1%85%D1%80');
+  });
+
   it('сначала грузит файлы, потом публикует пост', async () => {
     const { itd, mock } = makeClient((request) =>
       request.url.includes('/files/upload')

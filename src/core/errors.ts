@@ -3,8 +3,45 @@ import type { ItdErrorCode } from '../types/enums.js';
 /** Бренд, по которому ошибки библиотеки распознаются надёжнее, чем через `instanceof`. */
 const ITD_ERROR = Symbol.for('itd.error');
 
-/** Категория ошибки. Определяет, какие поля у неё есть. */
-export type ItdErrorKind = 'api' | 'network' | 'timeout' | 'abort' | 'config';
+/**
+ * Категория ошибки. Определяет, какие поля у неё есть.
+ *
+ * Значение, а не только тип: категорию нужно с чем-то сравнивать в рантайме.
+ */
+export const ItdErrorKind = Object.freeze({
+  /** Сервер ответил статусом ≥ 400. */
+  Api: 'api',
+  /** Запрос не дошёл до сервера. */
+  Network: 'network',
+  /** Истёк таймаут запроса. */
+  Timeout: 'timeout',
+  /** Запрос отменён через `AbortSignal`. */
+  Abort: 'abort',
+  /** Некорректная конфигурация или аргументы — обнаружено до обращения к сети. */
+  Config: 'config',
+} as const);
+export type ItdErrorKind = (typeof ItdErrorKind)[keyof typeof ItdErrorKind];
+
+/**
+ * Разновидность ошибки API — то же, что класс ошибки, но в виде данных.
+ *
+ * Существует потому, что `instanceof` подводит, когда в дереве зависимостей оказались
+ * две копии пакета или смешаны сборки ESM и CJS: классы тогда разные, хотя ошибка та же.
+ * Проверки {@link isItdValidationError} и соседние опираются на это поле, а не на класс.
+ */
+export const ItdApiErrorKind = Object.freeze({
+  /** Ни одна из специализаций не подошла. */
+  Generic: 'generic',
+  Validation: 'validation',
+  Auth: 'auth',
+  Forbidden: 'forbidden',
+  NotFound: 'not_found',
+  Conflict: 'conflict',
+  RateLimit: 'rate_limit',
+  PhoneVerification: 'phone_verification',
+  Server: 'server',
+} as const);
+export type ItdApiErrorKind = (typeof ItdApiErrorKind)[keyof typeof ItdApiErrorKind];
 
 /** Ошибки по полям формы: `{ email: ['уже занят'] }`. */
 export type ItdFieldErrors = Record<string, string[]>;
@@ -89,6 +126,13 @@ export interface ItdApiErrorInit {
  * ```
  */
 export class ItdApiError extends ItdError {
+  /**
+   * Разновидность ошибки: та же информация, что и класс, но пригодная для сравнения.
+   *
+   * Позволяет разбирать ошибку через `switch`, а проверкам вроде {@link isItdAuthError} —
+   * работать даже когда в проекте оказались две копии библиотеки.
+   */
+  readonly apiKind: ItdApiErrorKind;
   /** HTTP-статус ответа. */
   readonly status: number;
   /** Строковый код ошибки, например `VALIDATION_ERROR`. */
@@ -120,9 +164,13 @@ export class ItdApiError extends ItdError {
   /** Сколько запросов осталось в окне — заголовок `x-ratelimit-remaining`. */
   readonly rateLimitRemaining: number | undefined;
 
-  constructor(init: ItdApiErrorInit) {
-    super('api', init.message);
+  /**
+   * @param apiKind разновидность; подставляется подклассами, снаружи задавать не нужно
+   */
+  constructor(init: ItdApiErrorInit, apiKind: ItdApiErrorKind = ItdApiErrorKind.Generic) {
+    super(ItdErrorKind.Api, init.message);
     this.name = 'ItdApiError';
+    this.apiKind = apiKind;
     this.status = init.status;
     this.code = init.code;
     this.detail = init.detail;
@@ -159,7 +207,7 @@ export class ItdApiError extends ItdError {
 /** `400` / `422` — данные не прошли валидацию. Подробности в {@link ItdApiError.fieldErrors}. */
 export class ItdValidationError extends ItdApiError {
   constructor(init: ItdApiErrorInit) {
-    super(init);
+    super(init, ItdApiErrorKind.Validation);
     this.name = 'ItdValidationError';
   }
 }
@@ -167,7 +215,7 @@ export class ItdValidationError extends ItdApiError {
 /** `401` — токен отсутствует, истёк или отозван. */
 export class ItdAuthError extends ItdApiError {
   constructor(init: ItdApiErrorInit) {
-    super(init);
+    super(init, ItdApiErrorKind.Auth);
     this.name = 'ItdAuthError';
   }
 }
@@ -175,7 +223,7 @@ export class ItdAuthError extends ItdApiError {
 /** `403` — доступ запрещён либо действие ограничено настройками приватности. */
 export class ItdForbiddenError extends ItdApiError {
   constructor(init: ItdApiErrorInit) {
-    super(init);
+    super(init, ItdApiErrorKind.Forbidden);
     this.name = 'ItdForbiddenError';
   }
 }
@@ -183,7 +231,7 @@ export class ItdForbiddenError extends ItdApiError {
 /** `404` — сущность не найдена. */
 export class ItdNotFoundError extends ItdApiError {
   constructor(init: ItdApiErrorInit) {
-    super(init);
+    super(init, ItdApiErrorKind.NotFound);
     this.name = 'ItdNotFoundError';
   }
 }
@@ -191,7 +239,7 @@ export class ItdNotFoundError extends ItdApiError {
 /** `409` — сущность уже существует. */
 export class ItdConflictError extends ItdApiError {
   constructor(init: ItdApiErrorInit) {
-    super(init);
+    super(init, ItdApiErrorKind.Conflict);
     this.name = 'ItdConflictError';
   }
 }
@@ -204,7 +252,7 @@ export class ItdConflictError extends ItdApiError {
  */
 export class ItdRateLimitError extends ItdApiError {
   constructor(init: ItdApiErrorInit) {
-    super(init);
+    super(init, ItdApiErrorKind.RateLimit);
     this.name = 'ItdRateLimitError';
   }
 }
@@ -219,7 +267,7 @@ export class ItdPhoneVerificationError extends ItdApiError {
   readonly verificationUrl: string | undefined;
 
   constructor(init: ItdApiErrorInit & { userId?: string | undefined }) {
-    super(init);
+    super(init, ItdApiErrorKind.PhoneVerification);
     this.name = 'ItdPhoneVerificationError';
     this.verificationUrl = init.userId
       ? `https://t.me/itd_verification_bot?start=${encodeURIComponent(init.userId)}`
@@ -230,7 +278,7 @@ export class ItdPhoneVerificationError extends ItdApiError {
 /** `5xx` — ошибка на стороне сервера. */
 export class ItdServerError extends ItdApiError {
   constructor(init: ItdApiErrorInit) {
-    super(init);
+    super(init, ItdApiErrorKind.Server);
     this.name = 'ItdServerError';
   }
 }
@@ -243,7 +291,7 @@ export class ItdNetworkError extends ItdError {
   readonly path: string;
 
   constructor(message: string, init: { method: string; path: string; cause?: unknown }) {
-    super('network', message, { cause: init.cause });
+    super(ItdErrorKind.Network, message, { cause: init.cause });
     this.name = 'ItdNetworkError';
     this.method = init.method;
     this.path = init.path;
@@ -260,7 +308,10 @@ export class ItdTimeoutError extends ItdError {
   readonly path: string;
 
   constructor(init: { timeout: number; method: string; path: string }) {
-    super('timeout', `Запрос ${init.method} ${init.path} превысил таймаут ${init.timeout} мс`);
+    super(
+      ItdErrorKind.Timeout,
+      `Запрос ${init.method} ${init.path} превысил таймаут ${init.timeout} мс`,
+    );
     this.name = 'ItdTimeoutError';
     this.timeout = init.timeout;
     this.method = init.method;
@@ -271,7 +322,7 @@ export class ItdTimeoutError extends ItdError {
 /** Запрос отменён через переданный `AbortSignal`. */
 export class ItdAbortError extends ItdError {
   constructor(message = 'Запрос отменён') {
-    super('abort', message);
+    super(ItdErrorKind.Abort, message);
     this.name = 'ItdAbortError';
   }
 }
@@ -284,7 +335,7 @@ export class ItdAbortError extends ItdError {
  */
 export class ItdConfigError extends ItdError {
   constructor(message: string) {
-    super('config', message);
+    super(ItdErrorKind.Config, message);
     this.name = 'ItdConfigError';
   }
 }
@@ -296,20 +347,56 @@ export function isItdError(value: unknown): value is ItdError {
 
 /** Ошибка, пришедшая от сервера итд.com (статус ≥ 400). */
 export function isItdApiError(value: unknown): value is ItdApiError {
-  return isItdError(value) && value.kind === 'api';
+  return isItdError(value) && value.kind === ItdErrorKind.Api;
+}
+
+/**
+ * Проверяет разновидность ошибки API.
+ *
+ * Намеренно не `instanceof`: две копии пакета в дереве зависимостей или смешение сборок
+ * ESM и CJS дают разные классы для одной и той же ошибки, и проверка по классу молча
+ * перестаёт срабатывать. Поле {@link ItdApiError.apiKind} от этого не зависит.
+ */
+function hasApiKind(value: unknown, kind: ItdApiErrorKind): boolean {
+  return isItdApiError(value) && value.apiKind === kind;
 }
 
 /** Ошибка валидации: `VALIDATION_ERROR` либо статус `400`/`422`. */
 export function isItdValidationError(value: unknown): value is ItdValidationError {
-  return isItdApiError(value) && value instanceof ItdValidationError;
+  return hasApiKind(value, ItdApiErrorKind.Validation);
 }
 
 /** Ошибка авторизации: истёкший или отозванный токен. */
 export function isItdAuthError(value: unknown): value is ItdAuthError {
-  return isItdApiError(value) && value instanceof ItdAuthError;
+  return hasApiKind(value, ItdApiErrorKind.Auth);
+}
+
+/** Доступ запрещён либо действие ограничено настройками приватности. */
+export function isItdForbiddenError(value: unknown): value is ItdForbiddenError {
+  return hasApiKind(value, ItdApiErrorKind.Forbidden);
+}
+
+/** Сущность не найдена. */
+export function isItdNotFoundError(value: unknown): value is ItdNotFoundError {
+  return hasApiKind(value, ItdApiErrorKind.NotFound);
+}
+
+/** Сущность уже существует. */
+export function isItdConflictError(value: unknown): value is ItdConflictError {
+  return hasApiKind(value, ItdApiErrorKind.Conflict);
 }
 
 /** Превышен лимит запросов. */
 export function isItdRateLimitError(value: unknown): value is ItdRateLimitError {
-  return isItdApiError(value) && value instanceof ItdRateLimitError;
+  return hasApiKind(value, ItdApiErrorKind.RateLimit);
+}
+
+/** Действие требует подтверждённого телефона. Ссылка — в `verificationUrl`. */
+export function isItdPhoneVerificationError(value: unknown): value is ItdPhoneVerificationError {
+  return hasApiKind(value, ItdApiErrorKind.PhoneVerification);
+}
+
+/** Ошибка на стороне сервера (`5xx`). */
+export function isItdServerError(value: unknown): value is ItdServerError {
+  return hasApiKind(value, ItdApiErrorKind.Server);
 }

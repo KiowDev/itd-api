@@ -30,17 +30,19 @@ export class BaseResource {
    *
    * @param mode схема пагинации эндпоинта
    * @param load загружает одну страницу для указанной позиции
+   * @param options `maxPages` и `signal`, а также `start` — позиция, с которой продолжить
    */
   protected paginate<T>(
     mode: PaginationMode,
     load: (state: PageState) => Promise<Page<T>>,
-    options?: RequestOptions & { maxPages?: number },
+    options?: RequestOptions & { maxPages?: number; start?: PageState },
   ): Paginator<T> {
     return new Paginator<T>({
       mode,
       load,
       ...(options?.maxPages !== undefined ? { maxPages: options.maxPages } : {}),
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+      ...(options?.start !== undefined ? { start: options.start } : {}),
     });
   }
 }

@@ -16,6 +16,7 @@ import {
   ItdServerError,
   ItdValidationError,
   isItdApiError,
+  isItdAuthError,
   isItdError,
   isItdValidationError,
 } from '../src/core/errors.js';
@@ -144,6 +145,18 @@ describe('createApiError', () => {
 
     expect(error).toBeInstanceOf(ItdValidationError);
     expect(error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('распознаёт разновидность ошибки без instanceof', () => {
+    const error = createApiError({ ...ctx, status: 401, body: { code: 'UNAUTHORIZED' } });
+
+    // Проверки опираются на поле apiKind, а не на класс: две копии пакета в дереве
+    // зависимостей дают разные классы для одной и той же ошибки.
+    const copy = Object.assign(Object.create(Object.getPrototypeOf({})), error);
+
+    expect(isItdAuthError(error)).toBe(true);
+    expect(isItdAuthError(copy)).toBe(true);
+    expect(isItdValidationError(error)).toBe(false);
   });
 
   it('не сохраняет в raw пароль, вернувшийся эхом', () => {

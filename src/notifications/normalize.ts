@@ -1,3 +1,4 @@
+import { asString, isRecord } from '../core/unwrap.js';
 import type { Actor, Notification } from '../types/models.js';
 import { canonicalNotificationType } from './type-map.js';
 
@@ -13,14 +14,6 @@ export interface NotificationEvent {
   unreadCount: number | undefined;
   /** Нужно ли проиграть звук. */
   sound: boolean;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function asActor(value: unknown): Actor | undefined {
@@ -97,6 +90,7 @@ export function normalizeNotification(input: unknown): Notification {
   const subjectId = asString(payload.subjectId);
   const targetId = asString(payload.targetId);
   const subjectIsComment = payload.subjectType === 'comment';
+  const clickUrl = asString(payload.clickUrl);
 
   return {
     id: asString(payload.id) ?? asString(source.id) ?? '',
@@ -110,7 +104,7 @@ export function normalizeNotification(input: unknown): Notification {
     actors: readActors(payload),
     count: typeof payload.count === 'number' && payload.count > 0 ? payload.count : 1,
     preview: asString(payload.entityPreview) ?? asString(payload.preview) ?? null,
-    ...(asString(payload.clickUrl) ? { clickUrl: asString(payload.clickUrl) as string } : {}),
+    ...(clickUrl ? { clickUrl } : {}),
     createdAt,
     updatedAt: asString(payload.updatedAt) ?? readAt ?? createdAt,
     raw: input,

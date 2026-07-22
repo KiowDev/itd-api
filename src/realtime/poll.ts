@@ -116,6 +116,10 @@ export class PollTransport implements RealtimeTransport {
 
   /** Ждёт следующего опроса, прерываясь при отмене. */
   #wait(signal: AbortSignal): Promise<void> {
+    // Подписка на уже сработавший сигнал не вызывается никогда — без этой проверки
+    // отмена, пришедшая перед самым ожиданием, стоила бы лишнего интервала.
+    if (signal.aborted) return Promise.resolve();
+
     return new Promise<void>((resolve) => {
       const timer = setTimeout(finish, this.#interval);
 

@@ -7,10 +7,24 @@ import { ItdConfigError } from './errors.js';
  * - `server` — cookie ведёт встроенный jar, заголовок `Cookie` подставляется вручную;
  * - `auto` — определяется по среде исполнения (значение по умолчанию).
  */
-export type RuntimeMode = 'auto' | 'browser' | 'server';
+export const RuntimeMode = Object.freeze({
+  /** Определяется по среде исполнения. Значение по умолчанию. */
+  Auto: 'auto',
+  /** Cookie ведёт браузер, запросы уходят с `credentials: 'include'`. */
+  Browser: 'browser',
+  /** Cookie ведёт встроенный jar, заголовок `Cookie` подставляется вручную. */
+  Server: 'server',
+} as const);
+export type RuntimeMode = (typeof RuntimeMode)[keyof typeof RuntimeMode];
 
 /** Распознанная среда исполнения. */
-export type DetectedRuntime = 'browser' | 'react-native' | 'server';
+export const DetectedRuntime = Object.freeze({
+  Browser: 'browser',
+  /** Есть `window`, но нет `document`; cookie ведёт нативный сетевой слой. */
+  ReactNative: 'react-native',
+  Server: 'server',
+} as const);
+export type DetectedRuntime = (typeof DetectedRuntime)[keyof typeof DetectedRuntime];
 
 /**
  * Определяет среду исполнения.
@@ -21,11 +35,11 @@ export type DetectedRuntime = 'browser' | 'react-native' | 'server';
  */
 export function detectRuntime(): DetectedRuntime {
   const nav = (globalThis as { navigator?: { product?: string } }).navigator;
-  if (nav?.product === 'ReactNative') return 'react-native';
+  if (nav?.product === 'ReactNative') return DetectedRuntime.ReactNative;
 
-  if (typeof document !== 'undefined') return 'browser';
+  if (typeof document !== 'undefined') return DetectedRuntime.Browser;
 
-  return 'server';
+  return DetectedRuntime.Server;
 }
 
 /**
@@ -35,9 +49,9 @@ export function detectRuntime(): DetectedRuntime {
  * в React Native cookie ведёт нативный слой.
  */
 export function shouldUseCookieJar(mode: RuntimeMode): boolean {
-  if (mode === 'browser') return false;
-  if (mode === 'server') return true;
-  return detectRuntime() === 'server';
+  if (mode === RuntimeMode.Browser) return false;
+  if (mode === RuntimeMode.Server) return true;
+  return detectRuntime() === DetectedRuntime.Server;
 }
 
 /**
@@ -47,9 +61,9 @@ export function shouldUseCookieJar(mode: RuntimeMode): boolean {
  * Требует настроенного CORS на стороне итд.com — если его нет, укажите свой прокси в `baseUrl`.
  */
 export function shouldSendCredentials(mode: RuntimeMode): boolean {
-  if (mode === 'browser') return true;
-  if (mode === 'server') return false;
-  return detectRuntime() === 'browser';
+  if (mode === RuntimeMode.Browser) return true;
+  if (mode === RuntimeMode.Server) return false;
+  return detectRuntime() === DetectedRuntime.Browser;
 }
 
 /**
@@ -71,6 +85,23 @@ export function resolveFetch(custom?: typeof fetch): typeof fetch {
     'В этой среде нет глобального fetch. Обновитесь до Node 18+ либо передайте свою ' +
       'реализацию через опцию fetch.',
   );
+}
+
+/**
+ * Проверки бинарных типов, безопасные в любой среде.
+ *
+ * Обычный `instanceof` здесь недостаточен: конструктора может не быть вовсе, и тогда
+ * проверка падает с `ReferenceError`, а не возвращает `false`. `Blob` есть в Node с 18.0,
+ * но `File` стал глобальным только в Node 20 — при заявленной поддержке Node 18 голый
+ * `instanceof File` ронял бы любую загрузку.
+ */
+export function isBlob(value: unknown): value is Blob {
+  return typeof Blob !== 'undefined' && value instanceof Blob;
+}
+
+/** @see {@link isBlob} */
+export function isFile(value: unknown): value is File {
+  return typeof File !== 'undefined' && value instanceof File;
 }
 
 /** Доступно ли потоковое чтение тела ответа — от этого зависит, сработает ли SSE. */

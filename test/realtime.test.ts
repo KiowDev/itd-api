@@ -505,6 +505,61 @@ describe('поток: жизненный цикл', () => {
   });
 });
 
+describe('поток: защита от двойного подключения', () => {
+  it('два параллельных connect() поднимают одно соединение', async () => {
+    const transport = new TestTransport();
+    // syncCount: true заставляет connect() ждать счётчик — именно в этом ожидании
+    // второй вызов раньше успевал проскочить проверку и поднять второе соединение.
+    const stream = makeStream(
+      transport,
+      { fetchUnreadCount: () => Promise.resolve(0) },
+      { syncCount: true },
+    );
+
+    await Promise.all([stream.connect(), stream.connect()]);
+
+    expect(transport.connects).toBe(1);
+    stream.disconnect();
+  });
+
+  it('disconnect() во время подключения отменяет его', async () => {
+    const transport = new TestTransport();
+    let releaseCount: (() => void) | undefined;
+    const stream = makeStream(
+      transport,
+      {
+        fetchUnreadCount: () =>
+          new Promise<number>((resolve) => {
+            releaseCount = () => resolve(0);
+          }),
+      },
+      { syncCount: true },
+    );
+
+    const connecting = stream.connect();
+    stream.disconnect();
+    releaseCount?.();
+    await connecting;
+
+    expect(transport.connects).toBe(0);
+  });
+
+  it('ready отдаёт userId только строкой', async () => {
+    const transport = new TestTransport();
+    const stream = makeStream(transport);
+    const seen: Array<string | undefined> = [];
+    stream.on('ready', ({ userId }) => seen.push(userId));
+
+    await stream.connect();
+    transport.emit({ name: 'connected', data: { userId: null } });
+    transport.emit({ name: 'connected', data: { userId: 'u1' } });
+
+    // Раньше здесь оказывалась строка 'null', неотличимая от настоящего идентификатора.
+    expect(seen).toEqual([undefined, 'u1']);
+    stream.disconnect();
+  });
+});
+
 describe('выбор транспорта', () => {
   it('по умолчанию берёт поток событий там, где среда его поддерживает', () => {
     const stream = new ItdRealtime({

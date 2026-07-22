@@ -1,6 +1,6 @@
 import { type CommentInput, resolveComment } from '../builders/comment.js';
 import type { HttpClient } from '../core/http.js';
-import { type Page, type Paginator, readPagedPage } from '../core/pagination.js';
+import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { encodePathSegment } from '../core/url.js';
 import type { Comment, LikeResult } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
@@ -52,7 +52,7 @@ export class CommentsResource extends BaseResource {
     const path = `/api/comments/${encodePathSegment(commentId, 'commentId')}/replies`;
 
     return this.paginate<Comment>(
-      'page',
+      PaginationMode.Page,
       async (state) => {
         const body = await this.http.request({
           method: 'GET',
@@ -62,7 +62,7 @@ export class CommentsResource extends BaseResource {
         });
         return readPagedPage<Comment>(body, 'replies');
       },
-      params,
+      { ...params, ...(params.page !== undefined ? { start: { page: params.page } } : {}) },
     );
   }
 

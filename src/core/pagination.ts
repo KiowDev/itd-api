@@ -32,7 +32,15 @@ export interface Page<T> {
 }
 
 /** Схема пагинации эндпоинта. */
-export type PaginationMode = 'cursor' | 'page' | 'offset';
+export const PaginationMode = Object.freeze({
+  /** Следующая страница запрашивается непрозрачным курсором. */
+  Cursor: 'cursor',
+  /** Следующая страница запрашивается номером. */
+  Page: 'page',
+  /** Следующая страница запрашивается смещением от начала списка. */
+  Offset: 'offset',
+} as const);
+export type PaginationMode = (typeof PaginationMode)[keyof typeof PaginationMode];
 
 /** Применяет преобразование к элементам страницы, сохраняя сведения о пагинации. */
 export function mapPage<T, R>(page: Page<T>, map: (item: T) => R): Page<R> {
@@ -51,6 +59,13 @@ export interface PaginatorOptions<T> {
   mode: PaginationMode;
   /** Загружает одну страницу для указанной позиции. */
   load: (state: PageState) => Promise<Page<T>>;
+  /**
+   * С какой позиции начать. По умолчанию с начала списка.
+   *
+   * Нужно, чтобы перебор можно было продолжить с сохранённого курсора, а не только
+   * начать заново.
+   */
+  start?: PageState | undefined;
   /**
    * Предохранитель от бесконечного перебора. По умолчанию 1000.
    *
@@ -80,7 +95,8 @@ function readItems<T>(body: unknown, fields: readonly string[]): T[] {
   }
 
   // Пустой список тоже валиден: возвращаем по первому известному имени.
-  return fields.length > 0 ? pickArray<T>(body, fields[0] as string) : [];
+  const primary = fields[0];
+  return primary === undefined ? [] : pickArray<T>(body, primary);
 }
 
 /**
@@ -190,6 +206,10 @@ export function readOffsetPage<T>(body: unknown, field: string, offset: number):
  * Скрывает различия трёх схем пагинации: перебор элементов, страниц и сбор в массив
  * выглядят одинаково независимо от эндпоинта.
  *
+ * **Одноразовый.** Позиция хранится внутри, поэтому повторный перебор того же объекта
+ * ничего не вернёт: он продолжится с места, где закончился прошлый. Нужен второй проход —
+ * возьмите новый перебор у того же метода ресурса.
+ *
  * @example Перебор элементов
  * ```ts
  * for await (const post of itd.posts.iterate({ tab: 'following' })) {
@@ -213,13 +233,14 @@ export class Paginator<T> implements AsyncIterable<T> {
   readonly #options: PaginatorOptions<T>;
   readonly #maxPages: number;
 
-  #state: PageState = {};
+  #state: PageState;
   #finished = false;
   #pagesLoaded = 0;
 
   constructor(options: PaginatorOptions<T>) {
     this.#options = options;
     this.#maxPages = options.maxPages ?? 1000;
+    this.#state = options.start ?? {};
   }
 
   /**
@@ -296,7 +317,7 @@ export class Paginator<T> implements AsyncIterable<T> {
       return previous;
     }
 
-    if (this.#options.mode === 'cursor') {
+    if (this.#options.mode === PaginationMode.Cursor) {
       const cursor = page.nextCursor ?? undefined;
 
       if (!cursor || cursor === previous.cursor) {
@@ -307,7 +328,7 @@ export class Paginator<T> implements AsyncIterable<T> {
       return { cursor };
     }
 
-    if (this.#options.mode === 'page') {
+    if (this.#options.mode === PaginationMode.Page) {
       return { page: (previous.page ?? 1) + 1 };
     }
 

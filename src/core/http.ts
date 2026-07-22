@@ -3,6 +3,7 @@ import type { ResolvedConfig } from './config.js';
 import { createApiError, readRateLimit } from './error-factory.js';
 import { ItdAbortError, ItdConfigError, ItdNetworkError, ItdTimeoutError } from './errors.js';
 import { redactBody, redactHeaders } from './redact.js';
+import { isBlob } from './runtime.js';
 import { unwrapData } from './unwrap.js';
 import { buildQuery, joinUrl } from './url.js';
 
@@ -78,7 +79,7 @@ function isRawBody(body: unknown): body is BodyInit {
   if (typeof body !== 'object' || body === null) return typeof body === 'string';
   return (
     (typeof FormData !== 'undefined' && body instanceof FormData) ||
-    (typeof Blob !== 'undefined' && body instanceof Blob) ||
+    isBlob(body) ||
     (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) ||
     (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) ||
     body instanceof ArrayBuffer ||

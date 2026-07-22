@@ -1,6 +1,7 @@
 import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/http.js';
 import { assertAllowedMime, mimeFromFilename } from '../core/mime.js';
+import { isBlob, isFile } from '../core/runtime.js';
 import { encodePathSegment } from '../core/url.js';
 import type { RequestOptions } from '../types/options.js';
 import type { FileInput } from '../types/params.js';
@@ -84,7 +85,7 @@ export class FilesResource extends BaseResource {
    * ```
    */
   async upload(input: FileInput, options: UploadOptions = {}): Promise<UploadedFile> {
-    const prepared = await this.prepare(input, options);
+    const prepared = await this.#prepare(input, options);
 
     const form = new FormData();
     form.set('file', prepared.blob, prepared.filename);
@@ -143,16 +144,16 @@ export class FilesResource extends BaseResource {
   }
 
   /** Приводит любой поддерживаемый вход к `Blob` с именем и проверенным типом. */
-  private async prepare(input: FileInput, options: UploadOptions): Promise<PreparedFile> {
+  async #prepare(input: FileInput, options: UploadOptions): Promise<PreparedFile> {
     const { data, filename, contentType } = await this.#normalize(input, options);
 
     const type =
-      contentType ?? ((data instanceof Blob ? data.type : undefined) || mimeFromFilename(filename));
+      contentType ?? ((isBlob(data) ? data.type : undefined) || mimeFromFilename(filename));
 
     if (options.validateMime !== false) assertAllowedMime(type || undefined, filename);
 
     const blob =
-      data instanceof Blob && (!type || data.type === type)
+      isBlob(data) && (!type || data.type === type)
         ? data
         : new Blob([data as BlobPart], { type: type ?? '' });
 
@@ -179,11 +180,10 @@ export class FilesResource extends BaseResource {
       };
     }
 
-    if (input instanceof ArrayBuffer || ArrayBuffer.isView(input) || input instanceof Blob) {
-      const fallbackName =
-        input instanceof File
-          ? input.name
-          : (options.filename ?? this.#nameFromMime(options.contentType));
+    if (input instanceof ArrayBuffer || ArrayBuffer.isView(input) || isBlob(input)) {
+      const fallbackName = isFile(input)
+        ? input.name
+        : (options.filename ?? this.#nameFromMime(options.contentType));
 
       return {
         data: input as Blob | ArrayBuffer | Uint8Array,

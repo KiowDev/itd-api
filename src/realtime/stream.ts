@@ -1,5 +1,6 @@
 import { Emitter, type Listener, type Unsubscribe } from '../core/emitter.js';
 import { supportsStreamingBody } from '../core/runtime.js';
+import { pickString } from '../core/unwrap.js';
 import {
   type NotificationEvent,
   readNotificationEvent,
@@ -45,7 +46,16 @@ export interface RealtimeEvents {
 }
 
 /** Способ получения событий. */
-export type RealtimeTransportKind = 'auto' | 'sse' | 'poll';
+export const RealtimeTransportKind = Object.freeze({
+  /** Поток событий, если среда умеет читать тело по частям, иначе опрос. */
+  Auto: 'auto',
+  /** Поток `text/event-stream`. */
+  Sse: 'sse',
+  /** Периодический опрос REST. */
+  Poll: 'poll',
+} as const);
+export type RealtimeTransportKind =
+  (typeof RealtimeTransportKind)[keyof typeof RealtimeTransportKind];
 
 /** Настройки потока уведомлений. */
 export interface RealtimeOptions extends ReconnectOptions {
@@ -124,6 +134,15 @@ export class ItdRealtime {
   readonly #maxAttempts: number;
 
   #controller: AbortController | undefined;
+  /**
+   * Хочет ли вызывающий код, чтобы соединение было живо.
+   *
+   * Отдельно от `#controller`, потому что тот появляется только после `await` внутри
+   * {@link connect}. Без этого флага два вызова подряд проскочили бы проверку оба
+   * и подняли два соединения, а `disconnect()` во время ожидания счётчика не был бы
+   * замечен и соединение поднялось бы уже после отмены.
+   */
+  #wanted = false;
   #status: RealtimeStatus = RealtimeStatus.Disconnected;
   #attempt = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -168,7 +187,8 @@ export class ItdRealtime {
    * Возвращает управление сразу после запуска: соединение живёт в фоне.
    */
   async connect(): Promise<void> {
-    if (this.#controller) return;
+    if (this.#wanted) return;
+    this.#wanted = true;
 
     this.#attachEnvironmentListeners();
 
@@ -181,11 +201,14 @@ export class ItdRealtime {
       }
     }
 
-    this.#run();
+    // Пока ждали счётчик, могли успеть вызвать disconnect().
+    if (this.#wanted) this.#run();
   }
 
   /** Закрывает соединение и отменяет запланированные попытки. */
   disconnect(): void {
+    this.#wanted = false;
+
     if (this.#timer !== undefined) {
       clearTimeout(this.#timer);
       this.#timer = undefined;
@@ -207,11 +230,14 @@ export class ItdRealtime {
   }
 
   #createTransport(): RealtimeTransport {
-    const kind = this.#options.transport ?? 'auto';
+    const kind = this.#options.transport ?? RealtimeTransportKind.Auto;
 
     if (typeof kind === 'object') return kind;
 
-    if (kind === 'poll' || (kind === 'auto' && !supportsStreamingBody())) {
+    if (
+      kind === RealtimeTransportKind.Poll ||
+      (kind === RealtimeTransportKind.Auto && !supportsStreamingBody())
+    ) {
       return new PollTransport({
         ...(this.#options.pollInterval !== undefined
           ? { interval: this.#options.pollInterval }
@@ -228,6 +254,10 @@ export class ItdRealtime {
 
   /** Запускает попытку подключения; повторы планирует сам. */
   #run(): void {
+    // Страховка от потерянного соединения: если предыдущее ещё живо, закрываем его,
+    // иначе его AbortController остался бы недостижимым и поток — незакрытым.
+    this.#controller?.abort();
+
     const controller = new AbortController();
     this.#controller = controller;
     this.#setStatus(RealtimeStatus.Connecting);
@@ -263,12 +293,8 @@ export class ItdRealtime {
     this.#emitter.emit('message', { name, data });
 
     if (name === 'connected') {
-      const userId =
-        typeof data === 'object' && data !== null && 'userId' in data
-          ? String((data as { userId: unknown }).userId)
-          : undefined;
-
-      this.#emitter.emit('ready', { userId });
+      // Строго строка: `String(null)` дал бы подписчику осмысленно выглядящее «null».
+      this.#emitter.emit('ready', { userId: pickString(data, 'userId') });
       return;
     }
 
