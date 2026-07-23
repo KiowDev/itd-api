@@ -1,5 +1,5 @@
 /**
- * `itd-api-crypto` — скрытые сообщения в постах, комментариях и профилях итд.com.
+ * `@itd-api/crypto` — скрытые сообщения в постах, комментариях и профилях итд.com.
  *
  * Плагин к [`itd-api`](https://github.com/KiowDev/itd-api). Подключается через `itd.use()`,
  * работает на уровне транспорта: при отправке прогоняет текст через шифр, при получении
@@ -8,7 +8,7 @@
  * @example
  * ```ts
  * import { ItdClient } from 'itd-api';
- * import { crypt } from 'itd-api-crypto';
+ * import { crypt } from '@itd-api/crypto';
  *
  * const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
  * itd.use(crypt());

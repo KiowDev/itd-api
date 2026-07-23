@@ -38,7 +38,7 @@ type CryptRequest = RawRequestOptions & {
  * @example
  * ```ts
  * import { ItdClient } from 'itd-api';
- * import { crypt } from 'itd-api-crypto';
+ * import { crypt } from '@itd-api/crypto';
  *
  * const itd = new ItdClient({ auth: token });
  * itd.use(crypt());

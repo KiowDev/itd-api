@@ -1,5 +1,5 @@
 {
-  "name": "itd-api-turnstile",
+  "name": "@itd-api/turnstile",
   "version": "0.0.1",
   "description": "Получение токена Cloudflare Turnstile для входа в itd-api через локальный браузер",
   "repository": {

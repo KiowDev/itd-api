@@ -512,7 +512,7 @@ export class AuthManager {
       'Вход по email и паролю требует токен капчи Cloudflare Turnstile: без него сервер ' +
         'отвечает 422. Передайте auth.getTurnstileToken (источник свежего токена) либо ' +
         'разовый auth.turnstileToken. Ключ виджета — TURNSTILE_SITE_KEY. В Node токен умеет ' +
-        'добывать отдельный пакет: npm i itd-api-turnstile, затем ' +
+        'добывать отдельный пакет: npm i @itd-api/turnstile, затем ' +
         'getTurnstileToken: createTurnstileSolver().',
     );
   }

@@ -1,5 +1,5 @@
 /**
- * `itd-api-proxy` — HTTP/HTTPS- и SOCKS5-прокси для `itd-api`.
+ * `@itd-api/proxy` — HTTP/HTTPS- и SOCKS5-прокси для `itd-api`.
  *
  * Собирает `fetch`, направляющий запросы через прокси; передаётся клиенту опцией `fetch`.
  * Только для Node, Bun и Deno: использует диспетчеры undici и `node:tls`.
@@ -7,7 +7,7 @@
  * @example
  * ```ts
  * import { ItdClient } from 'itd-api';
- * import { proxyFetch } from 'itd-api-proxy';
+ * import { proxyFetch } from '@itd-api/proxy';
  *
  * const itd = new ItdClient({
  *   fetch: proxyFetch('socks5://127.0.0.1:1080'),

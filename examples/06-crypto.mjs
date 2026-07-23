@@ -6,7 +6,7 @@
  *
  * Плагин лежит в отдельном пакете — основному он не нужен:
  *
- *   npm i itd-api-crypto
+ *   npm i @itd-api/crypto
  *
  * Пример публикует пост, читает его обратно **с сервера** и сравнивает результат.
  * Смысл именно в обратном чтении: сервер итд.com нормализует текст поста при сохранении,
@@ -14,10 +14,10 @@
  */
 
 import { ItdClient, isItdApiError } from 'itd-api';
-import { crypt, stripInvisible } from 'itd-api-crypto';
+import { crypt, stripInvisible } from '@itd-api/crypto';
 
 const COVER = 'обычный пост, ничего необычного';
-const SECRET = 'секретный текст: 🦎 привет из itd-api-crypto';
+const SECRET = 'секретный текст: 🦎 привет из @itd-api/crypto';
 
 const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
 

@@ -250,7 +250,7 @@ export class ItdClient {
    *
    * @example
    * ```ts
-   * import { crypt } from 'itd-api-crypto';
+   * import { crypt } from '@itd-api/crypto';
    *
    * itd.use(crypt());
    * await itd.posts.create({ content: 'секрет' }, { encrypt: 'invis' });

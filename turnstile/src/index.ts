@@ -1,5 +1,5 @@
 /**
- * `itd-api-turnstile` — токен Cloudflare Turnstile для входа по логину и паролю.
+ * `@itd-api/turnstile` — токен Cloudflare Turnstile для входа по логину и паролю.
  *
  * Вход на итд.com требует токен капчи, а получить его можно только в браузере. Этот пакет
  * поднимает браузер, берёт токен и отдаёт функцию, которая подставляется в `auth`
@@ -12,7 +12,7 @@
  * @example
  * ```ts
  * import { ItdClient, FileTokenStorage } from 'itd-api/node';
- * import { createTurnstileSolver } from 'itd-api-turnstile';
+ * import { createTurnstileSolver } from '@itd-api/turnstile';
  *
  * const itd = new ItdClient({
  *   storage: new FileTokenStorage('./.itd-session.json'),

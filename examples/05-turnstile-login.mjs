@@ -5,10 +5,10 @@
  *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret node examples/05-turnstile-login.mjs
  *
  * Отличие от примера 02 — там токен капчи приходится добывать руками и передавать
- * в ITD_TURNSTILE. Здесь его берёт `itd-api-turnstile`: поднимает браузер, забирает токен
+ * в ITD_TURNSTILE. Здесь его берёт `@itd-api/turnstile`: поднимает браузер, забирает токен
  * и закрывается. Установите отдельно, основному пакету он не нужен:
  *
- *   npm i itd-api-turnstile playwright
+ *   npm i @itd-api/turnstile playwright
  *   npx playwright install chromium
  *
  * Браузер открывается с окном — так виджет проходится надёжнее. На сервере без графической
@@ -16,7 +16,7 @@
  */
 
 import { FileTokenStorage, ItdClient, isItdApiError } from 'itd-api/node';
-import { createTurnstileSolver } from 'itd-api-turnstile';
+import { createTurnstileSolver } from '@itd-api/turnstile';
 
 const itd = new ItdClient({
   // Сессия переживает перезапуск, поэтому браузер поднимется только в первый раз —

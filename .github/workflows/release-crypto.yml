@@ -1,9 +1,9 @@
-name: Публикация itd-api-crypto в npm
+name: Публикация @itd-api/crypto в npm
 
 # Запускается при пуше тега вида crypto-v1.2.3.
 # Порядок выпуска:
-#   npm version patch --workspace itd-api-crypto --no-git-tag-version
-#   git commit -am "itd-api-crypto 0.0.2"
+#   npm version patch --workspace @itd-api/crypto --no-git-tag-version
+#   git commit -am "@itd-api/crypto 0.0.2"
 #   git tag crypto-v0.0.2
 #   git push --follow-tags
 on:
@@ -67,4 +67,4 @@ jobs:
       # prepublishOnly пакета сам прогонит типы, тесты, сборку и check:pack — он же
       # и создаёт dist, которого в репозитории нет.
       - name: Публикация
-        run: npm publish --workspace itd-api-crypto
+        run: npm publish --workspace @itd-api/crypto

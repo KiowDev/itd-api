@@ -10,7 +10,7 @@
  * дело дошло, то есть капчу сервер принял. Отказ по самой капче выглядит иначе.
  */
 
-import { solveTurnstile } from 'itd-api-turnstile';
+import { solveTurnstile } from '@itd-api/turnstile';
 
 const BASE_URL = 'https://xn--d1ah4a.com';
 

@@ -6,8 +6,8 @@
 | [`02-bot-with-session.mjs`](./02-bot-with-session.mjs) | бот на Node: вход, сохранение сессии, публикация с опросом, обход ленты |
 | [`03-realtime-notifications.mjs`](./03-realtime-notifications.mjs) | поток уведомлений с автоматическим переподключением |
 | [`04-typescript.ts`](./04-typescript.ts) | типы, билдеры, пагинация, разбор ошибок |
-| [`05-turnstile-login.mjs`](./05-turnstile-login.mjs) | вход без ручной капчи — токен добывает `itd-api-turnstile` |
-| [`06-crypto.mjs`](./06-crypto.mjs) | скрытое сообщение в посте — плагин `itd-api-crypto` |
+| [`05-turnstile-login.mjs`](./05-turnstile-login.mjs) | вход без ручной капчи — токен добывает `@itd-api/turnstile` |
+| [`06-crypto.mjs`](./06-crypto.mjs) | скрытое сообщение в посте — плагин `@itd-api/crypto` |
 
 ## Как запустить
 

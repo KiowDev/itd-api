@@ -1,9 +1,9 @@
-name: Публикация itd-api-proxy в npm
+name: Публикация @itd-api/proxy в npm
 
 # Запускается при пуше тега вида proxy-v1.2.3.
 # Порядок выпуска:
-#   npm version patch --workspace itd-api-proxy --no-git-tag-version
-#   git commit -am "itd-api-proxy 0.0.2"
+#   npm version patch --workspace @itd-api/proxy --no-git-tag-version
+#   git commit -am "@itd-api/proxy 0.0.2"
 #   git tag proxy-v0.0.2
 #   git push --follow-tags
 on:
@@ -67,4 +67,4 @@ jobs:
       # prepublishOnly пакета сам прогонит типы, тесты, сборку и check:pack — он же
       # и создаёт dist, которого в репозитории нет.
       - name: Публикация
-        run: npm publish --workspace itd-api-proxy
+        run: npm publish --workspace @itd-api/proxy

@@ -1,5 +1,5 @@
 {
-  "name": "itd-api-proxy",
+  "name": "@itd-api/proxy",
   "version": "0.0.1",
   "description": "HTTP/HTTPS- и SOCKS5-прокси для itd-api: готовый fetch через прокси",
   "repository": {

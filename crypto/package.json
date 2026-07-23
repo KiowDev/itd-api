@@ -1,5 +1,5 @@
 {
-  "name": "itd-api-crypto",
+  "name": "@itd-api/crypto",
   "version": "0.0.1",
   "description": "Скрытые сообщения в постах и профилях итд.com: плагин шифрования для itd-api",
   "repository": {

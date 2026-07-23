@@ -289,7 +289,7 @@ export async function solveTurnstile(options: TurnstileOptions = {}): Promise<st
  * @example
  * ```ts
  * import { ItdClient, FileTokenStorage } from 'itd-api/node';
- * import { createTurnstileSolver } from 'itd-api-turnstile';
+ * import { createTurnstileSolver } from '@itd-api/turnstile';
  *
  * const itd = new ItdClient({
  *   storage: new FileTokenStorage('./.itd-session.json'),

@@ -1,4 +1,4 @@
-# itd-api-crypto
+# @itd-api/crypto
 
 Скрытые сообщения в постах, комментариях и профилях итд.com — плагин к
 [`itd-api`](https://github.com/KiowDev/itd-api).
@@ -13,7 +13,7 @@
 ## Установка
 
 ```sh
-npm i itd-api itd-api-crypto
+npm i itd-api @itd-api/crypto
 ```
 
 Нужен `itd-api` версии не ниже 0.0.6 — в ней появился `itd.use()`.
@@ -22,7 +22,7 @@ npm i itd-api itd-api-crypto
 
 ```ts
 import { ItdClient } from 'itd-api';
-import { crypt } from 'itd-api-crypto';
+import { crypt } from '@itd-api/crypto';
 
 const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
 itd.use(crypt());
@@ -107,7 +107,7 @@ post.secret;  // { cipher: 'beecrypt', field: 'content', text: 'секрет' }
 ### Настройки
 
 ```ts
-import { crypt, invisible } from 'itd-api-crypto';
+import { crypt, invisible } from '@itd-api/crypto';
 
 itd.use(
   crypt({
@@ -123,7 +123,7 @@ await itd.posts.list({ decrypt: false });
 Читать `secret` можно и без дополнений типов — помощниками `secretOf` и `secretsOf`:
 
 ```ts
-import { secretOf } from 'itd-api-crypto';
+import { secretOf } from '@itd-api/crypto';
 
 const text = secretOf(post)?.text;
 ```
@@ -149,7 +149,7 @@ const text = secretOf(post)?.text;
 Алгоритм доступен и напрямую, без клиента:
 
 ```ts
-import { encodeInvisible, decodeInvisible, stripInvisible } from 'itd-api-crypto';
+import { encodeInvisible, decodeInvisible, stripInvisible } from '@itd-api/crypto';
 
 const content = `обычный текст${encodeInvisible('секрет')}`;
 decodeInvisible(content);  // 'секрет'
@@ -162,7 +162,7 @@ stripInvisible(content);   // 'обычный текст'
 заменяется буквой: `00` → `ж`, `01` → `ъ`, `10` → `Ж`, `11` → `Ъ`.
 
 ```ts
-import { encodeBeeCrypt, decodeBeeCrypt } from 'itd-api-crypto';
+import { encodeBeeCrypt, decodeBeeCrypt } from '@itd-api/crypto';
 
 encodeBeeCrypt('A');  // 'ъъжъъъжъжЪЪъжЪЪъ'
 ```
@@ -180,7 +180,7 @@ encodeBeeCrypt('A');  // 'ъъжъъъжъжЪЪъжЪЪъ'
 Контракт из двух методов — ни о запросах, ни о моделях шифр не знает:
 
 ```ts
-import { crypt, type Cipher } from 'itd-api-crypto';
+import { crypt, type Cipher } from '@itd-api/crypto';
 
 const base64: Cipher = {
   name: 'base64',
@@ -204,7 +204,7 @@ await itd.posts.create({ content: 'секрет' }, { encrypt: 'base64' });
 известных:
 
 ```ts
-import { CipherName } from 'itd-api-crypto';
+import { CipherName } from '@itd-api/crypto';
 
 await itd.posts.create({ content: 'секрет' }, { encrypt: CipherName.Invisible });
 ```

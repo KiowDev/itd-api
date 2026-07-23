@@ -14,7 +14,7 @@ import { formatHost, type ParsedProxy, parseProxy } from './parse.js';
  * @example
  * ```ts
  * import { setGlobalDispatcher } from 'undici';
- * import { createProxyDispatcher } from 'itd-api-proxy';
+ * import { createProxyDispatcher } from '@itd-api/proxy';
  *
  * setGlobalDispatcher(createProxyDispatcher('socks5://127.0.0.1:1080'));
  * ```

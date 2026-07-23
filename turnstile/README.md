@@ -1,4 +1,4 @@
-# itd-api-turnstile
+# @itd-api/turnstile
 
 Токен Cloudflare Turnstile для входа по логину и паролю в [`itd-api`](https://github.com/KiowDev/itd-api).
 
@@ -12,7 +12,7 @@
 ## Установка
 
 ```sh
-npm i itd-api-turnstile playwright
+npm i @itd-api/turnstile playwright
 npx playwright install chromium
 ```
 
@@ -23,7 +23,7 @@ npx playwright install chromium
 
 ```ts
 import { ItdClient, FileTokenStorage } from 'itd-api/node';
-import { createTurnstileSolver } from 'itd-api-turnstile';
+import { createTurnstileSolver } from '@itd-api/turnstile';
 
 const itd = new ItdClient({
   storage: new FileTokenStorage('./.itd-session.json'),
@@ -42,7 +42,7 @@ const itd = new ItdClient({
 Разовый вызов без клиента:
 
 ```ts
-import { solveTurnstile } from 'itd-api-turnstile';
+import { solveTurnstile } from '@itd-api/turnstile';
 
 const token = await solveTurnstile();
 ```
@@ -84,8 +84,8 @@ xvfb-run -a node bot.js
 Учётные данные не нужны:
 
 ```sh
-npm run smoke --workspace itd-api-turnstile             # добыть токен
-npm run smoke --workspace itd-api-turnstile -- --verify # и убедиться, что сервер его принимает
+npm run smoke --workspace @itd-api/turnstile             # добыть токен
+npm run smoke --workspace @itd-api/turnstile -- --verify # и убедиться, что сервер его принимает
 ```
 
 Второй шаг отправляет один запрос входа с заведомо несуществующим адресом. Ответ

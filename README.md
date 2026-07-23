@@ -133,17 +133,17 @@ new ItdClient({
 });
 ```
 
-В Node таким источником может быть [`itd-api-turnstile`](./turnstile) — отдельный пакет,
+В Node таким источником может быть [`@itd-api/turnstile`](./turnstile) — отдельный пакет,
 который поднимает браузер и приносит токен. Отдельный он намеренно: тянет за собой Playwright
 и требует графической оболочки, а нужен далеко не всем — с сохранённой сессией до входа
 по паролю дело обычно вообще не доходит.
 
 ```sh
-npm i itd-api-turnstile playwright
+npm i @itd-api/turnstile playwright
 ```
 
 ```ts
-import { createTurnstileSolver } from 'itd-api-turnstile';
+import { createTurnstileSolver } from '@itd-api/turnstile';
 
 new ItdClient({
   storage: new FileTokenStorage('./.itd-session.json'),
@@ -459,15 +459,15 @@ Deno и React Native ограничение не действует.
 ### Прокси (HTTP/SOCKS5)
 
 Чтобы направить запросы клиента через прокси, возьмите `fetch` из пакета
-[`itd-api-proxy`](./proxy):
+[`@itd-api/proxy`](./proxy):
 
 ```sh
-npm i itd-api-proxy
+npm i @itd-api/proxy
 ```
 
 ```ts
 import { ItdClient } from 'itd-api';
-import { proxyFetch } from 'itd-api-proxy';
+import { proxyFetch } from '@itd-api/proxy';
 
 const itd = new ItdClient({ fetch: proxyFetch('socks5://127.0.0.1:1080') });
 // http://…, https://…, socks5://… — можно с user:pass@
@@ -485,19 +485,19 @@ const itd = new ItdClient({ fetch: proxyFetch('socks5://127.0.0.1:1080') });
 
 ```ts
 import { ItdClient } from 'itd-api';
-import { crypt } from 'itd-api-crypto';
+import { crypt } from '@itd-api/crypto';
 
 const itd = new ItdClient({ auth: token });
 itd.use(crypt());
 ```
 
-### `itd-api-crypto` — скрытые сообщения
+### `@itd-api/crypto` — скрытые сообщения
 
 [Отдельный пакет](./crypto): прячет текст в невидимых символах внутри обычного поста.
 Читатель видит обложку, а тот, у кого подключён плагин, получает спрятанное отдельным полем.
 
 ```sh
-npm i itd-api-crypto
+npm i @itd-api/crypto
 ```
 
 ```ts

@@ -1,18 +1,18 @@
-# itd-api-proxy
+# @itd-api/proxy
 
 HTTP/HTTPS- и SOCKS5-прокси для [`itd-api`](https://www.npmjs.com/package/itd-api).
 
 Направляет все запросы клиента через прокси: `fetch` из этого пакета передаётся клиенту опцией `fetch`. Только для Node, Bun и Deno.
 
 ```bash
-npm install itd-api-proxy
+npm install @itd-api/proxy
 ```
 
 ## Быстрый старт
 
 ```ts
 import { ItdClient } from 'itd-api';
-import { proxyFetch } from 'itd-api-proxy';
+import { proxyFetch } from '@itd-api/proxy';
 
 const itd = new ItdClient({
   fetch: proxyFetch('socks5://127.0.0.1:1080'),
@@ -46,7 +46,7 @@ proxyFetch('socks5://user:p%40ss@127.0.0.1:1080'); // p@ss
 
 ```ts
 import { setGlobalDispatcher } from 'undici';
-import { createProxyDispatcher } from 'itd-api-proxy';
+import { createProxyDispatcher } from '@itd-api/proxy';
 
 setGlobalDispatcher(createProxyDispatcher('socks5://127.0.0.1:1080'));
 ```
