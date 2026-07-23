@@ -4,8 +4,17 @@ import { resolveConfig } from '../src/core/config.js';
 import { CookieJar } from '../src/core/cookies.js';
 import { ItdAuthError, ItdConfigError } from '../src/core/errors.js';
 import { HttpClient } from '../src/core/http.js';
+import {
+  composePipeline,
+  createAuthMiddleware,
+  createPluginsMiddleware,
+  createRetryMiddleware,
+} from '../src/core/middleware.js';
+import type { RequestHandler } from '../src/core/pipeline.js';
+import { PluginRegistry } from '../src/core/plugins.js';
 import { MemoryTokenStorage } from '../src/core/storage.js';
-import type { ItdClientOptions } from '../src/types/options.js';
+import { Transport } from '../src/core/transport.js';
+import type { ItdClientOptions, RetryOptions } from '../src/types/options.js';
 import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';
 
 /** Собирает связку транспорт + авторизация так же, как это делает ItdClient. */
@@ -22,18 +31,59 @@ function makeAuth(handler: MockHandler | Response[], options: ItdClientOptions =
   });
 
   const jar = new CookieJar();
-  const http = new HttpClient(config);
-  const auth = new AuthManager(config, http, jar);
+  let auth!: AuthManager;
 
-  http.setCollaborators({
-    getAuthHeaders: () => auth.getAuthHeaders(),
+  const transport = new Transport(config, {
+    cookies: config.useCookieJar ? jar : undefined,
     getDeviceId: () => auth.getDeviceId(),
-    onUnauthorized: () => auth.onUnauthorized(),
-    getCookieHeader: (url) => jar.getHeader(url),
-    saveCookies: (url, response) => jar.setFromResponse(url, response),
+    onRateLimit: undefined,
   });
 
-  return { auth, http, jar, mock, config };
+  const plugins = new PluginRegistry();
+  const pluginsLayer = createPluginsMiddleware(plugins);
+  const retriesLayer = createRetryMiddleware({
+    retry: config.retry,
+    rateLimitDelays: [],
+    pauseQueue: undefined,
+    hooks: config.hooks,
+    logger: config.logger,
+    buildUrl: (request) => transport.buildUrl(request),
+  });
+
+  const authRetry: RetryOptions | undefined = config.retry
+    ? {
+        attempts: config.retry.attempts,
+        baseDelay: config.retry.baseDelay,
+        maxDelay: config.retry.maxDelay,
+        jitter: config.retry.jitter,
+        retryWrites: true,
+        ...(config.retry.shouldRetry ? { shouldRetry: config.retry.shouldRetry } : {}),
+      }
+    : undefined;
+  const authPipeline = composePipeline([pluginsLayer, retriesLayer], transport.send);
+  const authHandler: RequestHandler = (request) =>
+    authRetry && request.retry === undefined
+      ? authPipeline({ ...request, retry: authRetry })
+      : authPipeline(request);
+
+  auth = new AuthManager(config, authHandler, jar);
+
+  const handlerFn = composePipeline(
+    [
+      pluginsLayer,
+      retriesLayer,
+      createAuthMiddleware({
+        getAuthHeaders: () => auth.getAuthHeaders(),
+        onUnauthorized: () => auth.onUnauthorized(),
+        autoRefresh: config.autoRefresh,
+      }),
+    ],
+    transport.send,
+  );
+
+  const http = new HttpClient({ handler: handlerFn, plugins, baseUrl: config.baseUrl });
+
+  return { auth, http, jar, mock, config, plugins };
 }
 
 describe('получение токена', () => {
@@ -93,6 +143,30 @@ describe('отложенный вход по логину и паролю', () =
     expect(mock.callCount).toBe(1);
   });
 
+  it('показывает отложенный вход плагинам', async () => {
+    const paths: string[] = [];
+    const { auth, config, plugins } = makeAuth([json({ accessToken: 'new-token' })], {
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+    });
+
+    plugins.add(
+      {
+        name: 'recorder',
+        install({ use }) {
+          use(async (request, next) => {
+            paths.push(request.path);
+            return next(request);
+          });
+        },
+      },
+      { baseUrl: config.baseUrl, logger: config.logger },
+    );
+
+    await auth.getAccessToken();
+
+    expect(paths).toEqual(['/api/v1/auth/sign-in']);
+  });
+
   it('объясняет, что при запросе OTP автоматический вход невозможен', async () => {
     // Сервер вместо токена просит подтверждение — отвечаем так на любой запрос.
     const { auth } = makeAuth(() => json({ flowToken: 'f' }), {
@@ -137,6 +211,19 @@ describe('обновление токена', () => {
     await auth.refresh();
 
     expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
+  });
+
+  it('повторяет refresh при временной ошибке с обычной настройкой retry', async () => {
+    const { auth, mock } = makeAuth(
+      [json({ error: 'temporary' }, { status: 500 }), json({ accessToken: 'refreshed' })],
+      {
+        auth: { accessToken: 'old-token', refreshToken: 'r' },
+        retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+      },
+    );
+
+    await expect(auth.refresh()).resolves.toBe('refreshed');
+    expect(mock.callCount).toBe(2);
   });
 
   it('бросает ItdAuthError, если обновлять нечем', async () => {
@@ -465,6 +552,56 @@ describe('связка с транспортом', () => {
 
     expect(jar.has('is_auth')).toBe(true);
     expect(await auth.getSession()).toMatchObject({ accessToken: 'refreshed' });
+  });
+});
+
+describe('конкурентная инициализация на холодном клиенте', () => {
+  /** Хранилище с задержкой чтения — так гонка между параллельными запросами воспроизводима. */
+  function slowStorage(initial: Parameters<MemoryTokenStorage['set']>[0] | null = null) {
+    let session = initial;
+    let reads = 0;
+    let writes = 0;
+    return {
+      storage: {
+        get: () =>
+          new Promise<typeof session>((resolve) => {
+            reads += 1;
+            setTimeout(() => resolve(session), 5);
+          }),
+        set: (next: typeof session) => {
+          writes += 1;
+          session = next;
+        },
+        clear: () => {
+          session = null;
+        },
+      },
+      get reads() {
+        return reads;
+      },
+      get writes() {
+        return writes;
+      },
+    };
+  }
+
+  it('шесть параллельных запросов заводят один X-Device-Id и читают хранилище один раз', async () => {
+    const store = slowStorage();
+    const { http, mock } = makeAuth(() => json({ data: {} }), {
+      storage: store.storage,
+      auth: 'token-1',
+    });
+
+    await Promise.all(
+      Array.from({ length: 6 }, () => http.request({ method: 'GET', path: '/api/posts' })),
+    );
+
+    const ids = mock.calls.map((call) => call.headers.get('x-device-id'));
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
+    // Дедупликация: одно чтение хранилища и одна запись на всех, а не по одной на запрос.
+    expect(store.reads).toBe(1);
+    expect(store.writes).toBe(1);
   });
 });
 

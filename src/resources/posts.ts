@@ -3,7 +3,6 @@ import { type PostInput, resolvePost } from '../builders/post.js';
 import type { HttpClient } from '../core/http.js';
 import {
   type Page,
-  type PageState,
   PaginationMode,
   type Paginator,
   readCursorPage,
@@ -23,7 +22,12 @@ import type {
 } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
 import type { CreateCommentInput, CreatePostInput, FileInput } from '../types/params.js';
-import { BaseResource, withPageState } from './base.js';
+import { BaseResource } from './base.js';
+
+/** Курсорная позиция из параметров: если курсор задан — с него, иначе с начала. */
+function cursorStart(params: { cursor?: string | undefined }): { cursor?: string } {
+  return params.cursor ? { cursor: params.cursor } : {};
+}
 
 /** Параметры запроса ленты. */
 export interface FeedParams extends RequestOptions {
@@ -73,6 +77,42 @@ export interface CommentsParams extends RequestOptions {
 export class PostsResource extends BaseResource {
   readonly #uploadFiles: (files: FileInput[], options?: RequestOptions) => Promise<string[]>;
 
+  /** Лента: `/api/posts`, курсорная пагинация. */
+  readonly #feed = this.paginated<Post, FeedParams>({
+    path: () => '/api/posts',
+    query: (p) => ({ tab: p.tab, limit: p.limit }),
+    start: cursorStart,
+    read: (body) => readCursorPage<Post>(body, 'posts'),
+    mode: PaginationMode.Cursor,
+  });
+
+  /** Стена пользователя: `/api/posts/user/{user}`. */
+  readonly #wall = this.paginated<Post, UserPostsParams & { user: UserRef }>({
+    path: (p) => `/api/posts/user/${encodePathSegment(p.user, 'user')}`,
+    query: (p) => ({ limit: p.limit, sort: p.sort, pinnedPostId: p.pinnedPostId }),
+    start: cursorStart,
+    read: (body) => readCursorPage<Post>(body, 'posts'),
+    mode: PaginationMode.Cursor,
+  });
+
+  /** Понравившиеся посты пользователя: `/api/posts/user/{user}/liked`. */
+  readonly #liked = this.paginated<Post, UserPostsParams & { user: UserRef }>({
+    path: (p) => `/api/posts/user/${encodePathSegment(p.user, 'user')}/liked`,
+    query: (p) => ({ limit: p.limit }),
+    start: cursorStart,
+    read: (body) => readCursorPage<Post>(body, 'posts'),
+    mode: PaginationMode.Cursor,
+  });
+
+  /** Комментарии к посту: курсор лежит рядом со списком, поэтому свой reader. */
+  readonly #comments = this.paginated<Comment, CommentsParams & { postId: string }>({
+    path: (p) => `/api/posts/${encodePathSegment(p.postId, 'postId')}/comments`,
+    query: (p) => ({ limit: p.limit, sort: p.sort }),
+    start: cursorStart,
+    read: (body) => readFlatCursorPage<Comment>(body, 'comments'),
+    mode: PaginationMode.Cursor,
+  });
+
   constructor(
     http: HttpClient,
     deps: { uploadFiles: (files: FileInput[], options?: RequestOptions) => Promise<string[]> },
@@ -90,15 +130,8 @@ export class PostsResource extends BaseResource {
    * const next = await itd.posts.list({ tab: FeedTab.Following, cursor: page.nextCursor ?? undefined });
    * ```
    */
-  async list(params: FeedParams = {}): Promise<Page<Post>> {
-    const body = await this.http.request({
-      method: 'GET',
-      path: '/api/posts',
-      query: { tab: params.tab, limit: params.limit, cursor: params.cursor },
-      ...this.requestOptions(params),
-    });
-
-    return readCursorPage<Post>(body, 'posts');
+  list(params: FeedParams = {}): Promise<Page<Post>> {
+    return this.#feed.list(params);
   }
 
   /**
@@ -112,19 +145,7 @@ export class PostsResource extends BaseResource {
    * ```
    */
   iterate(params: FeedParams = {}): Paginator<Post> {
-    return this.paginate<Post>(
-      PaginationMode.Cursor,
-      async (state: PageState) => {
-        const body = await this.http.request({
-          method: 'GET',
-          path: '/api/posts',
-          query: withPageState({ tab: params.tab, limit: params.limit }, state),
-          ...this.requestOptions(params),
-        });
-        return readCursorPage<Post>(body, 'posts');
-      },
-      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
-    );
+    return this.#feed.iterate(params);
   }
 
   /**
@@ -298,73 +319,23 @@ export class PostsResource extends BaseResource {
    *
    * Принимает и UUID, и имя пользователя.
    */
-  async byUser(user: UserRef, params: UserPostsParams = {}): Promise<Page<Post>> {
-    const body = await this.http.request({
-      method: 'GET',
-      path: `/api/posts/user/${encodePathSegment(user, 'user')}`,
-      query: {
-        limit: params.limit,
-        cursor: params.cursor,
-        sort: params.sort,
-        pinnedPostId: params.pinnedPostId,
-      },
-      ...this.requestOptions(params),
-    });
-
-    return readCursorPage<Post>(body, 'posts');
+  byUser(user: UserRef, params: UserPostsParams = {}): Promise<Page<Post>> {
+    return this.#wall.list({ ...params, user });
   }
 
   /** Перебирает стену пользователя. Что именно в неё входит — см. {@link byUser}. */
   iterateByUser(user: UserRef, params: UserPostsParams = {}): Paginator<Post> {
-    const path = `/api/posts/user/${encodePathSegment(user, 'user')}`;
-
-    return this.paginate<Post>(
-      PaginationMode.Cursor,
-      async (state) => {
-        const body = await this.http.request({
-          method: 'GET',
-          path,
-          query: withPageState(
-            { limit: params.limit, sort: params.sort, pinnedPostId: params.pinnedPostId },
-            state,
-          ),
-          ...this.requestOptions(params),
-        });
-        return readCursorPage<Post>(body, 'posts');
-      },
-      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
-    );
+    return this.#wall.iterate({ ...params, user });
   }
 
   /** Загружает страницу постов, которые пользователь отметил реакцией. */
-  async likedByUser(user: UserRef, params: UserPostsParams = {}): Promise<Page<Post>> {
-    const body = await this.http.request({
-      method: 'GET',
-      path: `/api/posts/user/${encodePathSegment(user, 'user')}/liked`,
-      query: { limit: params.limit, cursor: params.cursor },
-      ...this.requestOptions(params),
-    });
-
-    return readCursorPage<Post>(body, 'posts');
+  likedByUser(user: UserRef, params: UserPostsParams = {}): Promise<Page<Post>> {
+    return this.#liked.list({ ...params, user });
   }
 
   /** Перебирает посты, которые пользователь отметил реакцией. */
   iterateLikedByUser(user: UserRef, params: UserPostsParams = {}): Paginator<Post> {
-    const path = `/api/posts/user/${encodePathSegment(user, 'user')}/liked`;
-
-    return this.paginate<Post>(
-      PaginationMode.Cursor,
-      async (state) => {
-        const body = await this.http.request({
-          method: 'GET',
-          path,
-          query: withPageState({ limit: params.limit }, state),
-          ...this.requestOptions(params),
-        });
-        return readCursorPage<Post>(body, 'posts');
-      },
-      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
-    );
+    return this.#liked.iterate({ ...params, user });
   }
 
   /**
@@ -373,34 +344,13 @@ export class PostsResource extends BaseResource {
    * У этого эндпоинта курсор и признак продолжения лежат рядом со списком, а не внутри
    * объекта `pagination`, как у остальных, — разница скрыта внутри.
    */
-  async comments(postId: string, params: CommentsParams = {}): Promise<Page<Comment>> {
-    const body = await this.http.request({
-      method: 'GET',
-      path: `/api/posts/${encodePathSegment(postId, 'postId')}/comments`,
-      query: { limit: params.limit, cursor: params.cursor, sort: params.sort },
-      ...this.requestOptions(params),
-    });
-
-    return readFlatCursorPage<Comment>(body, 'comments');
+  comments(postId: string, params: CommentsParams = {}): Promise<Page<Comment>> {
+    return this.#comments.list({ ...params, postId });
   }
 
   /** Перебирает комментарии к посту. */
   iterateComments(postId: string, params: CommentsParams = {}): Paginator<Comment> {
-    const path = `/api/posts/${encodePathSegment(postId, 'postId')}/comments`;
-
-    return this.paginate<Comment>(
-      PaginationMode.Cursor,
-      async (state) => {
-        const body = await this.http.request({
-          method: 'GET',
-          path,
-          query: withPageState({ limit: params.limit, sort: params.sort }, state),
-          ...this.requestOptions(params),
-        });
-        return readFlatCursorPage<Comment>(body, 'comments');
-      },
-      { ...params, ...(params.cursor ? { start: { cursor: params.cursor } } : {}) },
-    );
+    return this.#comments.iterate({ ...params, postId });
   }
 
   /**

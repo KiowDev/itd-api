@@ -682,4 +682,61 @@ describe('общее поведение клиента', () => {
     expect((await itd.posts.list()).items).toHaveLength(1);
     expect(calls).toBe(2);
   });
+
+  it('retry у запроса переопределяет глобальную настройку', async () => {
+    let calls = 0;
+    const { itd } = makeClient(
+      () => {
+        calls += 1;
+        return json({}, { status: 500 });
+      },
+      { retry: { attempts: 5, baseDelay: 0 } },
+    );
+
+    // Глобально до 5 попыток, но у конкретного запроса повторы выключены.
+    await expect(itd.posts.list({ retry: false })).rejects.toMatchObject({ status: 500 });
+    expect(calls).toBe(1);
+  });
+});
+
+describe('жизненный цикл', () => {
+  it('close() закрывает порождённые потоки и снимает паузу очереди', async () => {
+    const { itd } = makeClient([], { rateLimit: { concurrency: 1, retryDelays: [1000] } });
+
+    const stream = itd.realtime();
+    expect(stream.status).toBe('disconnected');
+
+    // Ставим очередь на длинную паузу — close() обязан её снять, иначе таймер удержит loop.
+    itd.request({ method: 'GET', path: '/api/posts' }).catch(() => {});
+
+    await itd.close();
+
+    // Повторный close() безвреден.
+    await itd.close();
+  });
+
+  it('ручной disconnect убирает поток из close()', async () => {
+    const { itd } = makeClient([]);
+    const stream = itd.realtime();
+    const disconnect = vi.spyOn(stream, 'disconnect');
+
+    stream.disconnect();
+    await itd.close();
+
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('await using закрывает потоки на выходе из блока', async () => {
+    const { itd } = makeClient([json({ data: { id: '1' } })]);
+    const stream = itd.realtime();
+    const disconnect = vi.spyOn(stream, 'disconnect');
+
+    {
+      await using guard = itd;
+      expect(guard).toBe(itd);
+      await itd.users.me();
+    }
+
+    expect(disconnect).toHaveBeenCalled();
+  });
 });

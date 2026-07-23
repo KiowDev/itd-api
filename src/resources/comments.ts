@@ -5,7 +5,7 @@ import { encodePathSegment } from '../core/url.js';
 import type { Comment, LikeResult } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
 import type { FileInput } from '../types/params.js';
-import { BaseResource, withPageState } from './base.js';
+import { BaseResource } from './base.js';
 
 /** Параметры запроса ответов на комментарий. */
 export interface RepliesParams extends RequestOptions {
@@ -23,6 +23,15 @@ export interface RepliesParams extends RequestOptions {
 export class CommentsResource extends BaseResource {
   readonly #uploadFiles: (files: FileInput[], options?: RequestOptions) => Promise<string[]>;
 
+  /** Ответы на комментарий: `/api/comments/{id}/replies`, постраничная пагинация. */
+  readonly #replies = this.paginated<Comment, RepliesParams & { commentId: string }>({
+    path: (p) => `/api/comments/${encodePathSegment(p.commentId, 'commentId')}/replies`,
+    query: (p) => ({ limit: p.limit }),
+    start: (p) => (p.page !== undefined ? { page: p.page } : {}),
+    read: (body) => readPagedPage<Comment>(body, 'replies'),
+    mode: PaginationMode.Page,
+  });
+
   constructor(
     http: HttpClient,
     deps: { uploadFiles: (files: FileInput[], options?: RequestOptions) => Promise<string[]> },
@@ -36,34 +45,13 @@ export class CommentsResource extends BaseResource {
    *
    * Здесь пагинация **постраничная**, в отличие от комментариев к посту, где курсорная.
    */
-  async replies(commentId: string, params: RepliesParams = {}): Promise<Page<Comment>> {
-    const body = await this.http.request({
-      method: 'GET',
-      path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/replies`,
-      query: { limit: params.limit, page: params.page },
-      ...this.requestOptions(params),
-    });
-
-    return readPagedPage<Comment>(body, 'replies');
+  replies(commentId: string, params: RepliesParams = {}): Promise<Page<Comment>> {
+    return this.#replies.list({ ...params, commentId });
   }
 
   /** Перебирает ответы на комментарий. */
   iterateReplies(commentId: string, params: RepliesParams = {}): Paginator<Comment> {
-    const path = `/api/comments/${encodePathSegment(commentId, 'commentId')}/replies`;
-
-    return this.paginate<Comment>(
-      PaginationMode.Page,
-      async (state) => {
-        const body = await this.http.request({
-          method: 'GET',
-          path,
-          query: withPageState({ limit: params.limit }, state),
-          ...this.requestOptions(params),
-        });
-        return readPagedPage<Comment>(body, 'replies');
-      },
-      { ...params, ...(params.page !== undefined ? { start: { page: params.page } } : {}) },
-    );
+    return this.#replies.iterate({ ...params, commentId });
   }
 
   /**

@@ -6,6 +6,16 @@ import type { Notification, NotificationSettings } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
+const NOTIFICATION_SETTING_KEYS = [
+  'enabled',
+  'sound',
+  'follows',
+  'wallPosts',
+  'likes',
+  'comments',
+  'mentions',
+] as const;
+
 /**
  * Сколько идентификаторов уходит в одном запросе на отметку прочтения.
  *
@@ -32,15 +42,9 @@ export type UpdateNotificationSettingsInput = Partial<NotificationSettings>;
  * ведёт себя сайт итд.com.
  */
 function readSettings(body: unknown): NotificationSettings {
-  return {
-    enabled: pickBoolean(body, 'enabled', true),
-    sound: pickBoolean(body, 'sound', true),
-    follows: pickBoolean(body, 'follows', true),
-    wallPosts: pickBoolean(body, 'wallPosts', true),
-    likes: pickBoolean(body, 'likes', true),
-    comments: pickBoolean(body, 'comments', true),
-    mentions: pickBoolean(body, 'mentions', true),
-  };
+  const settings = {} as NotificationSettings;
+  for (const key of NOTIFICATION_SETTING_KEYS) settings[key] = pickBoolean(body, key, true);
+  return settings;
 }
 
 /**
@@ -50,11 +54,25 @@ function readSettings(body: unknown): NotificationSettings {
  * объекты отсюда и из потока событий можно складывать в один список.
  */
 export class NotificationsResource extends BaseResource {
+  /** Уведомления: `/api/notifications/`, пагинация по смещению. */
+  readonly #list = this.paginated<Notification, NotificationListParams>({
+    // Завершающий слэш обязателен: без него сервер отвечает ошибкой.
+    path: () => '/api/notifications/',
+    query: (p) => ({ limit: p.limit }),
+    start: (p) => ({ offset: p.offset ?? 0 }),
+    read: (body, state) => {
+      const page = readOffsetPage<unknown>(body, 'notifications', state.offset ?? 0);
+      // Сайт итд.com оборачивает смещение в строку и притворяется, что это курсор;
+      // библиотека отдаёт честное число, а сами уведомления — в единой форме.
+      return { ...page, items: page.items.map(normalizeNotification) };
+    },
+    mode: PaginationMode.Offset,
+  });
+
   /**
    * Загружает страницу уведомлений.
    *
-   * Пагинация здесь основана на смещении. Сайт итд.com оборачивает смещение в строку
-   * и притворяется, что это курсор; библиотека отдаёт честное число.
+   * Пагинация здесь основана на смещении.
    *
    * @example
    * ```ts
@@ -63,22 +81,7 @@ export class NotificationsResource extends BaseResource {
    * ```
    */
   list(params: NotificationListParams = {}): Promise<Page<Notification>> {
-    return this.#loadPage(params, params.offset ?? 0);
-  }
-
-  /** Общая загрузка страницы для {@link list} и {@link iterate}. */
-  async #loadPage(params: NotificationListParams, offset: number): Promise<Page<Notification>> {
-    const body = await this.http.request({
-      method: 'GET',
-      // Завершающий слэш обязателен: без него сервер отвечает ошибкой.
-      path: '/api/notifications/',
-      query: { limit: params.limit, offset },
-      ...this.requestOptions(params),
-    });
-
-    const page = readOffsetPage<unknown>(body, 'notifications', offset);
-
-    return { ...page, items: page.items.map(normalizeNotification) };
+    return this.#list.list(params);
   }
 
   /**
@@ -92,11 +95,7 @@ export class NotificationsResource extends BaseResource {
    * ```
    */
   iterate(params: NotificationListParams = {}): Paginator<Notification> {
-    return this.paginate<Notification>(
-      PaginationMode.Offset,
-      (state) => this.#loadPage(params, state.offset ?? 0),
-      { ...params, ...(params.offset !== undefined ? { start: { offset: params.offset } } : {}) },
-    );
+    return this.#list.iterate(params);
   }
 
   /** Загружает число непрочитанных уведомлений. */
@@ -186,15 +185,7 @@ export class NotificationsResource extends BaseResource {
   ): Promise<NotificationSettings> {
     const payload: Record<string, boolean> = {};
 
-    for (const key of [
-      'enabled',
-      'sound',
-      'follows',
-      'wallPosts',
-      'likes',
-      'comments',
-      'mentions',
-    ] as const) {
+    for (const key of NOTIFICATION_SETTING_KEYS) {
       const value = input[key];
       if (value !== undefined) payload[key] = value;
     }

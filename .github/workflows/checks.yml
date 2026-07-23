@@ -107,5 +107,7 @@ jobs:
         run: |
           node -e "const m = require('itd-api'); if (typeof m.ItdClient !== 'function') { throw new Error('CJS-сборка не отдаёт ItdClient'); }"
           node --input-type=module -e "import { ItdClient } from 'itd-api'; if (typeof ItdClient !== 'function') { throw new Error('ESM-сборка не отдаёт ItdClient'); }"
+          node -e "const { ItdClient } = require('itd-api'); const key = Symbol.asyncDispose || Symbol.for('Symbol.asyncDispose'); if (typeof ItdClient.prototype[key] !== 'function') { throw new Error('ItdClient не disposable на текущем runtime'); }"
+          node --input-type=module -e "import { ItdClient } from 'itd-api'; const key = Symbol.asyncDispose || Symbol.for('Symbol.asyncDispose'); if (typeof ItdClient.prototype[key] !== 'function') { throw new Error('ItdClient не disposable на текущем runtime'); }"
           node -e "require('itd-api/node');"
           node --input-type=module -e "await import('itd-api/node');"

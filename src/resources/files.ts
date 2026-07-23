@@ -53,21 +53,15 @@ interface PreparedFile {
  * и `itd.posts.comment()` загружают файлы сами.
  */
 export class FilesResource extends BaseResource {
-  #readFile: FileReader | undefined;
+  readonly #readFile: FileReader | undefined;
 
+  /**
+   * @param deps.readFile чтение файлов с диска. Передаёт точка входа `itd-api/node`;
+   * в основном бандле его нет, чтобы браузерные сборщики не пытались разрешить `node:fs`.
+   */
   constructor(http: HttpClient, deps: { readFile?: FileReader } = {}) {
     super(http);
     this.#readFile = deps.readFile;
-  }
-
-  /**
-   * Подключает чтение файлов с диска.
-   *
-   * Вызывается точкой входа `itd-api/node`; в основном бандле работы с файловой
-   * системой нет, чтобы браузерные сборщики не пытались разрешить `node:fs`.
-   */
-  setFileReader(readFile: FileReader): void {
-    this.#readFile = readFile;
   }
 
   /**

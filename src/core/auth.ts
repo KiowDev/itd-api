@@ -1,5 +1,5 @@
 import type { AuthInput, CredentialsAuth } from '../types/options.js';
-import type { ResolvedConfig } from './config.js';
+import type { AuthConfig } from './config.js';
 import {
   AUTH_FLAG_COOKIE,
   type CookieJar,
@@ -8,7 +8,7 @@ import {
 } from './cookies.js';
 import { Emitter } from './emitter.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from './errors.js';
-import type { HttpClient } from './http.js';
+import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
 import type { ItdSession } from './storage.js';
 
@@ -61,6 +61,16 @@ function readAccessToken(payload: unknown): string | undefined {
 }
 
 /**
+ * Сообщает об исключении из пользовательского обработчика события: пишет в логгер,
+ * при его отсутствии — в консоль.
+ */
+function reportListenerError(logger: AuthConfig['logger'], scope: string, error: unknown): void {
+  const message = `Ошибка в обработчике события ${scope}`;
+  if (logger) logger.error(message, error);
+  else console.error(`[itd-api] ${message}`, error);
+}
+
+/**
  * Хранит сессию и продлевает её.
  *
  * Главное здесь — **дедупликация обновления**. Когда десять параллельных запросов
@@ -69,13 +79,18 @@ function readAccessToken(payload: unknown): string | undefined {
  * кроме первого, скорее всего получат отказ по уже использованному токену.
  */
 export class AuthManager {
-  readonly #config: ResolvedConfig;
-  readonly #http: HttpClient;
+  readonly #config: AuthConfig;
+  readonly #send: RequestHandler;
   readonly #jar: CookieJar;
-  readonly #emitter = new Emitter<AuthEvents>();
+  readonly #emitter: Emitter<AuthEvents>;
 
   /** `undefined` — сессия ещё не читалась из хранилища. */
   #session: ItdSession | null | undefined;
+  /**
+   * Общий промис чтения сессии из хранилища. Дедупликация: параллельные запросы на холодном
+   * старте читают хранилище один раз и не заводят каждый свой `deviceId`.
+   */
+  #loading: Promise<ItdSession | null> | null = null;
   /** Общий промис обновления: к нему присоединяются все, кто получил 401. */
   #refreshing: Promise<string | null> | null = null;
   /** Общий промис входа по логину и паролю. */
@@ -87,11 +102,16 @@ export class AuthManager {
    * поэтому `clear()` его не трогает.
    */
   #deviceId: string | undefined;
+  /** Общий промис первичной выдачи `deviceId` — чтобы параллельные запросы получили один. */
+  #deviceIdLoading: Promise<string> | null = null;
 
-  constructor(config: ResolvedConfig, http: HttpClient, jar: CookieJar) {
+  constructor(config: AuthConfig, send: RequestHandler, jar: CookieJar) {
     this.#config = config;
-    this.#http = http;
+    this.#send = send;
     this.#jar = jar;
+    this.#emitter = new Emitter<AuthEvents>((error) =>
+      reportListenerError(config.logger, 'авторизации', error),
+    );
   }
 
   /** Подписка на события авторизации. */
@@ -141,9 +161,18 @@ export class AuthManager {
    * сервер связывает с ним запись в списке сессий, и плавающее значение плодило бы
    * по новой сессии на каждый старт.
    */
-  async getDeviceId(): Promise<string> {
-    if (this.#deviceId) return this.#deviceId;
+  getDeviceId(): Promise<string> {
+    if (this.#deviceId) return Promise.resolve(this.#deviceId);
 
+    // Дедупликация: параллельные вызовы на холодном клиенте получают один `X-Device-Id`.
+    this.#deviceIdLoading ??= this.#resolveDeviceId().finally(() => {
+      this.#deviceIdLoading = null;
+    });
+
+    return this.#deviceIdLoading;
+  }
+
+  async #resolveDeviceId(): Promise<string> {
     const session = await this.#loadSession();
     const deviceId = this.#config.deviceId ?? session?.deviceId ?? createDeviceId();
 
@@ -271,9 +300,17 @@ export class AuthManager {
     this.#emitter.emit('signOut', undefined);
   }
 
-  async #loadSession(): Promise<ItdSession | null> {
-    if (this.#session !== undefined) return this.#session;
+  #loadSession(): Promise<ItdSession | null> {
+    if (this.#session !== undefined) return Promise.resolve(this.#session);
 
+    this.#loading ??= this.#performLoad().finally(() => {
+      this.#loading = null;
+    });
+
+    return this.#loading;
+  }
+
+  async #performLoad(): Promise<ItdSession | null> {
     const stored = (await this.#config.storage.get()) ?? null;
 
     // Восстанавливаем cookie: без них не выйдет обновить токен после перезапуска процесса.
@@ -370,17 +407,16 @@ export class AuthManager {
     }
 
     try {
-      const payload = await this.#http.request<unknown>({
+      // Служебный запрос идёт через плагины и повторы, но мимо очереди и слоя авторизации:
+      // обновление порождается изнутри запроса, который держит слот в очереди и ждёт его результата.
+      const payload = await this.#send({
         method: 'POST',
         path: AUTH_PATHS.refresh,
+        skipQueue: true,
+        skipAuth: true,
+        skipAuthRefresh: true,
         // Тела нет намеренно: сервер читает refresh-токен только из cookie — см.
         // #seedRefreshCookie. По той же причине не нужен и устаревший Bearer.
-        skipAuth: true,
-        // Без этого 401 на самом обновлении вызвал бы новое обновление — и так по кругу.
-        skipAuthRefresh: true,
-        // Обновление почти всегда запускается изнутри запроса, который занимает место
-        // в очереди и ждёт его результата. Встать в ту же очередь — значит зависнуть.
-        skipQueue: true,
       });
 
       const accessToken = readAccessToken(payload);
@@ -484,15 +520,15 @@ export class AuthManager {
   async #performSignIn(credentials: CredentialsAuth): Promise<string> {
     const turnstileToken = await this.#resolveTurnstileToken(credentials);
 
-    const payload = await this.#http.request<unknown>({
+    // Через служебный auth-конвейер: плагины и повторы сохраняются, очередь и слой
+    // авторизации обходятся, чтобы не зависнуть на запросе, который ждёт токен.
+    const payload = await this.#send({
       method: 'POST',
       path: AUTH_PATHS.signIn,
       body: { email: credentials.email, password: credentials.password, turnstileToken },
+      skipQueue: true,
       skipAuth: true,
       skipAuthRefresh: true,
-      // Отложенный вход происходит при сборке заголовков уже начатого запроса — тот держит
-      // место в очереди и ждёт токена. См. `skipQueue` в RawRequestOptions.
-      skipQueue: true,
     });
 
     const accessToken = readAccessToken(payload);

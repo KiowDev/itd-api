@@ -2,7 +2,43 @@ import type { HttpClient } from '../core/http.js';
 import type { Page, PageState, PaginationMode } from '../core/pagination.js';
 import { Paginator } from '../core/pagination.js';
 import type { QueryParams } from '../core/url.js';
-import type { RequestOptions } from '../types/options.js';
+import { REQUEST_OPTION_KEYS, type RequestOptions } from '../types/options.js';
+
+/** Параметры перебираемого списка: опции запроса плюс предел числа страниц. */
+export interface ListParams extends RequestOptions {
+  /** Ограничение числа страниц при переборе. */
+  maxPages?: number | undefined;
+}
+
+/**
+ * Описание перебираемого эндпоинта.
+ *
+ * Одно место, где заданы путь, параметры запроса, чтение страницы и схема пагинации.
+ * {@link BaseResource.paginated} строит из него и разовую загрузку, и перебор.
+ *
+ * @typeParam T тип элемента списка
+ * @typeParam P тип параметров метода
+ */
+export interface ListingSpec<T, P extends ListParams> {
+  /** Путь эндпоинта. */
+  path: (params: P) => string;
+  /** Параметры запроса без полей пагинации — их добавит перебор. */
+  query: (params: P) => QueryParams;
+  /** Читает страницу из ответа. Получает позицию — она нужна схеме со смещением. */
+  read: (body: unknown, state: PageState) => Page<T>;
+  /** Схема пагинации эндпоинта. */
+  mode: PaginationMode;
+  /** Начальная позиция, вычисленная из параметров (курсор, номер или смещение). */
+  start: (params: P) => PageState;
+}
+
+/** Пара методов, собранная из {@link ListingSpec}: разовая загрузка и перебор. */
+export interface Listing<T, P extends ListParams> {
+  /** Загружает одну страницу с позиции, заданной параметрами. */
+  list(params: P): Promise<Page<T>>;
+  /** Перебирает страницы, сама подставляя позиции. */
+  iterate(params: P): Paginator<T>;
+}
 
 /** Общая основа всех групп методов клиента. */
 export class BaseResource {
@@ -14,34 +50,31 @@ export class BaseResource {
   }
 
   /**
-   * Переносит общие поля опций запроса в параметры транспорта.
+   * Переносит опции запроса в описание транспорта.
    *
-   * Поля перечислены поимённо, а не скопированы целиком: параметры методов наследуют
-   * {@link RequestOptions} и приносят с собой `limit`, `cursor` и прочее, чему в описании
-   * запроса делать нечего. Исключение — опции, заявленные плагинами: их библиотека
+   * Копируются только поля {@link REQUEST_OPTION_KEYS} и опции, заявленные плагинами:
+   * параметры методов наследуют {@link RequestOptions} и приносят с собой `limit`, `cursor`
+   * и прочее, чему в описании запроса делать нечего. Чужие опции плагинов библиотека
    * не понимает, но обязана донести до обёрток нетронутыми.
    */
   protected requestOptions(options: RequestOptions | undefined): Partial<RequestOptions> {
     if (!options) return {};
 
-    const result: Partial<RequestOptions> = {
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
-      ...(options.timeout !== undefined ? { timeout: options.timeout } : {}),
-      ...(options.headers !== undefined ? { headers: options.headers } : {}),
-      ...(options.retry !== undefined ? { retry: options.retry } : {}),
-    };
-
-    const pluginKeys = this.http.pluginOptionKeys;
-    if (pluginKeys.size === 0) return result;
-
     const source = options as Record<string, unknown>;
-    const target = result as Record<string, unknown>;
-    for (const key of pluginKeys) {
+    const result: Record<string, unknown> = {};
+
+    for (const key of REQUEST_OPTION_KEYS) {
       const value = source[key];
-      if (value !== undefined) target[key] = value;
+      if (value !== undefined) result[key] = value;
     }
 
-    return result;
+    const pluginKeys = this.http.pluginOptionKeys;
+    for (const key of pluginKeys) {
+      const value = source[key];
+      if (value !== undefined) result[key] = value;
+    }
+
+    return result as Partial<RequestOptions>;
   }
 
   /**
@@ -63,6 +96,45 @@ export class BaseResource {
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
       ...(options?.start !== undefined ? { start: options.start } : {}),
     });
+  }
+
+  /**
+   * Собирает пару «загрузка страницы + перебор» из одного описания.
+   *
+   * Путь, параметры запроса и разбор ответа задаются один раз; `list` и `iterate`
+   * строятся из них.
+   *
+   * @example
+   * ```ts
+   * #feed = this.paginated<Post, FeedParams>({
+   *   path: () => '/api/posts',
+   *   query: (p) => ({ tab: p.tab, limit: p.limit }),
+   *   start: (p) => (p.cursor ? { cursor: p.cursor } : {}),
+   *   read: (body) => readCursorPage<Post>(body, 'posts'),
+   *   mode: PaginationMode.Cursor,
+   * });
+   * ```
+   */
+  protected paginated<T, P extends ListParams>(spec: ListingSpec<T, P>): Listing<T, P> {
+    const load = async (params: P, state: PageState): Promise<Page<T>> => {
+      const body = await this.http.request({
+        method: 'GET',
+        path: spec.path(params),
+        query: withPageState(spec.query(params), state),
+        ...this.requestOptions(params),
+      });
+      return spec.read(body, state);
+    };
+
+    return {
+      list: (params) => load(params, spec.start(params)),
+      iterate: (params) =>
+        this.paginate<T>(spec.mode, (state) => load(params, state), {
+          ...(params.maxPages !== undefined ? { maxPages: params.maxPages } : {}),
+          ...(params.signal !== undefined ? { signal: params.signal } : {}),
+          start: spec.start(params),
+        }),
+    };
   }
 }
 

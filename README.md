@@ -456,6 +456,26 @@ rateLimit: { retryDelays: [1000, 5000, 30_000, 60_000, 90_000] }  // по умо
 Поэтому в браузерном приложении укажите в `baseUrl` адрес своего прокси. В Node, Bun,
 Deno и React Native ограничение не действует.
 
+### Прокси (HTTP/SOCKS5)
+
+Чтобы направить запросы клиента через прокси, возьмите `fetch` из пакета
+[`itd-api-proxy`](./proxy):
+
+```sh
+npm i itd-api-proxy
+```
+
+```ts
+import { ItdClient } from 'itd-api';
+import { proxyFetch } from 'itd-api-proxy';
+
+const itd = new ItdClient({ fetch: proxyFetch('socks5://127.0.0.1:1080') });
+// http://…, https://…, socks5://… — можно с user:pass@
+```
+
+Через тот же `fetch` пойдут авторизация, cookie, очередь, повторы и поток уведомлений.
+Только для Node/Bun/Deno. Подробности — в [README пакета](./proxy).
+
 ---
 
 ## Плагины

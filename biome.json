@@ -9,7 +9,10 @@
       "turnstile/*.config.ts",
       "crypto/src/**/*.ts",
       "crypto/test/**/*.ts",
-      "crypto/*.config.ts"
+      "crypto/*.config.ts",
+      "proxy/src/**/*.ts",
+      "proxy/test/**/*.ts",
+      "proxy/*.config.ts"
     ]
   },
   "formatter": {

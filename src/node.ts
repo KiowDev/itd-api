@@ -55,6 +55,11 @@ export const nodeFileReader: FileReader = async (path) => {
  */
 export class FileTokenStorage implements TokenStorage {
   readonly #path: string;
+  /**
+   * Цепочка записей: сохранения идут строго по одному, конкурентные `set` не
+   * перемешиваются. Ошибка одной записи цепочку не рвёт.
+   */
+  #writing: Promise<void> = Promise.resolve();
 
   /** @param path путь к файлу сессии. Добавьте его в `.gitignore`. */
   constructor(path: string) {
@@ -74,12 +79,32 @@ export class FileTokenStorage implements TokenStorage {
     }
   }
 
-  async set(session: ItdSession): Promise<void> {
-    const { writeFile, rename } = await import('node:fs/promises');
-    const temporary = `${this.#path}.tmp`;
+  set(session: ItdSession): Promise<void> {
+    this.#writing = this.#writing.then(
+      () => this.#write(session),
+      () => this.#write(session),
+    );
+    return this.#writing;
+  }
 
-    await writeFile(temporary, JSON.stringify(session, null, 2), { encoding: 'utf8', mode: 0o600 });
-    await rename(temporary, this.#path);
+  async #write(session: ItdSession): Promise<void> {
+    const { writeFile, rename, unlink } = await import('node:fs/promises');
+
+    // Временный файл уникален на процесс и вызов — иначе параллельные записи (в том числе
+    // из разных процессов) делят один `.tmp`.
+    const pid = typeof process !== 'undefined' ? process.pid : 0;
+    const temporary = `${this.#path}.${pid}.${Math.random().toString(36).slice(2)}.tmp`;
+
+    try {
+      await writeFile(temporary, JSON.stringify(session, null, 2), {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+      await rename(temporary, this.#path);
+    } catch (error) {
+      await unlink(temporary).catch(() => {});
+      throw error;
+    }
   }
 
   async clear(): Promise<void> {
@@ -100,8 +125,9 @@ export class FileTokenStorage implements TokenStorage {
  */
 export class ItdClient extends BaseClient {
   constructor(options: ItdClientOptions = {}) {
-    super(options);
-    this.setFileReader(nodeFileReader);
+    // Чтение файлов передаётся скрытым параметром конструктора, а не мутацией уже
+    // собранного клиента: так объект работоспособен сразу и не меняется после создания.
+    super(options, { fileReader: nodeFileReader });
   }
 }
 

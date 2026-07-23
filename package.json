@@ -36,7 +36,8 @@
   },
   "workspaces": [
     "turnstile",
-    "crypto"
+    "crypto",
+    "proxy"
   ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -72,6 +73,8 @@
     "./package.json": "./package.json"
   },
   "scripts": {
+    "sync-version": "node scripts/sync-version.mjs",
+    "prebuild": "npm run sync-version",
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
@@ -79,10 +82,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src test turnstile/src turnstile/test crypto/src crypto/test",
-    "lint:fix": "biome check --write src test turnstile/src turnstile/test crypto/src crypto/test",
+    "lint": "biome check src test turnstile/src turnstile/test crypto/src crypto/test proxy/src proxy/test",
+    "lint:fix": "biome check --write src test turnstile/src turnstile/test crypto/src crypto/test proxy/src proxy/test",
     "docs": "typedoc",
     "check:pack": "publint && attw --pack .",
+    "version": "npm run sync-version && git add src/core/version.ts",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
   "devDependencies": {

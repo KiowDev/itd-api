@@ -2,30 +2,59 @@ import { type AuthEvents, AuthManager } from './core/auth.js';
 import { type ResolvedConfig, resolveConfig } from './core/config.js';
 import { CookieJar } from './core/cookies.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
-import { isItdRateLimitError } from './core/errors.js';
 import { HttpClient } from './core/http.js';
+import {
+  composePipeline,
+  createAuthMiddleware,
+  createPluginsMiddleware,
+  createQueueMiddleware,
+  createRetryMiddleware,
+  type RequestMiddleware,
+} from './core/middleware.js';
+import type { RequestHandler } from './core/pipeline.js';
 import { type ItdPlugin, PluginRegistry } from './core/plugins.js';
 import { RequestQueue } from './core/rate-limit.js';
-import { createRetryScheduler } from './core/retry.js';
 import type { ItdSession } from './core/storage.js';
+import { Transport } from './core/transport.js';
 import { ItdRealtime, type RealtimeOptions } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
 import { CommentsResource } from './resources/comments.js';
 import { type FileReader, FilesResource } from './resources/files.js';
-import {
-  HashtagsResource,
-  PlatformResource,
-  ReportsResource,
-  SearchResource,
-  SubscriptionResource,
-  VerificationResource,
-} from './resources/misc.js';
+import { HashtagsResource } from './resources/hashtags.js';
 import { NotificationsResource } from './resources/notifications.js';
+import { PlatformResource } from './resources/platform.js';
 import { PostsResource } from './resources/posts.js';
+import { ReportsResource } from './resources/reports.js';
+import { SearchResource } from './resources/search.js';
+import { SubscriptionResource } from './resources/subscription.js';
 import { TelemetryResource } from './resources/telemetry.js';
 import { UsersResource } from './resources/users.js';
-import type { ItdClientOptions, RawRequestOptions, RequestOptions } from './types/options.js';
+import { VerificationResource } from './resources/verification.js';
+import type {
+  ItdClientOptions,
+  RawRequestOptions,
+  RequestOptions,
+  RetryOptions,
+} from './types/options.js';
 import type { FileInput } from './types/params.js';
+
+declare global {
+  interface SymbolConstructor {
+    readonly asyncDispose: unique symbol;
+  }
+}
+
+/**
+ * Скрытые параметры конструктора — не часть публичного API.
+ *
+ * Через них точка входа `itd-api/node` передаёт чтение файлов с диска, не мутируя уже
+ * созданный объект.
+ *
+ * @internal
+ */
+export interface ItdClientInternals {
+  fileReader?: FileReader | undefined;
+}
 
 /**
  * Клиент API итд.com.
@@ -65,6 +94,8 @@ export class ItdClient {
   readonly #jar: CookieJar;
   readonly #queue: RequestQueue | undefined;
   readonly #plugins = new PluginRegistry();
+  /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
+  readonly #streams = new Set<ItdRealtime>();
 
   /** Авторизация, сессии и пароли. */
   readonly auth: AuthResource;
@@ -97,36 +128,79 @@ export class ItdClient {
    */
   readonly telemetry: TelemetryResource;
 
-  constructor(options: ItdClientOptions = {}) {
-    this.#config = resolveConfig(options);
+  constructor(options: ItdClientOptions = {}, internals: ItdClientInternals = {}) {
+    const config = resolveConfig(options);
+    this.#config = config;
     this.#jar = new CookieJar();
-    this.#http = new HttpClient(this.#config);
-    this.#authManager = new AuthManager(this.#config, this.#http, this.#jar);
 
-    this.#queue = this.#config.rateLimit ? new RequestQueue(this.#config.rateLimit) : undefined;
+    const queue = config.rateLimit ? new RequestQueue(config.rateLimit) : undefined;
+    this.#queue = queue;
 
-    // Реестр пуст и остаётся пустым, пока не вызовут `use()`: до этого момента запрос
-    // идёт ровно тем же путём, что и раньше.
-    this.#http.usePlugins(this.#plugins);
+    // Заполняется ниже. Транспорту нужен `getDeviceId` авторизации, а авторизации —
+    // транспорт; взаимная ссылка замыкается через отложенный вызов.
+    let authManager!: AuthManager;
 
-    this.#http.setCollaborators({
-      getAuthHeaders: () => this.#authManager.getAuthHeaders(),
-      getDeviceId: () => this.#authManager.getDeviceId(),
-      onUnauthorized: () => this.#authManager.onUnauthorized(),
-      getCookieHeader: (url) => this.#jar.getHeader(url),
-      saveCookies: (url, response) => this.#jar.setFromResponse(url, response),
-      ...(this.#queue ? { schedule: this.#queue.schedule.bind(this.#queue) } : {}),
-      // Планировщик нужен, даже когда обычные повторы выключены: лимит частоты
-      // живёт по своим правилам и настраивается отдельно, в `rateLimit`.
-      ...(this.#config.retry || this.#config.rateLimit
-        ? { nextRetryDelay: this.#createRetryScheduler() }
-        : {}),
-      ...(this.#queue && this.#config.rateLimit?.respectHeaders
-        ? { onRateLimit: this.#throttleByHeaders.bind(this) }
-        : {}),
+    const transport = new Transport(config, {
+      cookies: config.useCookieJar ? this.#jar : undefined,
+      getDeviceId: () => authManager.getDeviceId(),
+      onRateLimit:
+        queue && config.rateLimit?.respectHeaders
+          ? (limit, remaining) => this.#throttleByHeaders(limit, remaining)
+          : undefined,
     });
 
-    this.files = new FilesResource(this.#http);
+    const pluginsLayer = createPluginsMiddleware(this.#plugins);
+    const retriesLayer = createRetryMiddleware({
+      retry: config.retry,
+      rateLimitDelays: config.rateLimit?.retryDelays ?? [],
+      pauseQueue: queue ? (ms) => queue.pause(ms) : undefined,
+      hooks: config.hooks,
+      logger: config.logger,
+      buildUrl: (request) => transport.buildUrl(request),
+    });
+
+    const authRetry: RetryOptions | undefined = config.retry
+      ? {
+          attempts: config.retry.attempts,
+          baseDelay: config.retry.baseDelay,
+          maxDelay: config.retry.maxDelay,
+          jitter: config.retry.jitter,
+          retryWrites: true,
+          ...(config.retry.shouldRetry ? { shouldRetry: config.retry.shouldRetry } : {}),
+        }
+      : undefined;
+    const authPipeline = composePipeline([pluginsLayer, retriesLayer], transport.send);
+    // Служебные запросы авторизации проходят через плагины и повторы, но не через очередь
+    // и не через сам слой авторизации: они часто запускаются изнутри запроса, который уже ждёт токен.
+    // Для них POST безопасен к повтору: refresh/sign-in не создают пользовательский контент.
+    const authHandler: RequestHandler = (request) =>
+      authRetry && request.retry === undefined
+        ? authPipeline({ ...request, retry: authRetry })
+        : authPipeline(request);
+    authManager = new AuthManager(config, authHandler, this.#jar);
+    this.#authManager = authManager;
+
+    // Порядок слоёв: очередь снаружи, за ней плагины, повторы и авторизация,
+    // в сердцевине — транспорт.
+    const middlewares: RequestMiddleware[] = [];
+    if (queue) middlewares.push(createQueueMiddleware(queue.schedule.bind(queue)));
+    middlewares.push(pluginsLayer);
+    middlewares.push(retriesLayer);
+    middlewares.push(
+      createAuthMiddleware({
+        getAuthHeaders: () => authManager.getAuthHeaders(),
+        onUnauthorized: () => authManager.onUnauthorized(),
+        autoRefresh: config.autoRefresh,
+      }),
+    );
+
+    const handler = composePipeline(middlewares, transport.send);
+    this.#http = new HttpClient({ handler, plugins: this.#plugins, baseUrl: config.baseUrl });
+
+    this.files = new FilesResource(
+      this.#http,
+      internals.fileReader ? { readFile: internals.fileReader } : {},
+    );
 
     const uploadFiles = (files: FileInput[], requestOptions?: RequestOptions) =>
       this.files.uploadMany(files, requestOptions ?? {});
@@ -224,17 +298,48 @@ export class ItdClient {
    * ```
    */
   realtime(options: RealtimeOptions = {}): ItdRealtime {
-    return new ItdRealtime(
+    let stream!: ItdRealtime;
+    stream = new ItdRealtime(
       {
         baseUrl: this.#config.baseUrl,
         fetch: this.#config.fetch,
         getToken: () => this.#authManager.getAccessToken(),
         refresh: () => this.#authManager.onUnauthorized(),
         fetchUnreadCount: () => this.notifications.count(),
+        onClose: () => this.#streams.delete(stream),
         logger: this.#config.logger,
       },
       options,
     );
+
+    // Регистрируем для `close()`: поток держит открытое соединение и таймер переподключения.
+    this.#streams.add(stream);
+    return stream;
+  }
+
+  /**
+   * Освобождает ресурсы клиента: останавливает очередь запросов (снимает отложенные паузы)
+   * и закрывает все потоки уведомлений, созданные через {@link realtime}.
+   *
+   * После вызова клиентом можно пользоваться снова — новые запросы поднимут всё заново,
+   * но уже созданные потоки останутся закрытыми.
+   *
+   * @example
+   * ```ts
+   * await using itd = new ItdClient({ auth: token });
+   * // …работа…
+   * // close() вызовется сам на выходе из блока
+   * ```
+   */
+  async close(): Promise<void> {
+    for (const stream of this.#streams) stream.disconnect();
+    this.#streams.clear();
+    this.#queue?.stop();
+  }
+
+  /** Позволяет использовать клиент с `await using`. */
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
   }
 
   /** Текущая сессия целиком — чтобы сохранить её самостоятельно. */
@@ -245,17 +350,6 @@ export class ItdClient {
   /** Восстанавливает сохранённую сессию, включая cookie. */
   setSession(session: ItdSession): Promise<void> {
     return this.#authManager.setSession(session);
-  }
-
-  /**
-   * Подключает чтение файлов с диска.
-   *
-   * Вызывается из `itd-api/node`; напрямую обычно не нужно.
-   *
-   * @internal
-   */
-  setFileReader(readFile: FileReader): void {
-    this.files.setFileReader(readFile);
   }
 
   /**
@@ -280,42 +374,15 @@ export class ItdClient {
       `лимит сервера исчерпан (${remaining} из ${limit ?? '?'}), очередь ждёт ${first} мс`,
     );
   }
+}
 
-  /**
-   * Собирает планировщик повторов и связывает его с очередью.
-   *
-   * Ответ `429` обрабатывается отдельно от прочих ошибок. Причина в том, что сервер
-   * не присылает `Retry-After` и не сообщает время сброса окна: экспоненциальный откат
-   * в сотни миллисекунд здесь бесполезен, а окно измеряется десятками секунд. Вместо
-   * расчёта берётся лестница пауз `rateLimit.retryDelays`, и она не зависит
-   * от `retry.attempts`, у которого совсем другая задача.
-   *
-   * Пауза накладывается на всю очередь: иначе остальные запросы продолжат добивать API,
-   * пока первый ждёт.
-   */
-  #createRetryScheduler() {
-    const retry = this.#config.retry;
-    const scheduler = retry ? createRetryScheduler(retry) : undefined;
-    const queue = this.#queue;
-    const delays = this.#config.rateLimit?.retryDelays ?? [];
-
-    return (error: unknown, attempt: number, method: string): number | undefined => {
-      if (isItdRateLimitError(error)) {
-        // Пауза, названная сервером, важнее нашей лестницы — но он её не присылает.
-        const wait = error.retryAfter ?? delays[attempt - 1];
-
-        // Лестница закончилась: дальше ждать вслепую бессмысленно, отдаём ошибку.
-        if (wait === undefined) return undefined;
-
-        queue?.pause(wait);
-        this.#config.logger?.debug(`лимит частоты, попытка ${attempt + 1} через ${wait} мс`);
-
-        return wait;
-      }
-
-      return scheduler?.(error, attempt, method);
-    };
-  }
+// На Node 18 `Symbol.asyncDispose` отсутствует, поэтому вычисляемое имя метода выше
+// становится строкой "undefined". Транспайлеры `await using` в этой среде ищут fallback
+// `Symbol.for('Symbol.asyncDispose')`, поэтому переносим метод на ожидаемый ключ.
+if (typeof (Symbol as SymbolConstructor & { asyncDispose?: symbol }).asyncDispose !== 'symbol') {
+  const prototype = ItdClient.prototype as unknown as Record<PropertyKey, unknown>;
+  prototype[Symbol.for('Symbol.asyncDispose')] = prototype.undefined;
+  delete prototype.undefined;
 }
 
 /**

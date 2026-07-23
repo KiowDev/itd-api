@@ -3,6 +3,7 @@ import { ItdConfigError } from './errors.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
 import { MemoryTokenStorage, type TokenStorage } from './storage.js';
 import { normalizeBaseUrl } from './url.js';
+import { LIBRARY_VERSION } from './version.js';
 
 /** Базовый URL API итд.com. Домен записан в punycode: `итд.com`. */
 export const DEFAULT_BASE_URL = 'https://xn--d1ah4a.com';
@@ -10,10 +11,9 @@ export const DEFAULT_BASE_URL = 'https://xn--d1ah4a.com';
 /** Таймаут запроса по умолчанию. Столько же использует официальный клиент итд.com. */
 export const DEFAULT_TIMEOUT = 30_000;
 
-/**
- * Версия библиотеки — попадает в `User-Agent`.
- */
-export const LIBRARY_VERSION = '0.0.7';
+// Значение живёт в отдельном модуле, который порождается из package.json скриптом
+// scripts/sync-version.mjs: две записанные вручную версии рано или поздно разъезжаются.
+export { LIBRARY_VERSION } from './version.js';
 
 /**
  * `User-Agent` по умолчанию.
@@ -59,27 +59,35 @@ export interface ResolvedRateLimitOptions {
   respectHeaders: boolean;
 }
 
-/** Конфигурация клиента после подстановки значений по умолчанию и проверок. */
-export interface ResolvedConfig {
+/**
+ * Срез конфигурации, нужный слою авторизации.
+ *
+ * Выделен явно, чтобы {@link AuthManager} не получал целиком `ResolvedConfig` со всеми
+ * настройками транспорта, повторов и очереди, к которым он отношения не имеет.
+ * `ResolvedConfig` содержит все эти поля, поэтому подходит везде, где ждут `AuthConfig`.
+ */
+export interface AuthConfig {
   baseUrl: string;
   auth: AuthInput | undefined;
   storage: TokenStorage;
-  autoRefresh: boolean;
+  useCookieJar: boolean;
+  deviceId: string | undefined;
   reloginOnRefreshFailure: boolean;
+  logger: Logger | undefined;
+}
+
+/** Конфигурация клиента после подстановки значений по умолчанию и проверок. */
+export interface ResolvedConfig extends AuthConfig {
+  autoRefresh: boolean;
   fetch: typeof fetch;
   timeout: number;
   retry: ResolvedRetryOptions | undefined;
   rateLimit: ResolvedRateLimitOptions | undefined;
   hooks: ClientHooks;
-  logger: Logger | undefined;
   headers: Record<string, string>;
-  /** Значение заголовка `X-Device-Id`, если задано вручную. Иначе заводится само. */
-  deviceId: string | undefined;
   /** Значение заголовка `User-Agent`. `undefined` — заголовок не выставляется. */
   userAgent: string | undefined;
   mode: RuntimeMode;
-  /** Вести ли собственный cookie-jar (вне браузера и React Native). */
-  useCookieJar: boolean;
   /** Отправлять ли `credentials: 'include'` (в браузере). */
   sendCredentials: boolean;
 }
@@ -101,7 +109,16 @@ function consoleLogger(): Logger {
   };
 }
 
-function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOptions | undefined {
+/**
+ * Приводит настройки повторов к полному виду.
+ *
+ * Вызывается и при создании клиента (для глобальной настройки), и на каждый запрос,
+ * у которого задан свой `retry`. Возвращает `undefined`, когда повторять не нужно
+ * (`retry: false` или единственная попытка).
+ *
+ * @throws {ItdConfigError} при некорректных значениях
+ */
+export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOptions | undefined {
   if (retry === false) return undefined;
 
   const options = retry ?? {};

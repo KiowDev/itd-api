@@ -223,9 +223,37 @@ export interface RequestOptions {
   timeout?: number | undefined;
   /** Дополнительные заголовки. */
   headers?: Record<string, string> | undefined;
-  /** Повторы только для этого запроса. */
+  /** Повторы только для этого запроса. Переопределяют глобальную настройку `retry`. */
   retry?: RetryOptions | false | undefined;
 }
+
+/**
+ * Имена полей {@link RequestOptions} — единственный источник истины.
+ *
+ * Ресурсы переносят в описание запроса только эти поля (плюс заявленные плагинами),
+ * потому что параметры методов подмешивают к ним `limit`, `cursor` и прочее, чему
+ * в транспорте делать нечего. Список стоит рядом с интерфейсом, чтобы новое поле нельзя
+ * было забыть.
+ *
+ * `satisfies` гарантирует, что каждое имя в списке — действительно поле `RequestOptions`.
+ * Обратную полноту (не забыто ли новое поле) проверяет тип {@link RequestOptionKeysComplete}
+ * в тесте: здесь её проверять нельзя — плагины расширяют `RequestOptions` своими опциями
+ * (`encrypt`, `decrypt` и подобными), которых в этом списке быть и не должно.
+ */
+export const REQUEST_OPTION_KEYS = [
+  'signal',
+  'timeout',
+  'headers',
+  'retry',
+] as const satisfies readonly (keyof RequestOptions)[];
+
+/**
+ * Тип-страж полноты {@link REQUEST_OPTION_KEYS}: `true`, только когда список покрывает
+ * все ключи `RequestOptions`. Проверяется в тесте, а не здесь, — в сборке плагина
+ * интерфейс расширен, и strict-проверка на месте давала бы ложную ошибку.
+ */
+export type RequestOptionKeysComplete =
+  keyof RequestOptions extends (typeof REQUEST_OPTION_KEYS)[number] ? true : never;
 
 /** Полное описание запроса для низкоуровневого `itd.request()`. */
 export interface RawRequestOptions extends RequestOptions {

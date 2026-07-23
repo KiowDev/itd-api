@@ -300,4 +300,27 @@ describe('RequestQueue — частота', () => {
 
     await expect(queue.schedule(() => Promise.resolve('ок'))).resolves.toBe('ок');
   });
+
+  it('stop снимает отложенную паузу для следующих задач', async () => {
+    const queue = new RequestQueue({
+      concurrency: 1,
+      rps: undefined,
+      retryDelays: [1000],
+      respectHeaders: true,
+    });
+    const started = vi.fn();
+
+    queue.pause(60_000);
+    queue.stop();
+
+    const promise = queue.schedule(() => {
+      started();
+      return Promise.resolve('ок');
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(promise).resolves.toBe('ок');
+    expect(started).toHaveBeenCalledOnce();
+  });
 });

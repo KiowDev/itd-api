@@ -119,27 +119,22 @@ export type {
 export { OAuthProvider, SignInStatus } from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export type { FilesResource, UploadedFile, UploadOptions } from './resources/files.js';
-export type {
-  HashtagPostsParams,
-  HashtagsResource,
-  PlatformResource,
-  ReportsResource,
-  SearchResource,
-  SearchResult,
-  SubscriptionResource,
-  VerificationResource,
-} from './resources/misc.js';
+export type { HashtagPostsParams, HashtagsResource } from './resources/hashtags.js';
 export type {
   NotificationListParams,
   NotificationsResource,
   UpdateNotificationSettingsInput,
 } from './resources/notifications.js';
+export type { PlatformResource } from './resources/platform.js';
 export type {
   CommentsParams,
   FeedParams,
   PostsResource,
   UserPostsParams,
 } from './resources/posts.js';
+export type { ReportsResource } from './resources/reports.js';
+export type { SearchResource, SearchResult } from './resources/search.js';
+export type { SubscriptionResource } from './resources/subscription.js';
 export type {
   DwellEntry,
   InteractionEntry,
@@ -152,6 +147,7 @@ export type {
   UserListParams,
   UsersResource,
 } from './resources/users.js';
+export type { VerificationResource } from './resources/verification.js';
 export type { Loose } from './types/enums.js';
 // Перечисления экспортируются парой «значение + тип» под одним именем:
 // FeedTab.Popular работает как константа, FeedTab — как тип. Подробности — в types/enums.ts.

@@ -1,30 +1,21 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  DEFAULT_BASE_URL,
-  DEFAULT_TIMEOUT,
-  DEFAULT_USER_AGENT,
-  LIBRARY_VERSION,
-  resolveConfig,
-} from '../src/core/config.js';
+import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT, resolveConfig } from '../src/core/config.js';
 import { ItdConfigError } from '../src/core/errors.js';
 import {
   createTokenStorage,
   LocalStorageTokenStorage,
   MemoryTokenStorage,
 } from '../src/core/storage.js';
+import { REQUEST_OPTION_KEYS, type RequestOptionKeysComplete } from '../src/types/options.js';
 
-describe('версия библиотеки', () => {
-  it('совпадает с package.json', () => {
-    const manifest: unknown = JSON.parse(
-      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-    );
-    const version = (manifest as { version: string }).version;
-
-    // `npm version` правит только манифест. Без этой проверки User-Agent начал бы
-    // сообщать чужую версию, и заметить это было бы нечем.
-    expect(LIBRARY_VERSION).toBe(version);
-    expect(DEFAULT_USER_AGENT).toContain(`itd-api/${version}`);
+describe('REQUEST_OPTION_KEYS', () => {
+  it('покрывает все поля RequestOptions', () => {
+    // Проверка на уровне типа: если в RequestOptions добавят поле, не внесённое
+    // в REQUEST_OPTION_KEYS, тип RequestOptionKeysComplete станет never и строка
+    // ниже не скомпилируется. Здесь augmentation плагинов нет, поэтому проверка честна.
+    const complete: RequestOptionKeysComplete = true;
+    expect(complete).toBe(true);
+    expect(REQUEST_OPTION_KEYS).toContain('retry');
   });
 });
 

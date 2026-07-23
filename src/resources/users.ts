@@ -1,10 +1,4 @@
-import {
-  type Page,
-  type PageState,
-  PaginationMode,
-  type Paginator,
-  readPagedPage,
-} from '../core/pagination.js';
+import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { pickArray, pickBoolean, pickString } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import type {
@@ -19,7 +13,7 @@ import type {
   UserSummary,
 } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
-import { BaseResource, withPageState } from './base.js';
+import { BaseResource } from './base.js';
 
 /**
  * Параметры списков пользователей.
@@ -55,6 +49,22 @@ export type UpdatePrivacyInput = Partial<PrivacySettings>;
  * Доступна как `itd.users`.
  */
 export class UsersResource extends BaseResource {
+  /**
+   * Списки пользователей: подписчики, подписки, заблокированные.
+   *
+   * Путь приходит в параметрах — так один описатель обслуживает все три эндпоинта. Имена
+   * полей перечислены с запасом: списки приходят под `users`, но альтернативное имя ничего
+   * не стоит и спасает, если эндпоинт назовёт список по-своему. `page` уходит в запрос, хотя
+   * сервер его сейчас не читает (см. {@link followers}): когда починят — заработает само.
+   */
+  readonly #userList = this.paginated<UserSummary, UserListParams & { path: string }>({
+    path: (p) => p.path,
+    query: (p) => ({ limit: p.limit }),
+    start: (p) => (p.page !== undefined ? { page: p.page } : {}),
+    read: (body) => readPagedPage<UserSummary>(body, 'users', 'followers', 'following', 'blocked'),
+    mode: PaginationMode.Page,
+  });
+
   /** Загружает свой профиль — с подпиской и признаком подтверждённого телефона. */
   me(options: RequestOptions = {}): Promise<MyProfile> {
     return this.http.request<MyProfile>({
@@ -337,43 +347,11 @@ export class UsersResource extends BaseResource {
     });
   }
 
-  /**
-   * Загружает одну страницу списка пользователей.
-   *
-   * Имена полей перечислены с запасом: списки подписчиков и заблокированных приходят
-   * под `users`, но альтернативное имя ничего не стоит и спасает, если эндпоинт назовёт
-   * список по-своему.
-   *
-   * `page` уходит в запрос, хотя сервер его сейчас не читает (см. {@link followers}):
-   * когда пагинацию починят, работать начнёт само.
-   */
-  async #loadUserPage(
-    path: string,
-    params: UserListParams,
-    state: PageState,
-  ): Promise<Page<UserSummary>> {
-    const body = await this.http.request({
-      method: 'GET',
-      path,
-      query: withPageState({ limit: params.limit }, state),
-      ...this.requestOptions(params),
-    });
-
-    return readPagedPage<UserSummary>(body, 'users', 'followers', 'following', 'blocked');
-  }
-
   #userPage(path: string, params: UserListParams): Promise<Page<UserSummary>> {
-    return this.#loadUserPage(path, params, {
-      ...(params.page !== undefined ? { page: params.page } : {}),
-    });
+    return this.#userList.list({ ...params, path });
   }
 
   #userPaginator(path: string, params: UserListParams): Paginator<UserSummary> {
-    return this.paginate<UserSummary>(
-      PaginationMode.Page,
-      (state) => this.#loadUserPage(path, params, state),
-      // Без `start` перебор начинался бы с первой страницы, молча игнорируя `page`.
-      { ...params, ...(params.page !== undefined ? { start: { page: params.page } } : {}) },
-    );
+    return this.#userList.iterate({ ...params, path });
   }
 }

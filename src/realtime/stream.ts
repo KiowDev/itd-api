@@ -103,6 +103,8 @@ export interface RealtimeDeps {
   refresh: () => Promise<boolean>;
   /** Загружает начальное число непрочитанных. */
   fetchUnreadCount: () => Promise<number>;
+  /** Вызывается при явном закрытии потока. */
+  onClose?: (() => void) | undefined;
   logger?: Logger | undefined;
 }
 
@@ -129,7 +131,7 @@ export interface RealtimeDeps {
 export class ItdRealtime {
   readonly #deps: RealtimeDeps;
   readonly #options: RealtimeOptions;
-  readonly #emitter = new Emitter<RealtimeEvents>();
+  readonly #emitter: Emitter<RealtimeEvents>;
   readonly #transport: RealtimeTransport;
   readonly #maxAttempts: number;
 
@@ -153,6 +155,12 @@ export class ItdRealtime {
     this.#options = options;
     this.#maxAttempts = options.maxAttempts ?? MAX_RECONNECT_ATTEMPTS;
     this.#transport = this.#createTransport();
+    // Исключение из пользовательского обработчика — в логгер, при его отсутствии в консоль.
+    this.#emitter = new Emitter<RealtimeEvents>((error) => {
+      const message = 'Ошибка в обработчике события realtime';
+      if (deps.logger) deps.logger.error(message, error);
+      else console.error(`[itd-api] ${message}`, error);
+    });
   }
 
   /** Текущее состояние соединения. */
@@ -222,6 +230,7 @@ export class ItdRealtime {
     this.#attempt = 0;
 
     this.#setStatus(RealtimeStatus.Disconnected);
+    this.#deps.onClose?.();
   }
 
   /** Снимает все подписки. Соединение при этом не закрывается. */

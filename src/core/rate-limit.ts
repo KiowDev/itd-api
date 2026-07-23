@@ -1,8 +1,11 @@
 import type { ResolvedRateLimitOptions } from './config.js';
+import { ItdAbortError } from './errors.js';
 
 /** Задача, ожидающая своей очереди. */
 interface QueuedTask {
   run: () => void;
+  /** Снимает задачу, ещё не начавшую выполняться, — используется при остановке очереди. */
+  cancel: (reason: unknown) => void;
 }
 
 /**
@@ -64,9 +67,26 @@ export class RequestQueue {
           });
       };
 
-      this.#waiting.push({ run });
+      this.#waiting.push({ run, cancel: reject });
       this.#drain();
     });
+  }
+
+  /**
+   * Останавливает очередь: снимает отложенную паузу и отклоняет ещё не начатые задачи
+   * ошибкой `ItdAbortError`. Уже выполняющиеся задачи доводятся до конца.
+   */
+  stop(): void {
+    if (this.#timer !== undefined) {
+      clearTimeout(this.#timer);
+      this.#timer = undefined;
+    }
+    this.#nextSlot = 0;
+
+    const pending = this.#waiting.splice(0, this.#waiting.length);
+    for (const task of pending) {
+      task.cancel(new ItdAbortError('Клиент закрыт, запрос отменён'));
+    }
   }
 
   /**

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from '../src/core/config.js';
+import { CookieJar } from '../src/core/cookies.js';
 import {
   ItdAbortError,
   ItdNetworkError,
@@ -7,7 +8,14 @@ import {
   ItdTimeoutError,
   ItdValidationError,
 } from '../src/core/errors.js';
-import { HttpClient, type HttpCollaborators } from '../src/core/http.js';
+import {
+  composePipeline,
+  createAuthMiddleware,
+  createQueueMiddleware,
+  createRetryMiddleware,
+} from '../src/core/middleware.js';
+import type { PipelineRequest } from '../src/core/pipeline.js';
+import { Transport, type TransportDeps } from '../src/core/transport.js';
 import type { ItdClientOptions } from '../src/types/options.js';
 import {
   abortError,
@@ -18,10 +26,11 @@ import {
   noContent,
 } from './helpers/mock-fetch.js';
 
-function makeClient(
+/** Собирает транспорт с моком сети — так же, как это делает ItdClient. */
+function makeTransport(
   handler: MockHandler | Response[],
   options: ItdClientOptions = {},
-  collaborators: HttpCollaborators = {},
+  deps: Partial<TransportDeps> = {},
 ) {
   const mock = createMockFetch(handler);
   const config = resolveConfig({
@@ -32,109 +41,149 @@ function makeClient(
     mode: 'server',
     ...options,
   });
-  return { http: new HttpClient(config, collaborators), mock };
+
+  const transport = new Transport(config, {
+    cookies: deps.cookies ?? undefined,
+    getDeviceId: deps.getDeviceId,
+    onRateLimit: deps.onRateLimit,
+  });
+
+  return { transport, mock, config };
 }
 
-describe('сборка запроса', () => {
+describe('Transport: сборка запроса', () => {
   it('склеивает путь и строку запроса', async () => {
-    const { http, mock } = makeClient([json({ ok: true })]);
+    const { transport, mock } = makeTransport([json({ ok: true })]);
 
-    await http.request({ method: 'GET', path: '/api/posts', query: { tab: 'popular', limit: 20 } });
+    await transport.send({
+      method: 'GET',
+      path: '/api/posts',
+      query: { tab: 'popular', limit: 20 },
+    });
 
     expect(mock.calls[0]?.url).toBe('https://itd.test/api/posts?tab=popular&limit=20');
   });
 
   it('сохраняет завершающий слэш', async () => {
-    const { http, mock } = makeClient([json({ count: 0 })]);
+    const { transport, mock } = makeTransport([json({ count: 0 })]);
 
-    await http.request({ method: 'GET', path: '/api/notifications/' });
+    await transport.send({ method: 'GET', path: '/api/notifications/' });
 
     expect(mock.calls[0]?.url).toBe('https://itd.test/api/notifications/');
   });
 
   it('сериализует объект в JSON и ставит Content-Type', async () => {
-    const { http, mock } = makeClient([json({ id: '1' })]);
+    const { transport, mock } = makeTransport([json({ id: '1' })]);
 
-    await http.request({ method: 'POST', path: '/api/posts', body: { content: 'привет' } });
+    await transport.send({ method: 'POST', path: '/api/posts', body: { content: 'привет' } });
 
     expect(mock.calls[0]?.body).toBe('{"content":"привет"}');
     expect(mock.calls[0]?.headers.get('content-type')).toBe('application/json');
   });
 
   it('не трогает Content-Type у FormData — boundary выставляет среда', async () => {
-    const { http, mock } = makeClient([json({ id: '1' })]);
+    const { transport, mock } = makeTransport([json({ id: '1' })]);
     const form = new FormData();
     form.set('file', new Blob(['x']), 'a.png');
 
-    await http.request({ method: 'POST', path: '/api/files/upload', body: form });
+    await transport.send({ method: 'POST', path: '/api/files/upload', body: form });
 
     expect(mock.calls[0]?.headers.get('content-type')).toBeNull();
   });
 
   it('заголовки запроса важнее клиентских', async () => {
-    const { http, mock } = makeClient([json({})], { headers: { 'X-App': 'from-client' } });
+    const { transport, mock } = makeTransport([json({})], { headers: { 'X-App': 'from-client' } });
 
-    await http.request({ method: 'GET', path: '/api/posts', headers: { 'X-App': 'from-request' } });
+    await transport.send({
+      method: 'GET',
+      path: '/api/posts',
+      headers: { 'X-App': 'from-request' },
+    });
 
     expect(mock.calls[0]?.headers.get('x-app')).toBe('from-request');
   });
 
-  it('в браузерном режиме отправляет credentials', async () => {
-    const { http, mock } = makeClient([json({})], { mode: 'browser' });
+  it('заголовки слоёв важнее клиентских, но уступают заголовкам запроса', async () => {
+    const { transport, mock } = makeTransport([json({})], { headers: { 'X-App': 'from-client' } });
 
-    await http.request({ method: 'GET', path: '/api/users/me' });
+    const request: PipelineRequest = {
+      method: 'GET',
+      path: '/api/posts',
+      layerHeaders: { 'X-App': 'from-layer', Authorization: 'Bearer t' },
+      headers: { 'X-App': 'from-request' },
+    };
+    await transport.send(request);
+
+    expect(mock.calls[0]?.headers.get('x-app')).toBe('from-request');
+    expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer t');
+  });
+
+  it('в браузерном режиме отправляет credentials', async () => {
+    const { transport, mock } = makeTransport([json({})], { mode: 'browser' });
+
+    await transport.send({ method: 'GET', path: '/api/users/me' });
 
     expect(mock.calls[0]?.credentials).toBe('include');
   });
+
+  it('подставляет X-Device-Id из зависимости', async () => {
+    const { transport, mock } = makeTransport([json({})], {}, { getDeviceId: async () => 'dev-1' });
+
+    await transport.send({ method: 'GET', path: '/api/posts' });
+
+    expect(mock.calls[0]?.headers.get('x-device-id')).toBe('dev-1');
+  });
 });
 
-describe('разбор ответа', () => {
+describe('Transport: разбор ответа', () => {
   it('снимает обёртку data', async () => {
-    const { http } = makeClient([json({ data: { posts: [] } })]);
+    const { transport } = makeTransport([json({ data: { posts: [] } })]);
 
-    await expect(http.request({ method: 'GET', path: '/api/posts' })).resolves.toEqual({
+    await expect(transport.send({ method: 'GET', path: '/api/posts' })).resolves.toEqual({
       posts: [],
     });
   });
 
   it('raw: true оставляет обёртку', async () => {
-    const { http } = makeClient([json({ data: { posts: [] } })]);
+    const { transport } = makeTransport([json({ data: { posts: [] } })]);
 
-    await expect(http.request({ method: 'GET', path: '/api/posts', raw: true })).resolves.toEqual({
-      data: { posts: [] },
-    });
+    await expect(transport.send({ method: 'GET', path: '/api/posts', raw: true })).resolves.toEqual(
+      { data: { posts: [] } },
+    );
   });
 
   it('204 отдаёт undefined', async () => {
-    const { http } = makeClient([noContent()]);
+    const { transport } = makeTransport([noContent()]);
 
-    await expect(http.request({ method: 'DELETE', path: '/api/posts/1' })).resolves.toBeUndefined();
+    await expect(
+      transport.send({ method: 'DELETE', path: '/api/posts/1' }),
+    ).resolves.toBeUndefined();
   });
 
   it('не падает на битом JSON при заголовке application/json', async () => {
-    const { http } = makeClient([
+    const { transport } = makeTransport([
       new Response('не json', { status: 200, headers: { 'content-type': 'application/json' } }),
     ]);
 
-    await expect(http.request({ method: 'GET', path: '/api/posts' })).resolves.toBe('не json');
+    await expect(transport.send({ method: 'GET', path: '/api/posts' })).resolves.toBe('не json');
   });
 });
 
-describe('ошибки', () => {
+describe('Transport: ошибки', () => {
   it('превращает статус в типизированную ошибку', async () => {
-    const { http } = makeClient([
+    const { transport } = makeTransport([
       json({ error: { code: 'ENTITY_NOT_FOUND', message: 'нет поста' } }, { status: 404 }),
     ]);
 
-    await expect(http.request({ method: 'GET', path: '/api/posts/1' })).rejects.toThrow(
+    await expect(transport.send({ method: 'GET', path: '/api/posts/1' })).rejects.toThrow(
       ItdNotFoundError,
     );
   });
 
   it('сохраняет метод и путь в ошибке', async () => {
-    const { http } = makeClient([json({ code: 'VALIDATION_ERROR' }, { status: 400 })]);
+    const { transport } = makeTransport([json({ code: 'VALIDATION_ERROR' }, { status: 400 })]);
 
-    await expect(http.request({ method: 'POST', path: '/api/posts' })).rejects.toMatchObject({
+    await expect(transport.send({ method: 'POST', path: '/api/posts' })).rejects.toMatchObject({
       method: 'POST',
       path: '/api/posts',
       constructor: ItdValidationError,
@@ -142,11 +191,11 @@ describe('ошибки', () => {
   });
 
   it('сбой сети становится ItdNetworkError', async () => {
-    const { http } = makeClient(() => {
+    const { transport } = makeTransport(() => {
       throw new TypeError('fetch failed');
     });
 
-    await expect(http.request({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
+    await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
       ItdNetworkError,
     );
   });
@@ -160,9 +209,13 @@ describe('ошибки', () => {
       retry: false,
       rateLimit: false,
     });
-    const http = new HttpClient(config);
+    const transport = new Transport(config, {
+      cookies: undefined,
+      getDeviceId: undefined,
+      onRateLimit: undefined,
+    });
 
-    await expect(http.request({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
+    await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
       ItdTimeoutError,
     );
   });
@@ -176,187 +229,83 @@ describe('ошибки', () => {
       retry: false,
       rateLimit: false,
     });
-    const http = new HttpClient(config);
+    const transport = new Transport(config, {
+      cookies: undefined,
+      getDeviceId: undefined,
+      onRateLimit: undefined,
+    });
     const controller = new AbortController();
 
-    const promise = http.request({ method: 'GET', path: '/api/posts', signal: controller.signal });
+    const promise = transport.send({
+      method: 'GET',
+      path: '/api/posts',
+      signal: controller.signal,
+    });
     controller.abort();
 
     await expect(promise).rejects.toThrow(ItdAbortError);
   });
 
   it('уже отменённый signal не доходит до сети', async () => {
-    const { http, mock } = makeClient(() => json({}));
+    const { transport, mock } = makeTransport(() => json({}));
     const controller = new AbortController();
     controller.abort();
 
     await expect(
-      http.request({ method: 'GET', path: '/api/posts', signal: controller.signal }),
+      transport.send({ method: 'GET', path: '/api/posts', signal: controller.signal }),
     ).rejects.toThrow(ItdAbortError);
     expect(mock.callCount).toBe(1);
   });
 });
 
-describe('обновление токена при 401', () => {
-  it('повторяет запрос ровно один раз после успешного обновления', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(true);
-    const { http, mock } = makeClient(
-      [json({ code: 'UNAUTHORIZED' }, { status: 401 }), json({ data: { id: '1' } })],
-      {},
-      { onUnauthorized },
-    );
-
-    await expect(http.request({ method: 'GET', path: '/api/users/me' })).resolves.toEqual({
-      id: '1',
-    });
-    expect(onUnauthorized).toHaveBeenCalledTimes(1);
-    expect(mock.callCount).toBe(2);
-  });
-
-  it('не зацикливается, если 401 приходит и на свежем токене', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(true);
-    const { http, mock } = makeClient(
-      () => json({ code: 'UNAUTHORIZED' }, { status: 401 }),
-      {},
-      { onUnauthorized },
-    );
-
-    await expect(http.request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
-    expect(onUnauthorized).toHaveBeenCalledTimes(1);
-    expect(mock.callCount).toBe(2);
-  });
-
-  it('не обновляет токен, если обновление не удалось', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(false);
-    const { http, mock } = makeClient(
-      [json({ code: 'SESSION_EXPIRED' }, { status: 401 })],
-      {},
-      { onUnauthorized },
-    );
-
-    await expect(http.request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
-    expect(mock.callCount).toBe(1);
-  });
-
-  it('skipAuthRefresh отключает обновление — так защищены сами эндпоинты авторизации', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(true);
-    const { http } = makeClient(
-      [json({ code: 'UNAUTHORIZED' }, { status: 401 })],
-      {},
-      { onUnauthorized },
-    );
-
-    await expect(
-      http.request({ method: 'POST', path: '/api/v1/auth/refresh', skipAuthRefresh: true }),
-    ).rejects.toThrow();
-    expect(onUnauthorized).not.toHaveBeenCalled();
-  });
-
-  it('autoRefresh: false отключает обновление полностью', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(true);
-    const { http } = makeClient(
-      [json({ code: 'UNAUTHORIZED' }, { status: 401 })],
-      { autoRefresh: false },
-      { onUnauthorized },
-    );
-
-    await expect(http.request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
-    expect(onUnauthorized).not.toHaveBeenCalled();
-  });
-});
-
-describe('подключаемые части конвейера', () => {
-  it('подставляет заголовки авторизации', async () => {
-    const { http, mock } = makeClient(
-      [json({})],
-      {},
-      { getAuthHeaders: () => ({ Authorization: 'Bearer test-token' }) },
-    );
-
-    await http.request({ method: 'GET', path: '/api/users/me' });
-
-    expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer test-token');
-  });
-
-  it('skipAuth не подставляет заголовки авторизации', async () => {
-    const getAuthHeaders = vi.fn(() => ({ Authorization: 'Bearer test-token' }));
-    const { http, mock } = makeClient([json({})], {}, { getAuthHeaders });
-
-    await http.request({ method: 'POST', path: '/api/v1/auth/sign-in', skipAuth: true });
-
-    expect(getAuthHeaders).not.toHaveBeenCalled();
-    expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
-  });
-
+describe('Transport: cookie и rate-limit', () => {
   it('подставляет Cookie и принимает Set-Cookie', async () => {
-    const saveCookies = vi.fn();
-    const { http, mock } = makeClient(
-      [json({})],
-      {},
-      { getCookieHeader: () => 'is_auth=1', saveCookies },
-    );
+    const jar = new CookieJar();
+    jar.setFromStrings('https://itd.test/', ['is_auth=1; Path=/']);
 
-    await http.request({ method: 'POST', path: '/api/v1/auth/refresh' });
+    const response = new Response(JSON.stringify({}), {
+      headers: { 'content-type': 'application/json', 'set-cookie': 'sid=42; Path=/' },
+    });
+    const { transport, mock } = makeTransport([response], {}, { cookies: jar });
+
+    await transport.send({ method: 'POST', path: '/api/v1/auth/refresh' });
 
     expect(mock.calls[0]?.headers.get('cookie')).toBe('is_auth=1');
-    expect(saveCookies).toHaveBeenCalledOnce();
+    expect(jar.has('sid')).toBe(true);
   });
 
   it('в браузерном режиме свой cookie-jar не используется', async () => {
-    const getCookieHeader = vi.fn(() => 'is_auth=1');
-    const { http } = makeClient([json({})], { mode: 'browser' }, { getCookieHeader });
+    const jar = new CookieJar();
+    jar.setFromStrings('https://itd.test/', ['is_auth=1; Path=/']);
+    // В браузерном режиме useCookieJar выключен, поэтому заголовок не собирается.
+    const { transport, mock } = makeTransport([json({})], { mode: 'browser' }, { cookies: jar });
 
-    await http.request({ method: 'GET', path: '/api/users/me' });
+    await transport.send({ method: 'GET', path: '/api/users/me' });
 
-    expect(getCookieHeader).not.toHaveBeenCalled();
+    expect(mock.calls[0]?.headers.get('cookie')).toBeNull();
   });
 
-  it('пропускает запрос через очередь', async () => {
-    let scheduled = 0;
-    const schedule = <T>(task: () => Promise<T>): Promise<T> => {
-      scheduled += 1;
-      return task();
-    };
-    const { http } = makeClient([json({})], {}, { schedule });
-
-    await http.request({ method: 'GET', path: '/api/posts' });
-
-    expect(scheduled).toBe(1);
-  });
-
-  it('повторяет запрос по решению планировщика повторов', async () => {
-    const nextRetryDelay = vi.fn((_e: unknown, attempt: number) => (attempt === 1 ? 0 : undefined));
-    const { http, mock } = makeClient(
-      [json({ code: 'UNKNOWN_ERROR' }, { status: 500 }), json({ data: { ok: true } })],
+  it('сообщает об остатке лимита из заголовков', async () => {
+    const onRateLimit = vi.fn();
+    const { transport } = makeTransport(
+      [json({}, { headers: { 'x-ratelimit-limit': '100', 'x-ratelimit-remaining': '7' } })],
       {},
-      { nextRetryDelay },
+      { onRateLimit },
     );
 
-    await expect(http.request({ method: 'GET', path: '/api/posts' })).resolves.toEqual({
-      ok: true,
-    });
-    expect(mock.callCount).toBe(2);
-  });
+    await transport.send({ method: 'GET', path: '/api/posts' });
 
-  it('прекращает повторы, когда планировщик возвращает undefined', async () => {
-    const { http, mock } = makeClient(
-      () => json({ code: 'UNKNOWN_ERROR' }, { status: 500 }),
-      {},
-      { nextRetryDelay: () => undefined },
-    );
-
-    await expect(http.request({ method: 'GET', path: '/api/posts' })).rejects.toThrow();
-    expect(mock.callCount).toBe(1);
+    expect(onRateLimit).toHaveBeenCalledWith(100, 7);
   });
 });
 
-describe('хуки и логгер', () => {
+describe('Transport: хуки и логгер', () => {
   it('вызывает onRequest и onResponse', async () => {
     const onRequest = vi.fn();
     const onResponse = vi.fn();
-    const { http } = makeClient([json({})], { hooks: { onRequest, onResponse } });
+    const { transport } = makeTransport([json({})], { hooks: { onRequest, onResponse } });
 
-    await http.request({ method: 'GET', path: '/api/posts' });
+    await transport.send({ method: 'GET', path: '/api/posts' });
 
     expect(onRequest).toHaveBeenCalledWith(
       expect.objectContaining({ method: 'GET', path: '/api/posts', attempt: 1 }),
@@ -365,46 +314,240 @@ describe('хуки и логгер', () => {
   });
 
   it('onRequest может дописать заголовок', async () => {
-    const { http, mock } = makeClient([json({})], {
+    const { transport, mock } = makeTransport([json({})], {
       hooks: { onRequest: (context) => void context.headers.set('X-Trace', 'abc-123') },
     });
 
-    await http.request({ method: 'GET', path: '/api/posts' });
+    await transport.send({ method: 'GET', path: '/api/posts' });
 
     expect(mock.calls[0]?.headers.get('x-trace')).toBe('abc-123');
   });
 
   it('объясняет, почему кириллица в заголовке невозможна', async () => {
-    const { http } = makeClient([json({})], { headers: { 'X-App': 'мой бот' } });
+    const { transport } = makeTransport([json({})], { headers: { 'X-App': 'мой бот' } });
 
-    await expect(http.request({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
+    await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
       /latin1|кириллиц/,
     );
   });
 
   it('вызывает onError при ошибке сервера', async () => {
     const onError = vi.fn();
-    const { http } = makeClient([json({}, { status: 500 })], { hooks: { onError } });
+    const { transport } = makeTransport([json({}, { status: 500 })], { hooks: { onError } });
 
-    await expect(http.request({ method: 'GET', path: '/api/posts' })).rejects.toThrow();
+    await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow();
     expect(onError).toHaveBeenCalledOnce();
   });
 
   it('маскирует токен в логе', async () => {
     const debug = vi.fn();
     const logger = { debug, info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const { http } = makeClient(
-      [json({})],
-      { logger },
-      { getAuthHeaders: () => ({ Authorization: 'Bearer eyJhbGciOi.SECRET-TOKEN-BODY.xyz' }) },
-    );
+    const { transport } = makeTransport([json({})], { logger });
 
-    await http.request({ method: 'POST', path: '/api/posts', body: { password: 'тайна' } });
+    await transport.send({
+      method: 'POST',
+      path: '/api/posts',
+      layerHeaders: { Authorization: 'Bearer eyJhbGciOi.SECRET-TOKEN-BODY.xyz' },
+      body: { password: 'тайна' },
+    });
 
     const logged = JSON.stringify(debug.mock.calls);
     expect(logged).not.toContain('SECRET-TOKEN-BODY');
     expect(logged).not.toContain('тайна');
     expect(logged).toContain('Bearer');
+  });
+});
+
+/** Собирает конвейер только со слоем авторизации поверх транспорта. */
+function withAuth(
+  handler: MockHandler | Response[],
+  options: ItdClientOptions = {},
+  authDeps: {
+    getAuthHeaders?: () => Record<string, string> | Promise<Record<string, string>>;
+    onUnauthorized?: () => Promise<boolean>;
+  } = {},
+) {
+  const { transport, mock, config } = makeTransport(handler, options);
+  const handler401 = composePipeline(
+    [
+      createAuthMiddleware({
+        getAuthHeaders: authDeps.getAuthHeaders ?? (() => ({})),
+        onUnauthorized: authDeps.onUnauthorized ?? (async () => false),
+        autoRefresh: config.autoRefresh,
+      }),
+    ],
+    transport.send,
+  );
+
+  return { request: (options: PipelineRequest) => handler401(options), mock };
+}
+
+describe('слой авторизации', () => {
+  it('подставляет заголовки авторизации', async () => {
+    const { request, mock } = withAuth(
+      [json({})],
+      {},
+      {
+        getAuthHeaders: () => ({ Authorization: 'Bearer test-token' }),
+      },
+    );
+
+    await request({ method: 'GET', path: '/api/users/me' });
+
+    expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer test-token');
+  });
+
+  it('skipAuth не подставляет заголовки авторизации', async () => {
+    const getAuthHeaders = vi.fn(() => ({ Authorization: 'Bearer test-token' }));
+    const { request, mock } = withAuth([json({})], {}, { getAuthHeaders });
+
+    await request({ method: 'POST', path: '/api/v1/auth/sign-in', skipAuth: true });
+
+    expect(getAuthHeaders).not.toHaveBeenCalled();
+    expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
+  });
+
+  it('повторяет запрос ровно один раз после успешного обновления', async () => {
+    const onUnauthorized = vi.fn().mockResolvedValue(true);
+    const { request, mock } = withAuth(
+      [json({ code: 'UNAUTHORIZED' }, { status: 401 }), json({ data: { id: '1' } })],
+      {},
+      { onUnauthorized },
+    );
+
+    await expect(request({ method: 'GET', path: '/api/users/me' })).resolves.toEqual({ id: '1' });
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(mock.callCount).toBe(2);
+  });
+
+  it('не зацикливается, если 401 приходит и на свежем токене', async () => {
+    const onUnauthorized = vi.fn().mockResolvedValue(true);
+    const { request, mock } = withAuth(
+      () => json({ code: 'UNAUTHORIZED' }, { status: 401 }),
+      {},
+      { onUnauthorized },
+    );
+
+    await expect(request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(mock.callCount).toBe(2);
+  });
+
+  it('не обновляет токен, если обновление не удалось', async () => {
+    const onUnauthorized = vi.fn().mockResolvedValue(false);
+    const { request, mock } = withAuth(
+      [json({ code: 'SESSION_EXPIRED' }, { status: 401 })],
+      {},
+      { onUnauthorized },
+    );
+
+    await expect(request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('skipAuthRefresh отключает обновление — так защищены сами эндпоинты авторизации', async () => {
+    const onUnauthorized = vi.fn().mockResolvedValue(true);
+    const { request } = withAuth(
+      [json({ code: 'UNAUTHORIZED' }, { status: 401 })],
+      {},
+      { onUnauthorized },
+    );
+
+    await expect(
+      request({ method: 'POST', path: '/api/v1/auth/refresh', skipAuthRefresh: true }),
+    ).rejects.toThrow();
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('autoRefresh: false отключает обновление полностью', async () => {
+    const onUnauthorized = vi.fn().mockResolvedValue(true);
+    const { request } = withAuth(
+      [json({ code: 'UNAUTHORIZED' }, { status: 401 })],
+      { autoRefresh: false },
+      { onUnauthorized },
+    );
+
+    await expect(request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+});
+
+describe('слой очереди', () => {
+  it('пропускает запрос через очередь', async () => {
+    let scheduled = 0;
+    const schedule = <T>(task: () => Promise<T>): Promise<T> => {
+      scheduled += 1;
+      return task();
+    };
+    const { transport } = makeTransport([json({})]);
+    const handler = composePipeline([createQueueMiddleware(schedule)], transport.send);
+
+    await handler({ method: 'GET', path: '/api/posts' });
+
+    expect(scheduled).toBe(1);
+  });
+
+  it('skipQueue проходит мимо очереди', async () => {
+    let scheduled = 0;
+    const schedule = <T>(task: () => Promise<T>): Promise<T> => {
+      scheduled += 1;
+      return task();
+    };
+    const { transport } = makeTransport([json({})]);
+    const handler = composePipeline([createQueueMiddleware(schedule)], transport.send);
+
+    await handler({ method: 'POST', path: '/api/v1/auth/refresh', skipQueue: true });
+
+    expect(scheduled).toBe(0);
+  });
+});
+
+describe('слой повторов', () => {
+  function withRetry(handler: MockHandler | Response[], options: ItdClientOptions = {}) {
+    const { transport, mock, config } = makeTransport(handler, options);
+    const handlerFn = composePipeline(
+      [
+        createRetryMiddleware({
+          retry: config.retry,
+          rateLimitDelays: [],
+          pauseQueue: undefined,
+          hooks: config.hooks,
+          logger: config.logger,
+          buildUrl: (request) => transport.buildUrl(request),
+        }),
+      ],
+      transport.send,
+    );
+    return { request: (o: PipelineRequest) => handlerFn(o), mock };
+  }
+
+  it('повторяет запрос после 5xx по настройке', async () => {
+    const { request, mock } = withRetry(
+      [json({ code: 'UNKNOWN_ERROR' }, { status: 500 }), json({ data: { ok: true } })],
+      { retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
+    );
+
+    await expect(request({ method: 'GET', path: '/api/posts' })).resolves.toEqual({ ok: true });
+    expect(mock.callCount).toBe(2);
+  });
+
+  it('без повторов отдаёт ошибку сразу', async () => {
+    const { request, mock } = withRetry(() => json({ code: 'UNKNOWN_ERROR' }, { status: 500 }), {
+      retry: false,
+    });
+
+    await expect(request({ method: 'GET', path: '/api/posts' })).rejects.toThrow();
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('retry у запроса переопределяет глобальную настройку', async () => {
+    const { request, mock } = withRetry(() => json({ code: 'UNKNOWN_ERROR' }, { status: 500 }), {
+      retry: { attempts: 5, baseDelay: 0, jitter: 0 },
+    });
+
+    // Глобально до 5 попыток, но у запроса повторы выключены — уходит одна.
+    await expect(request({ method: 'GET', path: '/api/posts', retry: false })).rejects.toThrow();
+    expect(mock.callCount).toBe(1);
   });
 });
 
