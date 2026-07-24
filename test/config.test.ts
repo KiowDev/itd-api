@@ -163,6 +163,31 @@ describe('LocalStorageTokenStorage', () => {
     storage.clear();
     expect(storage.get()).toBeNull();
   });
+
+  it('после ошибки записи и удаления использует только память', () => {
+    const store = new Map([['itd-api:session', '{"accessToken":"старый"}']]);
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+      removeItem: () => {
+        throw new Error('SecurityError');
+      },
+    };
+
+    try {
+      const storage = new LocalStorageTokenStorage();
+
+      storage.set({ accessToken: 'новый' });
+      expect(storage.get()?.accessToken).toBe('новый');
+
+      storage.clear();
+      expect(storage.get()).toBeNull();
+    } finally {
+      delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
+  });
 });
 
 describe('createTokenStorage', () => {

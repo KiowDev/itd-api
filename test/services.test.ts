@@ -125,11 +125,29 @@ describe('Слой сервисов', () => {
     expect(mock.calls[0]?.headers.has('authorization')).toBe(false);
   });
 
-  it('шлёт авторизацию сервису, который её не отключал', async () => {
+  it('шлёт авторизацию поддомену основного хоста', async () => {
     const { itd, mock } = makeClient({ auth: 'token-123' });
-    itd.defineService({ name: 'pb', baseUrl: 'https://pbapi.test' });
+    itd.defineService({ name: 'pb', baseUrl: 'https://pbapi.itd.test' });
 
     await itd.request({ method: 'GET', service: 'pb', path: '/api/pixel-info' });
+
+    expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer token-123');
+  });
+
+  it('не шлёт авторизацию постороннему хосту', async () => {
+    const { itd, mock } = makeClient({ auth: 'token-123' });
+    itd.defineService({ name: 'external', baseUrl: 'https://pbapi.test' });
+
+    await itd.request({ method: 'GET', service: 'external', path: '/api/pixel-info' });
+
+    expect(mock.calls[0]?.headers.has('authorization')).toBe(false);
+  });
+
+  it('постороннему хосту авторизацию можно разрешить явно', async () => {
+    const { itd, mock } = makeClient({ auth: 'token-123' });
+    itd.defineService({ name: 'external', baseUrl: 'https://pbapi.test', auth: true });
+
+    await itd.request({ method: 'GET', service: 'external', path: '/api/pixel-info' });
 
     expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer token-123');
   });

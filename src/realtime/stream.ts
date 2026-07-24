@@ -1,4 +1,5 @@
 import { Emitter, type Listener, type Unsubscribe } from '../core/emitter.js';
+import { ItdConfigError } from '../core/errors.js';
 import { supportsStreamingBody } from '../core/runtime.js';
 import { pickString } from '../core/unwrap.js';
 import {
@@ -11,7 +12,11 @@ import type { Logger } from '../types/options.js';
 import { PollTransport } from './poll.js';
 import { MAX_RECONNECT_ATTEMPTS, type ReconnectOptions, reconnectDelay } from './reconnect.js';
 import { SseTransport } from './sse.js';
-import { type RealtimeTransport, UnauthorizedStreamError } from './transport.js';
+import {
+  type RealtimeTransport,
+  type TransportContext,
+  UnauthorizedStreamError,
+} from './transport.js';
 
 /** События потока уведомлений. */
 export interface RealtimeEvents {
@@ -94,10 +99,50 @@ export interface RealtimeOptions extends ReconnectOptions {
   reconnectOnOnline?: boolean;
 }
 
+/** Проверяет настройки потока. @throws {ItdConfigError} при некорректных значениях */
+function validateRealtimeOptions(options: RealtimeOptions): void {
+  const positiveInteger = (value: number | undefined, name: string): void => {
+    if (value === undefined) return;
+    if (!Number.isInteger(value) || value < 0) {
+      throw new ItdConfigError(
+        `realtime.${name} должен быть целым неотрицательным числом, получено: ${value}`,
+      );
+    }
+  };
+
+  const duration = (value: number | undefined, name: string, min: number): void => {
+    if (value === undefined) return;
+    if (!Number.isFinite(value) || value < min) {
+      throw new ItdConfigError(
+        `realtime.${name} должен быть числом не меньше ${min}, получено: ${value}`,
+      );
+    }
+  };
+
+  positiveInteger(options.maxAttempts, 'maxAttempts');
+  duration(options.pollInterval, 'pollInterval', 1);
+  duration(options.idleTimeout, 'idleTimeout', 0);
+
+  if (options.jitter !== undefined && !(options.jitter >= 0 && options.jitter <= 1)) {
+    throw new ItdConfigError(
+      `realtime.jitter должен быть в диапазоне 0…1, получено: ${options.jitter}`,
+    );
+  }
+
+  if (options.backoff !== undefined) {
+    if (!Array.isArray(options.backoff) || options.backoff.length === 0) {
+      throw new ItdConfigError('realtime.backoff должен быть непустым списком пауз');
+    }
+    for (const delay of options.backoff) duration(delay, 'backoff', 0);
+  }
+}
+
 /** Что поток получает от клиента. */
 export interface RealtimeDeps {
   baseUrl: string;
   fetch: typeof fetch;
+  /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
+  baseHeaders: (url: string) => Promise<Headers>;
   getToken: () => Promise<string | null>;
   /** Обновляет токен после отказа авторизации. Возвращает `true`, если удалось. */
   refresh: () => Promise<boolean>;
@@ -151,6 +196,8 @@ export class ItdRealtime {
   #detachEnvironment: (() => void) | undefined;
 
   constructor(deps: RealtimeDeps, options: RealtimeOptions = {}) {
+    validateRealtimeOptions(options);
+
     this.#deps = deps;
     this.#options = options;
     this.#maxAttempts = options.maxAttempts ?? MAX_RECONNECT_ATTEMPTS;
@@ -263,6 +310,8 @@ export class ItdRealtime {
 
   /** Запускает попытку подключения; повторы планирует сам. */
   #run(): void {
+    if (!this.#wanted) return;
+
     // Страховка от потерянного соединения: если предыдущее ещё живо, закрываем его,
     // иначе его AbortController остался бы недостижимым и поток — незакрытым.
     this.#controller?.abort();
@@ -275,6 +324,7 @@ export class ItdRealtime {
       .connect({
         baseUrl: this.#deps.baseUrl,
         fetch: this.#deps.fetch,
+        baseHeaders: this.#deps.baseHeaders,
         getToken: this.#deps.getToken,
         signal: controller.signal,
         onOpen: () => {
@@ -342,9 +392,10 @@ export class ItdRealtime {
 
     const refreshed = await this.#deps.refresh().catch(() => false);
 
+    if (!this.#wanted) return;
+
     if (!refreshed) {
-      this.#emitter.emit('error', { error, willReconnect: false });
-      this.#emitter.emit('giveup', undefined);
+      this.#giveUp(error);
       return;
     }
 
@@ -352,9 +403,10 @@ export class ItdRealtime {
   }
 
   #scheduleReconnect(error: unknown): void {
+    if (!this.#wanted) return;
+
     if (this.#attempt >= this.#maxAttempts) {
-      this.#emitter.emit('error', { error, willReconnect: false });
-      this.#emitter.emit('giveup', undefined);
+      this.#giveUp(error);
       return;
     }
 
@@ -368,6 +420,18 @@ export class ItdRealtime {
       this.#timer = undefined;
       this.#run();
     }, delay);
+  }
+
+  /** Завершает автоматические попытки переподключения. */
+  #giveUp(error: unknown): void {
+    this.#wanted = false;
+    this.#attempt = 0;
+
+    this.#detachEnvironment?.();
+    this.#detachEnvironment = undefined;
+
+    this.#emitter.emit('error', { error, willReconnect: false });
+    this.#emitter.emit('giveup', undefined);
   }
 
   /**

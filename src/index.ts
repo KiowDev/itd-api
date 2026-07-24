@@ -13,7 +13,7 @@ export { type PollBuilder, type PollInput, poll } from './builders/poll.js';
 export { type PostBuilder, type PostInput, post } from './builders/post.js';
 export { type ReportBuilder, type ReportInput, report } from './builders/report.js';
 export { createClient, ItdClient } from './client.js';
-export { AUTH_PATHS, DEVICE_ID_HEADER, TURNSTILE_SITE_KEY } from './core/auth.js';
+export { AUTH_PATHS, type AuthEvents, DEVICE_ID_HEADER, TURNSTILE_SITE_KEY } from './core/auth.js';
 export {
   BUILT_IN_SERVICES,
   DEFAULT_BASE_URL,
@@ -65,8 +65,8 @@ export {
   VIDEO_MIME_TYPES,
   type VideoMimeType,
 } from './core/mime.js';
-export type { Page, PageState } from './core/pagination.js';
-export { PaginationMode, Paginator } from './core/pagination.js';
+export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
+export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
 // Плагины работают на уровне транспорта: обёртка вокруг запроса видит и тело запроса,
 // и разобранный ответ. Подробности — в core/plugins.ts.
 export type { ItdPlugin, PluginContext, Transformer } from './core/plugins.js';
@@ -81,6 +81,7 @@ export {
   type TokenStorage,
 } from './core/storage.js';
 export { utcStampToIso } from './core/time.js';
+export type { QueryParams, QueryValue } from './core/url.js';
 // Уведомления приводятся к единой форме, поэтому объекты из REST и из потока событий
 // можно складывать в один список. Подробности — в notifications/normalize.ts.
 export {
@@ -106,6 +107,7 @@ export {
 export { type SseTransportOptions, STREAM_PATH } from './realtime/sse.js';
 export {
   ItdRealtime,
+  type RealtimeDeps,
   type RealtimeEvents,
   type RealtimeOptions,
   RealtimeTransportKind,
@@ -124,7 +126,13 @@ export type {
 } from './resources/auth.js';
 export { OAuthProvider, SignInStatus } from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
-export type { FilesResource, UploadedFile, UploadOptions } from './resources/files.js';
+export {
+  DEFAULT_UPLOAD_TIMEOUT,
+  type FileReader,
+  type FilesResource,
+  type UploadedFile,
+  type UploadOptions,
+} from './resources/files.js';
 export type { HashtagPostsParams, HashtagsResource } from './resources/hashtags.js';
 export type {
   NotificationListParams,
@@ -235,6 +243,7 @@ export type {
   RetryContext,
   RetryOptions,
 } from './types/options.js';
+export { REQUEST_OPTION_KEYS } from './types/options.js';
 export type {
   CreateCommentInput,
   CreatePollInput,

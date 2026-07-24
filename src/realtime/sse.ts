@@ -47,16 +47,17 @@ export class SseTransport implements RealtimeTransport {
     const token = await context.getToken();
     if (!token) throw new UnauthorizedStreamError();
 
-    const headers = new Headers({
-      Accept: 'text/event-stream',
-      Authorization: `Bearer ${token}`,
-      'Cache-Control': 'no-cache',
-    });
+    const url = joinUrl(context.baseUrl, STREAM_PATH);
+
+    const headers = await context.baseHeaders(url);
+    headers.set('Accept', 'text/event-stream');
+    headers.set('Authorization', `Bearer ${token}`);
+    headers.set('Cache-Control', 'no-cache');
 
     // Сервер пока не присылает id, но поддержка не мешает и пригодится, если начнёт.
     if (this.#lastEventId) headers.set('Last-Event-ID', this.#lastEventId);
 
-    const response = await context.fetch(joinUrl(context.baseUrl, STREAM_PATH), {
+    const response = await context.fetch(url, {
       method: 'GET',
       headers,
       signal: context.signal,

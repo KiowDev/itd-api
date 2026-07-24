@@ -360,6 +360,21 @@ describe('идентификатор устройства', () => {
 
     expect(storage.get()?.deviceId).toMatch(/^[0-9a-f-]{36}$/);
   });
+
+  it('setSession заменяет идентификатор устройства', async () => {
+    const { auth, http, mock } = makeAuth(() => json({ data: {} }));
+
+    await auth.setSession({ accessToken: 'A', deviceId: 'device-A' });
+    await http.request({ method: 'GET', path: '/api/x' });
+    await auth.setSession({ accessToken: 'B', deviceId: 'device-B' });
+    await http.request({ method: 'GET', path: '/api/y' });
+
+    expect(mock.calls.map((call) => call.headers.get('x-device-id'))).toEqual([
+      'device-A',
+      'device-B',
+    ]);
+    expect((await auth.getSession())?.deviceId).toBe('device-B');
+  });
 });
 
 describe('капча при входе по паролю', () => {
@@ -467,6 +482,28 @@ describe('признак refresh-сессии', () => {
     const { auth } = makeAuth([], { auth: 'token-1', mode: 'browser' });
 
     expect(await auth.hasRefreshSession()).toBe(true);
+  });
+
+  it('не учитывает cookie is_auth другого хоста', async () => {
+    const { auth, jar } = makeAuth([]);
+    jar.setFromStrings('https://pbapi.other.test/', ['is_auth=1; Path=/']);
+
+    expect(await auth.hasRefreshSession()).toBe(false);
+  });
+});
+
+describe('замена сессии', () => {
+  it('заменяет refresh-токен вместе с cookie', async () => {
+    const { auth } = makeAuth([]);
+
+    await auth.setSession({ accessToken: 'A', refreshToken: 'refresh-A' });
+    await auth.setSession({ accessToken: 'B', refreshToken: 'refresh-B' });
+
+    const cookies = (await auth.getSession())?.cookies ?? [];
+    const refresh = cookies.find((cookie) => cookie.includes('refresh_token='));
+
+    expect(refresh).toContain('refresh-B');
+    expect(refresh).not.toContain('refresh-A');
   });
 });
 

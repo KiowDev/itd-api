@@ -112,6 +112,37 @@ async function readBody(response: Response): Promise<unknown> {
   return text === '' ? undefined : text;
 }
 
+/** Ошибка отмены в формате `fetch`. */
+function createAbortError(): Error {
+  const error = new Error('Операция прервана');
+  error.name = 'AbortError';
+  return error;
+}
+
+/** Прерывает ожидание промиса при срабатывании сигнала. */
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    // Готовый промис может завершиться до отложенной ошибки отмены.
+    return Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(createAbortError()), 0);
+      }),
+    ]);
+  }
+
+  let onAbort: (() => void) | undefined;
+
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(createAbortError());
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+
+  return Promise.race([promise, interrupted]).finally(() => {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  });
+}
+
 /** Результат объединения пользовательской отмены и таймаута. */
 interface AbortBundle {
   signal: AbortSignal;
@@ -213,68 +244,113 @@ export class Transport {
       body: redactBody(request.body),
     });
 
-    let response: Response;
+    // Обработчики отмены действуют до завершения чтения тела.
     try {
-      response = await this.#config.fetch(url, {
+      let response: Response;
+      try {
+        response = await this.#config.fetch(url, {
+          method,
+          headers,
+          signal: abort.signal,
+          ...(body !== undefined ? { body } : {}),
+          ...(this.#config.sendCredentials ? { credentials: 'include' as const } : {}),
+        });
+      } catch (error) {
+        const duration = Date.now() - startedAt;
+        const failure = this.#toTransportError(error, abort, request, method, timeout);
+
+        await this.#config.hooks.onError?.({ ...context, duration, error: failure });
+        this.#config.logger?.warn(
+          `× ${method} ${request.path} (${duration} мс): ${failure.message}`,
+        );
+
+        throw failure;
+      }
+
+      if (this.#deps.onRateLimit) {
+        const { limit, remaining } = readRateLimit(response.headers);
+        this.#deps.onRateLimit(limit, remaining, request);
+      }
+
+      if (this.#config.useCookieJar) this.#deps.cookies?.setFromResponse(url, response);
+
+      // Хук получает непрочитанный ответ.
+      if (response.ok) {
+        await this.#config.hooks.onResponse?.({
+          ...context,
+          status: response.status,
+          duration: Date.now() - startedAt,
+          response,
+        });
+      }
+
+      const payload = await this.#readBodyOrFail(
+        response,
+        context,
+        request,
         method,
-        headers,
-        signal: abort.signal,
-        ...(body !== undefined ? { body } : {}),
-        ...(this.#config.sendCredentials ? { credentials: 'include' as const } : {}),
-      });
-    } catch (error) {
+        abort,
+        timeout,
+      );
       const duration = Date.now() - startedAt;
-      const failure = this.#toTransportError(error, abort, request, method, timeout);
 
-      await this.#config.hooks.onError?.({ ...context, duration, error: failure });
-      this.#config.logger?.warn(`× ${method} ${request.path} (${duration} мс): ${failure.message}`);
+      if (!response.ok) {
+        const error = createApiError({
+          method,
+          path: request.path,
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+          response,
+          body: payload,
+        });
 
-      throw failure;
+        await this.#config.hooks.onError?.({ ...context, duration, error });
+        this.#config.logger?.warn(
+          `← ${response.status} ${method} ${request.path} (${duration} мс): ${error.message}`,
+        );
+
+        throw error;
+      }
+
+      this.#config.logger?.debug(`← ${response.status} ${method} ${request.path} (${duration} мс)`);
+
+      return request.raw ? payload : unwrapData(payload);
     } finally {
       abort.cleanup();
     }
+  };
 
-    const duration = Date.now() - startedAt;
+  /** Читает тело и преобразует ошибку чтения в транспортную ошибку библиотеки. */
+  async #readBodyOrFail(
+    response: Response,
+    context: { method: string; path: string; url: string; headers: Headers; attempt: number },
+    request: PipelineRequest,
+    method: string,
+    abort: AbortBundle,
+    timeout: number,
+  ): Promise<unknown> {
+    const startedAt = Date.now();
 
-    if (this.#deps.onRateLimit) {
-      const { limit, remaining } = readRateLimit(response.headers);
-      this.#deps.onRateLimit(limit, remaining, request);
-    }
+    try {
+      return await abortable(readBody(response), abort.signal);
+    } catch (error) {
+      await response.body?.cancel().catch(() => {});
 
-    if (this.#config.useCookieJar) this.#deps.cookies?.setFromResponse(url, response);
+      const failure = this.#toTransportError(error, abort, request, method, timeout);
 
-    const payload = await readBody(response);
-
-    if (!response.ok) {
-      const error = createApiError({
-        method,
-        path: request.path,
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-        response,
-        body: payload,
+      await this.#config.hooks.onError?.({
+        ...context,
+        duration: Date.now() - startedAt,
+        error: failure,
       });
-
-      await this.#config.hooks.onError?.({ ...context, duration, error });
       this.#config.logger?.warn(
-        `← ${response.status} ${method} ${request.path} (${duration} мс): ${error.message}`,
+        `× ${method} ${request.path}: не удалось прочитать тело ответа — ${failure.message}`,
       );
 
-      throw error;
+      throw failure;
     }
-
-    await this.#config.hooks.onResponse?.({
-      ...context,
-      status: response.status,
-      duration,
-      response,
-    });
-
-    this.#config.logger?.debug(`← ${response.status} ${method} ${request.path} (${duration} мс)`);
-
-    return request.raw ? payload : unwrapData(payload);
-  };
+  }
 
   /**
    * Итоговый URL со строкой запроса. Нужен и слою повторов — для хука `onRetry`.
@@ -287,16 +363,12 @@ export class Transport {
   }
 
   /**
-   * Собирает заголовки запроса.
-   *
-   * Порядок важен: сначала умолчания библиотеки, затем заголовки клиента, затем то,
-   * что добавили слои конвейера (авторизация), и только в самом конце — заголовки
-   * конкретного вызова. Так пользователь может переопределить что угодно.
+   * Собирает общие заголовки клиента: `User-Agent`, идентификатор устройства,
+   * заголовки конфигурации и cookie для указанного адреса.
    */
-  async #buildHeaders(request: PipelineRequest, url: string): Promise<Headers> {
+  async platformHeaders(url: string): Promise<Headers> {
     const headers = new Headers();
 
-    headers.set('Accept', 'application/json');
     // Сервер этот заголовок не требует, но ожидает: дешевле отправить, чем разбираться,
     // почему часть запросов не проходит фильтры.
     headers.set('X-Requested-With', 'XMLHttpRequest');
@@ -311,13 +383,26 @@ export class Transport {
     for (const [name, value] of Object.entries(this.#config.headers))
       setHeader(headers, name, value);
 
-    for (const [name, value] of Object.entries(request.layerHeaders ?? {}))
-      setHeader(headers, name, value);
-
     if (this.#config.useCookieJar && this.#deps.cookies) {
       const cookie = this.#deps.cookies.getHeader(url);
       if (cookie) setHeader(headers, 'Cookie', cookie);
     }
+
+    return headers;
+  }
+
+  /**
+   * Дополняет общие заголовки значением `Accept`, заголовками конвейера и вызова.
+   * Заголовки вызова применяются последними.
+   */
+  async #buildHeaders(request: PipelineRequest, url: string): Promise<Headers> {
+    const headers = await this.platformHeaders(url);
+
+    // Заголовок из конфигурации имеет приоритет над значением по умолчанию.
+    if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+
+    for (const [name, value] of Object.entries(request.layerHeaders ?? {}))
+      setHeader(headers, name, value);
 
     for (const [name, value] of Object.entries(request.headers ?? {})) {
       setHeader(headers, name, value);

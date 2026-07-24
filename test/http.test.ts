@@ -51,6 +51,17 @@ function makeTransport(
   return { transport, mock, config };
 }
 
+function hangingBody(): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start() {
+        /* поток остаётся открытым */
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
 describe('Transport: сборка запроса', () => {
   it('склеивает путь и строку запроса', async () => {
     const { transport, mock } = makeTransport([json({ ok: true })]);
@@ -220,6 +231,14 @@ describe('Transport: ошибки', () => {
     );
   });
 
+  it('таймаут действует во время чтения тела', async () => {
+    const { transport } = makeTransport([hangingBody()], { timeout: 30 });
+
+    await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
+      ItdTimeoutError,
+    );
+  });
+
   it('отмена через signal становится ItdAbortError', async () => {
     const mock = createHangingFetch();
     const config = resolveConfig({
@@ -242,6 +261,20 @@ describe('Transport: ошибки', () => {
       signal: controller.signal,
     });
     controller.abort();
+
+    await expect(promise).rejects.toThrow(ItdAbortError);
+  });
+
+  it('signal отменяет чтение тела', async () => {
+    const { transport } = makeTransport([hangingBody()], { timeout: 0 });
+    const controller = new AbortController();
+
+    const promise = transport.send({
+      method: 'GET',
+      path: '/api/posts',
+      signal: controller.signal,
+    });
+    setTimeout(() => controller.abort(), 20);
 
     await expect(promise).rejects.toThrow(ItdAbortError);
   });
@@ -343,6 +376,41 @@ describe('Transport: хуки и логгер', () => {
 
     await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow();
     expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it('передаёт ошибку чтения тела в onError как ItdNetworkError', async () => {
+    const onError = vi.fn();
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.error(new Error('обрыв на середине тела'));
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+    const { transport } = makeTransport([response], { hooks: { onError } });
+
+    const failure = await transport
+      .send({ method: 'GET', path: '/api/posts' })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ItdNetworkError);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ error: failure }));
+  });
+
+  it('вызывает onResponse до чтения тела', async () => {
+    let bodyUsedAtHook: boolean | undefined;
+    const { transport } = makeTransport([json({ data: { ok: true } })], {
+      hooks: {
+        onResponse: ({ response }) => {
+          bodyUsedAtHook = response.bodyUsed;
+        },
+      },
+    });
+
+    await transport.send({ method: 'GET', path: '/api/posts' });
+
+    expect(bodyUsedAtHook).toBe(false);
   });
 
   it('маскирует токен в логе', async () => {
@@ -556,6 +624,24 @@ describe('слой повторов', () => {
     // Глобально до 5 попыток, но у запроса повторы выключены — уходит одна.
     await expect(request({ method: 'GET', path: '/api/posts', retry: false })).rejects.toThrow();
     expect(mock.callCount).toBe(1);
+  });
+
+  it('передаёт заголовки запроса в onRetry', async () => {
+    const seen: string[] = [];
+    const { request } = withRetry([json({}, { status: 503 }), json({ data: { ok: true } })], {
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+      hooks: {
+        onRetry: ({ headers }) => void seen.push(headers.get('x-trace') ?? ''),
+      },
+    });
+
+    await request({
+      method: 'GET',
+      path: '/api/posts',
+      headers: { 'X-Trace': 'abc' },
+    });
+
+    expect(seen).toEqual(['abc']);
   });
 });
 

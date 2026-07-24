@@ -1,7 +1,7 @@
 /** Обработчик события. */
 export type Listener<T> = (payload: T) => void;
 
-/** Функция отписки, которую возвращает {@link Emitter.on}. */
+/** Функция отписки, которую возвращает подписка на событие. */
 export type Unsubscribe = () => void;
 
 /**

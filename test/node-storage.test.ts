@@ -71,4 +71,15 @@ describe('FileTokenStorage', () => {
 
     expect(await storage.get()).toBeNull();
   });
+
+  it('clear выполняется после ранее запланированной записи', async () => {
+    const path = join(dir, 'session.json');
+    const storage = new FileTokenStorage(path);
+
+    const writing = storage.set({ accessToken: 'a' });
+    await storage.clear();
+    await writing;
+
+    expect(await readFile(path, 'utf8').catch(() => null)).toBeNull();
+  });
 });

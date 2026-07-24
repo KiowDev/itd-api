@@ -27,6 +27,15 @@ export { type ParsedProxy, type ProxyKind, parseProxy } from './parse.js';
 /** Тело запроса `fetch` с непубличным полем undici. */
 type WithDispatcher = RequestInit & { dispatcher?: Dispatcher };
 
+/** `fetch`, ходящий через прокси, и управление его пулом соединений. */
+export interface ProxyFetch {
+  (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response>;
+  /** Диспетчер undici, через который идут запросы. */
+  readonly dispatcher: Dispatcher;
+  /** Закрывает пул соединений, дождавшись завершения текущих запросов. */
+  close(): Promise<void>;
+}
+
 /** Настройки {@link proxyFetch}. */
 export interface ProxyFetchOptions {
   /**
@@ -42,17 +51,23 @@ export interface ProxyFetchOptions {
 /**
  * Собирает `fetch`, все запросы которого идут через прокси.
  *
- * Диспетчер создаётся один раз и переиспользуется (пул соединений к прокси).
+ * Диспетчер создаётся один раз и переиспользуется. Закройте возвращённый `fetch`
+ * методом `close()`, когда он больше не нужен.
  *
  * @param proxy адрес прокси: `http://…`, `https://…`, `socks5://…` (можно с `user:pass@`)
  * @throws {ProxyError} если адрес не разбирается или схема не поддерживается
  *
  * @example
  * ```ts
- * const itd = new ItdClient({ fetch: proxyFetch('http://user:pass@proxy:8080') });
+ * const fetch = proxyFetch('http://user:pass@proxy:8080');
+ * const itd = new ItdClient({ fetch });
+ *
+ * // …работа…
+ * await itd.close();
+ * await fetch.close(); // закрывает пул соединений
  * ```
  */
-export function proxyFetch(proxy: string | URL, options: ProxyFetchOptions = {}): typeof fetch {
+export function proxyFetch(proxy: string | URL, options: ProxyFetchOptions = {}): ProxyFetch {
   const dispatcher = createProxyDispatcher(proxy);
 
   // Именно undici, а не globalThis.fetch: опция `dispatcher` появилась в undici 6.3,
@@ -61,6 +76,11 @@ export function proxyFetch(proxy: string | URL, options: ProxyFetchOptions = {})
   // ProxyAgent, так что своей версии тут не занимать.
   const baseFetch = options.fetch ?? (undiciFetch as unknown as typeof fetch);
 
-  return (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+  const proxied = (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
     baseFetch(input, { ...init, dispatcher } as WithDispatcher);
+
+  return Object.assign(proxied, {
+    dispatcher,
+    close: () => dispatcher.close(),
+  });
 }

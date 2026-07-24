@@ -12,10 +12,20 @@ import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
 import type { ItdSession } from './storage.js';
 
-/** Пути авторизации. Вынесены, чтобы не расходиться между модулями. */
+/** Пути эндпоинтов авторизации. */
 export const AUTH_PATHS = {
+  signUp: '/api/v1/auth/sign-up',
   signIn: '/api/v1/auth/sign-in',
+  verifyOtp: '/api/v1/auth/verify-otp',
+  resendOtp: '/api/v1/auth/resend-otp',
   refresh: '/api/v1/auth/refresh',
+  logout: '/api/v1/auth/logout',
+  forgotPassword: '/api/v1/auth/forgot-password',
+  resetPassword: '/api/v1/auth/reset-password',
+  changePassword: '/api/v1/auth/change-password',
+  sessions: '/api/v1/auth/sessions',
+  /** Префикс внешнего входа: к нему дописывается имя провайдера. */
+  oauthLogin: '/api/v1/auth/login',
 } as const;
 
 /**
@@ -142,7 +152,8 @@ export class AuthManager {
   /** То же самое, но без чтения хранилища — для вызовов, где сессия уже загружена. */
   #hasRefreshSession(): boolean {
     if (!this.#config.useCookieJar) return true;
-    if (this.#jar.has(AUTH_FLAG_COOKIE)) return true;
+    // Флаг должен принадлежать основному API, а не другому сервису.
+    if (this.#jar.has(AUTH_FLAG_COOKIE, this.#config.baseUrl)) return true;
 
     // Явно переданный refresh-токен — тоже основание пробовать.
     return Boolean(this.#session?.refreshToken);
@@ -276,12 +287,18 @@ export class AuthManager {
     return this.#loadSession();
   }
 
-  /** Заменяет сессию целиком. */
+  /** Заменяет сессию и связанные с ней cookie целиком. */
   async setSession(session: ItdSession): Promise<void> {
+    this.#jar.clear();
     this.#jar.deserialize(session.cookies);
-    this.#deviceId ??= session.deviceId;
-    await this.#saveSession(session);
+
+    if (session.deviceId) this.#deviceId = session.deviceId;
+
+    // Refresh-cookie добавляется до сериализации сессии.
+    this.#session = session;
     this.#seedRefreshCookie();
+
+    await this.#saveSession(session);
   }
 
   /**

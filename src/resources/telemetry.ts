@@ -51,13 +51,13 @@ export interface InteractionEntry {
   vs: string;
   /** Идентификатор поста. Поле `ai`. */
   postId: string;
-  /** Индекс вложения (с нуля) — для {@link InteractionType.PhotoOpen}. Поле `mi`. */
+  /** Индекс вложения (с нуля) — для `InteractionType.PhotoOpen` ({@link InteractionType}). Поле `mi`. */
   mediaIndex?: number;
   /** Источник показа. Поле `s`. */
   source?: ViewSource;
-  /** Просмотрено мс — для {@link InteractionType.VideoProgress}. Поле `pm`. */
+  /** Просмотрено мс — для `InteractionType.VideoProgress` ({@link InteractionType}). Поле `pm`. */
   positionMs?: number;
-  /** Длительность видео в мс — для {@link InteractionType.VideoProgress}. Поле `dm`. */
+  /** Длительность видео в мс — для `InteractionType.VideoProgress` ({@link InteractionType}). Поле `dm`. */
   durationMs?: number;
 }
 

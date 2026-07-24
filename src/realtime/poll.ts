@@ -43,15 +43,17 @@ export class PollTransport implements RealtimeTransport {
       const token = await context.getToken();
       if (!token) throw new UnauthorizedStreamError();
 
-      const headers = new Headers({
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-      });
+      const url = `${joinUrl(context.baseUrl, '/api/notifications/')}?limit=${this.#limit}&offset=0`;
 
-      const response = await context.fetch(
-        `${joinUrl(context.baseUrl, '/api/notifications/')}?limit=${this.#limit}&offset=0`,
-        { method: 'GET', headers, signal: context.signal },
-      );
+      const headers = await context.baseHeaders(url);
+      headers.set('Accept', 'application/json');
+      headers.set('Authorization', `Bearer ${token}`);
+
+      const response = await context.fetch(url, {
+        method: 'GET',
+        headers,
+        signal: context.signal,
+      });
 
       if (response.status === 401) throw new UnauthorizedStreamError();
       if (!response.ok) throw new Error(`Опрос уведомлений вернул статус ${response.status}`);

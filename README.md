@@ -43,7 +43,7 @@ const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json')
 await itd.posts.create((p) => p.content('привет').attach('./photo.jpg'));
 ```
 
-Готовые примеры — в папке [`examples/`](./examples).
+Готовые примеры — в папке [`examples/`](./examples/README.md).
 
 ---
 
@@ -133,7 +133,7 @@ new ItdClient({
 });
 ```
 
-В Node таким источником может быть [`@itd-api/turnstile`](./turnstile) — отдельный пакет,
+В Node таким источником может быть [`@itd-api/turnstile`](./turnstile/README.md) — отдельный пакет,
 который поднимает браузер и приносит токен. Отдельный он намеренно: тянет за собой Playwright
 и требует графической оболочки, а нужен далеко не всем — с сохранённой сессией до входа
 по паролю дело обычно вообще не доходит.
@@ -517,7 +517,7 @@ Deno и React Native ограничение не действует.
 ### Прокси (HTTP/SOCKS5)
 
 Чтобы направить запросы клиента через прокси, возьмите `fetch` из пакета
-[`@itd-api/proxy`](./proxy):
+[`@itd-api/proxy`](./proxy/README.md):
 
 ```sh
 npm i @itd-api/proxy
@@ -527,12 +527,18 @@ npm i @itd-api/proxy
 import { ItdClient } from 'itd-api';
 import { proxyFetch } from '@itd-api/proxy';
 
-const itd = new ItdClient({ fetch: proxyFetch('socks5://127.0.0.1:1080') });
+const fetch = proxyFetch('socks5://127.0.0.1:1080');
 // http://…, https://…, socks5://… — можно с user:pass@
+const itd = new ItdClient({ fetch });
+
+// …работа…
+
+await itd.close();
+await fetch.close(); // закрывает пул соединений
 ```
 
 Через тот же `fetch` пойдут авторизация, cookie, очередь, повторы и поток уведомлений.
-Только для Node/Bun/Deno. Подробности — в [README пакета](./proxy).
+Только для Node/Bun/Deno. Подробности — в [README пакета](./proxy/README.md).
 
 ---
 
@@ -551,7 +557,7 @@ itd.use(crypt());
 
 ### `@itd-api/crypto` — скрытые сообщения
 
-[Отдельный пакет](./crypto): прячет текст в невидимых символах внутри обычного поста.
+[Отдельный пакет](./crypto/README.md): прячет текст в невидимых символах внутри обычного поста.
 Читатель видит обложку, а тот, у кого подключён плагин, получает спрятанное отдельным полем.
 
 ```sh
@@ -575,7 +581,7 @@ post.secret?.text;   // 'секретный текст'
 
 Шифра два: `invisible` — невидимые символы с обложкой, `beecrypt` — видимый текст из букв
 `жъЖЪ`. Подробности, ограничения и то, как подключить свой шифр, — в
-[README пакета](./crypto).
+[README пакета](./crypto/README.md).
 
 ### Свой плагин
 

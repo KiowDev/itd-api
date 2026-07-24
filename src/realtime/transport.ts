@@ -12,6 +12,11 @@ export interface TransportContext {
   baseUrl: string;
   /** Реализация `fetch`. */
   fetch: typeof fetch;
+  /**
+   * Общие заголовки клиента: `User-Agent`, `X-Device-Id`, заголовки конфигурации
+   * и cookie для указанного адреса.
+   */
+  baseHeaders: (url: string) => Promise<Headers>;
   /** Текущий токен доступа. */
   getToken: () => Promise<string | null>;
   /** Отмена подключения. */

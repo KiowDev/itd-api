@@ -88,11 +88,15 @@ export class MemoryTokenStorage implements TokenStorage {
  *
  * Помните, что `localStorage` доступен любому скрипту на странице: не используйте его,
  * если для вашего приложения это неприемлемый риск.
+ *
+ * После ошибки записи или удаления хранилище переключается на память до конца
+ * своего жизненного цикла.
  */
 export class LocalStorageTokenStorage implements TokenStorage {
   readonly #key: string;
   readonly #fallback = new MemoryTokenStorage();
-  readonly #available: boolean;
+  /** Доступен ли `localStorage` для дальнейших операций. */
+  #available: boolean;
 
   /** @param key ключ в `localStorage`. По умолчанию `itd-api:session`. */
   constructor(key = 'itd-api:session') {
@@ -115,30 +119,35 @@ export class LocalStorageTokenStorage implements TokenStorage {
   }
 
   set(session: ItdSession): void {
-    if (!this.#available) {
-      this.#fallback.set(session);
-      return;
+    if (this.#available) {
+      try {
+        globalThis.localStorage.setItem(this.#key, JSON.stringify(session));
+        return;
+      } catch {
+        this.#degrade();
+      }
     }
 
-    try {
-      globalThis.localStorage.setItem(this.#key, JSON.stringify(session));
-    } catch {
-      // Переполненное или заблокированное хранилище не должно ломать запрос.
-      this.#fallback.set(session);
-    }
+    this.#fallback.set(session);
   }
 
   clear(): void {
-    if (!this.#available) {
-      this.#fallback.clear();
-      return;
+    if (this.#available) {
+      try {
+        globalThis.localStorage.removeItem(this.#key);
+        return;
+      } catch {
+        this.#degrade();
+      }
     }
 
-    try {
-      globalThis.localStorage.removeItem(this.#key);
-    } catch {
-      this.#fallback.clear();
-    }
+    this.#fallback.clear();
+  }
+
+  /** Переводит хранилище в память без переноса прежнего значения. */
+  #degrade(): void {
+    this.#available = false;
+    this.#fallback.clear();
   }
 }
 

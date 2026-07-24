@@ -1,0 +1,27 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+
+  // Исходные точки входа пакета.
+  "entryPoints": ["src/index.ts", "src/node.ts"],
+  "out": "docs",
+  "readme": "README.md",
+  "name": "itd-api",
+
+  "excludeInternal": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeExternals": true,
+
+  "categorizeByGroup": true,
+  "navigationLinks": {
+    "GitHub": "https://github.com/KiowDev/itd-api"
+  },
+
+  "treatWarningsAsErrors": true,
+  "intentionallyNotExported": ["ItdClientInternals"],
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  }
+}

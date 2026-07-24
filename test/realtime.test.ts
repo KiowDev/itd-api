@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ItdClient } from '../src/client.js';
+import { ItdConfigError } from '../src/core/errors.js';
 import { RECONNECT_BACKOFF, reconnectDelay } from '../src/realtime/reconnect.js';
 import { SseTransport } from '../src/realtime/sse.js';
 import { ItdRealtime, type RealtimeDeps, type RealtimeOptions } from '../src/realtime/stream.js';
@@ -8,6 +10,7 @@ import {
   type TransportEvent,
   UnauthorizedStreamError,
 } from '../src/realtime/transport.js';
+import { json } from './helpers/mock-fetch.js';
 
 /** Ответ с телом-потоком: куски отдаются по одному. */
 function streamingResponse(chunks: string[], status = 200): Response {
@@ -45,6 +48,7 @@ async function runTransport(chunks: string[]): Promise<{
       headers = new Headers(init?.headers);
       return Promise.resolve(streamingResponse(chunks));
     }) as unknown as typeof fetch,
+    baseHeaders: () => Promise.resolve(new Headers({ 'User-Agent': 'itd-api/test' })),
     getToken: () => Promise.resolve('test-token'),
     signal: new AbortController().signal,
     onEvent: (event) => events.push(event),
@@ -74,6 +78,7 @@ describe('SSE-транспорт: подключение', () => {
       transport.connect({
         baseUrl: 'https://itd.test',
         fetch: (() => Promise.resolve(response)) as unknown as typeof fetch,
+        baseHeaders: () => Promise.resolve(new Headers()),
         getToken: () => Promise.resolve(token),
         signal: new AbortController().signal,
         onEvent: () => {},
@@ -81,6 +86,38 @@ describe('SSE-транспорт: подключение', () => {
         onOpen: () => {},
       }),
     ).rejects.toThrow(UnauthorizedStreamError);
+  });
+
+  it('получает общие заголовки клиента', async () => {
+    let streamHeaders: Headers | undefined;
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      fetch: ((url: string, init?: RequestInit) => {
+        if (String(url).includes('/stream')) {
+          streamHeaders = new Headers(init?.headers);
+          return Promise.resolve(new Response(null, { status: 500 }));
+        }
+        return Promise.resolve(json({ data: { count: 0 } }));
+      }) as unknown as typeof fetch,
+      auth: 'token',
+      headers: { 'X-App': 'bot' },
+      retry: false,
+      rateLimit: false,
+      mode: 'server',
+    });
+    const stream = itd.realtime({ syncCount: false, transport: 'sse', maxAttempts: 0 });
+
+    await new Promise<void>((resolve) => {
+      stream.once('giveup', resolve);
+      void stream.connect();
+    });
+
+    expect(streamHeaders?.get('user-agent')).toContain('itd-api/');
+    expect(streamHeaders?.get('x-app')).toBe('bot');
+    expect(streamHeaders?.get('x-device-id')).toBeTruthy();
+    expect(streamHeaders?.get('accept')).toBe('text/event-stream');
+
+    stream.disconnect();
   });
 });
 
@@ -236,6 +273,7 @@ function makeStream(
     {
       baseUrl: 'https://itd.test',
       fetch: (() => Promise.reject(new Error('не должно вызываться'))) as unknown as typeof fetch,
+      baseHeaders: () => Promise.resolve(new Headers()),
       getToken: () => Promise.resolve('t'),
       refresh: () => Promise.resolve(true),
       fetchUnreadCount: () => Promise.resolve(0),
@@ -503,6 +541,46 @@ describe('поток: жизненный цикл', () => {
 
     expect(flags).toEqual([true, false]);
   });
+
+  it('connect() после giveup запускает новую попытку', async () => {
+    const transport = new FailingTransport();
+    const stream = makeStream(transport, {}, { maxAttempts: 0 });
+
+    await new Promise<void>((resolve) => {
+      stream.once('giveup', resolve);
+      void stream.connect();
+    });
+    const before = transport.connects;
+
+    await new Promise<void>((resolve) => {
+      stream.once('giveup', resolve);
+      void stream.connect();
+    });
+
+    expect(transport.connects).toBeGreaterThan(before);
+    stream.disconnect();
+  });
+
+  it('disconnect() во время обновления токена отменяет переподключение', async () => {
+    const transport = new TestTransport();
+    let releaseRefresh: (() => void) | undefined;
+    const stream = makeStream(transport, {
+      refresh: () =>
+        new Promise<boolean>((resolve) => {
+          releaseRefresh = () => resolve(true);
+        }),
+    });
+
+    await stream.connect();
+    transport.fail(new UnauthorizedStreamError());
+    await vi.waitFor(() => expect(releaseRefresh).toBeTypeOf('function'));
+
+    stream.disconnect();
+    releaseRefresh?.();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(transport.connects).toBe(1);
+  });
 });
 
 describe('поток: защита от двойного подключения', () => {
@@ -565,6 +643,7 @@ describe('выбор транспорта', () => {
     const stream = new ItdRealtime({
       baseUrl: 'https://itd.test',
       fetch: globalThis.fetch,
+      baseHeaders: () => Promise.resolve(new Headers()),
       getToken: () => Promise.resolve('t'),
       refresh: () => Promise.resolve(true),
       fetchUnreadCount: () => Promise.resolve(0),
@@ -578,6 +657,7 @@ describe('выбор транспорта', () => {
       {
         baseUrl: 'https://itd.test',
         fetch: globalThis.fetch,
+        baseHeaders: () => Promise.resolve(new Headers()),
         getToken: () => Promise.resolve('t'),
         refresh: () => Promise.resolve(true),
         fetchUnreadCount: () => Promise.resolve(0),
@@ -593,5 +673,14 @@ describe('выбор транспорта', () => {
     const stream = makeStream(transport);
 
     expect(stream.transport).toBe('test');
+  });
+
+  it('проверяет числовые настройки', () => {
+    expect(() => makeStream(new TestTransport(), {}, { maxAttempts: Number.NaN })).toThrow(
+      ItdConfigError,
+    );
+    expect(() => makeStream(new TestTransport(), {}, { pollInterval: 0 })).toThrow(ItdConfigError);
+    expect(() => makeStream(new TestTransport(), {}, { jitter: 2 })).toThrow(ItdConfigError);
+    expect(() => makeStream(new TestTransport(), {}, { backoff: [] })).toThrow(ItdConfigError);
   });
 });

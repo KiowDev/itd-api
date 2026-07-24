@@ -56,8 +56,8 @@ export const nodeFileReader: FileReader = async (path) => {
 export class FileTokenStorage implements TokenStorage {
   readonly #path: string;
   /**
-   * Цепочка записей: сохранения идут строго по одному, конкурентные `set` не
-   * перемешиваются. Ошибка одной записи цепочку не рвёт.
+   * Цепочка операций с файлом. Запись и удаление выполняются последовательно
+   * в порядке вызова; ошибка одной операции не останавливает следующие.
    */
   #writing: Promise<void> = Promise.resolve();
 
@@ -80,10 +80,12 @@ export class FileTokenStorage implements TokenStorage {
   }
 
   set(session: ItdSession): Promise<void> {
-    this.#writing = this.#writing.then(
-      () => this.#write(session),
-      () => this.#write(session),
-    );
+    return this.#enqueue(() => this.#write(session));
+  }
+
+  /** Добавляет файловую операцию в очередь. */
+  #enqueue(operation: () => Promise<void>): Promise<void> {
+    this.#writing = this.#writing.then(operation, operation);
     return this.#writing;
   }
 
@@ -107,7 +109,11 @@ export class FileTokenStorage implements TokenStorage {
     }
   }
 
-  async clear(): Promise<void> {
+  clear(): Promise<void> {
+    return this.#enqueue(() => this.#remove());
+  }
+
+  async #remove(): Promise<void> {
     try {
       const { rm } = await import('node:fs/promises');
       await rm(this.#path, { force: true });

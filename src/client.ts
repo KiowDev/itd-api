@@ -92,11 +92,12 @@ export interface ItdClientInternals {
 export class ItdClient {
   readonly #config: ResolvedConfig;
   readonly #http: HttpClient;
+  readonly #transport: Transport;
   readonly #authManager: AuthManager;
   readonly #jar: CookieJar;
   readonly #queues: RequestQueuePool | undefined;
   readonly #plugins = new PluginRegistry();
-  readonly #services = new ServiceRegistry();
+  readonly #services: ServiceRegistry;
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
   readonly #streams = new Set<ItdRealtime>();
 
@@ -135,6 +136,7 @@ export class ItdClient {
     const config = resolveConfig(options);
     this.#config = config;
     this.#jar = new CookieJar();
+    this.#services = new ServiceRegistry(config.baseUrl);
 
     // Встроенные сервисы регистрируются первыми и заменить их нельзя
     for (const service of BUILT_IN_SERVICES) this.#services.define(service);
@@ -155,6 +157,7 @@ export class ItdClient {
           ? (limit, remaining, request) => this.#throttleByHeaders(limit, remaining, request)
           : undefined,
     });
+    this.#transport = transport;
 
     const pluginsLayer = createPluginsMiddleware(this.#plugins);
     const retriesLayer = createRetryMiddleware({
@@ -280,9 +283,12 @@ export class ItdClient {
    * опция `services` конструктора. Занятое имя не переопределяется — ни своё, ни встроенное:
    * разовому запросу хост задаётся полем `baseUrl`.
    *
+   * Заголовок авторизации по умолчанию уходит только своим — домену клиента и его
+   * поддоменам. Стороннему хосту токен нужно разрешить явно: `auth: true`.
+   *
    * @throws {ItdConfigError} если определение неверно или имя уже занято
    *
-   * @example
+   * @example Сервис платформы на поддомене — токен уходит сам
    * ```ts
    * itd.defineService({
    *   name: 'pb',
@@ -349,6 +355,7 @@ export class ItdClient {
       {
         baseUrl: this.#config.baseUrl,
         fetch: this.#config.fetch,
+        baseHeaders: (url) => this.#transport.platformHeaders(url),
         getToken: () => this.#authManager.getAccessToken(),
         refresh: () => this.#authManager.onUnauthorized(),
         fetchUnreadCount: () => this.notifications.count(),
@@ -388,6 +395,17 @@ export class ItdClient {
     return this.close();
   }
 
+  // Fallback для `await using` в Node 18, где `Symbol.asyncDispose` отсутствует.
+  static {
+    if (
+      typeof (Symbol as SymbolConstructor & { asyncDispose?: symbol }).asyncDispose !== 'symbol'
+    ) {
+      const prototype = ItdClient.prototype as unknown as Record<PropertyKey, unknown>;
+      prototype[Symbol.for('Symbol.asyncDispose')] = prototype.undefined;
+      delete prototype.undefined;
+    }
+  }
+
   /** Текущая сессия целиком — чтобы сохранить её самостоятельно. */
   getSession(): Promise<ItdSession | null> {
     return this.#authManager.getSession();
@@ -424,15 +442,6 @@ export class ItdClient {
       `лимит сервера исчерпан (${remaining} из ${limit ?? '?'}), очередь ждёт ${first} мс`,
     );
   }
-}
-
-// На Node 18 `Symbol.asyncDispose` отсутствует, поэтому вычисляемое имя метода выше
-// становится строкой "undefined". Транспайлеры `await using` в этой среде ищут fallback
-// `Symbol.for('Symbol.asyncDispose')`, поэтому переносим метод на ожидаемый ключ.
-if (typeof (Symbol as SymbolConstructor & { asyncDispose?: symbol }).asyncDispose !== 'symbol') {
-  const prototype = ItdClient.prototype as unknown as Record<PropertyKey, unknown>;
-  prototype[Symbol.for('Symbol.asyncDispose')] = prototype.undefined;
-  delete prototype.undefined;
 }
 
 /**

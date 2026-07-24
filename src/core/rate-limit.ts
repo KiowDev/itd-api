@@ -17,11 +17,7 @@ interface QueuedTask {
  * Частота выдерживается равномерным разносом стартов (`1000 / rps` между запросами),
  * а не окном со счётчиком: так нагрузка ровная, без всплеска в начале каждой секунды.
  *
- * @example
- * ```ts
- * const queue = new RequestQueue({ concurrency: 4, rps: 8 });
- * await Promise.all(ids.map((id) => queue.schedule(() => itd.posts.get(id))));
- * ```
+ * @internal
  */
 export class RequestQueue {
   readonly #concurrency: number;
@@ -132,12 +128,7 @@ export class RequestQueue {
 /**
  * Очереди по хостам: основная и по одной на каждый сервис платформы.
  *
- * @example
- * ```ts
- * const pool = new RequestQueuePool({ concurrency: 4, rps: 8, … });
- * await pool.for(undefined).schedule(task); // основной API
- * await pool.for('status').schedule(task);  // статус, со своим бюджетом
- * ```
+ * @internal
  */
 export class RequestQueuePool {
   readonly #options: ResolvedRateLimitOptions;

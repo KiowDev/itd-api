@@ -206,7 +206,8 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
           method,
           path: request.path,
           url: deps.buildUrl(request),
-          headers: new Headers(),
+          // Умолчания транспорта добавляются после слоя повторов и сюда не входят.
+          headers: new Headers({ ...request.layerHeaders, ...request.headers }),
           attempt,
           error,
           delay,

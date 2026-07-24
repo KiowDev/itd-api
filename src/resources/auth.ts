@@ -1,4 +1,4 @@
-import type { AuthManager, TURNSTILE_SITE_KEY } from '../core/auth.js';
+import { AUTH_PATHS, type AuthManager, type TURNSTILE_SITE_KEY } from '../core/auth.js';
 import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/http.js';
 import { pickArray, pickString } from '../core/unwrap.js';
@@ -64,8 +64,8 @@ export type SignInStatus = (typeof SignInStatus)[keyof typeof SignInStatus];
  * объединение делает оба случая явными.
  */
 export type SignInResult =
-  | { status: typeof SignInStatus.Authenticated; accessToken: string }
-  | { status: typeof SignInStatus.OtpRequired; flowToken: string | undefined };
+  | { status: 'authenticated'; accessToken: string }
+  | { status: 'otp_required'; flowToken: string | undefined };
 
 /**
  * Авторизация, сессии и пароли.
@@ -88,7 +88,7 @@ export class AuthResource extends BaseResource {
   async signUp(credentials: CaptchaCredentials, options: RequestOptions = {}): Promise<string> {
     const body = await this.http.request({
       method: 'POST',
-      path: '/api/v1/auth/sign-up',
+      path: AUTH_PATHS.signUp,
       body: credentials,
       skipAuth: true,
       skipAuthRefresh: true,
@@ -119,7 +119,7 @@ export class AuthResource extends BaseResource {
   ): Promise<SignInResult> {
     const body = await this.http.request({
       method: 'POST',
-      path: '/api/v1/auth/sign-in',
+      path: AUTH_PATHS.signIn,
       body: credentials,
       skipAuth: true,
       skipAuthRefresh: true,
@@ -147,7 +147,7 @@ export class AuthResource extends BaseResource {
   ): Promise<string> {
     const body = await this.http.request({
       method: 'POST',
-      path: '/api/v1/auth/verify-otp',
+      path: AUTH_PATHS.verifyOtp,
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
@@ -170,7 +170,7 @@ export class AuthResource extends BaseResource {
   ): Promise<void> {
     return this.http.request<void>({
       method: 'POST',
-      path: '/api/v1/auth/resend-otp',
+      path: AUTH_PATHS.resendOtp,
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
@@ -260,7 +260,7 @@ export class AuthResource extends BaseResource {
   async logout(options: RequestOptions = {}): Promise<void> {
     await this.http.request<void>({
       method: 'POST',
-      path: '/api/v1/auth/logout',
+      path: AUTH_PATHS.logout,
       skipAuthRefresh: true,
       ...this.requestOptions(options),
     });
@@ -294,7 +294,7 @@ export class AuthResource extends BaseResource {
   async forgotPassword(input: ForgotPasswordInput, options: RequestOptions = {}): Promise<string> {
     const body = await this.http.request({
       method: 'POST',
-      path: '/api/v1/auth/forgot-password',
+      path: AUTH_PATHS.forgotPassword,
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
@@ -318,7 +318,7 @@ export class AuthResource extends BaseResource {
   resetPassword(input: ResetPasswordInput, options: RequestOptions = {}): Promise<void> {
     return this.http.request<void>({
       method: 'POST',
-      path: '/api/v1/auth/reset-password',
+      path: AUTH_PATHS.resetPassword,
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
@@ -366,17 +366,20 @@ export class AuthResource extends BaseResource {
    * Меняет пароль. Требует действующей сессии.
    *
    * При неверном текущем пароле сервер отвечает `ACCOUNT_CURRENT_PASSWORD_INCORRECT`.
+   *
+   * @example
+   * ```ts
+   * await itd.auth.changePassword({ currentPassword, newPassword });
+   * ```
    */
   changePassword(
-    input: { oldPassword: string; newPassword: string },
+    input: { currentPassword: string; newPassword: string },
     options: RequestOptions = {},
   ): Promise<void> {
     return this.http.request<void>({
       method: 'POST',
-      path: '/api/v1/auth/change-password',
-      // Текущий пароль уходит под двумя именами: какое из них ждёт сервер, снаружи
-      // не проверить, а лишнее поле он игнорирует.
-      body: { ...input, currentPassword: input.oldPassword },
+      path: AUTH_PATHS.changePassword,
+      body: { currentPassword: input.currentPassword, newPassword: input.newPassword },
       ...this.requestOptions(options),
     });
   }
@@ -393,14 +396,14 @@ export class AuthResource extends BaseResource {
    * ```
    */
   oauthUrl(provider: OAuthProvider): string {
-    return joinUrl(this.http.baseUrl, `/api/v1/auth/login/${provider}`);
+    return joinUrl(this.http.baseUrl, `${AUTH_PATHS.oauthLogin}/${provider}`);
   }
 
   /** Загружает список активных сессий. У текущей поле `isCurrent` равно `true`. */
   async sessions(options: RequestOptions = {}): Promise<Session[]> {
     const body = await this.http.request({
       method: 'GET',
-      path: '/api/v1/auth/sessions',
+      path: AUTH_PATHS.sessions,
       ...this.requestOptions(options),
     });
 
@@ -411,7 +414,7 @@ export class AuthResource extends BaseResource {
   revokeSession(sessionId: string, options: RequestOptions = {}): Promise<void> {
     return this.http.request<void>({
       method: 'DELETE',
-      path: `/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`,
+      path: `${AUTH_PATHS.sessions}/${encodeURIComponent(sessionId)}`,
       ...this.requestOptions(options),
     });
   }
@@ -420,7 +423,7 @@ export class AuthResource extends BaseResource {
   revokeOtherSessions(options: RequestOptions = {}): Promise<void> {
     return this.http.request<void>({
       method: 'DELETE',
-      path: '/api/v1/auth/sessions',
+      path: AUTH_PATHS.sessions,
       ...this.requestOptions(options),
     });
   }
