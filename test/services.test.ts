@@ -66,6 +66,39 @@ describe('ServiceRegistry', () => {
     );
     expect(() => registry.define({ name: 'pb', baseUrl: '/api' })).toThrow(ItdConfigError);
   });
+
+  it('проверяет auth и заголовки определения', () => {
+    const registry = new ServiceRegistry();
+
+    expect(() =>
+      registry.define({ name: 'a', baseUrl: 'https://a.test', auth: 'yes' as never }),
+    ).toThrow(/auth/);
+    expect(() =>
+      registry.define({
+        name: 'b',
+        baseUrl: 'https://b.test',
+        headers: { 'X-Trace': 42 } as never,
+      }),
+    ).toThrow(/headers/);
+  });
+
+  it('не позволяет мутировать зарегистрированное определение', () => {
+    const registry = new ServiceRegistry();
+    registry.define({
+      name: 'pb',
+      baseUrl: 'https://pbapi.test',
+      headers: { 'X-Service': 'pb' },
+    });
+    const service = registry.get('pb');
+
+    expect(() => {
+      if (service) service.baseUrl = 'https://evil.test';
+    }).toThrow();
+    expect(() => {
+      if (service?.headers) service.headers['X-Service'] = 'evil';
+    }).toThrow();
+    expect(registry.resolveBaseUrl('pb')).toBe('https://pbapi.test');
+  });
 });
 
 describe('Слой сервисов', () => {
@@ -150,6 +183,67 @@ describe('Слой сервисов', () => {
     await itd.request({ method: 'GET', service: 'external', path: '/api/pixel-info' });
 
     expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer token-123');
+  });
+
+  it('разовый внешний baseUrl не получает авторизацию по умолчанию', async () => {
+    const { itd, mock } = makeClient({ auth: 'token-123' });
+
+    await itd.request({
+      method: 'GET',
+      baseUrl: 'https://external.test',
+      path: '/api/ping',
+    });
+
+    expect(mock.calls[0]?.headers.has('authorization')).toBe(false);
+  });
+
+  it('разовый baseUrl на поддомене основного API получает авторизацию', async () => {
+    const { itd, mock } = makeClient({ auth: 'token-123' });
+
+    await itd.request({
+      method: 'GET',
+      baseUrl: 'https://media.itd.test/',
+      path: '/api/ping',
+    });
+
+    expect(mock.calls[0]?.url).toBe('https://media.itd.test/api/ping');
+    expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer token-123');
+  });
+
+  it('авторизация внешнего разового baseUrl требует явного разрешения', async () => {
+    const { itd, mock } = makeClient({ auth: 'token-123' });
+
+    await itd.request({
+      method: 'GET',
+      baseUrl: 'https://external.test',
+      path: '/api/ping',
+      skipAuth: false,
+    });
+
+    expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer token-123');
+  });
+
+  it('разовый override не наследует auth-разрешение другого хоста сервиса', async () => {
+    const { itd, mock } = makeClient({ auth: 'token-123' });
+    itd.defineService({ name: 'trusted', baseUrl: 'https://trusted.test', auth: true });
+
+    await itd.request({
+      method: 'GET',
+      service: 'trusted',
+      baseUrl: 'https://external.test',
+      path: '/api/ping',
+    });
+
+    expect(mock.calls[0]?.headers.has('authorization')).toBe(false);
+  });
+
+  it('проверяет разовый baseUrl до сетевого запроса', async () => {
+    const { itd, mock } = makeClient({ auth: 'token-123' });
+
+    await expect(
+      itd.request({ method: 'GET', baseUrl: 'ftp://external.test', path: '/api/ping' }),
+    ).rejects.toThrow(ItdConfigError);
+    expect(mock.callCount).toBe(0);
   });
 
   it('падает на неизвестном имени сервиса', async () => {

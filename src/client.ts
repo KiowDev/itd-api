@@ -211,7 +211,9 @@ export class ItdClient {
     const middlewares: RequestMiddleware[] = [];
     if (queues) {
       middlewares.push(
-        createQueueMiddleware((request, task) => queues.for(request.service).schedule(task)),
+        createQueueMiddleware((request, task) =>
+          queues.for(request.service).schedule(task, request.signal),
+        ),
       );
     }
     middlewares.push(pluginsLayer);

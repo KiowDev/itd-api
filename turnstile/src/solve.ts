@@ -81,6 +81,9 @@ function resolveOrigin(origin: string): string {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new TypeError(`origin должен быть http или https, получено: ${parsed.protocol}`);
   }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new TypeError('origin не должен содержать логин, пароль, query или fragment');
+  }
 
   // Виджет привязан к домену, а не к пути: адрес приводится к корню, чтобы перехват
   // навигации совпал с ним ровно один раз.
@@ -88,8 +91,14 @@ function resolveOrigin(origin: string): string {
 }
 
 function resolveOptions(options: TurnstileOptions): ResolvedOptions {
+  if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+    throw new TypeError('options должен быть объектом');
+  }
+
   const timeout = options.timeout ?? 60_000;
   const attempts = options.attempts ?? 2;
+  const sitekey = options.sitekey ?? ITD_SITE_KEY;
+  const theme = options.theme ?? 'auto';
 
   if (!Number.isFinite(timeout) || timeout <= 0) {
     throw new TypeError(`timeout должен быть положительным числом, получено: ${timeout}`);
@@ -97,12 +106,38 @@ function resolveOptions(options: TurnstileOptions): ResolvedOptions {
   if (!Number.isInteger(attempts) || attempts < 1) {
     throw new TypeError(`attempts должен быть целым числом от 1, получено: ${attempts}`);
   }
+  if (typeof sitekey !== 'string' || sitekey.trim() === '') {
+    throw new TypeError('sitekey должен быть непустой строкой');
+  }
+  if (theme !== 'auto' && theme !== 'light' && theme !== 'dark') {
+    throw new TypeError("theme должен быть 'auto', 'light' или 'dark'");
+  }
+  for (const [name, value] of [
+    ['headless', options.headless],
+    ['disableSandbox', options.disableSandbox],
+  ] as const) {
+    if (value !== undefined && typeof value !== 'boolean') {
+      throw new TypeError(`${name} должен быть boolean`);
+    }
+  }
+  if (options.logger !== undefined && typeof options.logger !== 'function') {
+    throw new TypeError('logger должен быть функцией');
+  }
+  if (options.launch !== undefined && typeof options.launch !== 'function') {
+    throw new TypeError('launch должен быть функцией');
+  }
+  if (
+    options.args !== undefined &&
+    (!Array.isArray(options.args) || options.args.some((argument) => typeof argument !== 'string'))
+  ) {
+    throw new TypeError('args должен быть массивом строк');
+  }
 
   return {
     ...options,
     origin: resolveOrigin(options.origin ?? DEFAULT_ORIGIN),
-    sitekey: options.sitekey ?? ITD_SITE_KEY,
-    theme: options.theme ?? 'auto',
+    sitekey,
+    theme,
     timeout,
     attempts,
   };

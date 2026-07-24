@@ -3,6 +3,7 @@ import { createAccounts, ItdAccounts, type ItdAccountsOptions } from '../src/acc
 import { ItdConfigError } from '../src/core/errors.js';
 import {
   createMultiTokenStorage,
+  createRecordMultiStorage,
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
 } from '../src/core/multi-storage.js';
@@ -128,6 +129,51 @@ describe('изоляция аккаунтов', () => {
     expect(storage.accounts()).toEqual(['a', 'b']);
     expect(await accounts.account('a').getUserId()).toBe('user-a');
     expect(await accounts.account('b').getUserId()).toBe('user-b');
+  });
+
+  it('memory-хранилище изолирует входные и выходные объекты сессий', () => {
+    const initial = { accessToken: 'a', cookies: ['https://itd.test is_auth=1; Path=/'] };
+    const storage = new MemoryMultiTokenStorage({ a: initial });
+
+    initial.accessToken = 'изменён-снаружи';
+    initial.cookies.push('https://itd.test leaked=1; Path=/');
+    const returned = storage.get('a');
+    if (returned) returned.accessToken = 'изменён-после-get';
+
+    expect(storage.get('a')).toEqual({
+      accessToken: 'a',
+      cookies: ['https://itd.test is_auth=1; Path=/'],
+    });
+  });
+
+  it('record-хранилище передаёт источнику стабильный снимок каждой записи', async () => {
+    const releases: (() => void)[] = [];
+    const written: Record<string, ItdSession>[] = [];
+    const storage = createRecordMultiStorage({
+      read: async () => null,
+      write: (record) =>
+        new Promise<void>((resolve) => {
+          releases.push(() => {
+            written.push(record);
+            resolve();
+          });
+        }),
+    });
+
+    const first = storage.set('a', { accessToken: 'token-a' });
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    const second = storage.set('b', { accessToken: 'token-b' });
+
+    releases[0]?.();
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    releases[1]?.();
+    await Promise.all([first, second]);
+
+    expect(written[0]).toEqual({ a: { accessToken: 'token-a' } });
+    expect(written[1]).toEqual({
+      a: { accessToken: 'token-a' },
+      b: { accessToken: 'token-b' },
+    });
   });
 });
 

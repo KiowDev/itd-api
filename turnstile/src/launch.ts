@@ -6,14 +6,10 @@ import type { Browser, LaunchOptions, PlaywrightModule } from './playwright.js';
  *
  * Подмены `User-Agent` здесь нет намеренно: заявленная версия браузера расходилась бы
  * с реальным движком, а такое расхождение само по себе служит признаком автоматизации.
- * Остаются флаги, без которых браузер не поедет в контейнере, и отключение подсказки
- * об автоматизации.
+ * Остаются безопасные общие флаги. Отключение sandbox вынесено в явную настройку:
+ * удалённый код виджета исполняется в браузере, и ослаблять его изоляцию по умолчанию нельзя.
  */
-const DEFAULT_ARGS = [
-  '--no-sandbox',
-  '--disable-dev-shm-usage',
-  '--disable-blink-features=AutomationControlled',
-];
+const DEFAULT_ARGS = ['--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
 
 /** Драйверы в порядке предпочтения. */
 const DRIVERS = ['playwright', 'playwright-core'];
@@ -60,6 +56,14 @@ export interface BrowserOptions {
   executablePath?: string | undefined;
   /** Дополнительные аргументы командной строки — добавляются к стандартным. */
   args?: readonly string[] | undefined;
+  /**
+   * Отключить sandbox Chromium. По умолчанию `false`.
+   *
+   * Используйте только внутри изолированного контейнера, где sandbox невозможно настроить:
+   * страница исполняет удалённый код виджета, и без изоляции браузера его компрометация
+   * получает больше доступа к процессу и системе.
+   */
+  disableSandbox?: boolean | undefined;
   /** Прокси для браузера. */
   proxy?: { server: string; username?: string; password?: string } | undefined;
   /**
@@ -78,18 +82,26 @@ export interface BrowserOptions {
   launch?: (() => Promise<Browser>) | undefined;
 }
 
+/** Собирает параметры Playwright без запуска браузера. @internal */
+export function resolveLaunchOptions(options: BrowserOptions): LaunchOptions {
+  return {
+    headless: options.headless ?? false,
+    args: [
+      ...DEFAULT_ARGS,
+      ...(options.disableSandbox ? ['--no-sandbox'] : []),
+      ...(options.args ?? []),
+    ],
+    ...(options.executablePath ? { executablePath: options.executablePath } : {}),
+    ...(options.proxy ? { proxy: options.proxy } : {}),
+  };
+}
+
 /** Поднимает браузер по настройкам. */
 export async function launchBrowser(options: BrowserOptions): Promise<Browser> {
   if (options.launch) return options.launch();
 
   const { chromium } = await loadPlaywright();
-
-  const launchOptions: LaunchOptions = {
-    headless: options.headless ?? false,
-    args: [...DEFAULT_ARGS, ...(options.args ?? [])],
-    ...(options.executablePath ? { executablePath: options.executablePath } : {}),
-    ...(options.proxy ? { proxy: options.proxy } : {}),
-  };
+  const launchOptions = resolveLaunchOptions(options);
 
   try {
     return await chromium.launch(launchOptions);

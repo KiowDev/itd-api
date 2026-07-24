@@ -31,6 +31,22 @@ export interface ItdSession {
 }
 
 /**
+ * Создаёт независимый снимок сессии.
+ *
+ * Сессии пересекают границу пользовательского кода и внутреннего состояния клиента.
+ * Возвращать или сохранять их по ссылке нельзя: последующая мутация объекта или массива
+ * cookie меняла бы уже сохранённую сессию без вызова `set()`.
+ *
+ * @internal
+ */
+export function copySession(session: ItdSession): ItdSession {
+  return {
+    ...session,
+    ...(session.cookies ? { cookies: [...session.cookies] } : {}),
+  };
+}
+
+/**
  * Хранилище сессии.
  *
  * Подключаемый компонент: библиотека не знает, где вы держите токены, и обращается к ним
@@ -64,15 +80,15 @@ export class MemoryTokenStorage implements TokenStorage {
   #session: ItdSession | null = null;
 
   constructor(initial?: ItdSession | null) {
-    this.#session = initial ?? null;
+    this.#session = initial ? copySession(initial) : null;
   }
 
   get(): ItdSession | null {
-    return this.#session;
+    return this.#session ? copySession(this.#session) : null;
   }
 
   set(session: ItdSession): void {
-    this.#session = session;
+    this.#session = copySession(session);
   }
 
   clear(): void {

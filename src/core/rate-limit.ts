@@ -8,6 +8,11 @@ interface QueuedTask {
   cancel: (reason: unknown) => void;
 }
 
+/** Ошибка отмены запроса, который ещё не дошёл до транспорта. */
+function queueAbortError(): ItdAbortError {
+  return new ItdAbortError('Запрос отменён во время ожидания очереди');
+}
+
 /**
  * Очередь запросов: ограничивает одновременность и частоту.
  *
@@ -50,21 +55,50 @@ export class RequestQueue {
    *
    * @returns результат задачи; ошибка задачи пробрасывается без изменений
    */
-  schedule<T>(task: () => Promise<T>): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const run = () => {
-        this.#active += 1;
+  schedule<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (signal?.aborted) return Promise.reject(queueAbortError());
 
-        task()
-          .then(resolve, reject)
-          .finally(() => {
-            this.#active -= 1;
-            this.#drain();
-          });
+    return new Promise<T>((resolve, reject) => {
+      let queued: QueuedTask;
+
+      const detach = () => signal?.removeEventListener('abort', onAbort);
+      const onAbort = () => {
+        const index = this.#waiting.indexOf(queued);
+        if (index < 0) return;
+
+        this.#waiting.splice(index, 1);
+        queued.cancel(queueAbortError());
+        this.#drain();
       };
 
-      this.#waiting.push({ run, cancel: reject });
-      this.#drain();
+      queued = {
+        run: () => {
+          detach();
+          this.#active += 1;
+
+          // `task` обычно возвращает промис, но пользовательский middleware может бросить
+          // синхронно. Нормализуем оба пути, чтобы слот всегда освободился.
+          Promise.resolve()
+            .then(task)
+            .then(resolve, reject)
+            .finally(() => {
+              this.#active -= 1;
+              this.#drain();
+            });
+        },
+        cancel: (reason) => {
+          detach();
+          reject(reason);
+        },
+      };
+
+      this.#waiting.push(queued);
+      signal?.addEventListener('abort', onAbort, { once: true });
+
+      // Защищает и от нестандартной реализации AbortSignal, которая могла перейти
+      // в aborted между первой проверкой и установкой обработчика.
+      if (signal?.aborted) onAbort();
+      else this.#drain();
     });
   }
 
@@ -98,7 +132,15 @@ export class RequestQueue {
 
   /** Запускает столько ожидающих задач, сколько позволяют ограничения. */
   #drain(): void {
-    if (this.#waiting.length === 0) return;
+    if (this.#waiting.length === 0) {
+      // Последний ожидающий запрос мог быть отменён во время длинной паузы. Таймер больше
+      // не нужен и не должен удерживать event loop процесса.
+      if (this.#timer !== undefined) {
+        clearTimeout(this.#timer);
+        this.#timer = undefined;
+      }
+      return;
+    }
     if (this.#active >= this.#concurrency) return;
     // Ждём уже запланированного пробуждения, чтобы не плодить таймеры.
     if (this.#timer !== undefined) return;

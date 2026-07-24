@@ -683,6 +683,30 @@ describe('общее поведение клиента', () => {
     expect(calls).toBe(2);
   });
 
+  it('на новой retry-попытке заново читает обновлённый токен', async () => {
+    let client: ItdClient | undefined;
+    const built = makeClient(
+      (request, index) =>
+        index === 0
+          ? json({}, { status: 500 })
+          : request.headers.get('authorization') === 'Bearer fresh-token'
+            ? feedPage(['1'], null)
+            : json({}, { status: 401 }),
+      {
+        auth: 'old-token',
+        retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+        hooks: {
+          onRetry: () => client?.setSession({ accessToken: 'fresh-token' }),
+        },
+      },
+    );
+    client = built.itd;
+
+    await expect(client.posts.list()).resolves.toMatchObject({ items: [{ id: '1' }] });
+    expect(built.mock.calls[0]?.headers.get('authorization')).toBe('Bearer old-token');
+    expect(built.mock.calls[1]?.headers.get('authorization')).toBe('Bearer fresh-token');
+  });
+
   it('retry у запроса переопределяет глобальную настройку', async () => {
     let calls = 0;
     const { itd } = makeClient(

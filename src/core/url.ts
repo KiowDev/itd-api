@@ -88,6 +88,12 @@ export function joinUrl(baseUrl: string, path: string): string {
 
 /** Приводит базовый URL к каноничному виду и проверяет, что он вообще похож на URL. */
 export function normalizeBaseUrl(baseUrl: string): string {
+  if (typeof baseUrl !== 'string' || baseUrl.trim() === '') {
+    throw new ItdConfigError(
+      `baseUrl должен быть непустой строкой с абсолютным URL, получено: ${JSON.stringify(baseUrl)}`,
+    );
+  }
+
   let parsed: URL;
   try {
     parsed = new URL(baseUrl);
@@ -100,6 +106,12 @@ export function normalizeBaseUrl(baseUrl: string): string {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new ItdConfigError(
       `baseUrl должен использовать http или https, получено: ${parsed.protocol}`,
+    );
+  }
+
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new ItdConfigError(
+      'baseUrl не должен содержать логин, пароль, query-параметры или fragment',
     );
   }
 

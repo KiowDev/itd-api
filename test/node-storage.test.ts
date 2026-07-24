@@ -83,6 +83,21 @@ describe('FileTokenStorage', () => {
 
     expect(await readFile(path, 'utf8').catch(() => null)).toBeNull();
   });
+
+  it('get дожидается ранее вызванного set и set сохраняет снимок аргумента', async () => {
+    const path = join(dir, 'session.json');
+    const storage = new FileTokenStorage(path);
+    const session = { accessToken: 'исходный', cookies: ['https://itd.test a=1; Path=/'] };
+
+    void storage.set(session);
+    session.accessToken = 'изменённый';
+    session.cookies.push('https://itd.test leaked=1; Path=/');
+
+    expect(await storage.get()).toEqual({
+      accessToken: 'исходный',
+      cookies: ['https://itd.test a=1; Path=/'],
+    });
+  });
 });
 
 describe('FileMultiTokenStorage', () => {

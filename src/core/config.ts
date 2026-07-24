@@ -113,6 +113,65 @@ function requirePositive(value: number, name: string): number {
   return value;
 }
 
+function isRecord(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireOptionalBoolean(value: unknown, name: string): void {
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw new ItdConfigError(`${name} должен быть boolean`);
+  }
+}
+
+function resolveStorage(storage: TokenStorage | undefined): TokenStorage {
+  if (storage === undefined) return new MemoryTokenStorage();
+  if (!isRecord(storage)) throw new ItdConfigError('storage должен быть объектом TokenStorage');
+
+  for (const method of ['get', 'set', 'clear'] as const) {
+    if (typeof storage[method] !== 'function') {
+      throw new ItdConfigError(`storage.${method} должен быть функцией`);
+    }
+  }
+  return storage;
+}
+
+function resolveHeaders(headers: Record<string, string> | undefined): Record<string, string> {
+  if (headers === undefined) return {};
+  if (!isRecord(headers)) throw new ItdConfigError('headers должен быть объектом строк');
+
+  for (const [name, value] of Object.entries(headers)) {
+    if (typeof value !== 'string') {
+      throw new ItdConfigError(`headers.${name} должен быть строкой`);
+    }
+  }
+  return { ...headers };
+}
+
+function resolveHooks(hooks: ClientHooks | undefined): ClientHooks {
+  if (hooks === undefined) return {};
+  if (!isRecord(hooks)) throw new ItdConfigError('hooks должен быть объектом');
+
+  for (const name of ['onRequest', 'onResponse', 'onError', 'onRetry'] as const) {
+    if (hooks[name] !== undefined && typeof hooks[name] !== 'function') {
+      throw new ItdConfigError(`hooks.${name} должен быть функцией`);
+    }
+  }
+  return { ...hooks };
+}
+
+function resolveLogger(logger: ItdClientOptions['logger']): Logger | undefined {
+  if (logger === undefined || logger === false) return undefined;
+  if (logger === true) return consoleLogger();
+  if (!isRecord(logger)) throw new ItdConfigError('logger должен быть boolean или объектом Logger');
+
+  for (const method of ['debug', 'info', 'warn', 'error'] as const) {
+    if (typeof logger[method] !== 'function') {
+      throw new ItdConfigError(`logger.${method} должен быть функцией`);
+    }
+  }
+  return logger;
+}
+
 /** Логгер поверх `console` — включается опцией `logger: true`. */
 function consoleLogger(): Logger {
   return {
@@ -134,6 +193,9 @@ function consoleLogger(): Logger {
  */
 export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOptions | undefined {
   if (retry === false) return undefined;
+  if (retry !== undefined && !isRecord(retry)) {
+    throw new ItdConfigError('retry должен быть объектом или false');
+  }
 
   const options = retry ?? {};
   const attempts = options.attempts ?? 3;
@@ -143,17 +205,24 @@ export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOpt
   }
 
   const jitter = options.jitter ?? 0.3;
-  if (jitter < 0 || jitter > 1) {
+  if (!Number.isFinite(jitter) || jitter < 0 || jitter > 1) {
     throw new ItdConfigError(`retry.jitter должен быть в диапазоне 0…1, получено: ${jitter}`);
   }
+  requireOptionalBoolean(options.retryWrites, 'retry.retryWrites');
+  if (options.shouldRetry !== undefined && typeof options.shouldRetry !== 'function') {
+    throw new ItdConfigError('retry.shouldRetry должен быть функцией');
+  }
+
+  const baseDelay = requirePositive(options.baseDelay ?? 500, 'retry.baseDelay');
+  const maxDelay = requirePositive(options.maxDelay ?? 30_000, 'retry.maxDelay');
 
   // Одна попытка означает отсутствие повторов — очередь ретраев можно не поднимать.
   if (attempts === 1) return undefined;
 
   return {
     attempts,
-    baseDelay: requirePositive(options.baseDelay ?? 500, 'retry.baseDelay'),
-    maxDelay: requirePositive(options.maxDelay ?? 30_000, 'retry.maxDelay'),
+    baseDelay,
+    maxDelay,
     jitter,
     retryWrites: options.retryWrites ?? false,
     shouldRetry: options.shouldRetry,
@@ -174,6 +243,9 @@ export function resolveRateLimit(
   rateLimit: ItdClientOptions['rateLimit'],
 ): ResolvedRateLimitOptions | undefined {
   if (rateLimit === false) return undefined;
+  if (rateLimit !== undefined && !isRecord(rateLimit)) {
+    throw new ItdConfigError('rateLimit должен быть объектом или false');
+  }
 
   const defaults = {
     concurrency: 6,
@@ -197,12 +269,16 @@ export function resolveRateLimit(
   }
 
   const retryDelays = rateLimit.retryDelays ?? defaults.retryDelays;
+  if (!Array.isArray(retryDelays)) {
+    throw new ItdConfigError('rateLimit.retryDelays должен быть массивом чисел');
+  }
   for (const delay of retryDelays) requirePositive(delay, 'rateLimit.retryDelays');
+  requireOptionalBoolean(rateLimit.respectHeaders, 'rateLimit.respectHeaders');
 
   return {
     concurrency,
     rps: rateLimit.rps,
-    retryDelays,
+    retryDelays: [...retryDelays],
     respectHeaders: rateLimit.respectHeaders ?? true,
   };
 }
@@ -233,14 +309,14 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
     if (typeof auth.getToken !== 'function') {
       throw new ItdConfigError('auth.getToken должен быть функцией');
     }
-    return auth;
+    return { ...auth };
   }
 
   if ('accessToken' in auth) {
     if (typeof auth.accessToken !== 'string' || auth.accessToken.trim() === '') {
       throw new ItdConfigError('auth.accessToken должен быть непустой строкой');
     }
-    return auth;
+    return { ...auth };
   }
 
   if ('email' in auth || 'password' in auth) {
@@ -269,7 +345,7 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
     // Отсутствие капчи — не ошибка конфигурации: сессия может быть восстановлена из
     // хранилища, и до входа по паролю дело вообще не дойдёт. Ошибка возникнет в момент
     // входа, где её текст может объяснить, что именно нужно сделать.
-    return auth;
+    return { ...auth };
   }
 
   throw new ItdConfigError(
@@ -283,11 +359,16 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
  * означает один только базовый URL. Сам URL проверяет `ServiceRegistry.define`.
  */
 function resolveServices(services: ItdClientOptions['services']): ServiceDefinition[] {
-  if (!services) return [];
+  if (services === undefined) return [];
+  if (!isRecord(services)) throw new ItdConfigError('services должен быть объектом');
 
-  return Object.entries(services).map(([name, value]) =>
-    typeof value === 'string' ? { name, baseUrl: value } : { ...value, name },
-  );
+  return Object.entries(services).map(([name, value]) => {
+    if (typeof value === 'string') return { name, baseUrl: value };
+    if (!isRecord(value)) {
+      throw new ItdConfigError(`services.${name} должен быть URL или объектом сервиса`);
+    }
+    return { ...value, name } as ServiceDefinition;
+  });
 }
 
 /**
@@ -299,6 +380,8 @@ function resolveServices(services: ItdClientOptions['services']): ServiceDefinit
  * @throws {ItdConfigError} при некорректных значениях
  */
 export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
+  if (!isRecord(options)) throw new ItdConfigError('опции клиента должны быть объектом');
+
   const mode: RuntimeMode = options.mode ?? RuntimeMode.Auto;
 
   if (!Object.values(RuntimeMode).includes(mode)) {
@@ -308,6 +391,16 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
   }
 
   const timeout = requirePositive(options.timeout ?? DEFAULT_TIMEOUT, 'timeout');
+  requireOptionalBoolean(options.autoRefresh, 'autoRefresh');
+  requireOptionalBoolean(options.reloginOnRefreshFailure, 'reloginOnRefreshFailure');
+
+  if (
+    options.userAgent !== undefined &&
+    options.userAgent !== false &&
+    typeof options.userAgent !== 'string'
+  ) {
+    throw new ItdConfigError('userAgent должен быть строкой или false');
+  }
 
   if (
     options.deviceId !== undefined &&
@@ -320,16 +413,16 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
     baseUrl: normalizeBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL),
     services: resolveServices(options.services),
     auth: validateAuth(options.auth),
-    storage: options.storage ?? new MemoryTokenStorage(),
+    storage: resolveStorage(options.storage),
     autoRefresh: options.autoRefresh ?? true,
     reloginOnRefreshFailure: options.reloginOnRefreshFailure ?? true,
     fetch: resolveFetch(options.fetch),
     timeout,
     retry: resolveRetry(options.retry),
     rateLimit: resolveRateLimit(options.rateLimit),
-    hooks: options.hooks ?? {},
-    logger: options.logger === true ? consoleLogger() : options.logger || undefined,
-    headers: { ...options.headers },
+    hooks: resolveHooks(options.hooks),
+    logger: resolveLogger(options.logger),
+    headers: resolveHeaders(options.headers),
     deviceId: options.deviceId,
     // `false` — способ не слать заголовок вовсе; строка заменяет умолчание.
     userAgent: options.userAgent === false ? undefined : (options.userAgent ?? DEFAULT_USER_AGENT),

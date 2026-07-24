@@ -1,5 +1,5 @@
 import { AUTH_FLAG_COOKIE, CookieJar } from './cookies.js';
-import type { ItdSession, TokenStorage } from './storage.js';
+import { copySession, type ItdSession, type TokenStorage } from './storage.js';
 
 /**
  * Хранилище сессий нескольких аккаунтов.
@@ -139,16 +139,17 @@ export class MemoryMultiTokenStorage implements MultiTokenStorage {
 
   constructor(initial?: Readonly<Record<string, ItdSession>> | null) {
     for (const [account, session] of Object.entries(initial ?? {})) {
-      this.#sessions.set(account, session);
+      this.#sessions.set(account, copySession(session));
     }
   }
 
   get(account: string): ItdSession | null {
-    return this.#sessions.get(account) ?? null;
+    const session = this.#sessions.get(account);
+    return session ? copySession(session) : null;
   }
 
   set(account: string, session: ItdSession): void {
-    this.#sessions.set(account, session);
+    this.#sessions.set(account, copySession(session));
   }
 
   clear(account: string): void {
@@ -188,7 +189,9 @@ function normalizeSessionRecord(
   record: Record<string, ItdSession> | null,
 ): Record<string, ItdSession> {
   const normalized = emptySessionRecord();
-  for (const [account, session] of Object.entries(record ?? {})) normalized[account] = session;
+  for (const [account, session] of Object.entries(record ?? {})) {
+    normalized[account] = copySession(session);
+  }
   return normalized;
 }
 
@@ -230,8 +233,11 @@ export function createRecordMultiStorage(source: RecordStorageSource): MultiToke
   };
 
   const flush = (): Promise<void> => {
+    // Снимок делается в момент постановки записи в очередь. Иначе следующая мутация
+    // общего объекта могла изменить данные операции, которая уже выполняется.
+    const current = normalizeSessionRecord(snapshot ?? null);
+
     const operation = async () => {
-      const current = snapshot ?? emptySessionRecord();
       // Пустую запись убираем целиком, если источник это умеет: файл с `{}` после выхода
       // из последнего аккаунта выглядел бы мусором.
       if (source.remove && Object.keys(current).length === 0) await source.remove();
@@ -245,12 +251,13 @@ export function createRecordMultiStorage(source: RecordStorageSource): MultiToke
   return {
     async get(account) {
       const current = await load();
-      return Object.hasOwn(current, account) ? (current[account] ?? null) : null;
+      const session = Object.hasOwn(current, account) ? current[account] : undefined;
+      return session ? copySession(session) : null;
     },
 
     async set(account, session) {
       const current = await load();
-      current[account] = session;
+      current[account] = copySession(session);
       await flush();
     },
 

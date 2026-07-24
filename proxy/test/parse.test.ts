@@ -60,6 +60,16 @@ describe('parseProxy', () => {
     expect(() => parseProxy('это не url')).toThrow(ProxyError);
   });
 
+  it('не игнорирует путь, query и fragment', () => {
+    expect(() => parseProxy('http://proxy.example/tunnel')).toThrow(ProxyError);
+    expect(() => parseProxy('http://proxy.example?token=secret')).toThrow(ProxyError);
+    expect(() => parseProxy('http://proxy.example#fragment')).toThrow(ProxyError);
+  });
+
+  it('оборачивает неверное percent-кодирование учётных данных', () => {
+    expect(() => parseProxy('http://%E0:password@proxy.example')).toThrow(ProxyError);
+  });
+
   it('не печатает пароль прокси в ошибке разбора', () => {
     const error = (() => {
       try {

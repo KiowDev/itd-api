@@ -283,12 +283,22 @@ export interface RawRequestOptions extends RequestOptions {
    * клиента. Сервисы задаются опцией {@link ItdClientOptions.services}.
    */
   service?: string | undefined;
-  /** Хост этого запроса. Важнее, чем {@link RawRequestOptions.service}. */
+  /**
+   * Хост этого запроса. Важнее, чем {@link RawRequestOptions.service}.
+   *
+   * На посторонний основному API хост Bearer-токен по умолчанию не отправляется.
+   * Для осознанного разрешения укажите `skipAuth: false`.
+   */
   baseUrl?: string | undefined;
   query?: QueryParams | undefined;
   /** Тело: будет отправлено как JSON. Для загрузки файлов передайте `FormData`. */
   body?: unknown;
-  /** Не подставлять заголовок авторизации. */
+  /**
+   * Не подставлять заголовок авторизации.
+   *
+   * Явное `false` разрешает авторизацию и для разового внешнего `baseUrl`; без него
+   * токен автоматически отправляется только основному хосту и его поддоменам.
+   */
   skipAuth?: boolean | undefined;
   /** Не пытаться обновить токен при `401` — используется самими эндпоинтами авторизации. */
   skipAuthRefresh?: boolean | undefined;

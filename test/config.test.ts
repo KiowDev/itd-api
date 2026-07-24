@@ -72,9 +72,20 @@ describe('resolveConfig — проверки', () => {
     ['отрицательный timeout', { timeout: -1 }],
     ['ноль попыток', { retry: { attempts: 0 } }],
     ['jitter больше единицы', { retry: { jitter: 2 } }],
+    ['jitter NaN', { retry: { jitter: Number.NaN } }],
     ['дробная конкурентность', { rateLimit: { concurrency: 1.5 } }],
     ['отрицательный rps', { rateLimit: { rps: -1 } }],
     ['неизвестный mode', { mode: 'proxy' as never }],
+    ['fetch не функция', { fetch: 'fetch' as never }],
+    ['storage без clear', { storage: { get() {}, set() {} } as never }],
+    ['headers не строки', { headers: { trace: 42 } as never }],
+    ['hook не функция', { hooks: { onRetry: true } as never }],
+    ['неполный logger', { logger: { debug() {} } as never }],
+    ['retry не объект', { retry: 'yes' as never }],
+    ['rateLimit не объект', { rateLimit: 4 as never }],
+    ['autoRefresh не boolean', { autoRefresh: 'false' as never }],
+    ['userAgent не строка', { userAgent: 42 as never }],
+    ['services не объект', { services: [] as never }],
   ])('отвергает: %s', (_name, options) => {
     expect(() => resolveConfig(options)).toThrow(ItdConfigError);
   });
@@ -150,6 +161,24 @@ describe('MemoryTokenStorage', () => {
 
   it('принимает начальное значение', () => {
     expect(new MemoryTokenStorage({ accessToken: 'a' }).get()).toEqual({ accessToken: 'a' });
+  });
+
+  it('не отдаёт внутреннюю сессию для мутации по ссылке', () => {
+    const initial = { accessToken: 'a', cookies: ['https://itd.test is_auth=1; Path=/'] };
+    const storage = new MemoryTokenStorage(initial);
+
+    initial.accessToken = 'изменён-снаружи';
+    initial.cookies.push('https://itd.test leaked=1; Path=/');
+    const returned = storage.get();
+    if (returned) {
+      returned.accessToken = 'изменён-после-get';
+      returned.cookies?.push('https://itd.test another=1; Path=/');
+    }
+
+    expect(storage.get()).toEqual({
+      accessToken: 'a',
+      cookies: ['https://itd.test is_auth=1; Path=/'],
+    });
   });
 });
 

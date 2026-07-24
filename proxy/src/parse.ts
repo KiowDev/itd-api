@@ -91,15 +91,28 @@ export function parseProxy(proxy: string | URL): ParsedProxy {
   if (!url.hostname) {
     throw new ProxyError(`В адресе прокси нет хоста: ${JSON.stringify(redactProxy(url.href))}`);
   }
+  if ((url.pathname && url.pathname !== '/') || url.search || url.hash) {
+    throw new ProxyError('Адрес прокси не должен содержать путь, query-параметры или fragment');
+  }
 
   const port = url.port ? Number(url.port) : defaultPort(scheme);
+  let username: string | undefined;
+  let password: string | undefined;
+  try {
+    username = url.username ? decodeURIComponent(url.username) : undefined;
+    password = url.password ? decodeURIComponent(url.password) : undefined;
+  } catch {
+    throw new ProxyError(
+      `Логин или пароль в адресе прокси имеют неверное percent-кодирование: ${JSON.stringify(redactProxy(url.href))}`,
+    );
+  }
 
   return {
     kind,
     secure: scheme === 'https',
     host: stripBrackets(url.hostname),
     port,
-    username: url.username ? decodeURIComponent(url.username) : undefined,
-    password: url.password ? decodeURIComponent(url.password) : undefined,
+    username,
+    password,
   };
 }

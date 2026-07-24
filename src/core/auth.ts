@@ -12,7 +12,7 @@ import { ItdApiError, ItdAuthError, ItdConfigError } from './errors.js';
 import { readTokenSubject } from './jwt.js';
 import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
-import type { ItdSession } from './storage.js';
+import { copySession, type ItdSession } from './storage.js';
 
 /** Пути эндпоинтов авторизации. */
 export const AUTH_PATHS = {
@@ -283,7 +283,8 @@ export class AuthManager {
 
   /** Текущая сессия целиком. Полезно, чтобы сохранить её самому. */
   async getSession(): Promise<ItdSession | null> {
-    return this.#loadSession();
+    const session = await this.#loadSession();
+    return session ? copySession(session) : null;
   }
 
   /**

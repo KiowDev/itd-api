@@ -591,6 +591,25 @@ describe('связка с транспортом', () => {
     expect(jar.has('is_auth')).toBe(true);
     expect(await auth.getSession()).toMatchObject({ accessToken: 'refreshed' });
   });
+
+  it('getSession возвращает снимок, а не внутренний объект авторизации', async () => {
+    const { auth } = makeAuth([]);
+    await auth.setSession({
+      accessToken: 'token',
+      cookies: ['https://itd.test is_auth=1; Path=/'],
+    });
+
+    const exposed = await auth.getSession();
+    if (exposed) {
+      exposed.accessToken = 'изменённый';
+      exposed.cookies?.push('https://itd.test leaked=1; Path=/');
+    }
+
+    expect(await auth.getSession()).toMatchObject({
+      accessToken: 'token',
+      cookies: ['https://itd.test is_auth=1; Path=/'],
+    });
+  });
 });
 
 describe('конкурентная инициализация на холодном клиенте', () => {

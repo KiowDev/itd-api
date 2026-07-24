@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TurnstileError, TurnstileFailure } from '../src/errors.js';
+import { resolveLaunchOptions } from '../src/launch.js';
 import type {
   BoundingBox,
   Browser,
@@ -14,6 +15,16 @@ import { ITD_SITE_KEY, solveTurnstile } from '../src/solve.js';
 /** Поддельный браузер: весь путь до токена проверяется без Playwright и без сети. */
 
 const BOX: BoundingBox = { x: 40, y: 40, width: 300, height: 65 };
+
+describe('настройки запуска браузера', () => {
+  it('не отключает sandbox по умолчанию', () => {
+    expect(resolveLaunchOptions({}).args).not.toContain('--no-sandbox');
+  });
+
+  it('отключает sandbox только по явной opt-in настройке', () => {
+    expect(resolveLaunchOptions({ disableSandbox: true }).args).toContain('--no-sandbox');
+  });
+});
 
 class FakeRoute implements Route {
   body: string | undefined;
@@ -241,7 +252,15 @@ describe('solveTurnstile', () => {
   it('проверяет настройки до запуска браузера', async () => {
     await expect(solveTurnstile({ origin: 'не-адрес' })).rejects.toThrow(TypeError);
     await expect(solveTurnstile({ origin: 'ftp://example.com' })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ origin: 'https://user:pass@example.com' })).rejects.toThrow(
+      TypeError,
+    );
     await expect(solveTurnstile({ attempts: 0 })).rejects.toThrow(TypeError);
     await expect(solveTurnstile({ timeout: 0 })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ sitekey: '' })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ theme: 'blue' as never })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ disableSandbox: 'yes' as never })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ logger: true as never })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ args: ['ok', 42] as never })).rejects.toThrow(TypeError);
   });
 });

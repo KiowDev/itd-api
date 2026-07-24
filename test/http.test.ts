@@ -643,6 +643,19 @@ describe('слой повторов', () => {
 
     expect(seen).toEqual(['abc']);
   });
+
+  it('отмена во время паузы не запускает следующую попытку', async () => {
+    const controller = new AbortController();
+    const { request, mock } = withRetry([json({}, { status: 503 }), json({ data: { ok: true } })], {
+      retry: { attempts: 2, baseDelay: 10_000, jitter: 0 },
+      hooks: { onRetry: () => controller.abort() },
+    });
+
+    await expect(
+      request({ method: 'GET', path: '/api/posts', signal: controller.signal }),
+    ).rejects.toThrow(ItdAbortError);
+    expect(mock.callCount).toBe(1);
+  });
 });
 
 describe('createHangingFetch', () => {

@@ -23,7 +23,7 @@ import { ItdAccounts as BaseAccounts, type ItdAccountsOptions } from './accounts
 import { ItdClient as BaseClient, type ItdClientInternals } from './client.js';
 import { ItdConfigError } from './core/errors.js';
 import { createRecordMultiStorage, type MultiTokenStorage } from './core/multi-storage.js';
-import type { ItdSession, TokenStorage } from './core/storage.js';
+import { copySession, type ItdSession, type TokenStorage } from './core/storage.js';
 import type { FileReader } from './resources/files.js';
 import type { ItdClientOptions } from './types/options.js';
 
@@ -133,12 +133,21 @@ export class FileTokenStorage implements TokenStorage {
   }
 
   async get(): Promise<ItdSession | null> {
+    // Чтение, начатое сразу после `set()`/`clear()`, должно видеть результат более ранней
+    // операции, даже если вызывающий код не сохранил и не дождался её промиса.
+    await this.#writing.then(
+      () => undefined,
+      () => undefined,
+    );
     const parsed = await readJsonFile(this.#path);
-    return typeof parsed === 'object' && parsed !== null ? (parsed as ItdSession) : null;
+    return typeof parsed === 'object' && parsed !== null ? copySession(parsed as ItdSession) : null;
   }
 
   set(session: ItdSession): Promise<void> {
-    return this.#enqueue(() => writeJsonAtomic(this.#path, session));
+    // Пользователь может изменить переданный объект сразу после вызова `set()`.
+    // В очередь должен попасть снимок на момент вызова, а не живая ссылка.
+    const snapshot = copySession(session);
+    return this.#enqueue(() => writeJsonAtomic(this.#path, snapshot));
   }
 
   clear(): Promise<void> {

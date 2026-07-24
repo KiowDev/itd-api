@@ -73,7 +73,12 @@ export function shouldSendCredentials(mode: RuntimeMode): boolean {
  * @throws {ItdConfigError} если `fetch` недоступен — например, на Node ниже 18
  */
 export function resolveFetch(custom?: typeof fetch): typeof fetch {
-  if (custom) return custom;
+  if (custom !== undefined) {
+    if (typeof custom !== 'function') {
+      throw new ItdConfigError('fetch должен быть функцией');
+    }
+    return custom;
+  }
 
   if (typeof globalThis.fetch === 'function') {
     // Привязка к globalThis обязательна: в некоторых средах несвязанный fetch бросает

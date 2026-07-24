@@ -1,6 +1,6 @@
 import type { ClientHooks, Logger, RawRequestOptions, RequestOptions } from '../types/options.js';
 import { type ResolvedRetryOptions, resolveRetry } from './config.js';
-import { isItdApiError, isItdRateLimitError } from './errors.js';
+import { ItdAbortError, isItdApiError, isItdRateLimitError } from './errors.js';
 import {
   type PipelineRequest,
   type RequestHandler,
@@ -10,9 +10,26 @@ import {
 import type { PluginRegistry } from './plugins.js';
 import { createRetryScheduler, type RetryScheduler } from './retry.js';
 import type { ServiceRegistry } from './services.js';
+import { normalizeBaseUrl } from './url.js';
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** Ожидание повтора, которое уважает отмену запроса. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+  if (signal.aborted) {
+    return Promise.reject(new ItdAbortError('Запрос отменён во время ожидания повтора'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new ItdAbortError('Запрос отменён во время ожидания повтора'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /**
@@ -53,11 +70,27 @@ export function createPluginsMiddleware(plugins: PluginRegistry): RequestMiddlew
  */
 export function createServicesMiddleware(registry: ServiceRegistry): RequestMiddleware {
   return async (request, next) => {
-    if (request.service === undefined) return next(request);
+    const service = request.service === undefined ? undefined : registry.require(request.service);
+    let prepared = request;
 
-    const service = registry.require(request.service);
-    let prepared: PipelineRequest =
-      request.baseUrl === undefined ? { ...request, baseUrl: service.baseUrl } : request;
+    if (request.baseUrl !== undefined) {
+      const baseUrl = normalizeBaseUrl(request.baseUrl);
+      if (baseUrl !== request.baseUrl) prepared = { ...prepared, baseUrl };
+
+      // Разовый хост не наследует разрешение авторизации от сервиса с другим URL.
+      // Явное `skipAuth: false` остаётся способом осознанно отправить токен наружу.
+      const matchesService = service?.baseUrl === baseUrl;
+      const mayAuthorize = matchesService
+        ? service.auth !== false
+        : registry.isPrimarySite(baseUrl);
+      if (!mayAuthorize && prepared.skipAuth === undefined) {
+        prepared = { ...prepared, skipAuth: true };
+      }
+    }
+
+    if (!service) return next(prepared);
+
+    if (prepared.baseUrl === undefined) prepared = { ...prepared, baseUrl: service.baseUrl };
 
     if (service.headers) prepared = withLayerHeaders(prepared, service.headers);
     if (service.auth === false && prepared.skipAuth === undefined) {
@@ -217,7 +250,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
           `повтор ${method} ${request.path}, попытка ${attempt + 1} через ${delay} мс`,
         );
 
-        await sleep(delay);
+        await sleep(delay, request.signal);
       }
     }
   };

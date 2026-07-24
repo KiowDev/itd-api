@@ -85,6 +85,12 @@ describe('normalizeBaseUrl', () => {
     expect(() => normalizeBaseUrl('/api')).toThrow(ItdConfigError);
     expect(() => normalizeBaseUrl('ftp://example.com')).toThrow(/http/);
   });
+
+  it('не игнорирует секреты, query и fragment в baseUrl', () => {
+    expect(() => normalizeBaseUrl('https://user:secret@example.com')).toThrow(ItdConfigError);
+    expect(() => normalizeBaseUrl('https://example.com/api?token=secret')).toThrow(ItdConfigError);
+    expect(() => normalizeBaseUrl('https://example.com/api#fragment')).toThrow(ItdConfigError);
+  });
 });
 
 describe('unwrapData', () => {

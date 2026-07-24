@@ -196,6 +196,23 @@ describe('RequestQueue — конкурентность', () => {
     expect(queue.active).toBe(0);
   });
 
+  it('освобождает слот и после синхронной ошибки задачи', async () => {
+    const queue = new RequestQueue({
+      concurrency: 1,
+      rps: undefined,
+      retryDelays: [1000],
+      respectHeaders: true,
+    });
+
+    await expect(
+      queue.schedule(() => {
+        throw new Error('синхронный сбой');
+      }),
+    ).rejects.toThrow('синхронный сбой');
+    await expect(queue.schedule(() => Promise.resolve('готово'))).resolves.toBe('готово');
+    expect(queue.active).toBe(0);
+  });
+
   it('пробрасывает результат и ошибку без изменений', async () => {
     const queue = new RequestQueue({
       concurrency: 4,
@@ -299,6 +316,42 @@ describe('RequestQueue — частота', () => {
     queue.pause(-100);
 
     await expect(queue.schedule(() => Promise.resolve('ок'))).resolves.toBe('ок');
+  });
+
+  it('снимает отменённый запрос с ожидания и очищает таймер паузы', async () => {
+    const queue = new RequestQueue({
+      concurrency: 1,
+      rps: undefined,
+      retryDelays: [1000],
+      respectHeaders: true,
+    });
+    const controller = new AbortController();
+    const started = vi.fn(() => Promise.resolve());
+
+    queue.pause(60_000);
+    const promise = queue.schedule(started, controller.signal);
+    controller.abort();
+
+    await expect(promise).rejects.toThrow(ItdAbortError);
+    expect(started).not.toHaveBeenCalled();
+    expect(queue.pending).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('не ставит в очередь запрос с уже отменённым signal', async () => {
+    const queue = new RequestQueue({
+      concurrency: 1,
+      rps: undefined,
+      retryDelays: [1000],
+      respectHeaders: true,
+    });
+    const controller = new AbortController();
+    const started = vi.fn(() => Promise.resolve());
+    controller.abort();
+
+    await expect(queue.schedule(started, controller.signal)).rejects.toThrow(ItdAbortError);
+    expect(started).not.toHaveBeenCalled();
+    expect(queue.pending).toBe(0);
   });
 
   it('stop снимает отложенную паузу для следующих задач', async () => {

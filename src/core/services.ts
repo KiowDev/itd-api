@@ -62,13 +62,36 @@ export class ServiceRegistry {
     }
 
     const baseUrl = normalizeBaseUrl(definition.baseUrl);
+    if (definition.auth !== undefined && typeof definition.auth !== 'boolean') {
+      throw new ItdConfigError(`services.${name}.auth должен быть boolean`);
+    }
 
-    this.#services.set(name, {
+    let headers: Readonly<Record<string, string>> | undefined;
+    if (definition.headers !== undefined) {
+      if (
+        typeof definition.headers !== 'object' ||
+        definition.headers === null ||
+        Array.isArray(definition.headers)
+      ) {
+        throw new ItdConfigError(`services.${name}.headers должен быть объектом строк`);
+      }
+      for (const [header, value] of Object.entries(definition.headers)) {
+        if (typeof value !== 'string') {
+          throw new ItdConfigError(`services.${name}.headers.${header} должен быть строкой`);
+        }
+      }
+      headers = Object.freeze({ ...definition.headers });
+    }
+
+    const normalized = {
       ...definition,
       name,
       baseUrl,
       auth: definition.auth ?? isSameSite(this.#primaryHost, hostOf(baseUrl)),
-    });
+      ...(headers ? { headers } : {}),
+    } satisfies ServiceDefinition;
+
+    this.#services.set(name, Object.freeze(normalized));
   }
 
   /** Определение сервиса либо `undefined`, если такого нет. */
@@ -107,5 +130,17 @@ export class ServiceRegistry {
    */
   resolveBaseUrl(name: string): string {
     return this.require(name).baseUrl;
+  }
+
+  /**
+   * Принадлежит ли URL основному хосту клиента или его поддомену.
+   *
+   * Используется для безопасного значения по умолчанию у разового `baseUrl`: Bearer-токен
+   * не должен уходить на посторонний хост без явного `skipAuth: false`.
+   *
+   * @internal
+   */
+  isPrimarySite(baseUrl: string): boolean {
+    return isSameSite(this.#primaryHost, hostOf(baseUrl));
   }
 }
