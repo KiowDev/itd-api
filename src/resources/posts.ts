@@ -1,5 +1,10 @@
 import { type CommentInput, resolveComment } from '../builders/comment.js';
-import { type PostInput, resolvePost } from '../builders/post.js';
+import {
+  type PostInput,
+  type PostUpdateInput,
+  resolvePost,
+  resolvePostUpdate,
+} from '../builders/post.js';
 import type { HttpClient } from '../core/http.js';
 import {
   type Page,
@@ -191,16 +196,19 @@ export class PostsResource extends BaseResource {
     });
   }
 
-  /** Редактирует текст поста. */
-  update(
-    postId: string,
-    input: Pick<CreatePostInput, 'content' | 'spans'>,
-    options: RequestOptions = {},
-  ): Promise<Post> {
+  /**
+   * Редактирует текст и разметку поста.
+   *
+   * Как и {@link create}, принимает объект, готовый {@link PostBuilder} или
+   * функцию-настройщик. Поля создания поста, которые update endpoint не поддерживает
+   * (вложения, опрос и стена), отвергаются до запроса.
+   */
+  update(postId: string, input: PostUpdateInput, options: RequestOptions = {}): Promise<Post> {
+    const data = resolvePostUpdate(input);
     return this.http.request<Post>({
       method: 'PUT',
       path: `/api/posts/${encodePathSegment(postId, 'postId')}`,
-      body: { content: input.content ?? '', ...(input.spans ? { spans: input.spans } : {}) },
+      body: { content: data.content, ...(data.spans ? { spans: data.spans } : {}) },
       ...this.requestOptions(options),
     });
   }

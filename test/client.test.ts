@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { post } from '../src/builders/post.js';
 import { createClient, ItdClient } from '../src/client.js';
 import { ItdConfigError, ItdNotFoundError } from '../src/core/errors.js';
 import type { ItdClientOptions } from '../src/types/options.js';
@@ -139,6 +140,38 @@ describe('посты', () => {
       content: 'согласен',
       attachmentIds: [],
     });
+  });
+
+  it('обновляет пост через тот же билдер текста, что и create', async () => {
+    const { itd, mock } = makeClient([json({ id: 'p1' })]);
+
+    await itd.posts.update(
+      'p1',
+      post().markup((m) => m.bold('важно').text(' ').hashtag('новости')),
+    );
+
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+      content: 'важно #новости',
+      spans: [
+        { type: 'bold', offset: 0, length: 5 },
+        { type: 'hashtag', offset: 6, length: 8, tag: 'новости' },
+      ],
+    });
+  });
+
+  it('не отправляет update без явно заданного content', () => {
+    const { itd, mock } = makeClient([]);
+
+    expect(() => itd.posts.update('p1', {} as never)).toThrow(/требует явно заданный content/);
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('передаёт явно заданный пустой content без подстановок', async () => {
+    const { itd, mock } = makeClient([json({ id: 'p1' })]);
+
+    await itd.posts.update('p1', post(''));
+
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({ content: '' });
   });
 });
 

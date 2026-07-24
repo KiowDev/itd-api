@@ -38,7 +38,10 @@ export interface CreatePollInput {
 export interface CreatePostInput {
   /** Текст поста. */
   content?: string;
-  /** Разметка текста. Передаётся серверу без изменений — библиотека её не генерирует. */
+  /**
+   * Разметка текста. Сырые spans проверяются относительно `content`;
+   * для автоматического построения доступны `post().markup()` и `post().autoSpans()`.
+   */
   spans?: Span[];
   /**
    * Чья стена, если пост публикуется не у себя.
@@ -53,6 +56,14 @@ export interface CreatePostInput {
   files?: FileInput[];
   /** Опрос: обычный объект, {@link PollBuilder} или функция-настройщик. */
   poll?: PollInput;
+}
+
+/** Поля поста, которые принимает `itd.posts.update()`. */
+export interface UpdatePostInput {
+  /** Новый текст поста. Обязателен, чтобы обновление одних spans не стёрло текущий текст. */
+  content: string;
+  /** Разметка нового текста. */
+  spans?: Span[];
 }
 
 /** Данные для создания комментария или ответа. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isBuilder } from '../src/builders/base.js';
 import { comment, resolveComment } from '../src/builders/comment.js';
 import { type PollBuilder, poll, resolvePoll } from '../src/builders/poll.js';
-import { post, resolvePost } from '../src/builders/post.js';
+import { post, resolvePost, resolvePostUpdate } from '../src/builders/post.js';
 import { report, resolveReport } from '../src/builders/report.js';
 import { ItdConfigError } from '../src/core/errors.js';
 
@@ -208,6 +208,70 @@ describe('билдер поста', () => {
         .poll((q) => q.question('в').option('а'))
         .build(),
     ).toThrow(/минимум 2 варианта/);
+  });
+
+  it('update принимает функцию-настройщик и отвергает неподдерживаемые поля', () => {
+    expect(resolvePostUpdate((p) => p.content('новый текст'))).toEqual({
+      content: 'новый текст',
+    });
+    expect(() => resolvePostUpdate(post('текст').attachId('att-1'))).toThrow(
+      /update изменяет только content и spans/,
+    );
+  });
+
+  it('сбрасывает spans при замене текста и проверяет сырые spans во всех формах', () => {
+    const invalid = {
+      content: 'a',
+      spans: [{ type: 'bold' as const, offset: 0, length: 5 }],
+    };
+
+    expect(() => resolvePost(invalid)).toThrow(/Некорректный span/);
+    expect(() => resolvePost(() => invalid)).toThrow(/Некорректный span/);
+
+    expect(
+      post()
+        .markup((m) => m.hashtag('тег'))
+        .content('текст длиннее прежнего')
+        .build(),
+    ).toEqual({ content: 'текст длиннее прежнего' });
+
+    expect(
+      post()
+        .spans([{ type: 'bold', offset: 4, length: 99 }])
+        .content('текст')
+        .build(),
+    ).toEqual({ content: 'текст' });
+
+    expect(() => resolvePostUpdate(invalid)).toThrow(/Некорректный span/);
+  });
+
+  it('не принимает spans без текста и объясняет причину', () => {
+    expect(() =>
+      post()
+        .attachId('a1')
+        .spans([{ type: 'bold', offset: 0, length: 1 }])
+        .build(),
+    ).toThrow(/Нельзя задать spans без текста/);
+  });
+
+  it('одинаково разрешает явно заданный пустой текст во всех формах update', () => {
+    expect(resolvePostUpdate({ content: '' })).toEqual({ content: '' });
+    expect(resolvePostUpdate(post(''))).toEqual({ content: '' });
+    expect(resolvePostUpdate((p) => p.content(''))).toEqual({ content: '' });
+  });
+
+  it('не стирает текст update-запросом без явно заданного content', () => {
+    expect(() => resolvePostUpdate({} as never)).toThrow(/требует явно заданный content/);
+    expect(() => resolvePostUpdate(post())).toThrow(/требует явно заданный content/);
+  });
+
+  it('игнорирует неподдерживаемые поля со значением undefined в update', () => {
+    expect(
+      resolvePostUpdate({
+        content: 'текст',
+        poll: undefined,
+      } as never),
+    ).toEqual({ content: 'текст' });
   });
 });
 

@@ -417,25 +417,48 @@ await itd.posts.create(draft.content('второй'));   // заготовка �
 Файлы из `attach()` загружаются автоматически, порядок вложений сохраняется, MIME-тип
 проверяется до отправки.
 
-Разметка текста передаётся полем `spans` — библиотека её не генерирует и не пересчитывает.
-Известные типы собраны в `SpanType`: `hashtag`, `mention`, `link`, `bold`, `italic`,
-`underline`, `strike`, `spoiler`, `monospace`, `quote`.
+### Разметка текста
+
+Билдер собирает текст и сам считает смещения:
 
 ```ts
-import { SpanType } from 'itd-api';
+import { post, renderSpans } from 'itd-api';
 
-await itd.posts.create({
-  content: 'жирное слово и ссылка',
-  spans: [
-    { type: SpanType.Bold, offset: 0, length: 6 },
-    { type: SpanType.Link, offset: 15, length: 6, url: 'https://example.com' },
-  ],
-});
+const created = await itd.posts.create(
+  post().markup((m) =>
+    m
+      .text('смотрите ')
+      .hashtag('котики')
+      .text(' от ')
+      .mention('durov')
+      .text(': ')
+      .bold('важно'),
+  ),
+);
+
+renderSpans(created.content, created.spans); // безопасный HTML по умолчанию
 ```
 
-У `link` адрес лежит в `url`, у `hashtag` и `mention` — имя в `tag`.
+Доступны `bold`, `italic`, `underline`, `strike`, `spoiler`, `monospace`, `quote`, `link`,
+`hashtag`, `mention`, `span()` и несколько стилей сразу через `styled()`. Вложенные и
+пересекающиеся spans поддерживаются. Смещения измеряются в единицах UTF-16, как индексы
+строк и DOM Selection в JavaScript.
 
-Билдеры есть у поста, комментария, опроса и жалобы. Все они неизменяемые, а `build()`
+Для обычного текста есть автоматическое обнаружение ссылок, хэштегов и упоминаний:
+
+```ts
+await itd.posts.create(post('#котики от @durov: https://example.com').autoSpans());
+```
+
+`renderSpans()` также выводит Markdown и ANSI и позволяет настроить маршруты упоминаний,
+хэштегов и префикс CSS-классов. Вызов `postBuilder.content(newText)` сбрасывает прежние
+spans, поскольку они рассчитаны для другого текста. `posts.update()` принимает тот же билдер,
+но требует явно заданный `content`.
+
+Полный запускаемый пример — [`examples/08-text-markup.mjs`](./examples/08-text-markup.mjs):
+авторазметка, пересекающиеся стили, рендер и настройка ссылок/CSS.
+
+Билдеры есть у разметки, поста, комментария, опроса и жалобы. Все они неизменяемые, а `build()`
 проверяет данные и бросает `ItdConfigError` **до** обращения к сети:
 
 ```ts

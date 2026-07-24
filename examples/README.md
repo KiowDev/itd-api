@@ -9,6 +9,7 @@
 | [`05-turnstile-login.mjs`](./05-turnstile-login.mjs) | вход без ручной капчи — токен добывает `@itd-api/turnstile` |
 | [`06-crypto.mjs`](./06-crypto.mjs) | скрытое сообщение в посте — плагин `@itd-api/crypto` |
 | [`07-multi-accounts.mjs`](./07-multi-accounts.mjs) | несколько аккаунтов: общее хранилище сессий, восстановление, обход всех |
+| [`08-text-markup.mjs`](./08-text-markup.mjs) | создание поста с разметкой, `autoSpans()` и HTML/Markdown-рендер |
 
 ## Как запустить
 
@@ -20,6 +21,9 @@ npm run build
 
 # токен
 ITD_TOKEN=<accessToken> node examples/01-quick-start.mjs
+
+# создаст один настоящий пост с разметкой
+ITD_TOKEN=<accessToken> node examples/08-text-markup.mjs
 
 # логин и пароль — сессия сохранится в .itd-session.json
 ITD_EMAIL=you@example.com ITD_PASSWORD=secret node examples/02-bot-with-session.mjs

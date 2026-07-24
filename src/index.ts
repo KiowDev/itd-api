@@ -19,8 +19,23 @@ export { createAccounts, ItdAccounts } from './accounts.js';
 export type { BuilderInput, ItdBuilder } from './builders/base.js';
 export { isBuilder } from './builders/base.js';
 export { type CommentBuilder, type CommentInput, comment } from './builders/comment.js';
+export {
+  type AutoSpansOptions,
+  autoSpans,
+  type MarkupBuilder,
+  type MarkupContent,
+  type MarkupInput,
+  type MarkupSpan,
+  markup,
+  type TextMarkup,
+} from './builders/markup.js';
 export { type PollBuilder, type PollInput, poll } from './builders/poll.js';
-export { type PostBuilder, type PostInput, post } from './builders/post.js';
+export {
+  type PostBuilder,
+  type PostInput,
+  type PostUpdateInput,
+  post,
+} from './builders/post.js';
 export { type ReportBuilder, type ReportInput, report } from './builders/report.js';
 export { createClient, ItdClient } from './client.js';
 export { AUTH_PATHS, type AuthEvents, DEVICE_ID_HEADER, TURNSTILE_SITE_KEY } from './core/auth.js';
@@ -182,6 +197,11 @@ export type {
   UsersResource,
 } from './resources/users.js';
 export type { VerificationResource } from './resources/verification.js';
+export {
+  type RenderSpansOptions,
+  renderSpans,
+  type SpanRenderFormat,
+} from './spans/render.js';
 export type { Loose } from './types/enums.js';
 // Перечисления экспортируются парой «значение + тип» под одним именем:
 // FeedTab.Popular работает как константа, FeedTab — как тип. Подробности — в types/enums.ts.
@@ -270,4 +290,5 @@ export type {
   CreatePostInput,
   CreateReportInput,
   FileInput,
+  UpdatePostInput,
 } from './types/params.js';

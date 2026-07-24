@@ -1,11 +1,15 @@
 import { ItdConfigError } from '../core/errors.js';
+import { validateSpans } from '../spans/validate.js';
+import { SpanType } from '../types/enums.js';
 import type { Span, UserId } from '../types/models.js';
-import type { CreatePostInput, FileInput } from '../types/params.js';
-import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
+import type { CreatePostInput, FileInput, UpdatePostInput } from '../types/params.js';
+import { BUILDER, type BuilderInput, type ItdBuilder, isBuilder, resolveInput } from './base.js';
+import { type AutoSpansOptions, autoSpans, type MarkupInput, resolveMarkup } from './markup.js';
 import { type PollInput, resolvePoll } from './poll.js';
 
 /** UUID любой версии. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BUILD_UPDATE = Symbol.for('itd.postBuilder.update');
 
 /**
  * Проверяет данные поста.
@@ -41,12 +45,17 @@ export function validatePost(input: CreatePostInput): CreatePostInput {
 
   // Опрос внутри обычного объекта тоже может быть билдером или функцией — приводим его
   // здесь, чтобы форма записи не влияла на результат и на проверки.
-  return input.poll === undefined ? input : { ...input, poll: resolvePoll(input.poll) };
+  return {
+    ...input,
+    ...(input.spans !== undefined ? { spans: validateSpans(content, input.spans) } : {}),
+    ...(input.poll !== undefined ? { poll: resolvePoll(input.poll) } : {}),
+  };
 }
 
 /** Внутреннее состояние {@link PostBuilder}. */
 interface PostState extends CreatePostInput {
   content: string;
+  contentSet: boolean;
   attachmentIds: string[];
   files: FileInput[];
 }
@@ -76,25 +85,79 @@ export class PostBuilder implements ItdBuilder<CreatePostInput> {
     this.#state = state;
   }
 
-  /** Задаёт текст поста, заменяя прежний. */
+  /**
+   * Задаёт текст поста, заменяя прежний вместе с его разметкой.
+   *
+   * Spans привязаны к конкретному тексту, поэтому после замены их нужно задать заново
+   * через {@link spans}, {@link markup} или {@link autoSpans}.
+   */
   content(text: string): PostBuilder {
-    return new PostBuilder({ ...this.#state, content: text });
+    const state: PostState = { ...this.#state, content: text, contentSet: true };
+    delete state.spans;
+    return new PostBuilder(state);
   }
 
   /** Дописывает текст к уже заданному. */
   append(text: string): PostBuilder {
     const separator = this.#state.content === '' ? '' : '\n';
-    return new PostBuilder({ ...this.#state, content: this.#state.content + separator + text });
+    return new PostBuilder({
+      ...this.#state,
+      content: this.#state.content + separator + text,
+      contentSet: true,
+    });
   }
 
   /**
-   * Задаёт разметку текста.
+   * Задаёт готовую разметку текста. Смещения проверяются при {@link build}.
    *
-   * Библиотека разметку не генерирует: хэштеги и упоминания нужно размечать самостоятельно
-   * либо не размечать вовсе.
+   * Для автоматического поиска сущностей есть {@link autoSpans}, а для вычисления смещений
+   * при сборке текста — {@link markup}.
    */
   spans(spans: Span[]): PostBuilder {
     return new PostBuilder({ ...this.#state, spans });
+  }
+
+  /**
+   * Заменяет текст и разметку результатом {@link MarkupBuilder}.
+   *
+   * @example
+   * ```ts
+   * post().markup((m) => m.text('смотрите ').hashtag('котики').text(' от ').mention('durov'));
+   * ```
+   */
+  markup(input: MarkupInput): PostBuilder {
+    const result = resolveMarkup(input);
+    return new PostBuilder({
+      ...this.#state,
+      content: result.content,
+      contentSet: true,
+      spans: result.spans,
+    });
+  }
+
+  /**
+   * Находит HTTP(S)-ссылки, хэштеги и упоминания в уже заданном тексте.
+   *
+   * Ручные стили сохраняются. Повторный вызов не дублирует уже найденные сущности.
+   */
+  autoSpans(options: AutoSpansOptions = {}): PostBuilder {
+    const current = this.#state.spans ?? [];
+    const entityTypes = new Set<string>([SpanType.Hashtag, SpanType.Mention, SpanType.Link]);
+    const detected = autoSpans(this.#state.content, options).filter((candidate) => {
+      return !current.some(
+        (span) =>
+          entityTypes.has(span.type) &&
+          span.offset < candidate.offset + candidate.length &&
+          candidate.offset < span.offset + span.length,
+      );
+    });
+
+    return new PostBuilder({
+      ...this.#state,
+      spans: [...current, ...detected].sort(
+        (left, right) => left.offset - right.offset || right.length - left.length,
+      ),
+    });
   }
 
   /**
@@ -137,15 +200,23 @@ export class PostBuilder implements ItdBuilder<CreatePostInput> {
     return new PostBuilder({ ...this.#state, poll: resolvePoll(input) });
   }
 
-  build(): CreatePostInput {
-    const { content, attachmentIds, files, ...rest } = this.#state;
-
-    return validatePost({
+  #input(includeEmptyContent = false): CreatePostInput {
+    const { content, contentSet: _contentSet, attachmentIds, files, ...rest } = this.#state;
+    return {
       ...rest,
-      ...(content !== '' ? { content } : {}),
+      ...(content !== '' || includeEmptyContent ? { content } : {}),
       ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       ...(files.length > 0 ? { files } : {}),
-    });
+    };
+  }
+
+  build(): CreatePostInput {
+    return validatePost(this.#input());
+  }
+
+  /** @internal Собирает данные по правилам `posts.update`, не применяя правила создания. */
+  [BUILD_UPDATE](): UpdatePostInput {
+    return validatePostUpdate(this.#input(this.#state.contentSet));
   }
 
   toJSON(): CreatePostInput {
@@ -169,8 +240,13 @@ export class PostBuilder implements ItdBuilder<CreatePostInput> {
  * );
  * ```
  */
-export function post(content = ''): PostBuilder {
-  return new PostBuilder({ content, attachmentIds: [], files: [] });
+export function post(content?: string): PostBuilder {
+  return new PostBuilder({
+    content: content ?? '',
+    contentSet: content !== undefined,
+    attachmentIds: [],
+    files: [],
+  });
 }
 
 /** Что принимает параметр поста: объект, билдер или функция-настройщик. */
@@ -179,4 +255,56 @@ export type PostInput = BuilderInput<CreatePostInput, PostBuilder>;
 /** Приводит любую форму входа к готовым данным поста. */
 export function resolvePost(input: PostInput): CreatePostInput {
   return resolveInput(input, () => post(), validatePost);
+}
+
+/** Что принимает `posts.update`: объект, билдер поста или функция-настройщик. */
+export type PostUpdateInput =
+  | UpdatePostInput
+  | PostBuilder
+  | ((builder: PostBuilder) => PostBuilder | UpdatePostInput);
+
+function validatePostUpdate(input: CreatePostInput | UpdatePostInput): UpdatePostInput {
+  if (!input || typeof input !== 'object') {
+    throw new ItdConfigError('Для обновления поста нужен объект с явно заданным content');
+  }
+
+  const unsupported = ['wallRecipientId', 'attachmentIds', 'files', 'poll'].filter(
+    (key) => (input as CreatePostInput)[key as keyof CreatePostInput] !== undefined,
+  );
+  if (unsupported.length > 0) {
+    throw new ItdConfigError(
+      `posts.update изменяет только content и spans; не поддерживаются: ${unsupported.join(', ')}`,
+    );
+  }
+
+  if (input.content === undefined) {
+    throw new ItdConfigError(
+      'posts.update требует явно заданный content; обновление одних spans могло бы стереть текст поста',
+    );
+  }
+  if (typeof input.content !== 'string') {
+    throw new ItdConfigError('content обновляемого поста должен быть строкой');
+  }
+  if (input.spans !== undefined && !Array.isArray(input.spans)) {
+    throw new ItdConfigError('spans обновляемого поста должен быть массивом');
+  }
+
+  return {
+    content: input.content,
+    ...(input.spans !== undefined ? { spans: validateSpans(input.content, input.spans) } : {}),
+  };
+}
+
+/** Приводит вход `posts.update` к поддерживаемым данным поста. */
+export function resolvePostUpdate(input: PostUpdateInput): UpdatePostInput {
+  if (typeof input === 'function') {
+    const result = input(post());
+    return isBuilder<CreatePostInput>(result)
+      ? (result as PostBuilder)[BUILD_UPDATE]()
+      : validatePostUpdate(result);
+  }
+
+  return isBuilder<CreatePostInput>(input)
+    ? (input as PostBuilder)[BUILD_UPDATE]()
+    : validatePostUpdate(input);
 }
