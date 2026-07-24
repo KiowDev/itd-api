@@ -12,7 +12,10 @@
       "crypto/*.config.ts",
       "proxy/src/**/*.ts",
       "proxy/test/**/*.ts",
-      "proxy/*.config.ts"
+      "proxy/*.config.ts",
+      "cache/src/**/*.ts",
+      "cache/test/**/*.ts",
+      "cache/*.config.ts"
     ]
   },
   "formatter": {

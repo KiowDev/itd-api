@@ -38,7 +38,8 @@
   "workspaces": [
     "turnstile",
     "crypto",
-    "proxy"
+    "proxy",
+    "cache"
   ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -83,8 +84,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src test turnstile/src turnstile/test crypto/src crypto/test proxy/src proxy/test",
-    "lint:fix": "biome check --write src test turnstile/src turnstile/test crypto/src crypto/test proxy/src proxy/test",
+    "lint": "biome check src test turnstile/src turnstile/test crypto/src crypto/test proxy/src proxy/test cache/src cache/test",
+    "lint:fix": "biome check --write src test turnstile/src turnstile/test crypto/src crypto/test proxy/src proxy/test cache/src cache/test",
     "docs": "typedoc",
     "check:pack": "publint && attw --pack .",
     "version": "npm run sync-version && git add src/core/version.ts",

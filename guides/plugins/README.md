@@ -11,7 +11,44 @@ const itd = new ItdClient({ auth: token });
 itd.use(crypt());
 ```
 
-## Официальный плагин: Crypto
+## Cache
+
+```bash
+npm install @itd-api/cache
+```
+
+```ts
+import { cache } from '@itd-api/cache';
+
+const cached = cache({
+  ttl: 60_000,
+  routes: ['users.get', 'posts.get', 'posts.list'],
+});
+
+itd.use(cached);
+```
+
+Плагин хранит успешные ответы в LRU-кэше и объединяет одновременные одинаковые запросы.
+Маршруты выбираются явно; после мутаций связанные данные инвалидируются автоматически.
+У каждого клиента и аккаунта свой раздел кэша, а изменения общих сущностей сбрасывают
+соответствующие маршруты во всех разделах.
+
+```ts
+await itd.posts.get(postId, { cache: 'reload' });
+cached.invalidate('posts.get');
+```
+
+Полный каталог маршрутов, подключение к нескольким клиентам и привязка к realtime описаны в
+[README пакета](../../cache/README.md).
+
+Запускаемый пример:
+
+```bash
+ITD_TOKEN=<accessToken> ITD_POST_ID=<postId> \
+  node guides/plugins/examples/cache.mjs
+```
+
+## Crypto
 
 ```bash
 npm install @itd-api/crypto

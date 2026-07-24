@@ -448,14 +448,19 @@ await fetch.close(); // закрывает пул соединений
 
 ```ts
 import { ItdClient } from 'itd-api';
-import { crypt } from '@itd-api/crypto';
+import { cache } from '@itd-api/cache';
 
 const itd = new ItdClient({ auth: token });
-itd.use(crypt());
+itd.use(
+  cache({
+    ttl: 60_000,
+    routes: ['users.get', 'posts.get', 'posts.list'],
+  }),
+);
 ```
 
-Официальный плагин Crypto, полный контракт `ItdPlugin`, собственные опции и рекомендуемая
-структура следующего пакета описаны в
+Официальные плагины Cache и Crypto, полный контракт `ItdPlugin`, собственные опции и
+структура пакета описаны в
 [руководстве по плагинам](./guides/plugins/README.md).
 
 ---

@@ -376,6 +376,21 @@ describe('идентификатор устройства', () => {
     ]);
     expect((await auth.getSession())?.deviceId).toBe('device-B');
   });
+
+  it('разделяет области авторизации клиентов и меняет их вместе с сессией', async () => {
+    const first = makeAuth([]);
+    const second = makeAuth([]);
+    const initial = first.auth.getAuthScope();
+
+    expect(second.auth.getAuthScope()).not.toBe(initial);
+
+    await first.auth.setSession({ accessToken: 'another-account' });
+    expect(first.auth.getAuthScope()).not.toBe(initial);
+
+    const authenticated = first.auth.getAuthScope();
+    await first.auth.clear();
+    expect(first.auth.getAuthScope()).not.toBe(authenticated);
+  });
 });
 
 describe('капча при входе по паролю', () => {
@@ -590,6 +605,16 @@ describe('связка с транспортом', () => {
 
     expect(jar.has('is_auth')).toBe(true);
     expect(await auth.getSession()).toMatchObject({ accessToken: 'refreshed' });
+  });
+
+  it('не меняет область авторизации при обычном обновлении токена', async () => {
+    const { auth } = makeAuth([json({ accessToken: 'refreshed' })]);
+    await auth.setSession({ accessToken: 'old-token', refreshToken: 'r' });
+    const scope = auth.getAuthScope();
+
+    await auth.refresh();
+
+    expect(auth.getAuthScope()).toBe(scope);
   });
 
   it('getSession возвращает снимок, а не внутренний объект авторизации', async () => {

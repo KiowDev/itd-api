@@ -290,7 +290,11 @@ export class ItdClient {
    * ```
    */
   use(plugin: ItdPlugin): this {
-    this.#plugins.add(plugin, { baseUrl: this.#config.baseUrl, logger: this.#config.logger });
+    this.#plugins.add(plugin, {
+      baseUrl: this.#config.baseUrl,
+      logger: this.#config.logger,
+      getAuthScope: () => this.#authManager.getAuthScope(),
+    });
     return this;
   }
 

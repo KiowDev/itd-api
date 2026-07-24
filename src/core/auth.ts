@@ -79,6 +79,13 @@ function withoutLegacyUserId(session: ItdSession): ItdSession {
   return clean;
 }
 
+let authScopeSequence = 0;
+
+function nextAuthScope(): string {
+  authScopeSequence += 1;
+  return String(authScopeSequence);
+}
+
 /**
  * Хранит сессию и продлевает её.
  *
@@ -104,6 +111,8 @@ export class AuthManager {
   #refreshing: Promise<string | null> | null = null;
   /** Общий промис входа по логину и паролю. */
   #signingIn: Promise<string> | null = null;
+  /** Непрозрачная версия владельца клиента для разделения состояния плагинов. */
+  #authScope = nextAuthScope();
   /**
    * Идентификатор устройства.
    *
@@ -131,6 +140,15 @@ export class AuthManager {
   /** Подписка на одно срабатывание. */
   get once(): Emitter<AuthEvents>['once'] {
     return this.#emitter.once.bind(this.#emitter);
+  }
+
+  /** Непрозрачная область авторизации; токен и идентификатор пользователя не раскрываются. */
+  getAuthScope(): string {
+    return this.#authScope;
+  }
+
+  #rotateAuthScope(): void {
+    this.#authScope = nextAuthScope();
   }
 
   /**
@@ -277,6 +295,7 @@ export class AuthManager {
 
   /** Сохраняет токен, полученный извне, — например после подтверждения OTP. */
   async setAccessToken(accessToken: string): Promise<void> {
+    this.#rotateAuthScope();
     await this.#saveSession({ ...(this.#session ?? {}), accessToken, obtainedAt: Date.now() });
     this.#emitter.emit('tokens', { accessToken });
   }
@@ -300,6 +319,7 @@ export class AuthManager {
 
   /** Заменяет сессию и связанные с ней cookie целиком. */
   async setSession(session: ItdSession): Promise<void> {
+    this.#rotateAuthScope();
     this.#jar.clear();
     this.#jar.deserialize(session.cookies);
 
@@ -320,6 +340,7 @@ export class AuthManager {
    */
   async clear(): Promise<void> {
     this.#session = null;
+    this.#rotateAuthScope();
     this.#jar.clear();
     await this.#config.storage.clear();
 
@@ -472,6 +493,7 @@ export class AuthManager {
       if (error instanceof ItdApiError) {
         // Сессия недействительна — чистим её, иначе будем биться в стену на каждом запросе.
         this.#session = null;
+        this.#rotateAuthScope();
         this.#jar.clear();
         await this.#config.storage.clear();
 
@@ -573,6 +595,7 @@ export class AuthManager {
 
     // Прежний refresh-токен и cookie намеренно не переносятся: вход выдал новую сессию,
     // и держаться за старую было бы ошибкой. Идентификатор устройства добавит #saveSession.
+    this.#rotateAuthScope();
     await this.#saveSession({ accessToken, obtainedAt: Date.now() });
     this.#emitter.emit('tokens', { accessToken });
     this.#emitter.emit('signIn', { accessToken });

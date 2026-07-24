@@ -8,7 +8,7 @@
 | [Realtime](./realtime/README.md) | уведомления, SSE, переподключение и fallback на polling |
 | [Несколько аккаунтов](./multi-accounts/README.md) | `ItdAccounts`, общее хранилище, очереди и личные настройки |
 | [Интеграции](./integrations/README.md) | proxy, Turnstile и точки подключения внешних возможностей |
-| [Плагины](./plugins/README.md) | `ItdPlugin`, Crypto и создание нового плагина |
+| [Плагины](./plugins/README.md) | Cache, Crypto, `ItdPlugin` и создание нового плагина |
 
 ## Запуск примеров
 

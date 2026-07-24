@@ -1,0 +1,621 @@
+import { ItdClient, type ItdPlugin, type ItdRealtime } from 'itd-api';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CacheError, type CachePlugin, cache } from '../src/index.js';
+
+type FetchHandler = (url: string, init: RequestInit, call: number) => Response | Promise<Response>;
+type RawRequestWithView = { view?: unknown };
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify({ data }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function makeClient(handler: FetchHandler) {
+  const calls: { url: string; method: string; body: unknown; headers: Headers }[] = [];
+  const fetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
+    calls.push({
+      url: String(input),
+      method: init.method ?? 'GET',
+      body,
+      headers: new Headers(init.headers),
+    });
+    return handler(String(input), init, calls.length);
+  }) as unknown as typeof globalThis.fetch;
+
+  const itd = new ItdClient({
+    baseUrl: 'https://itd.test',
+    fetch,
+    auth: 'test-token',
+    retry: false,
+    rateLimit: false,
+    mode: 'server',
+  });
+
+  return { itd, calls, fetch };
+}
+
+function postFromUrl(url: string, call: number): Response {
+  return json({ id: url.split('/').at(-1), content: `ответ-${call}` });
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('настройки', () => {
+  it('проверяет обязательные поля', () => {
+    expect(() => cache({ ttl: 0, routes: ['posts.get'] })).toThrow(CacheError);
+    expect(() => cache({ ttl: 1, routes: [] })).toThrow(CacheError);
+    expect(() => cache({ ttl: 1, routes: ['posts.create' as 'posts.get'] })).toThrow(
+      /Неизвестный маршрут/,
+    );
+    expect(() => cache({ ttl: 1, routes: ['posts.get'], maxEntries: 1.5 })).toThrow(/maxEntries/);
+    expect(() =>
+      cache({ ttl: 1, routes: ['posts.get'], deduplicate: 'да' as unknown as boolean }),
+    ).toThrow(/deduplicate/);
+  });
+
+  it('проверяет режим отдельного запроса', async () => {
+    const { itd } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 1_000, routes: ['posts.get'] }));
+
+    await expect(itd.posts.get('1', { cache: 'неизвестно' as 'default' })).rejects.toThrow(
+      CacheError,
+    );
+  });
+});
+
+describe('TTL/LRU-кэш', () => {
+  it('кэширует только выбранные маршруты', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    const first = await itd.posts.get('1');
+    const second = await itd.posts.get('1');
+    await itd.users.get('durov');
+    await itd.users.get('durov');
+
+    expect(first.content).toBe('ответ-1');
+    expect(second.content).toBe('ответ-1');
+    expect(calls).toHaveLength(3);
+  });
+
+  it('разделяет path, query и body', async () => {
+    const { itd, calls } = makeClient((url, init, call) => {
+      if (url.endsWith('/api/posts/stats')) {
+        const body = JSON.parse(String(init.body)) as { ids: string[] };
+        return json({ posts: body.ids.map((id) => ({ id })) });
+      }
+      return json({ posts: [], pagination: { hasMore: false, nextCursor: null }, call });
+    });
+    itd.use(
+      cache({
+        ttl: 60_000,
+        routes: ['posts.get', 'posts.list', 'posts.stats'],
+      }),
+    );
+
+    await itd.posts.get('1');
+    await itd.posts.get('2');
+    await itd.posts.list({ tab: 'popular' });
+    await itd.posts.list({ tab: 'following' });
+    await itd.posts.stats(['1']);
+    await itd.posts.stats(['2']);
+
+    await itd.posts.get('1');
+    await itd.posts.list({ tab: 'popular' });
+    await itd.posts.stats(['1']);
+
+    expect(calls).toHaveLength(6);
+  });
+
+  it('не делит кэш по заголовкам', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    const first = await itd.posts.get('1', { headers: { 'X-Variant': 'a' } });
+    const second = await itd.posts.get('1', { headers: { 'X-Variant': 'b' } });
+
+    expect(first.content).toBe(second.content);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('учитывает опции других плагинов, меняющие ответ', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    const optionCarrier: ItdPlugin = {
+      name: 'option-carrier',
+      optionKeys: ['view'],
+      install: ({ use }) =>
+        use(async (request, next) => {
+          const result = (await next(request)) as Record<string, unknown>;
+          result.view = (request as RawRequestWithView).view;
+          return result;
+        }),
+    };
+
+    itd.use(optionCarrier);
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    const full = await itd.posts.get('1', {
+      view: 'full',
+    } as Parameters<typeof itd.posts.get>[1]);
+    const compact = await itd.posts.get('1', {
+      view: 'compact',
+    } as Parameters<typeof itd.posts.get>[1]);
+    const fullAgain = await itd.posts.get('1', {
+      view: 'full',
+    } as Parameters<typeof itd.posts.get>[1]);
+
+    expect(calls).toHaveLength(2);
+    expect((full as typeof full & { view: string }).view).toBe('full');
+    expect((compact as typeof compact & { view: string }).view).toBe('compact');
+    expect((fullAgain as typeof fullAgain & { view: string }).view).toBe('full');
+  });
+
+  it('возвращает независимые копии ответа', async () => {
+    const { itd } = makeClient(() => json({ id: '1', content: 'исходный' }));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    const first = await itd.posts.get('1');
+    first.content = 'изменён вызывающим кодом';
+    const second = await itd.posts.get('1');
+
+    expect(second.content).toBe('исходный');
+    expect(second).not.toBe(first);
+  });
+
+  it('пропускает несериализуемый ответ без поломки запроса', async () => {
+    const { itd, calls } = makeClient(() => json({ id: '1', content: 'ответ' }));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use({
+      name: 'function-in-response',
+      install: ({ use }) =>
+        use(async (request, next) => {
+          const result = (await next(request)) as Record<string, unknown>;
+          result.action = () => {};
+          return result;
+        }),
+    });
+
+    await itd.posts.get('1');
+    await itd.posts.get('1');
+
+    expect(calls).toHaveLength(2);
+  });
+
+  it('удаляет ответ после TTL', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 10, routes: ['posts.get'] }));
+
+    await itd.posts.get('1');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await itd.posts.get('1');
+
+    expect(calls).toHaveLength(2);
+  });
+
+  it('вытесняет давно не использованный ответ', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'], maxEntries: 2 }));
+
+    await itd.posts.get('1');
+    await itd.posts.get('2');
+    await itd.posts.get('1');
+    await itd.posts.get('3');
+    await itd.posts.get('2');
+
+    expect(calls).toHaveLength(4);
+  });
+});
+
+describe('дедупликация', () => {
+  it('объединяет одновременные одинаковые запросы', async () => {
+    let release!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const { itd, calls } = makeClient(() => response);
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    const first = itd.posts.get('1');
+    const second = itd.posts.get('1');
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+
+    release(json({ id: '1', content: 'один ответ' }));
+    const [a, b] = await Promise.all([first, second]);
+
+    expect(a).toEqual(b);
+    expect(a).not.toBe(b);
+  });
+
+  it('не объединяет запросы с signal или отдельным timeout', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    await Promise.all([
+      itd.posts.get('1', { signal: new AbortController().signal }),
+      itd.posts.get('1', { signal: new AbortController().signal }),
+    ]);
+    await Promise.all([
+      itd.posts.get('2', { timeout: 1_000 }),
+      itd.posts.get('2', { timeout: 2_000 }),
+    ]);
+
+    expect(calls).toHaveLength(4);
+  });
+
+  it('не сохраняет ошибку', async () => {
+    const { itd, calls } = makeClient(() => json({ message: 'ошибка' }, 500));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    await expect(itd.posts.get('1')).rejects.toThrow();
+    await expect(itd.posts.get('1')).rejects.toThrow();
+
+    expect(calls).toHaveLength(2);
+  });
+
+  it('отключает объединение через настройку', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { itd, calls } = makeClient(async () => {
+      await gate;
+      return json({ id: '1' });
+    });
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'], deduplicate: false }));
+
+    const first = itd.posts.get('1');
+    const second = itd.posts.get('1');
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    release();
+
+    await Promise.all([first, second]);
+  });
+});
+
+describe('управление и инвалидация', () => {
+  it('поддерживает reload и no-store', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    expect((await itd.posts.get('1')).content).toBe('ответ-1');
+    expect((await itd.posts.get('1', { cache: 'reload' })).content).toBe('ответ-2');
+    expect((await itd.posts.get('1')).content).toBe('ответ-2');
+    expect((await itd.posts.get('1', { cache: 'no-store' })).content).toBe('ответ-3');
+    expect((await itd.posts.get('1')).content).toBe('ответ-2');
+
+    expect(calls).toHaveLength(3);
+  });
+
+  it('очищает один маршрут или всё хранилище', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => {
+      if (url.includes('/api/users/')) return json({ id: 'u1', username: 'durov', call });
+      return postFromUrl(url, call);
+    });
+    const cached = cache({ ttl: 60_000, routes: ['posts.get', 'users.get'] });
+    itd.use(cached);
+
+    await itd.posts.get('1');
+    await itd.users.get('durov');
+    expect(cached.size).toBe(2);
+
+    cached.invalidate('posts.get');
+    expect(cached.size).toBe(1);
+    await itd.posts.get('1');
+    await itd.users.get('durov');
+    expect(calls).toHaveLength(3);
+
+    cached.clear();
+    expect(cached.size).toBe(0);
+    await itd.posts.get('1');
+    await itd.users.get('durov');
+    expect(calls).toHaveLength(5);
+  });
+
+  it('очищается после успешной мутации', async () => {
+    const { itd, calls } = makeClient((url, init, call) =>
+      init.method === 'POST' ? json({ liked: true }) : postFromUrl(url, call),
+    );
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    await itd.posts.get('1');
+    await itd.posts.like('1');
+    await itd.posts.get('1');
+
+    expect(calls).toHaveLength(3);
+  });
+
+  it('инвалидирует только связанные с мутацией маршруты', async () => {
+    const { itd, calls } = makeClient((url, init, call) => {
+      if (init.method === 'POST') return json({ liked: true });
+      if (url.includes('/api/users/')) return json({ id: 'u1', username: 'durov', call });
+      return postFromUrl(url, call);
+    });
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get', 'users.get'] }));
+
+    await itd.posts.get('1');
+    await itd.users.get('durov');
+    await itd.posts.like('1');
+    await itd.posts.get('1');
+    await itd.users.get('durov');
+
+    expect(calls).toHaveLength(4);
+  });
+
+  it('не очищает кэш после известного запроса без зависимостей', async () => {
+    const { itd, calls } = makeClient((url, _init, call) =>
+      url.endsWith('/api/v1/i') ? json({ ok: true }) : postFromUrl(url, call),
+    );
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    await itd.posts.get('1');
+    await itd.request({ method: 'POST', path: '/api/v1/i', body: {} });
+    await itd.posts.get('1');
+
+    expect(calls).toHaveLength(2);
+  });
+
+  it('не проверяет режим cache у некэшируемой мутации', async () => {
+    const { itd, calls } = makeClient(() => json({ ok: true }));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    await itd.request({
+      method: 'POST',
+      path: '/api/reports',
+      body: {},
+      cache: 'неизвестно',
+    } as unknown as Parameters<typeof itd.request>[0]);
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it('не очищается после читающего POST или неудачной мутации', async () => {
+    const { itd, calls } = makeClient((url, init, call) => {
+      if (url.endsWith('/stats')) return json({ posts: [{ id: '1' }] });
+      if (init.method === 'POST') return json({ message: 'ошибка' }, 500);
+      return postFromUrl(url, call);
+    });
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get', 'posts.stats'] }));
+
+    await itd.posts.get('1');
+    await itd.posts.stats(['1']);
+    await itd.posts.get('1');
+    await expect(itd.posts.like('1')).rejects.toThrow();
+    await itd.posts.get('1');
+
+    expect(calls).toHaveLength(3);
+  });
+
+  it('не возвращает в кэш чтение, начатое до мутации', async () => {
+    let release!: (response: Response) => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const { itd, calls } = makeClient((url, init, call) => {
+      if (call === 1) return oldResponse;
+      if (init.method === 'POST') return json({ liked: true });
+      return postFromUrl(url, call);
+    });
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    const stale = itd.posts.get('1');
+    await Promise.resolve();
+    await itd.posts.like('1');
+    release(json({ id: '1', content: 'старый' }));
+    await stale;
+    const fresh = await itd.posts.get('1');
+
+    expect(fresh.content).toBe('ответ-3');
+    expect(calls).toHaveLength(3);
+  });
+
+  it('не возвращает в кэш чтение, начатое до invalidate()', async () => {
+    let release!: (response: Response) => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const { itd, calls } = makeClient((url, _init, call) =>
+      call === 1 ? oldResponse : postFromUrl(url, call),
+    );
+    const cached = cache({ ttl: 60_000, routes: ['posts.get'] });
+    itd.use(cached);
+
+    const stale = itd.posts.get('1');
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    cached.invalidate('posts.get');
+    release(json({ id: '1', content: 'старый' }));
+    await stale;
+    const fresh = await itd.posts.get('1');
+
+    expect(fresh.content).toBe('ответ-2');
+    expect(calls).toHaveLength(2);
+  });
+});
+
+describe('область экземпляра', () => {
+  it('два вызова cache() создают независимые хранилища', async () => {
+    const a = makeClient((url, _init, call) => postFromUrl(url, call));
+    const b = makeClient((url, _init, call) => postFromUrl(url, call));
+    a.itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    b.itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    await a.itd.posts.get('1');
+    await b.itd.posts.get('1');
+
+    expect(a.calls).toHaveLength(1);
+    expect(b.calls).toHaveLength(1);
+  });
+
+  it('один экземпляр изолирует ответы разных клиентов', async () => {
+    const a = makeClient(() => json({ id: '1', content: 'из клиента A' }));
+    const b = makeClient(() => json({ id: '1', content: 'из клиента B' }));
+    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    a.itd.use(shared);
+    b.itd.use(shared);
+
+    const fromA = await a.itd.posts.get('1');
+    const fromB = await b.itd.posts.get('1');
+
+    expect(fromA.content).toBe('из клиента A');
+    expect(fromB.content).toBe('из клиента B');
+    expect(a.calls).toHaveLength(1);
+    expect(b.calls).toHaveLength(1);
+    expect(shared.size).toBe(2);
+  });
+
+  it('смена сессии клиента отбрасывает его прежние ответы', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    await itd.posts.get('1');
+    await itd.setSession({ accessToken: 'another-account-token' });
+    const afterSwitch = await itd.posts.get('1');
+
+    expect(afterSwitch.content).toBe('ответ-2');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('не сохраняет ответ, начатый до смены сессии', async () => {
+    let release!: (response: Response) => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const { itd, calls } = makeClient((url, _init, call) =>
+      call === 1 ? oldResponse : postFromUrl(url, call),
+    );
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    const stale = itd.posts.get('1');
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await itd.setSession({ accessToken: 'another-account-token' });
+    release(json({ id: '1', content: 'старый аккаунт' }));
+    await stale;
+
+    const fresh = await itd.posts.get('1');
+    expect(fresh.content).toBe('ответ-2');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('общая мутация инвалидирует связанный маршрут у других клиентов', async () => {
+    const a = makeClient((url, init, call) =>
+      init.method === 'POST' ? json({ ok: true }) : postFromUrl(url, call),
+    );
+    const b = makeClient((url, _init, call) => postFromUrl(url, call));
+    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    a.itd.use(shared);
+    b.itd.use(shared);
+
+    await a.itd.posts.get('1');
+    await b.itd.posts.get('1');
+    await a.itd.posts.like('1');
+    await b.itd.posts.get('1');
+
+    expect(a.calls).toHaveLength(2);
+    expect(b.calls).toHaveLength(2);
+  });
+
+  it('персональная мутация инвалидирует только свой раздел', async () => {
+    const handler: FetchHandler = (url, init) => {
+      if (init.method === 'POST') return json({ markedCount: 1 });
+      if (url.endsWith('/count')) return json({ count: 1 });
+      return json({ notifications: [], pagination: { total: 0, hasMore: false } });
+    };
+    const a = makeClient(handler);
+    const b = makeClient(handler);
+    const shared = cache({
+      ttl: 60_000,
+      routes: ['notifications.list', 'notifications.count'],
+    });
+    a.itd.use(shared);
+    b.itd.use(shared);
+
+    await fillNotifications(a.itd);
+    await fillNotifications(b.itd);
+    await a.itd.notifications.markAllRead();
+    await fillNotifications(a.itd);
+    await fillNotifications(b.itd);
+
+    expect(a.calls).toHaveLength(5);
+    expect(b.calls).toHaveLength(2);
+  });
+
+  it('неизвестная мутация использует глобальный безопасный fallback', async () => {
+    const a = makeClient((url, _init, call) => postFromUrl(url, call));
+    const b = makeClient((url, _init, call) => postFromUrl(url, call));
+    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    a.itd.use(shared);
+    b.itd.use(shared);
+
+    await a.itd.posts.get('1');
+    await b.itd.posts.get('1');
+    await a.itd.request({ method: 'POST', path: '/api/unknown' });
+    await b.itd.posts.get('1');
+
+    expect(a.calls).toHaveLength(2);
+    expect(b.calls).toHaveLength(2);
+  });
+});
+
+class FakeRealtime {
+  readonly #listeners = new Map<string, Set<() => void>>();
+
+  on(event: string, listener: () => void): () => void {
+    const listeners = this.#listeners.get(event) ?? new Set();
+    listeners.add(listener);
+    this.#listeners.set(event, listeners);
+    return () => listeners.delete(listener);
+  }
+
+  emit(event: string): void {
+    for (const listener of this.#listeners.get(event) ?? []) listener();
+  }
+}
+
+async function fillNotifications(itd: ItdClient): Promise<void> {
+  await itd.notifications.list();
+  await itd.notifications.count();
+}
+
+describe('realtime', () => {
+  it('очищает список и счётчик и позволяет отписаться', async () => {
+    const { itd } = makeClient((url) =>
+      url.endsWith('/count')
+        ? json({ count: 2 })
+        : json({ notifications: [], pagination: { total: 0, hasMore: false } }),
+    );
+    const cached = cache({
+      ttl: 60_000,
+      routes: ['notifications.list', 'notifications.count'],
+    });
+    itd.use(cached);
+    await fillNotifications(itd);
+    expect(cached.size).toBe(2);
+
+    const realtime = new FakeRealtime();
+    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
+    expect(cached.size).toBe(0);
+
+    await fillNotifications(itd);
+    realtime.emit('notification');
+    expect(cached.size).toBe(0);
+
+    await itd.notifications.count();
+    expect(cached.size).toBe(1);
+    realtime.emit('unreadCount');
+    expect(cached.size).toBe(0);
+
+    await fillNotifications(itd);
+    detach();
+    realtime.emit('notification');
+    expect(cached.size).toBe(2);
+  });
+
+  it('проверяет переданный поток', () => {
+    const cached: CachePlugin = cache({ ttl: 1_000, routes: ['notifications.list'] });
+    expect(() => cached.attachRealtime({} as ItdRealtime)).toThrow(CacheError);
+  });
+});
