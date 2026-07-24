@@ -106,6 +106,39 @@ const RESERVED_OPTION_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Проверяет описание плагина без его установки.
+ *
+ * Нужна не только {@link PluginRegistry}: контейнер аккаунтов обязан отклонять сломанный
+ * плагин сразу, даже когда внутри ещё нет ни одного клиента, которому можно поручить
+ * полноценную установку.
+ *
+ * @internal
+ */
+export function validatePluginDefinition(plugin: ItdPlugin): void {
+  if (typeof plugin?.install !== 'function') {
+    throw new ItdConfigError('Плагин должен быть объектом с методом install()');
+  }
+
+  const name = plugin.name;
+  if (typeof name !== 'string' || name.trim() === '') {
+    throw new ItdConfigError('У плагина должно быть непустое имя');
+  }
+
+  const keys = plugin.optionKeys ?? [];
+  for (const key of keys) {
+    if (typeof key !== 'string' || key.trim() === '') {
+      throw new ItdConfigError(`Плагин «${name}» заявил пустое имя опции`);
+    }
+    if (RESERVED_OPTION_KEYS.has(key)) {
+      throw new ItdConfigError(
+        `Плагин «${name}» заявил опцию «${key}»: это поле запроса, имя занято. ` +
+          `Занятые имена: ${[...RESERVED_OPTION_KEYS].join(', ')}`,
+      );
+    }
+  }
+}
+
+/**
  * Список подключённых плагинов и собранная из них цепочка обёрток.
  *
  * Живёт в клиенте, а работает в транспорте: {@link HttpClient} прогоняет через `run`
@@ -133,14 +166,8 @@ export class PluginRegistry {
    * имя опции
    */
   add(plugin: ItdPlugin, context: Omit<PluginContext, 'use'>): void {
-    if (typeof plugin?.install !== 'function') {
-      throw new ItdConfigError('Плагин должен быть объектом с методом install()');
-    }
-
+    validatePluginDefinition(plugin);
     const name = plugin.name;
-    if (typeof name !== 'string' || name.trim() === '') {
-      throw new ItdConfigError('У плагина должно быть непустое имя');
-    }
 
     // Повторное подключение почти всегда означает недосмотр, а последствия у него
     // молчаливые: обёртка отработает дважды — текст зашифруется два раза подряд.
@@ -149,17 +176,6 @@ export class PluginRegistry {
     }
 
     const keys = plugin.optionKeys ?? [];
-    for (const key of keys) {
-      if (typeof key !== 'string' || key.trim() === '') {
-        throw new ItdConfigError(`Плагин «${name}» заявил пустое имя опции`);
-      }
-      if (RESERVED_OPTION_KEYS.has(key)) {
-        throw new ItdConfigError(
-          `Плагин «${name}» заявил опцию «${key}»: это поле запроса, имя занято. ` +
-            `Занятые имена: ${[...RESERVED_OPTION_KEYS].join(', ')}`,
-        );
-      }
-    }
 
     // Реестр меняется только после того, как install() отработал целиком: иначе упавший
     // на середине плагин оставит занятое имя и половину обёрток.

@@ -184,6 +184,10 @@ await itd.auth.resetPasswordWithOtp({
 | `FileTokenStorage` | `itd-api/node` | Node, Bun, Deno |
 | `createTokenStorage({ get, set, clear })` | `itd-api` | своё: Redis, БД, AsyncStorage |
 
+Для нескольких аккаунтов есть их мультиверсии — `MemoryMultiTokenStorage`,
+`FileMultiTokenStorage` и `createMultiTokenStorage`. Подробности — в разделе
+[«Несколько аккаунтов»](#несколько-аккаунтов).
+
 По умолчанию сессия живёт в памяти процесса и теряется при перезапуске. Укажите `storage` —
 и библиотека сама запишет туда всё нужное после входа и после каждого продления; отдельно
 сохранять ничего не надо.
@@ -196,6 +200,17 @@ await itd.auth.resetPasswordWithOtp({
 `deviceId` — идентификатор устройства из заголовка `X-Device-Id`. Сервер различает по нему
 записи в списке сессий (`itd.auth.sessions()`), поэтому при постоянном хранилище он переживает
 перезапуск и бот не плодит по новой сессии на каждый старт. Своё значение — опцией `deviceId`.
+
+`getUserId()` снимает идентификатор владельца с текущего токена доступа, когда тот выдан
+в формате JWT, и не тратит на это ни одного запроса. Идентификатор отдельно не сохраняется:
+после смены токена устаревшее значение остаться не может. Для непрозрачного токена метод
+вернёт `undefined`. Подтверждением личности результат не является: подпись токена клиент
+не проверяет.
+
+```ts
+const id = await itd.getUserId();   // без обращения к сети
+const me = await itd.users.me();    // свежий профиль целиком
+```
 
 Refresh-токен можно передать и строкой (`auth: { accessToken, refreshToken }`) — вне браузера
 библиотека сама подставит его нужной cookie. В браузере так не выйдет: cookie помечена
@@ -211,6 +226,121 @@ itd.on('tokens', async () => saveSomewhere(await itd.getSession()));
 // при следующем запуске
 await itd.setSession(await loadFromSomewhere());
 ```
+
+---
+
+## Несколько аккаунтов
+
+`ItdAccounts` — контейнер именованных клиентов. У каждого аккаунта свой токен, свои cookie
+и свой `deviceId`, а сессии всех складываются в одно хранилище: один файл вместо десяти.
+
+```ts
+import { ItdAccounts, FileMultiTokenStorage } from 'itd-api/node';
+
+await using accounts = new ItdAccounts({
+  storage: new FileMultiTokenStorage('./.itd-sessions.json'),
+  rateLimit: { concurrency: 4 },
+});
+
+// Поднимаем тех, кто уже входил раньше: ни auth, ни капча не нужны.
+await accounts.restore();
+
+if (!accounts.has('kiow')) {
+  accounts.addAccount('kiow', { auth: { email, password, getTurnstileToken } });
+}
+
+const itd = accounts.account('kiow');   // обычный ItdClient со всеми разделами
+await itd.posts.create({ content: 'привет' });
+```
+
+Имя аккаунта выбираете вы — сервер о нём ничего не знает. Какому профилю оно соответствует,
+покажет `getUserId()`, и тоже без запроса:
+
+```ts
+for (const [name, itd] of accounts) {
+  console.log(name, await itd.getUserId());
+}
+```
+
+| Метод | Что делает |
+|---|---|
+| `addAccount(name, options?)` | заводит аккаунт; `options` — те же, что у `ItdClient`, кроме `storage` |
+| `account(name)` | клиент по имени |
+| `restore()` | поднимает аккаунты, чьи сессии уже лежат в хранилище |
+| `removeAccount(name, { forget })` | убирает аккаунт; `forget: true` стирает и сохранённую сессию |
+| `has(name)` · `names()` · `size` | состав контейнера |
+| `use(plugin)` | подключает плагин всем — и будущим тоже |
+| `on(event, listener)` | события авторизации всех аккаунтов сразу, с именем в полезной нагрузке |
+| `close()` | закрывает всех |
+
+`auth` в `addAccount` необязателен: когда сессия аккаунта уже в хранилище, токен берётся
+оттуда, а истёкший продлевается сам — ровно как у одиночного клиента.
+
+### Личные настройки аккаунта
+
+Общие опции задаются контейнеру, личные — каждому аккаунту; `headers` и `services`
+при этом сливаются по ключам, а не заменяются целиком. Так, например, аккаунты разводятся
+по разным прокси:
+
+```ts
+import { proxyFetch } from '@itd-api/proxy';
+
+accounts.addAccount('первый', { auth: …, fetch: proxyFetch('socks5://127.0.0.1:1080') });
+accounts.addAccount('второй', { auth: …, fetch: proxyFetch('socks5://127.0.0.1:1081') });
+```
+
+`auth` и `deviceId` контейнеру передать нельзя — они задаются каждому аккаунту отдельно.
+Обычный `TokenStorage` отдельного клиента здесь заменён общим `MultiTokenStorage`: его,
+наоборот, передают контейнеру, а тот сам выдаёт каждому аккаунту изолированный срез по имени.
+Передавать `storage` в `addAccount()` нельзя. Общий `deviceId` был бы прямо вреден:
+сервер различает по нему записи в списке сессий.
+
+### Очередь запросов
+
+По умолчанию очередь у каждого аккаунта своя: лимиты итд.com считаются по аккаунту,
+а при работе через разные прокси общая очередь только мешает. Если же все аккаунты сидят
+на одном IP и упираются в ограничение по адресу, включите общую:
+
+```ts
+const accounts = new ItdAccounts({
+  storage,
+  rateLimit: { concurrency: 4, rps: 8 },
+  rateLimitScope: 'shared',   // одна очередь на всех
+});
+```
+
+Параметры общей очереди берутся только из `rateLimit` контейнера. Личный объект `rateLimit`
+у аккаунта в этом режиме запрещён, потому что не может изменить уже созданную общую очередь.
+Передать аккаунту `rateLimit: false` можно — это полностью выведет его из общей очереди.
+
+### Своё хранилище
+
+`MultiTokenStorage` отличается от обычного тем, что каждый метод получает **имя аккаунта**, —
+ключ вы строите сами:
+
+```ts
+import { createMultiTokenStorage } from 'itd-api';
+
+const storage = createMultiTokenStorage({
+  get: async (account) => JSON.parse((await redis.get(`itd:session:${account}`)) ?? 'null'),
+  set: async (account, session) => {
+    await redis.set(`itd:session:${account}`, JSON.stringify(session));
+    await redis.sadd('itd:accounts', account);
+  },
+  clear: async (account) => {
+    await redis.del(`itd:session:${account}`);
+    await redis.srem('itd:accounts', account);
+  },
+  accounts: () => redis.smembers('itd:accounts'),
+});
+```
+
+Имя приходит ровно тем, под которым аккаунт заведён: библиотека его не нормализует
+и не экранирует. Список из `accounts()` ведёт сам адаптер — именно по нему работает
+`restore()`; без него сессии останутся целы, но восстанавливать состав будет нечем.
+
+> Каждый аккаунт держит своё соединение с потоком уведомлений: десять `itd.realtime()` —
+> это десять SSE-соединений. Открывайте поток тем, кому он действительно нужен.
 
 ---
 
@@ -644,6 +774,7 @@ declare module 'itd-api' {
 | `itd.realtime()` | поток уведомлений |
 | `itd.use()` | плагины: обёртки вокруг запроса и ответа |
 | `itd.request()` | произвольный запрос, если метода ещё нет |
+| `ItdAccounts` | несколько аккаунтов с общим хранилищем сессий |
 
 Метода не хватает или ответ разошёлся с документацией — есть запасной путь:
 

@@ -9,6 +9,8 @@ pack/
 # Сессии клиента: внутри токены доступа
 .itd-session.json
 *.itd-session.json
+.itd-sessions.json
+*.itd-sessions.json
 .env
 .env.local
 

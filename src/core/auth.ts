@@ -1,3 +1,4 @@
+import type { UserId } from '../types/models.js';
 import type { AuthInput, CredentialsAuth } from '../types/options.js';
 import type { AuthConfig } from './config.js';
 import {
@@ -6,8 +7,9 @@ import {
   REFRESH_COOKIE,
   REFRESH_COOKIE_PATH,
 } from './cookies.js';
-import { Emitter } from './emitter.js';
+import { Emitter, reportListenerError } from './emitter.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from './errors.js';
+import { readTokenSubject } from './jwt.js';
 import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
 import type { ItdSession } from './storage.js';
@@ -70,14 +72,11 @@ function readAccessToken(payload: unknown): string | undefined {
   return typeof token === 'string' && token.length > 0 ? token : undefined;
 }
 
-/**
- * Сообщает об исключении из пользовательского обработчика события: пишет в логгер,
- * при его отсутствии — в консоль.
- */
-function reportListenerError(logger: AuthConfig['logger'], scope: string, error: unknown): void {
-  const message = `Ошибка в обработчике события ${scope}`;
-  if (logger) logger.error(message, error);
-  else console.error(`[itd-api] ${message}`, error);
+/** Убирает поле, которое сохраняли промежуточные версии с поддержкой `getUserId()`. */
+function withoutLegacyUserId(session: ItdSession): ItdSession {
+  const clean = { ...session };
+  delete (clean as ItdSession & { userId?: unknown }).userId;
+  return clean;
 }
 
 /**
@@ -287,6 +286,17 @@ export class AuthManager {
     return this.#loadSession();
   }
 
+  /**
+   * Идентификатор владельца сессии.
+   *
+   * Считается непосредственно из текущего токена и отдельно не сохраняется: после замены
+   * токена идентификатор прежнего владельца остаться не может.
+   */
+  async getUserId(): Promise<UserId | undefined> {
+    const session = await this.#loadSession();
+    return session?.accessToken ? readTokenSubject(session.accessToken) : undefined;
+  }
+
   /** Заменяет сессию и связанные с ней cookie целиком. */
   async setSession(session: ItdSession): Promise<void> {
     this.#jar.clear();
@@ -328,7 +338,8 @@ export class AuthManager {
   }
 
   async #performLoad(): Promise<ItdSession | null> {
-    const stored = (await this.#config.storage.get()) ?? null;
+    const loaded = (await this.#config.storage.get()) ?? null;
+    const stored = loaded ? withoutLegacyUserId(loaded) : null;
 
     // Восстанавливаем cookie: без них не выйдет обновить токен после перезапуска процесса.
     if (stored?.cookies) this.#jar.deserialize(stored.cookies);
@@ -388,11 +399,11 @@ export class AuthManager {
     const cookies = this.#config.useCookieJar ? this.#jar.serialize() : undefined;
     const deviceId = session.deviceId ?? this.#deviceId;
 
-    const next: ItdSession = {
+    const next = withoutLegacyUserId({
       ...session,
       ...(cookies?.length ? { cookies } : {}),
       ...(deviceId ? { deviceId } : {}),
-    };
+    });
 
     this.#session = next;
     await this.#config.storage.set(next);

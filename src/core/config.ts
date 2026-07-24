@@ -160,7 +160,17 @@ export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOpt
   };
 }
 
-function resolveRateLimit(
+/**
+ * Приводит настройки очереди к полному виду. `undefined` — очередь не нужна.
+ *
+ * Кроме создания клиента вызывается ещё из {@link ItdAccounts}: общая на всех аккаунтов
+ * очередь заводится из тех же опций и с теми же проверками.
+ *
+ * @throws {ItdConfigError} при некорректных значениях
+ *
+ * @internal
+ */
+export function resolveRateLimit(
   rateLimit: ItdClientOptions['rateLimit'],
 ): ResolvedRateLimitOptions | undefined {
   if (rateLimit === false) return undefined;

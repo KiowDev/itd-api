@@ -32,6 +32,7 @@ import { SubscriptionResource } from './resources/subscription.js';
 import { TelemetryResource } from './resources/telemetry.js';
 import { UsersResource } from './resources/users.js';
 import { VerificationResource } from './resources/verification.js';
+import type { UserId } from './types/models.js';
 import type {
   ItdClientOptions,
   RawRequestOptions,
@@ -56,6 +57,12 @@ declare global {
  */
 export interface ItdClientInternals {
   fileReader?: FileReader | undefined;
+  /**
+   * Готовая очередь запросов — так {@link ItdAccounts} с `rateLimitScope: 'shared'` даёт
+   * нескольким клиентам одну на всех. Свою клиент в этом случае не заводит и, что важнее,
+   * не гасит при `close()`: чужие ожидающие запросы это отменило бы.
+   */
+  queues?: RequestQueuePool | undefined;
 }
 
 /**
@@ -96,6 +103,8 @@ export class ItdClient {
   readonly #authManager: AuthManager;
   readonly #jar: CookieJar;
   readonly #queues: RequestQueuePool | undefined;
+  /** Заведена ли очередь этим клиентом. Чужую он останавливать не вправе. */
+  readonly #ownsQueues: boolean;
   readonly #plugins = new PluginRegistry();
   readonly #services: ServiceRegistry;
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
@@ -142,8 +151,15 @@ export class ItdClient {
     for (const service of BUILT_IN_SERVICES) this.#services.define(service);
     for (const service of config.services) this.#services.define(service);
 
-    const queues = config.rateLimit ? new RequestQueuePool(config.rateLimit) : undefined;
+    // Очередь может прийти извне — общая на несколько аккаунтов. `rateLimit: false` отключает
+    // её и в этом случае: отдельный аккаунт вправе не вставать в общую очередь.
+    const shared = config.rateLimit ? internals.queues : undefined;
+    const queues =
+      shared ?? (config.rateLimit ? new RequestQueuePool(config.rateLimit) : undefined);
     this.#queues = queues;
+    // Гасить в `close()` можно только свою: остановка чужой отменила бы ожидающие запросы
+    // соседних аккаунтов.
+    this.#ownsQueues = shared === undefined;
 
     // Заполняется ниже. Транспорту нужен `getDeviceId` авторизации, а авторизации —
     // транспорт; взаимная ссылка замыкается через отложенный вызов.
@@ -377,6 +393,9 @@ export class ItdClient {
    * После вызова клиентом можно пользоваться снова — новые запросы поднимут всё заново,
    * но уже созданные потоки останутся закрытыми.
    *
+   * Общая очередь, полученная от {@link ItdAccounts}, не останавливается: её гасит сам
+   * контейнер, когда закрывает все аккаунты разом.
+   *
    * @example
    * ```ts
    * await using itd = new ItdClient({ auth: token });
@@ -387,7 +406,7 @@ export class ItdClient {
   async close(): Promise<void> {
     for (const stream of this.#streams) stream.disconnect();
     this.#streams.clear();
-    this.#queues?.stop();
+    if (this.#ownsQueues) this.#queues?.stop();
   }
 
   /** Позволяет использовать клиент с `await using`. */
@@ -409,6 +428,23 @@ export class ItdClient {
   /** Текущая сессия целиком — чтобы сохранить её самостоятельно. */
   getSession(): Promise<ItdSession | null> {
     return this.#authManager.getSession();
+  }
+
+  /**
+   * Идентификатор аккаунта, под которым работает клиент.
+   *
+   * Читается из токена доступа и не стоит ни одного запроса. `undefined`, когда сессии
+   * ещё нет или токен выдан не в формате JWT. Полезен прежде всего с {@link ItdAccounts}:
+   * показывает, какому профилю соответствует восстановленная из хранилища запись.
+   * Свежий профиль целиком отдаёт `itd.users.me()`.
+   *
+   * @example
+   * ```ts
+   * for (const [name, itd] of accounts) console.log(name, await itd.getUserId());
+   * ```
+   */
+  getUserId(): Promise<UserId | undefined> {
+    return this.#authManager.getUserId();
   }
 
   /** Восстанавливает сохранённую сессию, включая cookie. */

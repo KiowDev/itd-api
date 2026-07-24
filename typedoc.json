@@ -18,7 +18,15 @@
   },
 
   "treatWarningsAsErrors": true,
-  "intentionallyNotExported": ["ItdClientInternals"],
+  "intentionallyNotExported": [
+    "ItdClientInternals",
+    "ItdAccountsInternals"
+  ],
+  "externalSymbolLinkMappings": {
+    "itd-api": {
+      "RequestOptionKeysComplete": "#"
+    }
+  },
   "validation": {
     "notExported": true,
     "invalidLink": true,

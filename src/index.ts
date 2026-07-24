@@ -4,6 +4,16 @@
  * @packageDocumentation
  */
 
+// Несколько аккаунтов в одном контейнере: у каждого свой токен, cookie и deviceId,
+// а сессии складываются в одно хранилище. Подробности — в accounts.ts.
+export type {
+  AccountEvents,
+  AddAccountOptions,
+  ItdAccountsOptions,
+  RateLimitScope,
+  RemoveAccountOptions,
+} from './accounts.js';
+export { createAccounts, ItdAccounts } from './accounts.js';
 // Билдеры: фабрики — обычные функции, классы отдаются только как типы,
 // поэтому единственная точка входа — фабрика. Подробности — в builders/base.ts.
 export type { BuilderInput, ItdBuilder } from './builders/base.js';
@@ -65,6 +75,16 @@ export {
   VIDEO_MIME_TYPES,
   type VideoMimeType,
 } from './core/mime.js';
+// Хранилище на несколько аккаунтов: те же операции, но с именем аккаунта в каждой.
+// Подробности — в core/multi-storage.ts.
+export {
+  createMultiTokenStorage,
+  createRecordMultiStorage,
+  MemoryMultiTokenStorage,
+  type MultiTokenStorage,
+  type RecordStorageSource,
+  scopedTokenStorage,
+} from './core/multi-storage.js';
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
 // Плагины работают на уровне транспорта: обёртка вокруг запроса видит и тело запроса,

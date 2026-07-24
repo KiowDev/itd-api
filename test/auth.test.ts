@@ -12,9 +12,10 @@ import {
 } from '../src/core/middleware.js';
 import type { RequestHandler } from '../src/core/pipeline.js';
 import { PluginRegistry } from '../src/core/plugins.js';
-import { MemoryTokenStorage } from '../src/core/storage.js';
+import { type ItdSession, MemoryTokenStorage } from '../src/core/storage.js';
 import { Transport } from '../src/core/transport.js';
 import type { ItdClientOptions, RetryOptions } from '../src/types/options.js';
+import { makeJwt } from './helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';
 
 /** Собирает связку транспорт + авторизация так же, как это делает ItdClient. */
@@ -677,5 +678,71 @@ describe('события', () => {
 
     expect(await auth.onUnauthorized()).toBe(false);
     expect(authError).toHaveBeenCalledOnce();
+  });
+});
+
+describe('идентификатор владельца сессии', () => {
+  it('снимает userId с токена из конфигурации, не заглядывая в хранилище', async () => {
+    const { auth } = makeAuth([], { auth: makeJwt({ sub: 'user-1' }) });
+
+    expect(await auth.getUserId()).toBe('user-1');
+  });
+
+  it('не сохраняет userId отдельно от токена', async () => {
+    const token = makeJwt({ sub: 'user-2' });
+    const storage = new MemoryTokenStorage();
+    const { auth } = makeAuth([json({ accessToken: token })], {
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      storage,
+    });
+
+    await auth.getAccessToken();
+
+    expect(await storage.get()).toEqual(expect.not.objectContaining({ userId: expect.anything() }));
+    expect(await auth.getUserId()).toBe('user-2');
+  });
+
+  it('не-JWT токен оставляет поле пустым и ничего не ломает', async () => {
+    const storage = new MemoryTokenStorage();
+    const { auth } = makeAuth([], { auth: 'непрозрачный-токен', storage });
+
+    await auth.setAccessToken('всё-ещё-непрозрачный');
+
+    expect(await auth.getUserId()).toBeUndefined();
+    expect((await storage.get())?.accessToken).toBe('всё-ещё-непрозрачный');
+  });
+
+  it('вход под другим аккаунтом заменяет прежний идентификатор', async () => {
+    const { auth } = makeAuth([], { auth: makeJwt({ sub: 'user-1' }) });
+
+    await auth.setAccessToken(makeJwt({ sub: 'user-2' }));
+
+    expect(await auth.getUserId()).toBe('user-2');
+  });
+
+  it('смена JWT на непрозрачный токен не оставляет идентификатор прежнего владельца', async () => {
+    const storage = new MemoryTokenStorage({ accessToken: makeJwt({ sub: 'user-3' }) });
+    const { auth } = makeAuth([], { storage });
+
+    expect(await auth.getUserId()).toBe('user-3');
+
+    await auth.setAccessToken('непрозрачный-токен');
+
+    expect(await auth.getUserId()).toBeUndefined();
+    expect(await storage.get()).toEqual(expect.not.objectContaining({ userId: expect.anything() }));
+  });
+
+  it('не поднимает устаревший сохранённый userId', async () => {
+    const legacy = {
+      accessToken: 'непрозрачный-токен',
+      userId: 'прежний-владелец',
+    } as unknown as ItdSession;
+    const storage = new MemoryTokenStorage(legacy);
+    const { auth } = makeAuth([], { storage });
+
+    expect(await auth.getUserId()).toBeUndefined();
+    expect(await auth.getSession()).toEqual(
+      expect.not.objectContaining({ userId: expect.anything() }),
+    );
   });
 });

@@ -8,6 +8,7 @@
 | [`04-typescript.ts`](./04-typescript.ts) | типы, билдеры, пагинация, разбор ошибок |
 | [`05-turnstile-login.mjs`](./05-turnstile-login.mjs) | вход без ручной капчи — токен добывает `@itd-api/turnstile` |
 | [`06-crypto.mjs`](./06-crypto.mjs) | скрытое сообщение в посте — плагин `@itd-api/crypto` |
+| [`07-multi-accounts.mjs`](./07-multi-accounts.mjs) | несколько аккаунтов: общее хранилище сессий, восстановление, обход всех |
 
 ## Как запустить
 
@@ -22,6 +23,9 @@ ITD_TOKEN=<accessToken> node examples/01-quick-start.mjs
 
 # логин и пароль — сессия сохранится в .itd-session.json
 ITD_EMAIL=you@example.com ITD_PASSWORD=secret node examples/02-bot-with-session.mjs
+
+# несколько аккаунтов — сессии сохранятся в .itd-sessions.json
+ITD_TOKENS='бот-1=<accessToken>,бот-2=<accessToken>' node examples/07-multi-accounts.mjs
 
 # TypeScript
 npx tsx examples/04-typescript.ts
@@ -43,5 +47,5 @@ npm link itd-api  # там, где запускаете примеры
 Если токен уже есть в браузере, его можно взять из ответа `POST /api/v1/auth/refresh`
 во вкладке «Сеть» на итд.com.
 
-> Файл `.itd-session.json` содержит токены доступа. Он уже добавлен в `.gitignore` —
-> не коммитьте его и не публикуйте.
+> Файлы `.itd-session.json` и `.itd-sessions.json` содержат токены доступа. Оба уже
+> добавлены в `.gitignore` — не коммитьте их и не публикуйте.
