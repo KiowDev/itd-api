@@ -128,3 +128,43 @@ export class RequestQueue {
     this.#drain();
   }
 }
+
+/**
+ * Очереди по хостам: основная и по одной на каждый сервис платформы.
+ *
+ * @example
+ * ```ts
+ * const pool = new RequestQueuePool({ concurrency: 4, rps: 8, … });
+ * await pool.for(undefined).schedule(task); // основной API
+ * await pool.for('status').schedule(task);  // статус, со своим бюджетом
+ * ```
+ */
+export class RequestQueuePool {
+  readonly #options: ResolvedRateLimitOptions;
+  readonly #main: RequestQueue;
+  /** Очереди сервисов заводятся при первом запросе — обычно не нужна ни одна. */
+  readonly #byService = new Map<string, RequestQueue>();
+
+  constructor(options: ResolvedRateLimitOptions) {
+    this.#options = options;
+    this.#main = new RequestQueue(options);
+  }
+
+  /** Очередь хоста. */
+  for(service: string | undefined): RequestQueue {
+    if (service === undefined) return this.#main;
+
+    let queue = this.#byService.get(service);
+    if (!queue) {
+      queue = new RequestQueue(this.#options);
+      this.#byService.set(service, queue);
+    }
+    return queue;
+  }
+
+  /** Останавливает все очереди. */
+  stop(): void {
+    this.#main.stop();
+    for (const queue of this.#byService.values()) queue.stop();
+  }
+}

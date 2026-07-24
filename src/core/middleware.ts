@@ -9,6 +9,7 @@ import {
 } from './pipeline.js';
 import type { PluginRegistry } from './plugins.js';
 import { createRetryScheduler, type RetryScheduler } from './retry.js';
+import type { ServiceRegistry } from './services.js';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -19,11 +20,14 @@ function sleep(ms: number): Promise<void> {
  *
  * `skipQueue` пропускает запрос мимо очереди — так поступают служебные запросы, которые
  * порождены изнутри другого запроса и не могут ждать освободившегося слота.
+ *
+ * Очередь выбирается по запросу: у каждого сервиса платформы свой хост и свой лимит.
  */
 export function createQueueMiddleware(
-  schedule: <T>(task: () => Promise<T>) => Promise<T>,
+  schedule: <T>(request: PipelineRequest, task: () => Promise<T>) => Promise<T>,
 ): RequestMiddleware {
-  return (request, next) => (request.skipQueue ? next(request) : schedule(() => next(request)));
+  return (request, next) =>
+    request.skipQueue ? next(request) : schedule(request, () => next(request));
 }
 
 /**
@@ -36,6 +40,31 @@ export function createPluginsMiddleware(plugins: PluginRegistry): RequestMiddlew
   return (request, next) => {
     if (plugins.size === 0) return next(request);
     return plugins.run(request, next as (request: RawRequestOptions) => Promise<unknown>);
+  };
+}
+
+/**
+ * Слой сервисов.
+ *
+ * Запросу с полем `service` подставляет хост сервиса, его заголовки и `skipAuth`, если
+ * сервис объявлен публичным. Заданный у запроса `baseUrl` не трогает.
+ *
+ * Стоит снаружи повторов и авторизации, чтобы выставленный здесь `skipAuth` был ей виден.
+ */
+export function createServicesMiddleware(registry: ServiceRegistry): RequestMiddleware {
+  return async (request, next) => {
+    if (request.service === undefined) return next(request);
+
+    const service = registry.require(request.service);
+    let prepared: PipelineRequest =
+      request.baseUrl === undefined ? { ...request, baseUrl: service.baseUrl } : request;
+
+    if (service.headers) prepared = withLayerHeaders(prepared, service.headers);
+    if (service.auth === false && prepared.skipAuth === undefined) {
+      prepared = { ...prepared, skipAuth: true };
+    }
+
+    return next(prepared);
   };
 }
 
@@ -104,8 +133,12 @@ export interface RetryMiddlewareDeps {
    * тут бесполезен — окно измеряется десятками секунд. Не зависят от `retry.attempts`.
    */
   rateLimitDelays: readonly number[];
-  /** Придерживает всю очередь на паузу `429`. `undefined`, если очереди нет. */
-  pauseQueue: ((ms: number) => void) | undefined;
+  /**
+   * Придерживает очередь запроса на паузу `429`. `undefined`, если очереди нет.
+   *
+   * Тормозится очередь того хоста, который ответил отказом: лимит у каждого свой.
+   */
+  pauseQueue: ((ms: number, request: PipelineRequest) => void) | undefined;
   hooks: ClientHooks;
   logger: Logger | undefined;
   buildUrl: (request: PipelineRequest) => string;
@@ -141,6 +174,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
   const nextDelay = (
     error: unknown,
     attempt: number,
+    request: PipelineRequest,
     method: string,
     backoff: RetryScheduler | undefined,
   ): number | undefined => {
@@ -149,7 +183,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
       const wait = error.retryAfter ?? deps.rateLimitDelays[attempt - 1];
       if (wait === undefined) return undefined;
 
-      deps.pauseQueue?.(wait);
+      deps.pauseQueue?.(wait, request);
       deps.logger?.debug(`лимит частоты, попытка ${attempt + 1} через ${wait} мс`);
       return wait;
     }
@@ -165,7 +199,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
       try {
         return await next({ ...request, attempt });
       } catch (error) {
-        const delay = nextDelay(error, attempt, method, backoff);
+        const delay = nextDelay(error, attempt, request, method, backoff);
         if (delay === undefined) throw error;
 
         await deps.hooks.onRetry?.({

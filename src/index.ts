@@ -15,10 +15,13 @@ export { type ReportBuilder, type ReportInput, report } from './builders/report.
 export { createClient, ItdClient } from './client.js';
 export { AUTH_PATHS, DEVICE_ID_HEADER, TURNSTILE_SITE_KEY } from './core/auth.js';
 export {
+  BUILT_IN_SERVICES,
   DEFAULT_BASE_URL,
+  DEFAULT_STATUS_BASE_URL,
   DEFAULT_TIMEOUT,
   DEFAULT_USER_AGENT,
   LIBRARY_VERSION,
+  STATUS_SERVICE,
 } from './core/config.js';
 export { AUTH_FLAG_COOKIE, REFRESH_COOKIE, REFRESH_COOKIE_PATH } from './core/cookies.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';
@@ -68,6 +71,8 @@ export { PaginationMode, Paginator } from './core/pagination.js';
 // и разобранный ответ. Подробности — в core/plugins.ts.
 export type { ItdPlugin, PluginContext, Transformer } from './core/plugins.js';
 export { DetectedRuntime, RuntimeMode } from './core/runtime.js';
+// Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
+export { type ServiceDefinition, ServiceRegistry } from './core/services.js';
 export {
   createTokenStorage,
   type ItdSession,
@@ -75,6 +80,7 @@ export {
   MemoryTokenStorage,
   type TokenStorage,
 } from './core/storage.js';
+export { utcStampToIso } from './core/time.js';
 // Уведомления приводятся к единой форме, поэтому объекты из REST и из потока событий
 // можно складывать в один список. Подробности — в notifications/normalize.ts.
 export {
@@ -156,6 +162,7 @@ export {
   AttachmentType,
   CommentSort,
   FeedTab,
+  IncidentKind,
   InteractionType,
   ItdErrorCode,
   LikesVisibility,
@@ -163,6 +170,7 @@ export {
   RealtimeStatus,
   ReportReason,
   ReportTargetType,
+  ServiceState,
   SpanType,
   ViewReason,
   ViewSource,
@@ -189,6 +197,7 @@ export type {
   Pin,
   PinPostResult,
   PinsResult,
+  PlatformStatus,
   Poll,
   PollOption,
   Portal,
@@ -198,8 +207,11 @@ export type {
   Profile,
   PublicProfile,
   Report,
+  ServiceStatus,
   Session,
   Span,
+  StatusDay,
+  StatusIncidentLine,
   Subscription,
   SubscriptionState,
   UserId,
@@ -207,7 +219,7 @@ export type {
   UserSummary,
   VerificationStatus,
 } from './types/models.js';
-export { isMyProfile, toDate } from './types/models.js';
+export { isMyProfile, statusDays, toDate } from './types/models.js';
 export type {
   AuthInput,
   ClientHooks,

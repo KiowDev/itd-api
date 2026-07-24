@@ -1,12 +1,24 @@
 import type { AuthInput, ClientHooks, ItdClientOptions, Logger } from '../types/options.js';
 import { ItdConfigError } from './errors.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
+import type { ServiceDefinition } from './services.js';
 import { MemoryTokenStorage, type TokenStorage } from './storage.js';
 import { normalizeBaseUrl } from './url.js';
 import { LIBRARY_VERSION } from './version.js';
 
 /** Базовый URL API итд.com. Домен записан в punycode: `итд.com`. */
 export const DEFAULT_BASE_URL = 'https://xn--d1ah4a.com';
+
+/** Базовый URL страницы статуса. Домен записан в punycode: `статус.итд.com`. */
+export const DEFAULT_STATUS_BASE_URL = 'https://xn--80a7abcbg.xn--d1ah4a.com';
+
+/** Имя встроенного сервиса статуса. */
+export const STATUS_SERVICE = 'status';
+
+/** Сервисы, зарегистрированные у любого клиента. */
+export const BUILT_IN_SERVICES: readonly ServiceDefinition[] = Object.freeze([
+  Object.freeze({ name: STATUS_SERVICE, baseUrl: DEFAULT_STATUS_BASE_URL, auth: false }),
+]);
 
 /** Таймаут запроса по умолчанию. Столько же использует официальный клиент итд.com. */
 export const DEFAULT_TIMEOUT = 30_000;
@@ -78,6 +90,8 @@ export interface AuthConfig {
 
 /** Конфигурация клиента после подстановки значений по умолчанию и проверок. */
 export interface ResolvedConfig extends AuthConfig {
+  /** Сервисы из опций клиента. Встроенные сюда не входят. */
+  services: ServiceDefinition[];
   autoRefresh: boolean;
   fetch: typeof fetch;
   timeout: number;
@@ -255,6 +269,18 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
 }
 
 /**
+ * Разворачивает запись сервисов из опций в определения: имя берётся из ключа, строка
+ * означает один только базовый URL. Сам URL проверяет `ServiceRegistry.define`.
+ */
+function resolveServices(services: ItdClientOptions['services']): ServiceDefinition[] {
+  if (!services) return [];
+
+  return Object.entries(services).map(([name, value]) =>
+    typeof value === 'string' ? { name, baseUrl: value } : { ...value, name },
+  );
+}
+
+/**
  * Приводит пользовательские опции к полной конфигурации.
  *
  * Все проверки выполняются здесь, до единого сетевого запроса: неверная настройка должна
@@ -282,6 +308,7 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
 
   return {
     baseUrl: normalizeBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL),
+    services: resolveServices(options.services),
     auth: validateAuth(options.auth),
     storage: options.storage ?? new MemoryTokenStorage(),
     autoRefresh: options.autoRefresh ?? true,

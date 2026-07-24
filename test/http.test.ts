@@ -293,9 +293,15 @@ describe('Transport: cookie и rate-limit', () => {
       { onRateLimit },
     );
 
-    await transport.send({ method: 'GET', path: '/api/posts' });
+    await transport.send({ method: 'GET', service: 'status', path: '/api/posts' });
 
-    expect(onRateLimit).toHaveBeenCalledWith(100, 7);
+    // Третьим аргументом идёт сам запрос: по нему выбирается очередь того хоста,
+    // чей лимит подходит к концу.
+    expect(onRateLimit).toHaveBeenCalledWith(
+      100,
+      7,
+      expect.objectContaining({ service: 'status' }),
+    );
   });
 });
 
@@ -474,22 +480,24 @@ describe('слой авторизации', () => {
 
 describe('слой очереди', () => {
   it('пропускает запрос через очередь', async () => {
-    let scheduled = 0;
-    const schedule = <T>(task: () => Promise<T>): Promise<T> => {
-      scheduled += 1;
+    const scheduled: (string | undefined)[] = [];
+    const schedule = <T>(request: PipelineRequest, task: () => Promise<T>): Promise<T> => {
+      scheduled.push(request.service);
       return task();
     };
-    const { transport } = makeTransport([json({})]);
+    const { transport } = makeTransport([json({}), json({})]);
     const handler = composePipeline([createQueueMiddleware(schedule)], transport.send);
 
     await handler({ method: 'GET', path: '/api/posts' });
+    await handler({ method: 'GET', service: 'status', path: '/api/status' });
 
-    expect(scheduled).toBe(1);
+    // Имя сервиса доходит до очереди — по нему выбирается очередь его хоста.
+    expect(scheduled).toEqual([undefined, 'status']);
   });
 
   it('skipQueue проходит мимо очереди', async () => {
     let scheduled = 0;
-    const schedule = <T>(task: () => Promise<T>): Promise<T> => {
+    const schedule = <T>(_request: PipelineRequest, task: () => Promise<T>): Promise<T> => {
       scheduled += 1;
       return task();
     };

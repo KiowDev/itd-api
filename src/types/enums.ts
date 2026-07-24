@@ -130,6 +130,26 @@ export const RealtimeStatus = Object.freeze({
 } as const);
 export type RealtimeStatus = (typeof RealtimeStatus)[keyof typeof RealtimeStatus];
 
+/** Состояние сервиса платформы. Тип открытый. */
+export const ServiceState = Object.freeze({
+  /** Работает штатно. */
+  Operational: 'operational',
+  /** Работает с деградацией. */
+  Degraded: 'degraded',
+  /** Недоступен. */
+  Downtime: 'downtime',
+} as const);
+export type ServiceState = Loose<(typeof ServiceState)[keyof typeof ServiceState]>;
+
+/** Вид происшествия в истории сервиса. Тип открытый. */
+export const IncidentKind = Object.freeze({
+  /** Недоступен. */
+  Down: 'down',
+  /** Деградация. */
+  Degraded: 'deg',
+} as const);
+export type IncidentKind = Loose<(typeof IncidentKind)[keyof typeof IncidentKind]>;
+
 /**
  * Уровень доступа к разделу профиля.
  *

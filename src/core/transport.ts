@@ -48,7 +48,9 @@ export interface TransportDeps {
    * Вызывается после **каждого** ответа, включая ошибочные, — так очередь узнаёт
    * об исчерпании лимита заранее и успевает притормозить до отказа сервера.
    */
-  onRateLimit: ((limit: number | undefined, remaining: number | undefined) => void) | undefined;
+  onRateLimit:
+    | ((limit: number | undefined, remaining: number | undefined, request: PipelineRequest) => void)
+    | undefined;
 }
 
 /**
@@ -236,7 +238,7 @@ export class Transport {
 
     if (this.#deps.onRateLimit) {
       const { limit, remaining } = readRateLimit(response.headers);
-      this.#deps.onRateLimit(limit, remaining);
+      this.#deps.onRateLimit(limit, remaining, request);
     }
 
     if (this.#config.useCookieJar) this.#deps.cookies?.setFromResponse(url, response);
@@ -274,9 +276,14 @@ export class Transport {
     return request.raw ? payload : unwrapData(payload);
   };
 
-  /** Итоговый URL со строкой запроса. Нужен и слою повторов — для хука `onRetry`. */
+  /**
+   * Итоговый URL со строкой запроса. Нужен и слою повторов — для хука `onRetry`.
+   *
+   * Хост берётся из самого запроса, если он там задан: у сервисов платформы свои домены.
+   */
   buildUrl(request: PipelineRequest): string {
-    return joinUrl(this.#config.baseUrl, request.path) + buildQuery(request.query);
+    const base = request.baseUrl ?? this.#config.baseUrl;
+    return joinUrl(base, request.path) + buildQuery(request.query);
   }
 
   /**

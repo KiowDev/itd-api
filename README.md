@@ -358,6 +358,60 @@ await stream.connect();
 
 ---
 
+## Статус сервисов
+
+`itd.platform.status()` отдаёт состояние платформы и историю доступности за 90 суток.
+Авторизация не нужна, ответ кэшируется сервером на минуту.
+
+```ts
+import { statusDays } from 'itd-api';
+
+const status = await itd.platform.status();
+
+status.overall_status;                       // 'operational' | 'degraded' | 'downtime'
+status.services.map((s) => s.current_status);
+
+const auth = status.services.find((s) => s.id === 'auth');
+auth?.uptime_90d;                            // 97.92
+auth?.last_checked;                          // '2026-07-23T23:14:25Z'
+
+const days = auth ? statusDays(auth) : [];   // 90 элементов, [0] — сегодня
+days[0]?.uptime;                             // 100
+days[0]?.lines;                              // [{ t: 'down', text: 'недоступен 6 мин (12:00–12:06)' }]
+```
+
+Поле `days` приходит объектом с числовыми ключами, и сутки без данных сервер пропускает —
+`statusDays()` разворачивает его в массив, где пропуски равны `null`. Строки в `lines`
+готовы к показу как есть: длительность и границы интервала отдельными полями не приходят,
+время в них московское, тогда как `date_key` суток нарезан по UTC.
+
+### Сервисы платформы
+
+Статус живёт на отдельном домене — `статус.итд.com`. Такие домены описываются как сервисы:
+у каждого своё имя, хост, заголовки и признак публичности. Запрос выбирает сервис
+полем `service`.
+
+```ts
+const itd = new ItdClient({
+  services: {
+    pb: {
+      baseUrl: 'https://pbapi.xn--d1ah4a.com',
+      headers: { Referer: 'https://pixel.xn--d1ah4a.com/' },
+    },
+  },
+});
+
+await itd.request({ method: 'GET', service: 'pb', path: '/api/pixel-info', query: { x: 1, y: 2 } });
+```
+
+То же самое после создания клиента — `itd.defineService({ name, baseUrl, headers, auth })`;
+базовый URL сервиса отдаёт `itd.serviceBaseUrl(name)`.
+
+У каждого сервиса своя очередь `rateLimit`: лимит частоты сервер считает по хосту, поэтому
+`429` от статуса не тормозит основной API и наоборот.
+
+---
+
 ## Ошибки
 
 Обе формы ошибок API сведены к одному классу:
@@ -397,6 +451,7 @@ const itd = new ItdClient({
   // Заголовки латиницей: кириллица в них запрещена самим HTTP.
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',             // по умолчанию itd-api/<версия>; false — не слать
   deviceId: '3f2a…-uuid',              // по умолчанию заводится сам и живёт в сессии
+  services: { pb: 'https://pbapi.xn--d1ah4a.com' },  // домены сервисов платформы, см. ниже
   logger: true,                        // токены и пароли в логах маскируются
   hooks: {
     onRequest: (ctx) => console.log(ctx.method, ctx.path),
@@ -455,6 +510,9 @@ rateLimit: { retryDelays: [1000, 5000, 30_000, 60_000, 90_000] }  // по умо
 
 Поэтому в браузерном приложении укажите в `baseUrl` адрес своего прокси. В Node, Bun,
 Deno и React Native ограничение не действует.
+
+Исключение — `itd.platform.status()`: страница статуса отдаёт
+`Access-Control-Allow-Origin: *`, и этот метод работает из браузера напрямую.
 
 ### Прокси (HTTP/SOCKS5)
 
@@ -576,7 +634,7 @@ declare module 'itd-api' {
 | `itd.files` | загрузка медиа |
 | `itd.hashtags` · `itd.search` | хэштеги, трендовые, глобальный поиск |
 | `itd.reports` · `itd.verification` | жалобы, заявка на верификацию |
-| `itd.subscription` · `itd.platform` | подписка, способы оплаты, анонсы |
+| `itd.subscription` · `itd.platform` | подписка, способы оплаты, анонсы, статус сервисов |
 | `itd.realtime()` | поток уведомлений |
 | `itd.use()` | плагины: обёртки вокруг запроса и ответа |
 | `itd.request()` | произвольный запрос, если метода ещё нет |

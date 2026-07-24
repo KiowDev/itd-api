@@ -1,4 +1,5 @@
 import type { RuntimeMode } from '../core/runtime.js';
+import type { ServiceDefinition } from '../core/services.js';
 import type { TokenStorage } from '../core/storage.js';
 import type { QueryParams } from '../core/url.js';
 
@@ -164,6 +165,23 @@ export interface ItdClientOptions {
    * источников на итд.com, скорее всего, не настроен.
    */
   baseUrl?: string | undefined;
+  /**
+   * Сервисы платформы на отдельных доменах.
+   *
+   * Ключ — имя сервиса, значение — базовый URL или определение целиком. Имя встроенного
+   * сервиса задаёт его хост. Встроен один: `status` — хост `itd.platform.status()`.
+   *
+   * @example
+   * ```ts
+   * const itd = new ItdClient({
+   *   services: {
+   *     status: 'https://my-proxy.example/status',
+   *     pb: { baseUrl: 'https://pbapi.xn--d1ah4a.com', headers: { Referer: 'https://pixel.xn--d1ah4a.com/' } },
+   *   },
+   * });
+   * ```
+   */
+  services?: Record<string, string | Omit<ServiceDefinition, 'name'>> | undefined;
   /** Авторизация. Без неё доступны только публичные эндпоинты. */
   auth?: AuthInput | undefined;
   /** Где хранить сессию. По умолчанию {@link MemoryTokenStorage}. */
@@ -260,6 +278,13 @@ export interface RawRequestOptions extends RequestOptions {
   method: string;
   /** Путь с ведущим слэшем, например `/api/posts`. Завершающий слэш значим. */
   path: string;
+  /**
+   * Имя сервиса, на хост которого уйдёт запрос. Без него запрос идёт на основной `baseUrl`
+   * клиента. Сервисы задаются опцией {@link ItdClientOptions.services}.
+   */
+  service?: string | undefined;
+  /** Хост этого запроса. Важнее, чем {@link RawRequestOptions.service}. */
+  baseUrl?: string | undefined;
   query?: QueryParams | undefined;
   /** Тело: будет отправлено как JSON. Для загрузки файлов передайте `FormData`. */
   body?: unknown;

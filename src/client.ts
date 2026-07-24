@@ -1,5 +1,5 @@
 import { type AuthEvents, AuthManager } from './core/auth.js';
-import { type ResolvedConfig, resolveConfig } from './core/config.js';
+import { BUILT_IN_SERVICES, type ResolvedConfig, resolveConfig } from './core/config.js';
 import { CookieJar } from './core/cookies.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { HttpClient } from './core/http.js';
@@ -9,11 +9,13 @@ import {
   createPluginsMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
+  createServicesMiddleware,
   type RequestMiddleware,
 } from './core/middleware.js';
-import type { RequestHandler } from './core/pipeline.js';
+import type { PipelineRequest, RequestHandler } from './core/pipeline.js';
 import { type ItdPlugin, PluginRegistry } from './core/plugins.js';
-import { RequestQueue } from './core/rate-limit.js';
+import { RequestQueuePool } from './core/rate-limit.js';
+import { type ServiceDefinition, ServiceRegistry } from './core/services.js';
 import type { ItdSession } from './core/storage.js';
 import { Transport } from './core/transport.js';
 import { ItdRealtime, type RealtimeOptions } from './realtime/stream.js';
@@ -92,8 +94,9 @@ export class ItdClient {
   readonly #http: HttpClient;
   readonly #authManager: AuthManager;
   readonly #jar: CookieJar;
-  readonly #queue: RequestQueue | undefined;
+  readonly #queues: RequestQueuePool | undefined;
   readonly #plugins = new PluginRegistry();
+  readonly #services = new ServiceRegistry();
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
   readonly #streams = new Set<ItdRealtime>();
 
@@ -133,8 +136,12 @@ export class ItdClient {
     this.#config = config;
     this.#jar = new CookieJar();
 
-    const queue = config.rateLimit ? new RequestQueue(config.rateLimit) : undefined;
-    this.#queue = queue;
+    // Встроенные сервисы регистрируются первыми и заменить их нельзя
+    for (const service of BUILT_IN_SERVICES) this.#services.define(service);
+    for (const service of config.services) this.#services.define(service);
+
+    const queues = config.rateLimit ? new RequestQueuePool(config.rateLimit) : undefined;
+    this.#queues = queues;
 
     // Заполняется ниже. Транспорту нужен `getDeviceId` авторизации, а авторизации —
     // транспорт; взаимная ссылка замыкается через отложенный вызов.
@@ -144,8 +151,8 @@ export class ItdClient {
       cookies: config.useCookieJar ? this.#jar : undefined,
       getDeviceId: () => authManager.getDeviceId(),
       onRateLimit:
-        queue && config.rateLimit?.respectHeaders
-          ? (limit, remaining) => this.#throttleByHeaders(limit, remaining)
+        queues && config.rateLimit?.respectHeaders
+          ? (limit, remaining, request) => this.#throttleByHeaders(limit, remaining, request)
           : undefined,
     });
 
@@ -153,7 +160,7 @@ export class ItdClient {
     const retriesLayer = createRetryMiddleware({
       retry: config.retry,
       rateLimitDelays: config.rateLimit?.retryDelays ?? [],
-      pauseQueue: queue ? (ms) => queue.pause(ms) : undefined,
+      pauseQueue: queues ? (ms, request) => queues.for(request.service).pause(ms) : undefined,
       hooks: config.hooks,
       logger: config.logger,
       buildUrl: (request) => transport.buildUrl(request),
@@ -180,11 +187,16 @@ export class ItdClient {
     authManager = new AuthManager(config, authHandler, this.#jar);
     this.#authManager = authManager;
 
-    // Порядок слоёв: очередь снаружи, за ней плагины, повторы и авторизация,
+    // Порядок слоёв: очередь снаружи, за ней плагины, сервисы, повторы и авторизация,
     // в сердцевине — транспорт.
     const middlewares: RequestMiddleware[] = [];
-    if (queue) middlewares.push(createQueueMiddleware(queue.schedule.bind(queue)));
+    if (queues) {
+      middlewares.push(
+        createQueueMiddleware((request, task) => queues.for(request.service).schedule(task)),
+      );
+    }
     middlewares.push(pluginsLayer);
+    middlewares.push(createServicesMiddleware(this.#services));
     middlewares.push(retriesLayer);
     middlewares.push(
       createAuthMiddleware({
@@ -262,6 +274,40 @@ export class ItdClient {
   }
 
   /**
+   * Регистрирует сервис платформы — домен, отличный от основного.
+   *
+   * Запросы с `{ service: 'имя' }` уходят на его хост с его заголовками. То же самое умеет
+   * опция `services` конструктора. Занятое имя не переопределяется — ни своё, ни встроенное:
+   * разовому запросу хост задаётся полем `baseUrl`.
+   *
+   * @throws {ItdConfigError} если определение неверно или имя уже занято
+   *
+   * @example
+   * ```ts
+   * itd.defineService({
+   *   name: 'pb',
+   *   baseUrl: 'https://pbapi.xn--d1ah4a.com',
+   *   headers: { Referer: 'https://pixel.xn--d1ah4a.com/' },
+   * });
+   *
+   * await itd.request({ method: 'GET', service: 'pb', path: '/api/pixel-info' });
+   * ```
+   */
+  defineService(definition: ServiceDefinition): this {
+    this.#services.define(definition);
+    return this;
+  }
+
+  /**
+   * Базовый URL зарегистрированного сервиса.
+   *
+   * @throws {ItdConfigError} если сервис не зарегистрирован
+   */
+  serviceBaseUrl(name: string): string {
+    return this.#services.resolveBaseUrl(name);
+  }
+
+  /**
    * Подписывается на события авторизации.
    *
    * Полезно, чтобы сохранять сессию во внешнее хранилище или узнавать, что вход
@@ -334,7 +380,7 @@ export class ItdClient {
   async close(): Promise<void> {
     for (const stream of this.#streams) stream.disconnect();
     this.#streams.clear();
-    this.#queue?.stop();
+    this.#queues?.stop();
   }
 
   /** Позволяет использовать клиент с `await using`. */
@@ -363,13 +409,17 @@ export class ItdClient {
    * Смысл этой паузы прежде всего в том, чтобы при работе в несколько потоков остальные
    * запросы не улетели в стену все разом.
    */
-  #throttleByHeaders(limit: number | undefined, remaining: number | undefined): void {
+  #throttleByHeaders(
+    limit: number | undefined,
+    remaining: number | undefined,
+    request: PipelineRequest,
+  ): void {
     if (remaining === undefined || remaining > 0) return;
 
     const first = this.#config.rateLimit?.retryDelays[0];
     if (first === undefined) return;
 
-    this.#queue?.pause(first);
+    this.#queues?.for(request.service).pause(first);
     this.#config.logger?.debug(
       `лимит сервера исчерпан (${remaining} из ${limit ?? '?'}), очередь ждёт ${first} мс`,
     );

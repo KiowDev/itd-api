@@ -95,6 +95,8 @@ const RESERVED_OPTION_KEYS: ReadonlySet<string> = new Set([
   'retry',
   'method',
   'path',
+  'service',
+  'baseUrl',
   'query',
   'body',
   'skipAuth',

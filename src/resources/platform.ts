@@ -1,7 +1,29 @@
-import { pickArray } from '../core/unwrap.js';
-import type { Announcement, ChangelogEntry, Portal } from '../types/models.js';
+import { STATUS_SERVICE } from '../core/config.js';
+import { utcStampToIso } from '../core/time.js';
+import { isRecord, pickArray } from '../core/unwrap.js';
+import type {
+  Announcement,
+  ChangelogEntry,
+  PlatformStatus,
+  Portal,
+  ServiceStatus,
+} from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
+
+/** Приводит `last_checked` каждого сервиса к ISO. Остальное остаётся как прислал сервер. */
+function normalizeStatus(body: PlatformStatus): PlatformStatus {
+  if (!isRecord(body) || !Array.isArray(body.services)) return body;
+
+  return {
+    ...body,
+    services: body.services.map((service: ServiceStatus) =>
+      typeof service?.last_checked === 'string'
+        ? { ...service, last_checked: utcStampToIso(service.last_checked) }
+        : service,
+    ),
+  };
+}
 
 /**
  * Сведения о платформе: изменения, анонсы, баннер события.
@@ -38,5 +60,32 @@ export class PlatformResource extends BaseResource {
       path: '/api/v1/portal',
       ...this.requestOptions(options),
     });
+  }
+
+  /**
+   * Загружает состояние сервисов платформы за последние 90 суток.
+   *
+   * Идёт на хост `статус.итд.com` без авторизации. Ответ кэшируется сервером на минуту.
+   * История по суткам приходит разреженной, ровный массив даёт `statusDays`.
+   *
+   * @example
+   * ```ts
+   * const status = await itd.platform.status();
+   *
+   * if (status.overall_status !== 'operational') {
+   *   const broken = status.services.filter((s) => s.current_status !== 'operational');
+   *   console.log('лежит:', broken.map((s) => s.name).join(', '));
+   * }
+   * ```
+   */
+  async status(options: RequestOptions = {}): Promise<PlatformStatus> {
+    const body = await this.http.request<PlatformStatus>({
+      method: 'GET',
+      service: STATUS_SERVICE,
+      path: '/api/status',
+      ...this.requestOptions(options),
+    });
+
+    return normalizeStatus(body);
   }
 }
