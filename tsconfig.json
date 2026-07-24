@@ -36,5 +36,5 @@
       "itd-api/node": ["./src/node.ts"]
     }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts", "*.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "guides/**/*.ts", "*.config.ts"]
 }

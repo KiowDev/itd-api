@@ -2,7 +2,7 @@
  * Создание и отображение поста с разметкой текста.
  *
  * Запуск:
- *   ITD_TOKEN=<ваш accessToken> node examples/08-text-markup.mjs
+ *   ITD_TOKEN=<ваш accessToken> node guides/text-markup/examples/create-post.mjs
  *
  * Скрипт создаёт один настоящий пост в аккаунте из ITD_TOKEN.
  */

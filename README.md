@@ -43,65 +43,24 @@ const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json')
 await itd.posts.create((p) => p.content('привет').attach('./photo.jpg'));
 ```
 
-Готовые примеры — в папке [`examples/`](./examples/README.md).
+Продолжение с запускаемыми примерами — в [руководстве по быстрому старту](./guides/quickstart/README.md).
+Все тематические материалы собраны в [`guides/`](./guides/README.md).
 
 ---
 
 ## Авторизация
 
-Откуда клиент берёт доступ к API — либо из опции `auth`, либо из `storage`, либо
-из явного вызова входа. Всё это взаимозаменяемо, и **обязательного варианта нет**.
+Клиент может взять доступ из `auth`, сохранённой сессии или явного вызова `itd.auth`:
 
 ```ts
-new ItdClient({ auth: '<accessToken>' });                    // разовый вызов
-new ItdClient({ auth: { accessToken, refreshToken } });      // восстановить сессию строками
-new ItdClient({ auth: { email, password, getTurnstileToken } });  // войти самому
-new ItdClient({ auth: { getToken: () => vault.read() } });   // токен извне
-
-new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });  // сессия с прошлого раза
-new ItdClient();                                             // войти позже, через itd.auth
+new ItdClient({ auth: '<accessToken>' });
+new ItdClient({ auth: { accessToken, refreshToken } });
+new ItdClient({ auth: { email, password, getTurnstileToken } });
+new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });
 ```
 
-`auth` и `storage` не конкурируют, а дополняют друг друга: **хранилище главнее** — оно
-отражает текущее состояние сессии, — а недостающие поля берутся из `auth`. Типичный случай:
-в хранилище лежит только `accessToken`, а `refreshToken` приходит из настроек приложения.
-
-### Сессия из хранилища — `auth` не нужен
-
-Если предыдущий запуск сохранил сессию, для работы достаточно одного `storage`:
-
-```ts
-import { ItdClient, FileTokenStorage } from 'itd-api/node';
-
-const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });
-
-const me = await itd.users.me();   // токен подставится сам
-```
-
-Более того, сохранённого `accessToken` не требуется вовсе. Хватает cookie: первый запрос
-получит `401`, библиотека продлит сессию и повторит его — вызывающий код ничего не заметит.
-
-Refresh-токен живёт 30 суток и обновляется при каждом продлении, поэтому регулярно
-работающему боту капчу достаточно решить один раз, при первом запуске.
-
-Проверить, есть ли что продлевать, можно заранее:
-
-```ts
-if (await itd.auth.hasRefreshSession()) await itd.auth.refresh();
-else redirectToLogin();
-```
-
-### Продление токена
-
-При ответе `401` библиотека продлевает сессию и повторяет запрос. Параллельные запросы,
-одновременно получившие `401`, ждут **одного** обновления, а не запускают своё — иначе сервер
-увидел бы десяток одновременных `refresh` и отверг бы все, кроме первого.
-
-Отключить автоматику: `autoRefresh: false`, дальше `await itd.auth.refresh()` вручную.
-
-Когда продлить не удалось, `refresh()` бросает ошибку **сервера** — по её коду видно, что
-именно случилось: `SESSION_NOT_FOUND` (сессия отозвана или истекла), `SESSION_REVOKED`,
-`REFRESH_TOKEN_MISSING` (продлевать нечем). Та же ошибка приходит в событии `authError`:
+При `401` сессия продлевается, исходный запрос повторяется, а новое состояние сохраняется.
+Параллельные запросы ждут одного refresh. Потерю сессии можно отследить:
 
 ```ts
 itd.on('authError', ({ error }) => {
@@ -109,135 +68,21 @@ itd.on('authError', ({ error }) => {
 });
 ```
 
-### Капча обязательна при входе
-
-`signIn`, `signUp` и `forgotPassword` требуют токен Cloudflare Turnstile. Сам клиент капчу
-не решает — он принимает готовый токен, а решает его кто-то снаружи.
-
-```ts
-import { TURNSTILE_SITE_KEY } from 'itd-api';
-
-// в браузере — виджет Turnstile с этим ключом
-turnstile.render('#captcha', {
-  sitekey: TURNSTILE_SITE_KEY,
-  callback: (turnstileToken) => itd.auth.signIn({ email, password, turnstileToken }),
-});
-```
-
-Токен одноразовый и живёт несколько минут. Долгоживущему боту передавайте не строку,
-а источник — он спрашивается заново перед каждой попыткой входа:
-
-```ts
-new ItdClient({
-  auth: { email, password, getTurnstileToken: () => captchaSolver.solve() },
-});
-```
-
-В Node таким источником может быть [`@itd-api/turnstile`](./turnstile/README.md) — отдельный пакет,
-который поднимает браузер и приносит токен. Отдельный он намеренно: тянет за собой Playwright
-и требует графической оболочки, а нужен далеко не всем — с сохранённой сессией до входа
-по паролю дело обычно вообще не доходит.
-
-```sh
-npm i @itd-api/turnstile playwright
-```
-
-```ts
-import { createTurnstileSolver } from '@itd-api/turnstile';
-
-new ItdClient({
-  storage: new FileTokenStorage('./.itd-session.json'),
-  auth: { email, password, getTurnstileToken: createTurnstileSolver() },
-});
-```
-
-### Вход с кодом из письма
-
-```ts
-import { createInterface } from 'node:readline/promises';
-
-const rl = createInterface({ input: process.stdin, output: process.stdout });
-
-await itd.auth.signInWithOtp({
-  email, password, turnstileToken,
-  getOtp: () => rl.question('Код из письма: '),
-});
-```
-
-### Сброс пароля
-
-Идёт тем же потоком с кодом: `forgotPassword` возвращает `flowToken`, письмо приносит код.
-
-```ts
-await itd.auth.resetPasswordWithOtp({
-  email, turnstileToken, newPassword,
-  getOtp: () => rl.question('Код из письма: '),
-});
-```
-
-### Хранение сессии
-
-| Хранилище | Откуда | Среда |
-|---|---|---|
-| `MemoryTokenStorage` (по умолчанию) | `itd-api` | везде |
-| `LocalStorageTokenStorage` | `itd-api` | браузер |
-| `FileTokenStorage` | `itd-api/node` | Node, Bun, Deno |
-| `createTokenStorage({ get, set, clear })` | `itd-api` | своё: Redis, БД, AsyncStorage |
-
-Для нескольких аккаунтов есть их мультиверсии — `MemoryMultiTokenStorage`,
-`FileMultiTokenStorage` и `createMultiTokenStorage`. Подробности — в разделе
-[«Несколько аккаунтов»](#несколько-аккаунтов).
-
-По умолчанию сессия живёт в памяти процесса и теряется при перезапуске. Укажите `storage` —
-и библиотека сама запишет туда всё нужное после входа и после каждого продления; отдельно
-сохранять ничего не надо.
-
-В сессию попадают `accessToken`, `refreshToken`, cookie и `deviceId`. Сохранять её целиком
-важно: refresh-токен приходит в cookie `refresh_token`, а `fetch` вне браузера их не хранит,
-поэтому библиотека ведёт собственный cookie-jar. В браузере используется
-`credentials: 'include'`, в React Native cookie ведёт нативный слой.
-
-`deviceId` — идентификатор устройства из заголовка `X-Device-Id`. Сервер различает по нему
-записи в списке сессий (`itd.auth.sessions()`), поэтому при постоянном хранилище он переживает
-перезапуск и бот не плодит по новой сессии на каждый старт. Своё значение — опцией `deviceId`.
-
-`getUserId()` снимает идентификатор владельца с текущего токена доступа, когда тот выдан
-в формате JWT, и не тратит на это ни одного запроса. Идентификатор отдельно не сохраняется:
-после смены токена устаревшее значение остаться не может. Для непрозрачного токена метод
-вернёт `undefined`. Подтверждением личности результат не является: подпись токена клиент
-не проверяет.
-
-```ts
-const id = await itd.getUserId();   // без обращения к сети
-const me = await itd.users.me();    // свежий профиль целиком
-```
-
-Refresh-токен можно передать и строкой (`auth: { accessToken, refreshToken }`) — вне браузера
-библиотека сама подставит его нужной cookie. В браузере так не выйдет: cookie помечена
-`HttpOnly`, и из JS её не выставить.
-
-**Сервер выдаёт при каждом продлении новый refresh-токен взамен прежнего.** Со штатным
-`storage` это происходит само. Если же вы храните сессию сами, снимайте её после каждого
-обновления, а не один раз при входе, — иначе сохранённое значение протухнет:
-
-```ts
-itd.on('tokens', async () => saveSomewhere(await itd.getSession()));
-
-// при следующем запуске
-await itd.setSession(await loadFromSomewhere());
-```
+Вход, регистрация и восстановление пароля требуют одноразовый Turnstile token. Подробности
+о cookie, `deviceId`, OTP, собственном storage и автоматическом решателе:
+[руководство по авторизации](./guides/authentication/README.md).
 
 ---
 
 ## Несколько аккаунтов
 
-`ItdAccounts` — контейнер именованных клиентов. У каждого аккаунта свой токен, свои cookie
-и свой `deviceId`, а сессии всех складываются в одно хранилище: один файл вместо десяти.
+`ItdAccounts` хранит именованные клиенты с отдельными tokens, cookie и `deviceId`, но одним
+`MultiTokenStorage`:
 
 ```ts
 import { ItdAccounts, FileMultiTokenStorage } from 'itd-api/node';
 
-await using accounts = new ItdAccounts({
+const accounts = new ItdAccounts({
   storage: new FileMultiTokenStorage('./.itd-sessions.json'),
   rateLimit: { concurrency: 4 },
 });
@@ -251,96 +96,11 @@ if (!accounts.has('kiow')) {
 
 const itd = accounts.account('kiow');   // обычный ItdClient со всеми разделами
 await itd.posts.create({ content: 'привет' });
+await accounts.close();
 ```
 
-Имя аккаунта выбираете вы — сервер о нём ничего не знает. Какому профилю оно соответствует,
-покажет `getUserId()`, и тоже без запроса:
-
-```ts
-for (const [name, itd] of accounts) {
-  console.log(name, await itd.getUserId());
-}
-```
-
-| Метод | Что делает |
-|---|---|
-| `addAccount(name, options?)` | заводит аккаунт; `options` — те же, что у `ItdClient`, кроме `storage` |
-| `account(name)` | клиент по имени |
-| `restore()` | поднимает аккаунты, чьи сессии уже лежат в хранилище |
-| `removeAccount(name, { forget })` | убирает аккаунт; `forget: true` стирает и сохранённую сессию |
-| `has(name)` · `names()` · `size` | состав контейнера |
-| `use(plugin)` | подключает плагин всем — и будущим тоже |
-| `on(event, listener)` | события авторизации всех аккаунтов сразу, с именем в полезной нагрузке |
-| `close()` | закрывает всех |
-
-`auth` в `addAccount` необязателен: когда сессия аккаунта уже в хранилище, токен берётся
-оттуда, а истёкший продлевается сам — ровно как у одиночного клиента.
-
-### Личные настройки аккаунта
-
-Общие опции задаются контейнеру, личные — каждому аккаунту; `headers` и `services`
-при этом сливаются по ключам, а не заменяются целиком. Так, например, аккаунты разводятся
-по разным прокси:
-
-```ts
-import { proxyFetch } from '@itd-api/proxy';
-
-accounts.addAccount('первый', { auth: …, fetch: proxyFetch('socks5://127.0.0.1:1080') });
-accounts.addAccount('второй', { auth: …, fetch: proxyFetch('socks5://127.0.0.1:1081') });
-```
-
-`auth` и `deviceId` контейнеру передать нельзя — они задаются каждому аккаунту отдельно.
-Обычный `TokenStorage` отдельного клиента здесь заменён общим `MultiTokenStorage`: его,
-наоборот, передают контейнеру, а тот сам выдаёт каждому аккаунту изолированный срез по имени.
-Передавать `storage` в `addAccount()` нельзя. Общий `deviceId` был бы прямо вреден:
-сервер различает по нему записи в списке сессий.
-
-### Очередь запросов
-
-По умолчанию очередь у каждого аккаунта своя: лимиты итд.com считаются по аккаунту,
-а при работе через разные прокси общая очередь только мешает. Если же все аккаунты сидят
-на одном IP и упираются в ограничение по адресу, включите общую:
-
-```ts
-const accounts = new ItdAccounts({
-  storage,
-  rateLimit: { concurrency: 4, rps: 8 },
-  rateLimitScope: 'shared',   // одна очередь на всех
-});
-```
-
-Параметры общей очереди берутся только из `rateLimit` контейнера. Личный объект `rateLimit`
-у аккаунта в этом режиме запрещён, потому что не может изменить уже созданную общую очередь.
-Передать аккаунту `rateLimit: false` можно — это полностью выведет его из общей очереди.
-
-### Своё хранилище
-
-`MultiTokenStorage` отличается от обычного тем, что каждый метод получает **имя аккаунта**, —
-ключ вы строите сами:
-
-```ts
-import { createMultiTokenStorage } from 'itd-api';
-
-const storage = createMultiTokenStorage({
-  get: async (account) => JSON.parse((await redis.get(`itd:session:${account}`)) ?? 'null'),
-  set: async (account, session) => {
-    await redis.set(`itd:session:${account}`, JSON.stringify(session));
-    await redis.sadd('itd:accounts', account);
-  },
-  clear: async (account) => {
-    await redis.del(`itd:session:${account}`);
-    await redis.srem('itd:accounts', account);
-  },
-  accounts: () => redis.smembers('itd:accounts'),
-});
-```
-
-Имя приходит ровно тем, под которым аккаунт заведён: библиотека его не нормализует
-и не экранирует. Список из `accounts()` ведёт сам адаптер — именно по нему работает
-`restore()`; без него сессии останутся целы, но восстанавливать состав будет нечем.
-
-> Каждый аккаунт держит своё соединение с потоком уведомлений: десять `itd.realtime()` —
-> это десять SSE-соединений. Открывайте поток тем, кому он действительно нужен.
+Личные прокси, общая или раздельные очереди, собственное хранилище и события контейнера
+описаны в [руководстве по нескольким аккаунтам](./guides/multi-accounts/README.md).
 
 ---
 
@@ -455,8 +215,8 @@ await itd.posts.create(post('#котики от @durov: https://example.com').au
 spans, поскольку они рассчитаны для другого текста. `posts.update()` принимает тот же билдер,
 но требует явно заданный `content`.
 
-Полный запускаемый пример — [`examples/08-text-markup.mjs`](./examples/08-text-markup.mjs):
-авторазметка, пересекающиеся стили, рендер и настройка ссылок/CSS.
+Авторазметка, пересекающиеся стили, обновление и настройка рендера подробно разобраны
+в [руководстве по разметке](./guides/text-markup/README.md).
 
 Билдеры есть у разметки, поста, комментария, опроса и жалобы. Все они неизменяемые, а `build()`
 проверяет данные и бросает `ItdConfigError` **до** обращения к сети:
@@ -481,33 +241,13 @@ stream.on('notification', ({ notification }) => {
   console.log(formatNotificationText(notification));   // «Аня и ещё 2 оценили ваш пост»
   console.log(resolveNotificationUrl(notification));   // '/@anya/post/9f1c…'
 });
-stream.on('unreadCount', (count) => setBadge(count));
 
 await stream.connect();
 ```
 
-События приходят почти мгновенно — реакция, комментарий, подписка и репост долетают
-за доли секунды после действия.
-
-Уведомления из потока и из `itd.notifications.list()` приведены к общей форме, поэтому
-складываются в один список. Сервер называет типы коротко (`like`, `comment`, `repost`),
-библиотека приводит их к однозначным (`post_reaction`, `post_comment`, `post_repost`),
-а пришедшее значение оставляет в `rawType`; весь исходный объект — в `raw`.
-
-`resolveNotificationUrl()` учитывает, что смысл полей зависит от типа: у комментария
-цель — пост, а предмет — сам комментарий; у репоста наоборот, цель — репост, а предмет —
-исходная запись. Поэтому ссылка на комментарий ведёт на пост с якорем, а на репост —
-на сам репост.
-
-Соединение держится само: обрывы, продление токена и повторные попытки
-(`[1, 2, 4, 8, 16, 30] с`, джиттер ±30%, 15 попыток подряд) обрабатываются внутри.
-Сервер шлёт keep-alive `: ping` каждые 15 секунд; если тишина длится дольше `idleTimeout`
-(90 секунд по умолчанию), соединение считается мёртвым и поднимается заново.
-В браузере поток дополнительно переподключается при возврате вкладки из фона
-и восстановлении сети.
-
-> Счётчик непрочитанных сервер по потоку **не присылает** — событие `unreadCount`
-> на практике не срабатывает. Считайте сами либо запрашивайте `itd.notifications.count()`.
+REST и поток используют одну форму уведомления. Переподключение, refresh token, keep-alive
+и fallback на polling обрабатываются внутри. Эксплуатационные настройки и счётчик
+непрочитанных разобраны в [руководстве по realtime](./guides/realtime/README.md).
 
 ---
 
@@ -696,14 +436,15 @@ await fetch.close(); // закрывает пул соединений
 ```
 
 Через тот же `fetch` пойдут авторизация, cookie, очередь, повторы и поток уведомлений.
-Только для Node/Bun/Deno. Подробности — в [README пакета](./proxy/README.md).
+Только для Node/Bun/Deno. Подключение proxy и Turnstile разобрано в
+[руководстве по интеграциям](./guides/integrations/README.md), параметры транспорта — в
+[README пакета](./proxy/README.md).
 
 ---
 
 ## Плагины
 
-Плагин — обёртка вокруг запроса: она видит тело до отправки и разобранный ответ, поэтому
-одна обёртка охватывает сразу все методы клиента. Подключается через `itd.use()`:
+Плагин оборачивает запросы и ответы сразу всех ресурсов:
 
 ```ts
 import { ItdClient } from 'itd-api';
@@ -713,76 +454,9 @@ const itd = new ItdClient({ auth: token });
 itd.use(crypt());
 ```
 
-### `@itd-api/crypto` — скрытые сообщения
-
-[Отдельный пакет](./crypto/README.md): прячет текст в невидимых символах внутри обычного поста.
-Читатель видит обложку, а тот, у кого подключён плагин, получает спрятанное отдельным полем.
-
-```sh
-npm i @itd-api/crypto
-```
-
-```ts
-// отправка: текст прогоняется через шифр, обложка остаётся видимой
-const created = await itd.posts.create(
-  { content: 'секретный текст' },
-  { encrypt: { cipher: 'invisible', cover: 'обычный пост' } },
-);
-
-// чтение: content не меняется, расшифровка приезжает рядом
-const post = await itd.posts.get(created.id);
-post.secret?.text;   // 'секретный текст'
-```
-
-Работает для постов, комментариев, ответов, имени и подписи профиля. Расшифровка идёт сама
-и вглубь: находки появляются и у постов ленты, и у исходного поста репоста, и у авторов.
-
-Шифра два: `invisible` — невидимые символы с обложкой, `beecrypt` — видимый текст из букв
-`жъЖЪ`. Подробности, ограничения и то, как подключить свой шифр, — в
-[README пакета](./crypto/README.md).
-
-### Свой плагин
-
-```ts
-import type { ItdPlugin } from 'itd-api';
-
-const timing: ItdPlugin = {
-  name: 'timing',
-  install({ use, logger }) {
-    use(async (request, next) => {
-      const started = Date.now();
-      try {
-        return await next(request);
-      } finally {
-        logger?.info(`${request.method} ${request.path}: ${Date.now() - started} мс`);
-      }
-    });
-  },
-};
-```
-
-Обёртка может изменить запрос (передайте в `next` копию), подменить ответ или вернуть своё,
-не обращаясь к сети. Подключённая раньше оказывается снаружи. Выполняется она один раз
-на запрос, независимо от числа повторов.
-
-Свои опции запроса плагин объявляет сам — библиотека их не понимает, но доносит до обёртки
-нетронутыми:
-
-```ts
-const plugin: ItdPlugin = {
-  name: 'мой',
-  optionKeys: ['мояОпция'],
-  install({ use }) { /* … */ },
-};
-
-declare module 'itd-api' {
-  interface RequestOptions { мояОпция?: string | undefined }
-}
-```
-
-Имена полей самого запроса (`path`, `body`, `headers`, `signal` и прочие) заявить нельзя:
-подключение такого плагина завершится `ItdConfigError`. Иначе опечатка в `optionKeys`
-молча подменяла бы путь или тело любого вызова.
+Официальный плагин Crypto, полный контракт `ItdPlugin`, собственные опции и рекомендуемая
+структура следующего пакета описаны в
+[руководстве по плагинам](./guides/plugins/README.md).
 
 ---
 
@@ -830,7 +504,7 @@ TypeScript 5.0+. Пакет собран в ESM и CommonJS, типы корре
 
 ```bash
 npm install
-npm test            # 417 тестов
+npm test            # 611 тестов
 npm run test:all    # вместе с пакетами workspace
 npm run typecheck
 npm run lint

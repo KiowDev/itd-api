@@ -2,11 +2,10 @@
  * Быстрый старт: чтение ленты и реакция на пост.
  *
  * Запуск:
- *   ITD_TOKEN=<ваш accessToken> node examples/01-quick-start.mjs
+ *   ITD_TOKEN=<ваш accessToken> node guides/quickstart/examples/quick-start.mjs
  *
  * Где взять токен: откройте итд.com, войдите, затем в консоли браузера выполните
- * запрос к /api/v1/auth/refresh — либо воспользуйтесь примером 02, который входит
- * по логину и паролю.
+ * запрос к /api/v1/auth/refresh — либо воспользуйтесь руководством по авторизации.
  */
 
 import { FeedTab, ItdClient, isItdApiError } from 'itd-api';

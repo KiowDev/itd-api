@@ -2,7 +2,7 @@
  * TypeScript: типы, билдеры и разбор ошибок.
  *
  * Запуск:
- *   npx tsx examples/04-typescript.ts
+ *   npx tsx guides/quickstart/examples/typescript.ts
  */
 
 import {

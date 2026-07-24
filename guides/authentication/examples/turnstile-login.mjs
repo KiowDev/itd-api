@@ -2,9 +2,10 @@
  * Полностью автоматический вход: токен капчи добывается сам.
  *
  * Запуск:
- *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret node examples/05-turnstile-login.mjs
+ *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret \
+ *     node guides/authentication/examples/turnstile-login.mjs
  *
- * Отличие от примера 02 — там токен капчи приходится добывать руками и передавать
+ * В соседнем `bot-with-session.mjs` токен капчи приходится добывать руками и передавать
  * в ITD_TURNSTILE. Здесь его берёт `@itd-api/turnstile`: поднимает браузер, забирает токен
  * и закрывается. Установите отдельно, основному пакету он не нужен:
  *
@@ -12,7 +13,8 @@
  *   npx playwright install chromium
  *
  * Браузер открывается с окном — так виджет проходится надёжнее. На сервере без графической
- * оболочки запускайте через `xvfb-run -a node examples/05-turnstile-login.mjs`.
+ * оболочки запускайте через
+ * `xvfb-run -a node guides/authentication/examples/turnstile-login.mjs`.
  */
 
 import { FileTokenStorage, ItdClient, isItdApiError } from 'itd-api/node';

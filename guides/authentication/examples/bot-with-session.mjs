@@ -3,7 +3,7 @@
  *
  * Запуск:
  *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret ITD_TURNSTILE=... \
- *     node examples/02-bot-with-session.mjs
+ *     node guides/authentication/examples/bot-with-session.mjs
  *
  * Вход требует токен капчи Cloudflare Turnstile: получите его в браузере на странице входа
  * (ключ виджета — TURNSTILE_SITE_KEY) и передайте в ITD_TURNSTILE. Токен одноразовый

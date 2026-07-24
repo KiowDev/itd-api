@@ -2,7 +2,7 @@
  * Скрытое сообщение в обычном посте.
  *
  * Запуск:
- *   ITD_TOKEN=<accessToken> node examples/06-crypto.mjs
+ *   ITD_TOKEN=<accessToken> node guides/plugins/examples/crypto.mjs
  *
  * Плагин лежит в отдельном пакете — основному он не нужен:
  *

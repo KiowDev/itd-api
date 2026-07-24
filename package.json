@@ -27,6 +27,7 @@
   },
   "files": [
     "dist",
+    "guides",
     "NOTICE",
     "LICENSE",
     "README.md"

@@ -2,7 +2,7 @@
  * Уведомления в реальном времени.
  *
  * Запуск:
- *   ITD_TOKEN=<ваш accessToken> node examples/03-realtime-notifications.mjs
+ *   ITD_TOKEN=<ваш accessToken> node guides/realtime/examples/notifications.mjs
  *
  * Соединение держится само: обрывы, обновление токена и повторные попытки библиотека
  * берёт на себя. Завершение — Ctrl+C.
