@@ -3,6 +3,7 @@ import type { CookieJar } from './cookies.js';
 import { createApiError, readRateLimit } from './error-factory.js';
 import { ItdAbortError, ItdConfigError, ItdNetworkError, ItdTimeoutError } from './errors.js';
 import type { PipelineRequest } from './pipeline.js';
+import { dispatchRequestHook } from './plugins.js';
 import { redactBody, redactHeaders } from './redact.js';
 import { isBlob } from './runtime.js';
 import { unwrapData } from './unwrap.js';
@@ -233,7 +234,7 @@ export class Transport {
     }
 
     const context = { method, path: request.path, url, headers, attempt };
-    await this.#config.hooks.onRequest?.(context);
+    await dispatchRequestHook(this.#config.hooks, 'onRequest', context, request);
 
     const timeout = request.timeout ?? this.#config.timeout;
     const abort = createAbortBundle(request.signal, timeout);
@@ -259,7 +260,12 @@ export class Transport {
         const duration = Date.now() - startedAt;
         const failure = this.#toTransportError(error, abort, request, method, timeout);
 
-        await this.#config.hooks.onError?.({ ...context, duration, error: failure });
+        await dispatchRequestHook(
+          this.#config.hooks,
+          'onError',
+          { ...context, duration, error: failure },
+          request,
+        );
         this.#config.logger?.warn(
           `× ${method} ${request.path} (${duration} мс): ${failure.message}`,
         );
@@ -276,12 +282,17 @@ export class Transport {
 
       // Хук получает непрочитанный ответ.
       if (response.ok) {
-        await this.#config.hooks.onResponse?.({
-          ...context,
-          status: response.status,
-          duration: Date.now() - startedAt,
-          response,
-        });
+        await dispatchRequestHook(
+          this.#config.hooks,
+          'onResponse',
+          {
+            ...context,
+            status: response.status,
+            duration: Date.now() - startedAt,
+            response,
+          },
+          request,
+        );
       }
 
       const payload = await this.#readBodyOrFail(
@@ -305,7 +316,12 @@ export class Transport {
           body: payload,
         });
 
-        await this.#config.hooks.onError?.({ ...context, duration, error });
+        await dispatchRequestHook(
+          this.#config.hooks,
+          'onError',
+          { ...context, duration, error },
+          request,
+        );
         this.#config.logger?.warn(
           `← ${response.status} ${method} ${request.path} (${duration} мс): ${error.message}`,
         );
@@ -339,11 +355,16 @@ export class Transport {
 
       const failure = this.#toTransportError(error, abort, request, method, timeout);
 
-      await this.#config.hooks.onError?.({
-        ...context,
-        duration: Date.now() - startedAt,
-        error: failure,
-      });
+      await dispatchRequestHook(
+        this.#config.hooks,
+        'onError',
+        {
+          ...context,
+          duration: Date.now() - startedAt,
+          error: failure,
+        },
+        request,
+      );
       this.#config.logger?.warn(
         `× ${method} ${request.path}: не удалось прочитать тело ответа — ${failure.message}`,
       );

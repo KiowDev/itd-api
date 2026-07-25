@@ -7,7 +7,7 @@ import {
   type RequestMiddleware,
   withLayerHeaders,
 } from './pipeline.js';
-import type { PluginRegistry } from './plugins.js';
+import { dispatchRequestHook, type PluginRegistry } from './plugins.js';
 import { createRetryScheduler, type RetryScheduler } from './retry.js';
 import type { ServiceRegistry } from './services.js';
 import { normalizeBaseUrl } from './url.js';
@@ -54,10 +54,8 @@ export function createQueueMiddleware(
  * разу, независимо от числа попыток, — иначе, например, текст поста зашифруется дважды.
  */
 export function createPluginsMiddleware(plugins: PluginRegistry): RequestMiddleware {
-  return (request, next) => {
-    if (plugins.size === 0) return next(request);
-    return plugins.run(request, next as (request: RawRequestOptions) => Promise<unknown>);
-  };
+  return (request, next) =>
+    plugins.run(request, next as (request: RawRequestOptions) => Promise<unknown>);
 }
 
 /**
@@ -235,16 +233,21 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
         const delay = nextDelay(error, attempt, request, method, backoff);
         if (delay === undefined) throw error;
 
-        await deps.hooks.onRetry?.({
-          method,
-          path: request.path,
-          url: deps.buildUrl(request),
-          // Умолчания транспорта добавляются после слоя повторов и сюда не входят.
-          headers: new Headers({ ...request.layerHeaders, ...request.headers }),
-          attempt,
-          error,
-          delay,
-        });
+        await dispatchRequestHook(
+          deps.hooks,
+          'onRetry',
+          {
+            method,
+            path: request.path,
+            url: deps.buildUrl(request),
+            // Умолчания транспорта добавляются после слоя повторов и сюда не входят.
+            headers: new Headers({ ...request.layerHeaders, ...request.headers }),
+            attempt,
+            error,
+            delay,
+          },
+          request,
+        );
 
         deps.logger?.debug(
           `повтор ${method} ${request.path}, попытка ${attempt + 1} через ${delay} мс`,

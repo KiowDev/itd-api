@@ -264,6 +264,80 @@ describe('общие и личные настройки', () => {
     expect(teardown).toHaveBeenCalledOnce();
   });
 
+  it('use проверяет локальные конфликты всех аккаунтов до установки общего плагина', () => {
+    const { accounts } = makeAccounts(ok);
+    const first = accounts.addAccount('a', { auth: 'token-a' });
+    const second = accounts.addAccount('b', { auth: 'token-b' });
+    second.use({ name: 'local', conflicts: ['shared'], install() {} });
+    const install = vi.fn();
+
+    expect(() => accounts.use({ name: 'shared', install })).toThrow(/несовместим/);
+
+    expect(install).not.toHaveBeenCalled();
+    expect(accounts.hasPlugin('shared')).toBe(false);
+    expect(first.hasPlugin('shared')).toBe(false);
+    expect(second.hasPlugin('shared')).toBe(false);
+  });
+
+  it('use откатывает уже установленные копии, если install следующей падает', async () => {
+    const { accounts } = makeAccounts(ok);
+    const first = accounts.addAccount('a', { auth: 'token-a' });
+    const second = accounts.addAccount('b', { auth: 'token-b' });
+    const teardown = vi.fn();
+    let installs = 0;
+    const unstable: ItdPlugin = {
+      name: 'unstable',
+      install() {
+        installs += 1;
+        if (installs === 2) throw new Error('сломалась вторая установка');
+        return teardown;
+      },
+    };
+
+    expect(() => accounts.use(unstable)).toThrow(/вторая установка/);
+
+    expect(accounts.hasPlugin('unstable')).toBe(false);
+    expect(first.hasPlugin('unstable')).toBe(false);
+    expect(second.hasPlugin('unstable')).toBe(false);
+    await vi.waitFor(() => expect(teardown).toHaveBeenCalledOnce());
+  });
+
+  it('unuse проверяет локальные зависимости до изменения любого аккаунта', async () => {
+    const { accounts } = makeAccounts(ok);
+    const first = accounts.addAccount('a', { auth: 'token-a' });
+    const second = accounts.addAccount('b', { auth: 'token-b' });
+    accounts.use({ name: 'shared', install() {} });
+    second.use({ name: 'local', requires: ['shared'], install() {} });
+
+    await expect(accounts.unuse('shared')).rejects.toThrow(/зависит «local»/);
+
+    expect(accounts.hasPlugin('shared')).toBe(true);
+    expect(first.hasPlugin('shared')).toBe(true);
+    expect(second.hasPlugin('shared')).toBe(true);
+
+    await second.unuse('local');
+    await expect(accounts.unuse('shared')).resolves.toBe(true);
+  });
+
+  it('освобождает уже установленные плагины, если addAccount завершается ошибкой', async () => {
+    const teardown = vi.fn();
+    const { accounts } = makeAccounts(ok, {
+      plugins: [
+        { name: 'first', install: () => teardown },
+        {
+          name: 'broken',
+          install() {
+            throw new Error('не установился');
+          },
+        },
+      ],
+    });
+
+    expect(() => accounts.addAccount('a', { auth: 'token-a' })).toThrow(/не установился/);
+    expect(accounts.has('a')).toBe(false);
+    await vi.waitFor(() => expect(teardown).toHaveBeenCalledOnce());
+  });
+
   it('повторное подключение плагина — ошибка конфигурации', () => {
     const { accounts } = makeAccounts(ok);
     const plugin = { name: 'trace', install() {} };

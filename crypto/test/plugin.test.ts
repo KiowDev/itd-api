@@ -48,6 +48,16 @@ function makeClient(responses: unknown[]) {
   return { itd, calls };
 }
 
+describe('порядок плагинов', () => {
+  it('ставит crypt снаружи cache независимо от порядка подключения', () => {
+    const { itd } = makeClient([]);
+    itd.use({ name: 'cache', install() {} });
+    itd.use(crypt());
+
+    expect(itd.pluginNames()).toEqual(['crypt', 'cache']);
+  });
+});
+
 describe('шифрование запроса', () => {
   it('прячет текст поста', async () => {
     const { itd, calls } = makeClient([{ id: '1' }]);

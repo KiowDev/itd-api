@@ -418,6 +418,50 @@ describe('Plugin API 2.0: lifecycle hooks', () => {
     ).toThrow(/onRequest должен быть функцией/);
     expect(itd.hasPlugin('broken-hooks')).toBe(false);
   });
+
+  it('сохраняет снимок хуков до конца уже начатого логического запроса', async () => {
+    let attempts = 0;
+    const { itd } = makeClient(
+      () => {
+        attempts += 1;
+        return attempts === 1
+          ? json({ message: 'временно' }, { status: 500 })
+          : json({ data: { id: '1' } });
+      },
+      { retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
+    );
+    const events: string[] = [];
+    const teardown = vi.fn();
+    let removing: Promise<boolean> | undefined;
+
+    itd.use({
+      name: 'observe',
+      install({ useHooks }) {
+        useHooks({
+          onRequest({ attempt }) {
+            events.push(`request:${attempt}`);
+            if (attempt === 1) removing = itd.unuse('observe');
+          },
+          onResponse({ attempt }) {
+            events.push(`response:${attempt}`);
+          },
+          onError({ attempt }) {
+            events.push(`error:${attempt}`);
+          },
+          onRetry({ attempt }) {
+            events.push(`retry:${attempt}`);
+          },
+        });
+        return teardown;
+      },
+    });
+
+    await itd.posts.get('1');
+    await removing;
+
+    expect(events).toEqual(['request:1', 'error:1', 'retry:1', 'request:2', 'response:2']);
+    expect(teardown).toHaveBeenCalledOnce();
+  });
 });
 
 describe('Plugin API 2.0: отключение и очистка', () => {
@@ -518,5 +562,35 @@ describe('Plugin API 2.0: отключение и очистка', () => {
 
     expect(teardown).toHaveBeenCalledOnce();
     expect(itd.hasPlugin('resourceful')).toBe(false);
+  });
+
+  it('dispose дожидается teardown, уже запущенного через unuse', async () => {
+    let release: (() => void) | undefined;
+    let cleanupStarted = false;
+    const cleanup = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { itd } = makeClient([]);
+    itd.use({
+      name: 'slow-cleanup',
+      install: () => async () => {
+        cleanupStarted = true;
+        await cleanup;
+      },
+    });
+
+    const removing = itd.unuse('slow-cleanup');
+    await vi.waitFor(() => expect(cleanupStarted).toBe(true));
+
+    let disposed = false;
+    const disposing = itd.dispose().then(() => {
+      disposed = true;
+    });
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+
+    release?.();
+    await Promise.all([removing, disposing]);
+    expect(disposed).toBe(true);
   });
 });

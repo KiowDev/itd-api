@@ -1,4 +1,9 @@
-import { ItdClient, type ItdClientInternals } from './client.js';
+import {
+  assertClientCanUnusePlugin,
+  assertClientCanUsePlugin,
+  ItdClient,
+  type ItdClientInternals,
+} from './client.js';
 import { resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
 import { ItdConfigError } from './core/errors.js';
@@ -12,7 +17,7 @@ import {
 import { assertPluginRemovable, type ItdPlugin, orderPluginDefinitions } from './core/plugins.js';
 import { RequestQueuePool } from './core/rate-limit.js';
 import type { TokenStorage } from './core/storage.js';
-import type { ItdClientOptions } from './types/options.js';
+import type { ItdClientOptions, Logger } from './types/options.js';
 
 /** Как аккаунты делят между собой очередь запросов. */
 export type RateLimitScope = 'account' | 'shared';
@@ -153,6 +158,7 @@ export class ItdAccounts {
   readonly #queues: RequestQueuePool | undefined;
   readonly #rateLimitScope: RateLimitScope;
   readonly #emitter: Emitter<AccountEvents>;
+  readonly #logger: Logger | undefined;
   readonly #createClient: (options: ItdClientOptions, internals: ItdClientInternals) => ItdClient;
 
   constructor(options: ItdAccountsOptions = {}, internals: ItdAccountsInternals = {}) {
@@ -181,6 +187,7 @@ export class ItdAccounts {
     this.#queues = rateLimit ? new RequestQueuePool(rateLimit) : undefined;
 
     const logger = typeof base.logger === 'object' ? base.logger : undefined;
+    this.#logger = logger;
     this.#emitter = new Emitter<AccountEvents>((error) =>
       reportListenerError(logger, 'аккаунтов', error),
     );
@@ -248,7 +255,7 @@ export class ItdAccounts {
     }
 
     const storageControl = controlledTokenStorage(this.#storage, name);
-    let client: ItdClient;
+    let client: ItdClient | undefined;
     try {
       client = this.#createClient(
         this.#mergeOptions(options, storageControl.storage),
@@ -258,6 +265,11 @@ export class ItdAccounts {
       for (const plugin of this.#plugins) client.use(plugin);
     } catch (error) {
       storageControl.revoke();
+      if (client) {
+        void client.dispose().catch((cleanupError: unknown) => {
+          this.#reportPluginCleanup('неудачного добавления аккаунта', cleanupError);
+        });
+      }
       throw error;
     }
 
@@ -393,8 +405,25 @@ export class ItdAccounts {
       );
     }
     const ordered = orderPluginDefinitions([...this.#plugins, plugin]);
+    const clients = [...this.#clients.values()];
+    for (const client of clients) assertClientCanUsePlugin(client, plugin);
 
-    for (const client of this.#clients.values()) client.use(plugin);
+    const installed: ItdClient[] = [];
+    try {
+      for (const client of clients) {
+        client.use(plugin);
+        installed.push(client);
+      }
+    } catch (error) {
+      // remove() исключает запись из реестра до первого await, поэтому видимое состояние
+      // откатывается синхронно, а асинхронные teardown завершаются в фоне.
+      for (const client of installed.reverse()) {
+        void client.unuse(plugin.name).catch((cleanupError: unknown) => {
+          this.#reportPluginCleanup(`отката плагина «${plugin.name}»`, cleanupError);
+        });
+      }
+      throw error;
+    }
     this.#plugins.splice(0, this.#plugins.length, ...ordered);
 
     return this;
@@ -420,13 +449,13 @@ export class ItdAccounts {
     const index = this.#plugins.findIndex((plugin) => plugin.name === name);
     if (index < 0) return false;
     assertPluginRemovable(this.#plugins, name);
+    const clients = [...this.#clients.values()];
+    for (const client of clients) assertClientCanUnusePlugin(client, name);
     this.#plugins.splice(index, 1);
     this.#removingPlugins.add(name);
 
     try {
-      const results = await Promise.allSettled(
-        [...this.#clients.values()].map((client) => client.unuse(name)),
-      );
+      const results = await Promise.allSettled(clients.map((client) => client.unuse(name)));
       const errors = results
         .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
         .map((result) => result.reason);
@@ -544,6 +573,13 @@ export class ItdAccounts {
         : {}),
       storage,
     };
+  }
+
+  /** Не теряет ошибку фонового teardown, который синхронный API не может await-нуть. */
+  #reportPluginCleanup(scope: string, error: unknown): void {
+    const message = `Не удалось завершить teardown после ${scope}`;
+    if (this.#logger) this.#logger.error(message, error);
+    else console.error(`[itd-api] ${message}`, error);
   }
 
   /** Ретранслирует события клиента наружу, добавляя к ним имя аккаунта. */

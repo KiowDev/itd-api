@@ -47,6 +47,18 @@ declare global {
   }
 }
 
+const CLIENT_PLUGIN_REGISTRIES = new WeakMap<ItdClient, PluginRegistry>();
+
+/** Проверяет возможность подключить плагин к клиенту без вызова `install()`. @internal */
+export function assertClientCanUsePlugin(client: ItdClient, plugin: ItdPlugin): void {
+  CLIENT_PLUGIN_REGISTRIES.get(client)?.assertCanAdd(plugin);
+}
+
+/** Проверяет возможность отключить плагин клиента без изменения реестра. @internal */
+export function assertClientCanUnusePlugin(client: ItdClient, name: string): void {
+  CLIENT_PLUGIN_REGISTRIES.get(client)?.assertCanRemove(name);
+}
+
 /**
  * Скрытые параметры конструктора — не часть публичного API.
  *
@@ -138,6 +150,7 @@ export class ItdClient {
   readonly telemetry: TelemetryResource;
 
   constructor(options: ItdClientOptions = {}, internals: ItdClientInternals = {}) {
+    CLIENT_PLUGIN_REGISTRIES.set(this, this.#plugins);
     const config = resolveConfig(options);
     this.#config = config;
     this.#jar = new CookieJar();

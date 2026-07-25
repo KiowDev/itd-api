@@ -75,6 +75,9 @@ export function crypt(options: CryptOptions = {}): ItdPlugin {
 
   return {
     name: 'crypt',
+    // Кэш должен хранить сырой ответ: тогда расшифровка применяется и к cache hit,
+    // а отключение или замена crypt не оставляет в кэше уже обработанные данные.
+    before: ['cache'],
     optionKeys: ['encrypt', 'decrypt'],
     install: ({ use }) => use(transformer),
   };

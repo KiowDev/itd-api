@@ -345,6 +345,41 @@ interface InstalledPlugin {
 
 type HookName = keyof ClientHooks;
 type HookContext<K extends HookName> = Parameters<NonNullable<ClientHooks[K]>>[0];
+type HookDispatcher = <K extends HookName>(
+  field: K,
+  context: HookContext<K>,
+  request: RawRequestOptions,
+) => Promise<void>;
+
+const REQUEST_HOOK_DISPATCHERS = new WeakMap<ClientHooks, HookDispatcher>();
+const PLUGIN_HOOK_SCOPE: unique symbol = Symbol('itd-api.plugin-hooks');
+type ScopedRequest = RawRequestOptions & {
+  [PLUGIN_HOOK_SCOPE]?: readonly ClientHooks[];
+};
+
+/**
+ * Вызывает публичный хук, сохраняя привязанный к логическому запросу снимок плагинов.
+ *
+ * Обычные наборы хуков по-прежнему получают только публичный контекст. Дополнительный
+ * аргумент используется исключительно внутренним составным набором PluginRegistry.
+ *
+ * @internal
+ */
+export async function dispatchRequestHook<K extends HookName>(
+  hooks: ClientHooks,
+  field: K,
+  context: HookContext<K>,
+  request: RawRequestOptions,
+): Promise<void> {
+  const dispatcher = REQUEST_HOOK_DISPATCHERS.get(hooks);
+  if (dispatcher) {
+    await dispatcher(field, context, request);
+    return;
+  }
+
+  const hook = hooks[field] as ((value: HookContext<K>) => void | Promise<void>) | undefined;
+  await hook?.(context);
+}
 
 /**
  * Список подключённых плагинов и собранная из них цепочка обёрток.
@@ -356,6 +391,7 @@ export class PluginRegistry {
   readonly #entries = new Map<string, InstalledPlugin>();
   readonly #optionKeys = new Set<string>();
   readonly #removing = new Set<string>();
+  readonly #cleanups = new Set<Promise<void>>();
   #ordered: InstalledPlugin[] = [];
 
   /** Сколько плагинов подключено. */
@@ -378,6 +414,27 @@ export class PluginRegistry {
     return this.#entries.has(name);
   }
 
+  /** Проверяет добавление без вызова `install()`. @internal */
+  assertCanAdd(plugin: ItdPlugin): void {
+    validatePluginDefinition(plugin);
+    if (this.#removing.has(plugin.name)) {
+      throw new ItdConfigError(
+        `плагин «${plugin.name}» ещё отключается; дождитесь завершения unuse() или dispose()`,
+      );
+    }
+    orderPluginDefinitions([...this.#ordered.map((entry) => entry.plugin), plugin]);
+  }
+
+  /** Проверяет удаление без изменения реестра. @internal */
+  assertCanRemove(name: string): void {
+    const entry = this.#entries.get(name);
+    if (!entry) return;
+    assertPluginRemovable(
+      this.#ordered.map((current) => current.plugin),
+      name,
+    );
+  }
+
   /**
    * Подключает плагин.
    *
@@ -385,12 +442,7 @@ export class PluginRegistry {
    * или заявил занятое имя опции
    */
   add(plugin: ItdPlugin, context: Omit<PluginContext, 'use' | 'useHooks'>): void {
-    validatePluginDefinition(plugin);
-    if (this.#removing.has(plugin.name)) {
-      throw new ItdConfigError(
-        `плагин «${plugin.name}» ещё отключается; дождитесь завершения unuse() или dispose()`,
-      );
-    }
+    this.assertCanAdd(plugin);
     const ordered = orderPluginDefinitions([...this.#ordered.map((entry) => entry.plugin), plugin]);
 
     const transformers: Transformer[] = [];
@@ -443,18 +495,21 @@ export class PluginRegistry {
     const entry = this.#entries.get(name);
     if (!entry) return false;
 
-    assertPluginRemovable(
-      this.#ordered.map((current) => current.plugin),
-      name,
-    );
+    this.assertCanRemove(name);
     this.#entries.delete(name);
     this.#ordered = this.#ordered.filter((current) => current !== entry);
     this.#rebuildOptionKeys();
     this.#removing.add(name);
 
+    const cleanup = this.#trackCleanup(
+      (async () => {
+        await this.#waitForDrain(entry);
+        await entry.teardown?.();
+      })(),
+    );
+
     try {
-      await this.#waitForDrain(entry);
-      await entry.teardown?.();
+      await cleanup;
       return true;
     } finally {
       this.#removing.delete(name);
@@ -468,40 +523,50 @@ export class PluginRegistry {
    */
   async dispose(): Promise<void> {
     const entries = [...this.#ordered].reverse();
+    const previousCleanups = [...this.#cleanups];
     this.#entries.clear();
     this.#ordered = [];
     this.#optionKeys.clear();
     for (const { plugin } of entries) this.#removing.add(plugin.name);
 
-    const errors: unknown[] = [];
-    for (const entry of entries) {
-      try {
-        await this.#waitForDrain(entry);
-        await entry.teardown?.();
-      } catch (error) {
-        errors.push(error);
-      } finally {
-        this.#removing.delete(entry.plugin.name);
-      }
-    }
-    if (errors.length > 0) {
-      throw new AggregateError(errors, 'Не удалось освободить ресурсы плагинов');
-    }
+    const cleanup = this.#trackCleanup(
+      (async () => {
+        const errors: unknown[] = [];
+        const previous = await Promise.allSettled(previousCleanups);
+        for (const result of previous) {
+          if (result.status === 'rejected') errors.push(result.reason);
+        }
+
+        for (const entry of entries) {
+          try {
+            await this.#waitForDrain(entry);
+            await entry.teardown?.();
+          } catch (error) {
+            errors.push(error);
+          } finally {
+            this.#removing.delete(entry.plugin.name);
+          }
+        }
+        if (errors.length > 0) {
+          throw new AggregateError(errors, 'Не удалось освободить ресурсы плагинов');
+        }
+      })(),
+    );
+
+    await cleanup;
   }
 
   /**
    * Объединяет конструкторские хуки с хуками подключаемых плагинов.
    *
    * Возвращённый объект динамический: подключение и отключение плагина начинает действовать
-   * со следующей сетевой попытки без пересоздания транспорта.
+   * со следующего логического запроса без пересоздания транспорта.
    */
   hooks(base: ClientHooks): ClientHooks {
-    return {
-      onRequest: (context) => this.#runHook('onRequest', context, base),
-      onResponse: (context) => this.#runHook('onResponse', context, base),
-      onError: (context) => this.#runHook('onError', context, base),
-      onRetry: (context) => this.#runHook('onRetry', context, base),
-    };
+    const hooks: ClientHooks = {};
+    REQUEST_HOOK_DISPATCHERS.set(hooks, ((field, context, request) =>
+      this.#runHook(field, context, request, base)) as HookDispatcher);
+    return hooks;
   }
 
   /**
@@ -518,16 +583,22 @@ export class PluginRegistry {
   ): Promise<unknown> {
     const entries = [...this.#ordered];
     for (const entry of entries) entry.activeRequests += 1;
+    const hookScope = entries.flatMap((entry) => entry.hooks);
+    const scoped = (current: RawRequestOptions): ScopedRequest =>
+      (current as ScopedRequest)[PLUGIN_HOOK_SCOPE] === hookScope
+        ? (current as ScopedRequest)
+        : { ...current, [PLUGIN_HOOK_SCOPE]: hookScope };
 
     const chain = entries
       .flatMap((entry) => entry.transformers)
       .reduceRight<(r: RawRequestOptions) => Promise<unknown>>(
-        (next, transformer) => (current) => transformer(current, next),
-        execute,
+        (next, transformer) => (current) =>
+          transformer(scoped(current), (prepared) => next(scoped(prepared))),
+        (current) => execute(scoped(current)),
       );
 
     try {
-      return await chain(request);
+      return await chain(scoped(request));
     } finally {
       for (const entry of entries) {
         entry.activeRequests -= 1;
@@ -555,19 +626,28 @@ export class PluginRegistry {
     return entry.drain;
   }
 
+  #trackCleanup(cleanup: Promise<void>): Promise<void> {
+    this.#cleanups.add(cleanup);
+    void cleanup.then(
+      () => this.#cleanups.delete(cleanup),
+      () => this.#cleanups.delete(cleanup),
+    );
+    return cleanup;
+  }
+
   async #runHook<K extends HookName>(
     field: K,
     context: HookContext<K>,
+    request: RawRequestOptions,
     base: ClientHooks,
   ): Promise<void> {
     const baseHook = base[field] as ((value: HookContext<K>) => void | Promise<void>) | undefined;
     await baseHook?.(context);
 
-    for (const entry of this.#ordered) {
-      for (const hooks of entry.hooks) {
-        const hook = hooks[field] as ((value: HookContext<K>) => void | Promise<void>) | undefined;
-        await hook?.(context);
-      }
+    const scope = (request as ScopedRequest)[PLUGIN_HOOK_SCOPE] ?? [];
+    for (const hooks of scope) {
+      const hook = hooks[field] as ((value: HookContext<K>) => void | Promise<void>) | undefined;
+      await hook?.(context);
     }
   }
 }
