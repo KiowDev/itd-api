@@ -77,8 +77,8 @@
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
     "prebuild": "npm run sync-version",
-    "build": "tsup",
-    "dev": "tsup --watch",
+    "build": "tsdown",
+    "dev": "tsdown --watch",
     "test": "vitest run",
     "test:all": "npm run test && npm run test --workspaces --if-present",
     "test:watch": "vitest",
@@ -99,7 +99,7 @@
     "eventsource-parser": "^3.1.0",
     "publint": "^0.3.22",
     "set-cookie-parser": "^3.1.2",
-    "tsup": "^8.5.1",
+    "tsdown": "^0.22.14",
     "typedoc": "^0.28.20",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"

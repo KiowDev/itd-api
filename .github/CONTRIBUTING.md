@@ -36,7 +36,7 @@ npm run typecheck   # проверка типов, tsc --noEmit
 npm run lint        # Biome
 npm test            # тесты Vitest
 npm run test:all    # вместе с пакетами workspace
-npm run build       # сборка tsup
+npm run build       # сборка tsdown
 npm run check:pack  # publint + attw, корректность упаковки
 ```
 
