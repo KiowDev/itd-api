@@ -6,8 +6,8 @@ export interface CacheMutation {
   method: string;
   path: RegExp;
   invalidates: MutationInvalidation;
-  /** По умолчанию зависимые маршруты удаляются у всех установок общего экземпляра. */
-  scope?: 'installation' | undefined;
+  /** По умолчанию зависимые маршруты удаляются у всех аккаунтов общего экземпляра. */
+  scope?: 'account' | undefined;
 }
 
 const POST_CONTENT = [
@@ -138,7 +138,7 @@ const CACHE_MUTATIONS = Object.freeze([
     method: 'DELETE',
     path: /^\/api\/v1\/auth\/sessions(?:\/[^/]+)?$/,
     invalidates: ['auth.sessions'],
-    scope: 'installation',
+    scope: 'account',
   },
 
   // Посты и комментарии.
@@ -183,13 +183,13 @@ const CACHE_MUTATIONS = Object.freeze([
     method: 'POST',
     path: /^\/api\/notifications\/(?:[^/]+\/read|read-batch|read-all)$/,
     invalidates: NOTIFICATIONS,
-    scope: 'installation',
+    scope: 'account',
   },
   {
     method: 'PUT',
     path: /^\/api\/notifications\/settings$/,
     invalidates: ['notifications.getSettings'],
-    scope: 'installation',
+    scope: 'account',
   },
 
   // Файлы и настройки аккаунта.
@@ -203,37 +203,37 @@ const CACHE_MUTATIONS = Object.freeze([
     method: 'POST',
     path: /^\/api\/verification\/submit$/,
     invalidates: ['verification.status'],
-    scope: 'installation',
+    scope: 'account',
   },
   {
     method: 'POST',
     path: /^\/api\/v1\/subscription\/pay$/,
     invalidates: SUBSCRIPTION,
-    scope: 'installation',
+    scope: 'account',
   },
   {
     method: 'POST',
     path: /^\/api\/v1\/subscription\/auto-renewal$/,
     invalidates: SUBSCRIPTION,
-    scope: 'installation',
+    scope: 'account',
   },
   {
     method: 'POST',
     path: /^\/api\/v1\/subscription\/bind-card$/,
     invalidates: SUBSCRIPTION,
-    scope: 'installation',
+    scope: 'account',
   },
   {
     method: 'POST',
     path: /^\/api\/v1\/subscription\/methods\/[^/]+\/default$/,
     invalidates: SUBSCRIPTION,
-    scope: 'installation',
+    scope: 'account',
   },
   {
     method: 'DELETE',
     path: /^\/api\/v1\/subscription\/methods\/[^/]+$/,
     invalidates: SUBSCRIPTION,
-    scope: 'installation',
+    scope: 'account',
   },
 
   // Эти запросы не меняют ни один доступный для кэширования ответ.

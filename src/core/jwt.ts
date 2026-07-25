@@ -15,28 +15,43 @@ function decodeBase64Url(segment: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+/** Идентификаторы владельца и сессии, прочитанные из JWT без проверки подписи. */
+export interface TokenIdentity {
+  subject?: string | undefined;
+  sessionId?: string | undefined;
+}
+
+/**
+ * Читает `sub` и `sid` из полезной нагрузки JWT.
+ *
+ * Подпись не проверяется — ключа для проверки у клиента нет. Прочитанные значения служат
+ * лишь метками для разделения локального состояния и не дают доступа: его определяет сервер.
+ */
+export function readTokenIdentity(token: string): TokenIdentity {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return {};
+
+    const parsed: unknown = JSON.parse(decodeBase64Url(payload));
+    if (typeof parsed !== 'object' || parsed === null) return {};
+
+    const { sub, sid } = parsed as { sub?: unknown; sid?: unknown };
+    return {
+      ...(typeof sub === 'string' && sub.length > 0 ? { subject: sub } : {}),
+      ...(typeof sid === 'string' && sid.length > 0 ? { sessionId: sid } : {}),
+    };
+  } catch {
+    // Токен другого формата — не повод падать: поля просто останутся пустыми.
+    return {};
+  }
+}
+
 /**
  * Читает `sub` из полезной нагрузки JWT.
- *
- * Подпись **не проверяется** и проверена быть не может: ключа у клиента нет. Значение
- * годится как метка «чья это сохранённая сессия» и не годится как основание доверия —
- * решение о доступе принимает сервер.
  *
  * @returns идентификатор владельца токена; `undefined`, если токен не JWT, повреждён
  * или поля `sub` в нём нет
  */
 export function readTokenSubject(token: string): string | undefined {
-  try {
-    const payload = token.split('.')[1];
-    if (!payload) return undefined;
-
-    const parsed: unknown = JSON.parse(decodeBase64Url(payload));
-    if (typeof parsed !== 'object' || parsed === null) return undefined;
-
-    const subject = (parsed as { sub?: unknown }).sub;
-    return typeof subject === 'string' && subject.length > 0 ? subject : undefined;
-  } catch {
-    // Токен другого формата — не повод падать: поле просто останется пустым.
-    return undefined;
-  }
+  return readTokenIdentity(token).subject;
 }

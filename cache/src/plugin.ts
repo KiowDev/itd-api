@@ -1,12 +1,29 @@
-import type { ItdPlugin, ItdRealtime, RawRequestOptions, Transformer, Unsubscribe } from 'itd-api';
+import type {
+  AuthIdentity,
+  ItdPlugin,
+  ItdRealtime,
+  RawRequestOptions,
+  Transformer,
+  Unsubscribe,
+} from 'itd-api';
 import { LRUCache } from 'lru-cache';
 import { CacheError } from './errors.js';
 import { buildCacheKey } from './key.js';
 import { type CacheMutation, cacheMutation } from './mutations.js';
 import { type CacheRouteId, cacheRoute, isCacheRouteId } from './routes.js';
 
+/** Режимы кэширования отдельного запроса. */
+export const CacheModes = Object.freeze({
+  /** Отдать свежий кэш, иначе выполнить запрос и сохранить ответ. */
+  Default: 'default',
+  /** Пропустить сохранённое значение, выполнить запрос и перезаписать кэш. */
+  Reload: 'reload',
+  /** Не читать и не писать кэш для этого запроса. */
+  NoStore: 'no-store',
+} as const);
+
 /** Поведение кэша для отдельного запроса. */
-export type CacheMode = 'default' | 'reload' | 'no-store';
+export type CacheMode = (typeof CacheModes)[keyof typeof CacheModes];
 
 /** Настройки плагина. */
 export interface CacheOptions {
@@ -37,8 +54,7 @@ export interface CachePlugin extends ItdPlugin {
 }
 
 interface CacheEntry {
-  authScope: string;
-  installation: number;
+  accountScope: string;
   route: CacheRouteId;
   value: unknown;
 }
@@ -48,23 +64,26 @@ interface LoadedValue {
   value: unknown;
 }
 
+interface CacheIdentity {
+  accountScope: string;
+  sessionScope: string;
+}
+
 interface PendingEntry {
-  installation: number;
+  accountScope: string;
   route: CacheRouteId;
   promise: Promise<LoadedValue>;
 }
 
 interface KeyState {
   active: number;
-  authScope: string;
   generation: number;
-  installation: number;
 }
 
 type CacheRequest = RawRequestOptions & { cache?: CacheMode | undefined };
 
 const DEFAULT_MAX_ENTRIES = 500;
-const CACHE_MODES: ReadonlySet<string> = new Set(['default', 'reload', 'no-store']);
+const CACHE_MODES: ReadonlySet<string> = new Set(Object.values(CacheModes));
 
 function assertPositive(value: number, name: string, integer = false): void {
   if (!Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) {
@@ -118,10 +137,10 @@ function cloneValue(value: unknown): LoadedValue {
 }
 
 function cacheMode(request: CacheRequest): CacheMode {
-  const mode = request.cache ?? 'default';
+  const mode = request.cache ?? CacheModes.Default;
   if (!CACHE_MODES.has(mode)) {
     throw new CacheError(
-      `cache должен быть 'default', 'reload' или 'no-store', получено: ${String(mode)}`,
+      `cache должен быть '${CacheModes.Default}', '${CacheModes.Reload}' или '${CacheModes.NoStore}', получено: ${String(mode)}`,
     );
   }
   return mode;
@@ -138,14 +157,14 @@ export function cache(options: CacheOptions): CachePlugin {
   });
   const pending = new Map<string, PendingEntry>();
   const routeGenerations = new Map<CacheRouteId, number>();
-  const installationGenerations = new Map<number, number>();
-  const installationRouteGenerations = new Map<string, number>();
+  const scopeGenerations = new Map<string, number>();
+  const scopeRouteGenerations = new Map<string, number>();
   const keyStates = new Map<string, KeyState>();
   let generation = 0;
   let installationSequence = 0;
 
-  const installationRouteKey = (installation: number, route: CacheRouteId): string =>
-    `${installation}:${route}`;
+  const scopeRouteKey = (accountScope: string, route: CacheRouteId): string =>
+    JSON.stringify([accountScope, route]);
 
   const clear = (): void => {
     generation += 1;
@@ -173,71 +192,67 @@ export function cache(options: CacheOptions): CachePlugin {
     }
   };
 
-  const clearInstallation = (installation: number): void => {
-    installationGenerations.set(installation, (installationGenerations.get(installation) ?? 0) + 1);
+  const clearScope = (accountScope: string): void => {
+    scopeGenerations.set(accountScope, (scopeGenerations.get(accountScope) ?? 0) + 1);
 
     for (const [key, entry] of values.entries()) {
-      if (entry.installation === installation) values.delete(key);
+      if (entry.accountScope === accountScope) values.delete(key);
     }
     for (const [key, entry] of pending) {
-      if (entry.installation === installation) pending.delete(key);
+      if (entry.accountScope === accountScope) pending.delete(key);
     }
   };
 
-  const invalidateInstallation = (installation: number, routes: readonly CacheRouteId[]): void => {
+  const invalidateScope = (accountScope: string, routes: readonly CacheRouteId[]): void => {
     if (routes.length === 0) return;
 
     const selected = new Set(routes);
     for (const route of selected) {
-      const key = installationRouteKey(installation, route);
-      installationRouteGenerations.set(key, (installationRouteGenerations.get(key) ?? 0) + 1);
+      const key = scopeRouteKey(accountScope, route);
+      scopeRouteGenerations.set(key, (scopeRouteGenerations.get(key) ?? 0) + 1);
     }
 
     for (const [key, entry] of values.entries()) {
-      if (entry.installation === installation && selected.has(entry.route)) values.delete(key);
+      if (entry.accountScope === accountScope && selected.has(entry.route)) values.delete(key);
     }
     for (const [key, entry] of pending) {
-      if (entry.installation === installation && selected.has(entry.route)) pending.delete(key);
+      if (entry.accountScope === accountScope && selected.has(entry.route)) pending.delete(key);
     }
   };
 
-  const applyMutation = (installation: number, mutation: CacheMutation): void => {
+  const applyMutation = (accountScope: string, mutation: CacheMutation): void => {
     if (mutation.invalidates === 'all') {
-      clearInstallation(installation);
-    } else if (mutation.scope === 'installation') {
-      invalidateInstallation(installation, mutation.invalidates);
+      clearScope(accountScope);
+    } else if (mutation.scope === 'account') {
+      invalidateScope(accountScope, mutation.invalidates);
     } else {
       invalidate(...mutation.invalidates);
     }
   };
 
-  const invalidateRealtimeScope = (authScope: string, routes: readonly CacheRouteId[]): void => {
-    const installations = new Set<number>();
-
-    for (const entry of values.values()) {
-      if (entry.authScope === authScope) installations.add(entry.installation);
-    }
-    for (const state of keyStates.values()) {
-      if (state.authScope === authScope) installations.add(state.installation);
-    }
-
-    for (const installation of installations) invalidateInstallation(installation, routes);
-  };
-
   const createTransformer = (
     installation: number,
+    baseUrl: string,
+    getAuthIdentity: (() => Promise<AuthIdentity>) | undefined,
     getAuthScope: (() => string) | undefined,
   ): Transformer => {
-    let observedAuthScope: string | undefined;
-    const fallbackAuthScope = `installation:${installation}`;
+    const fallbackAuthScope = JSON.stringify([baseUrl, `installation:${installation}`]);
 
-    const resolveAuthScope = (): string => {
-      const authScope = getAuthScope ? getAuthScope() : fallbackAuthScope;
-      if (observedAuthScope !== undefined && observedAuthScope !== authScope) {
-        clearInstallation(installation);
-      }
-      observedAuthScope = authScope;
-      return authScope;
+    const resolveIdentity = async (): Promise<CacheIdentity> => {
+      const identity = await getAuthIdentity?.();
+      const accountScope = identity?.userId
+        ? JSON.stringify([baseUrl, identity.userId])
+        : getAuthScope
+          ? JSON.stringify([baseUrl, getAuthScope()])
+          : fallbackAuthScope;
+      const sessionScope =
+        identity?.userId && identity.sessionId
+          ? JSON.stringify([baseUrl, identity.userId, identity.sessionId])
+          : JSON.stringify([
+              accountScope,
+              getAuthScope ? getAuthScope() : `installation:${installation}`,
+            ]);
+      return { accountScope, sessionScope };
     };
 
     return async (rawRequest, next) => {
@@ -247,31 +262,41 @@ export function cache(options: CacheOptions): CachePlugin {
       const isRead = route !== undefined || method === 'GET' || method === 'HEAD';
 
       if (!isRead) {
-        const result = await next(request);
         const mutation = cacheMutation(method, request.path);
-        if (mutation) applyMutation(installation, mutation);
-        else clear();
+        const startedIdentity = mutation ? await resolveIdentity() : undefined;
+        const result = await next(request);
+        if (mutation && startedIdentity) {
+          applyMutation(startedIdentity.accountScope, mutation);
+          const currentIdentity = await resolveIdentity();
+          if (
+            currentIdentity.accountScope !== startedIdentity.accountScope &&
+            (mutation.invalidates === 'all' || mutation.scope === 'account')
+          ) {
+            applyMutation(currentIdentity.accountScope, mutation);
+          }
+        } else {
+          clear();
+        }
         return result;
       }
 
       if (!route || !config.routes.has(route.id)) return next(request);
 
       const mode = cacheMode(request);
-      if (mode === 'no-store') return next(request);
+      if (mode === CacheModes.NoStore) return next(request);
 
       const unscopedKey = buildCacheKey(route.id, request);
       if (unscopedKey === undefined) return next(request);
 
-      const authScope = resolveAuthScope();
-      const key = JSON.stringify([installation, authScope, unscopedKey]);
+      const identity = await resolveIdentity();
+      const scope = route.id === 'auth.sessions' ? identity.sessionScope : identity.accountScope;
+      const key = JSON.stringify([scope, unscopedKey]);
 
-      if (mode === 'reload') {
+      if (mode === CacheModes.Reload) {
         // Прежняя загрузка только этого ключа не должна перезаписать принудительное обновление.
         const state = keyStates.get(key) ?? {
           active: 0,
-          authScope,
           generation: 0,
-          installation,
         };
         state.generation += 1;
         keyStates.set(key, state);
@@ -279,7 +304,7 @@ export function cache(options: CacheOptions): CachePlugin {
         pending.delete(key);
       }
 
-      if (mode === 'default') {
+      if (mode === CacheModes.Default) {
         const hit = values.get(key);
         if (hit) {
           const cloned = cloneValue(hit.value);
@@ -300,16 +325,13 @@ export function cache(options: CacheOptions): CachePlugin {
       }
 
       const startedGeneration = generation;
-      const startedInstallationGeneration = installationGenerations.get(installation) ?? 0;
+      const startedScopeGeneration = scopeGenerations.get(identity.accountScope) ?? 0;
       const startedRouteGeneration = routeGenerations.get(route.id) ?? 0;
-      const scopedRouteKey = installationRouteKey(installation, route.id);
-      const startedInstallationRouteGeneration =
-        installationRouteGenerations.get(scopedRouteKey) ?? 0;
+      const scopedRouteKey = scopeRouteKey(identity.accountScope, route.id);
+      const startedScopeRouteGeneration = scopeRouteGenerations.get(scopedRouteKey) ?? 0;
       const keyState = keyStates.get(key) ?? {
         active: 0,
-        authScope,
         generation: 0,
-        installation,
       };
       keyState.active += 1;
       keyStates.set(key, keyState);
@@ -318,21 +340,23 @@ export function cache(options: CacheOptions): CachePlugin {
         try {
           const result = await next(request);
           const stored = cloneValue(result);
-          const currentAuthScope = resolveAuthScope();
+          const currentIdentity = await resolveIdentity();
+          const currentScope =
+            route.id === 'auth.sessions'
+              ? currentIdentity.sessionScope
+              : currentIdentity.accountScope;
 
           if (
             stored.cacheable &&
-            currentAuthScope === authScope &&
+            currentScope === scope &&
             generation === startedGeneration &&
-            (installationGenerations.get(installation) ?? 0) === startedInstallationGeneration &&
+            (scopeGenerations.get(identity.accountScope) ?? 0) === startedScopeGeneration &&
             (routeGenerations.get(route.id) ?? 0) === startedRouteGeneration &&
-            (installationRouteGenerations.get(scopedRouteKey) ?? 0) ===
-              startedInstallationRouteGeneration &&
+            (scopeRouteGenerations.get(scopedRouteKey) ?? 0) === startedScopeRouteGeneration &&
             keyState.generation === startedKeyGeneration
           ) {
             values.set(key, {
-              authScope,
-              installation,
+              accountScope: identity.accountScope,
               route: route.id,
               value: stored.value,
             });
@@ -347,11 +371,15 @@ export function cache(options: CacheOptions): CachePlugin {
       })();
 
       const mayDeduplicate =
-        mode === 'default' &&
+        mode === CacheModes.Default &&
         config.deduplicate &&
         request.signal === undefined &&
         request.timeout === undefined;
-      const entry: PendingEntry = { installation, route: route.id, promise: load };
+      const entry: PendingEntry = {
+        accountScope: identity.accountScope,
+        route: route.id,
+        promise: load,
+      };
       if (mayDeduplicate) pending.set(key, entry);
 
       try {
@@ -378,10 +406,22 @@ export function cache(options: CacheOptions): CachePlugin {
       }
 
       const invalidateStream = (...routes: CacheRouteId[]): void => {
-        const authScope =
+        const identity =
+          typeof stream.getAuthIdentity === 'function' ? stream.getAuthIdentity() : undefined;
+        const streamBaseUrl =
+          typeof stream.baseUrl === 'string' && stream.baseUrl.length > 0
+            ? stream.baseUrl
+            : undefined;
+        const legacyScope =
           typeof stream.getAuthScope === 'function' ? stream.getAuthScope() : undefined;
-        if (authScope === undefined) invalidate(...routes);
-        else invalidateRealtimeScope(authScope, routes);
+        const accountScope =
+          identity?.userId && streamBaseUrl
+            ? JSON.stringify([streamBaseUrl, identity.userId])
+            : legacyScope !== undefined && streamBaseUrl
+              ? JSON.stringify([streamBaseUrl, legacyScope])
+              : undefined;
+        if (accountScope === undefined) invalidate(...routes);
+        else invalidateScope(accountScope, routes);
       };
 
       invalidateStream('notifications.list', 'notifications.count');
@@ -397,9 +437,9 @@ export function cache(options: CacheOptions): CachePlugin {
         offUnreadCount();
       };
     },
-    install({ use, getAuthScope }) {
+    install({ use, baseUrl, getAuthIdentity, getAuthScope }) {
       installationSequence += 1;
-      use(createTransformer(installationSequence, getAuthScope));
+      use(createTransformer(installationSequence, baseUrl, getAuthIdentity, getAuthScope));
     },
   };
 }

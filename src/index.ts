@@ -38,7 +38,13 @@ export {
 } from './builders/post.js';
 export { type ReportBuilder, type ReportInput, report } from './builders/report.js';
 export { createClient, ItdClient } from './client.js';
-export { AUTH_PATHS, type AuthEvents, DEVICE_ID_HEADER, TURNSTILE_SITE_KEY } from './core/auth.js';
+export {
+  AUTH_PATHS,
+  type AuthEvents,
+  type AuthIdentity,
+  DEVICE_ID_HEADER,
+  TURNSTILE_SITE_KEY,
+} from './core/auth.js';
 export {
   BUILT_IN_SERVICES,
   DEFAULT_BASE_URL,

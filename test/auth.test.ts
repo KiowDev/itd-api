@@ -19,7 +19,11 @@ import { makeJwt } from './helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';
 
 /** Собирает связку транспорт + авторизация так же, как это делает ItdClient. */
-function makeAuth(handler: MockHandler | Response[], options: ItdClientOptions = {}) {
+function makeAuth(
+  handler: MockHandler | Response[],
+  options: ItdClientOptions = {},
+  onAccountChange?: () => void,
+) {
   const mock = createMockFetch(handler);
   const config = resolveConfig({
     baseUrl: 'https://itd.test',
@@ -67,7 +71,7 @@ function makeAuth(handler: MockHandler | Response[], options: ItdClientOptions =
       ? authPipeline({ ...request, retry: authRetry })
       : authPipeline(request);
 
-  auth = new AuthManager(config, authHandler, jar);
+  auth = new AuthManager(config, authHandler, jar, { onAccountChange });
 
   const handlerFn = composePipeline(
     [
@@ -377,19 +381,40 @@ describe('идентификатор устройства', () => {
     expect((await auth.getSession())?.deviceId).toBe('device-B');
   });
 
-  it('разделяет области авторизации клиентов и меняет их вместе с сессией', async () => {
-    const first = makeAuth([]);
-    const second = makeAuth([]);
-    const initial = first.auth.getAuthScope();
+  it('объединяет область аккаунта по sub и разделяет auth.sessions по sid', async () => {
+    const first = makeAuth([], { auth: makeJwt({ sub: 'user-1', sid: 'session-a' }) });
+    const second = makeAuth([], { auth: makeJwt({ sub: 'user-1', sid: 'session-b' }) });
 
-    expect(second.auth.getAuthScope()).not.toBe(initial);
+    const a = await first.auth.getAuthIdentity();
+    const b = await second.auth.getAuthIdentity();
 
-    await first.auth.setSession({ accessToken: 'another-account' });
-    expect(first.auth.getAuthScope()).not.toBe(initial);
+    expect(a.userId).toBe(b.userId);
+    expect(a.sessionId).not.toBe(b.sessionId);
+    expect(first.auth.getAuthScope()).not.toBe(second.auth.getAuthScope());
+  });
 
-    const authenticated = first.auth.getAuthScope();
-    await first.auth.clear();
-    expect(first.auth.getAuthScope()).not.toBe(authenticated);
+  it('разделяет аккаунты и безопасно изолирует непрозрачные токены', async () => {
+    const a = makeAuth([], { auth: makeJwt({ sub: 'user-a', sid: 'session-a' }) });
+    const b = makeAuth([], { auth: makeJwt({ sub: 'user-b', sid: 'session-b' }) });
+    const opaqueA = makeAuth([], { auth: 'token' });
+    const opaqueB = makeAuth([], { auth: 'token' });
+
+    expect((await a.auth.getAuthIdentity()).userId).not.toBe(
+      (await b.auth.getAuthIdentity()).userId,
+    );
+    expect(opaqueA.auth.getAuthScope()).not.toBe(opaqueB.auth.getAuthScope());
+  });
+
+  it('разрешает область из лениво загруженной сессии до первого запроса', async () => {
+    const storage = new MemoryTokenStorage({
+      accessToken: makeJwt({ sub: 'stored-user', sid: 'stored-session' }),
+    });
+    const { auth } = makeAuth([], { storage });
+
+    expect(await auth.getAuthIdentity()).toEqual({
+      userId: 'stored-user',
+      sessionId: 'stored-session',
+    });
   });
 });
 
@@ -615,6 +640,26 @@ describe('связка с транспортом', () => {
     await auth.refresh();
 
     expect(auth.getAuthScope()).toBe(scope);
+  });
+
+  it('меняет область и сообщает о смене sub при обновлении токена', async () => {
+    const onAccountChange = vi.fn();
+    const { auth } = makeAuth(
+      [json({ accessToken: makeJwt({ sub: 'user-b', sid: 'session-b' }) })],
+      {},
+      onAccountChange,
+    );
+    await auth.setSession({
+      accessToken: makeJwt({ sub: 'user-a', sid: 'session-a' }),
+      refreshToken: 'r',
+    });
+    onAccountChange.mockClear();
+    const scope = auth.getAuthScope();
+
+    await auth.refresh();
+
+    expect(auth.getAuthScope()).not.toBe(scope);
+    expect(onAccountChange).toHaveBeenCalledOnce();
   });
 
   it('getSession возвращает снимок, а не внутренний объект авторизации', async () => {

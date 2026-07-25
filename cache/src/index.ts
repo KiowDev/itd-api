@@ -18,6 +18,7 @@ export { CacheError } from './errors.js';
 export { buildCacheKey } from './key.js';
 export {
   type CacheMode,
+  CacheModes,
   type CacheOptions,
   type CachePlugin,
   cache,

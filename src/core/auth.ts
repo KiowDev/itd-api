@@ -9,7 +9,7 @@ import {
 } from './cookies.js';
 import { Emitter, reportListenerError } from './emitter.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from './errors.js';
-import { readTokenSubject } from './jwt.js';
+import { readTokenIdentity, readTokenSubject } from './jwt.js';
 import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
 import { copySession, type ItdSession } from './storage.js';
@@ -86,6 +86,19 @@ function nextAuthScope(): string {
   return String(authScopeSequence);
 }
 
+/** Области аккаунта и конкретной сессии для локального состояния плагинов. */
+export interface AuthIdentity {
+  /** Идентификатор пользователя; отсутствует у непрозрачного или повреждённого токена. */
+  userId?: UserId | undefined;
+  /** Идентификатор серверной сессии; отсутствует у непрозрачного или повреждённого токена. */
+  sessionId?: string | undefined;
+}
+
+interface AuthManagerHooks {
+  /** Вызывается синхронно перед заменой владельца авторизации. */
+  onAccountChange?: (() => void) | undefined;
+}
+
 /**
  * Хранит сессию и продлевает её.
  *
@@ -99,6 +112,7 @@ export class AuthManager {
   readonly #send: RequestHandler;
   readonly #jar: CookieJar;
   readonly #emitter: Emitter<AuthEvents>;
+  readonly #hooks: AuthManagerHooks;
 
   /** `undefined` — сессия ещё не читалась из хранилища. */
   #session: ItdSession | null | undefined;
@@ -111,8 +125,12 @@ export class AuthManager {
   #refreshing: Promise<string | null> | null = null;
   /** Общий промис входа по логину и паролю. */
   #signingIn: Promise<string> | null = null;
-  /** Непрозрачная версия владельца клиента для разделения состояния плагинов. */
+  /** Fallback-область для изоляции состояния плагинов, когда JWT-идентичность недоступна. */
   #authScope = nextAuthScope();
+  /** Последний токен внешнего источника; `undefined` означает, что источник ещё не читался. */
+  #externalToken: string | null | undefined;
+  /** Идентификаторы последнего токена внешнего источника для синхронных потребителей. */
+  #externalIdentity: AuthIdentity | undefined;
   /**
    * Идентификатор устройства.
    *
@@ -123,10 +141,16 @@ export class AuthManager {
   /** Общий промис первичной выдачи `deviceId` — чтобы параллельные запросы получили один. */
   #deviceIdLoading: Promise<string> | null = null;
 
-  constructor(config: AuthConfig, send: RequestHandler, jar: CookieJar) {
+  constructor(
+    config: AuthConfig,
+    send: RequestHandler,
+    jar: CookieJar,
+    hooks: AuthManagerHooks = {},
+  ) {
     this.#config = config;
     this.#send = send;
     this.#jar = jar;
+    this.#hooks = hooks;
     this.#emitter = new Emitter<AuthEvents>((error) =>
       reportListenerError(config.logger, 'авторизации', error),
     );
@@ -142,13 +166,84 @@ export class AuthManager {
     return this.#emitter.once.bind(this.#emitter);
   }
 
-  /** Непрозрачная область авторизации; токен и идентификатор пользователя не раскрываются. */
+  /**
+   * Непрозрачная fallback-область авторизации.
+   *
+   * Изолирует состояние плагинов, когда идентичность аккаунта из JWT недоступна (непрозрачный
+   * токен): значение уникально для владельца и сменяется при замене или очистке сессии.
+   */
   getAuthScope(): string {
     return this.#authScope;
   }
 
+  /** Загружает сессию и возвращает идентификаторы аккаунта и сессии для плагинов. */
+  async getAuthIdentity(): Promise<AuthIdentity> {
+    const session = await this.#loadSession();
+    if (session?.accessToken) return this.#identityForToken(session.accessToken);
+
+    const auth = this.#config.auth;
+    if (typeof auth === 'object' && auth !== null && 'getToken' in auth) {
+      const token = await this.#readExternalToken(() => auth.getToken());
+      return this.#identityForToken(token ?? undefined);
+    }
+
+    return {};
+  }
+
+  /** Идентификаторы аккаунта и сессии без чтения хранилища. @internal */
+  getCurrentAuthIdentity(): AuthIdentity {
+    const session =
+      this.#session === undefined ? this.#sessionFromConfig(this.#config.auth) : this.#session;
+    return session?.accessToken
+      ? this.#identityForToken(session.accessToken)
+      : (this.#externalIdentity ?? {});
+  }
+
   #rotateAuthScope(): void {
     this.#authScope = nextAuthScope();
+  }
+
+  #identityForToken(accessToken: string | undefined): AuthIdentity {
+    const token = accessToken ? readTokenIdentity(accessToken) : {};
+    return {
+      ...(token.subject ? { userId: token.subject as UserId } : {}),
+      ...(token.sessionId ? { sessionId: token.sessionId } : {}),
+    };
+  }
+
+  async #readExternalToken(
+    getToken: () => string | null | Promise<string | null>,
+  ): Promise<string | null> {
+    const token = (await getToken()) ?? null;
+    const current = this.#identityForToken(token ?? undefined);
+
+    if (this.#externalToken !== undefined && this.#externalToken !== token) {
+      this.#rotateAuthScope();
+      const previous = this.#externalIdentity ?? {};
+      const changed =
+        previous.userId !== undefined && current.userId !== undefined
+          ? previous.userId !== current.userId
+          : true;
+      if (changed) this.#hooks.onAccountChange?.();
+    }
+
+    this.#externalToken = token;
+    this.#externalIdentity = current;
+    return token;
+  }
+
+  /** Меняет fallback и завершает realtime, только если фактически сменился аккаунт. */
+  #transitionAuth(accessToken: string | undefined, rotateFallback = true): void {
+    const knownPrevious = this.#session !== undefined;
+    const previous = this.#identityForToken(this.#session?.accessToken);
+    const current = this.#identityForToken(accessToken);
+    const changed =
+      previous.userId !== undefined && current.userId !== undefined
+        ? previous.userId !== current.userId
+        : previous.userId !== current.userId || rotateFallback;
+
+    if (rotateFallback || changed) this.#rotateAuthScope();
+    if (knownPrevious && changed) this.#hooks.onAccountChange?.();
   }
 
   /**
@@ -230,7 +325,7 @@ export class AuthManager {
 
     // Внешний источник токена спрашиваем каждый раз: он сам решает, когда обновлять.
     if (typeof auth === 'object' && 'getToken' in auth) {
-      return (await auth.getToken()) ?? null;
+      return this.#readExternalToken(() => auth.getToken());
     }
 
     if (typeof auth === 'object' && 'email' in auth) {
@@ -295,7 +390,8 @@ export class AuthManager {
 
   /** Сохраняет токен, полученный извне, — например после подтверждения OTP. */
   async setAccessToken(accessToken: string): Promise<void> {
-    this.#rotateAuthScope();
+    await this.#loadSession();
+    this.#transitionAuth(accessToken);
     await this.#saveSession({ ...(this.#session ?? {}), accessToken, obtainedAt: Date.now() });
     this.#emitter.emit('tokens', { accessToken });
   }
@@ -319,7 +415,8 @@ export class AuthManager {
 
   /** Заменяет сессию и связанные с ней cookie целиком. */
   async setSession(session: ItdSession): Promise<void> {
-    this.#rotateAuthScope();
+    await this.#loadSession();
+    this.#transitionAuth(session.accessToken);
     this.#jar.clear();
     this.#jar.deserialize(session.cookies);
 
@@ -339,8 +436,9 @@ export class AuthManager {
    * новую запись в списке сессий.
    */
   async clear(): Promise<void> {
+    await this.#loadSession();
+    this.#transitionAuth(undefined);
     this.#session = null;
-    this.#rotateAuthScope();
     this.#jar.clear();
     await this.#config.storage.clear();
 
@@ -480,6 +578,9 @@ export class AuthManager {
         this.#config.baseUrl + REFRESH_COOKIE_PATH,
       );
 
+      // Refresh продолжает ту же серверную сессию. Для непрозрачного токена это единственная
+      // надёжная возможность сохранить scope; смена пользователя в JWT всё равно будет обнаружена.
+      this.#transitionAuth(accessToken, false);
       await this.#saveSession({
         ...(this.#session ?? {}),
         accessToken,
@@ -492,8 +593,8 @@ export class AuthManager {
     } catch (error) {
       if (error instanceof ItdApiError) {
         // Сессия недействительна — чистим её, иначе будем биться в стену на каждом запросе.
+        this.#transitionAuth(undefined);
         this.#session = null;
-        this.#rotateAuthScope();
         this.#jar.clear();
         await this.#config.storage.clear();
 
@@ -595,7 +696,7 @@ export class AuthManager {
 
     // Прежний refresh-токен и cookie намеренно не переносятся: вход выдал новую сессию,
     // и держаться за старую было бы ошибкой. Идентификатор устройства добавит #saveSession.
-    this.#rotateAuthScope();
+    this.#transitionAuth(accessToken);
     await this.#saveSession({ accessToken, obtainedAt: Date.now() });
     this.#emitter.emit('tokens', { accessToken });
     this.#emitter.emit('signIn', { accessToken });

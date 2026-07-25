@@ -203,7 +203,9 @@ export class ItdClient {
       authRetry && request.retry === undefined
         ? authPipeline({ ...request, retry: authRetry })
         : authPipeline(request);
-    authManager = new AuthManager(config, authHandler, this.#jar);
+    authManager = new AuthManager(config, authHandler, this.#jar, {
+      onAccountChange: () => this.#disconnectStreams(),
+    });
     this.#authManager = authManager;
 
     // Порядок слоёв: очередь снаружи, за ней плагины, сервисы, повторы и авторизация,
@@ -294,6 +296,7 @@ export class ItdClient {
       baseUrl: this.#config.baseUrl,
       logger: this.#config.logger,
       getAuthScope: () => this.#authManager.getAuthScope(),
+      getAuthIdentity: () => this.#authManager.getAuthIdentity(),
     });
     return this;
   }
@@ -357,7 +360,8 @@ export class ItdClient {
    * Создаёт поток уведомлений в реальном времени.
    *
    * Каждый вызов даёт новый независимый поток; обычно он нужен один на приложение.
-   * Соединение поднимается методом `connect()` и держится само.
+   * Соединение поднимается методом `connect()` и держится само. Замена авторизации на токен
+   * другого пользователя завершает все потоки клиента; смена только сессии их не затрагивает.
    *
    * @example
    * ```ts
@@ -378,6 +382,7 @@ export class ItdClient {
         baseUrl: this.#config.baseUrl,
         fetch: this.#config.fetch,
         baseHeaders: (url) => this.#transport.platformHeaders(url),
+        getAuthIdentity: () => this.#authManager.getCurrentAuthIdentity(),
         getAuthScope: () => this.#authManager.getAuthScope(),
         getToken: () => this.#authManager.getAccessToken(),
         refresh: () => this.#authManager.onUnauthorized(),
@@ -411,9 +416,14 @@ export class ItdClient {
    * ```
    */
   async close(): Promise<void> {
-    for (const stream of this.#streams) stream.disconnect();
-    this.#streams.clear();
+    this.#disconnectStreams();
     if (this.#ownsQueues) this.#queues?.stop();
+  }
+
+  /** Завершает потоки до того, как запросы начнут использовать другой аккаунт. */
+  #disconnectStreams(): void {
+    for (const stream of [...this.#streams]) stream.disconnect();
+    this.#streams.clear();
   }
 
   /** Позволяет использовать клиент с `await using`. */

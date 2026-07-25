@@ -1,9 +1,15 @@
-import { ItdClient, type ItdPlugin, type ItdRealtime } from 'itd-api';
+import { ItdClient, type ItdClientOptions, type ItdPlugin, type ItdRealtime } from 'itd-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CacheError, type CachePlugin, cache } from '../src/index.js';
 
 type FetchHandler = (url: string, init: RequestInit, call: number) => Response | Promise<Response>;
 type RawRequestWithView = { view?: unknown };
+
+function makeJwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown) =>
+    btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${encode({ alg: 'none' })}.${encode(payload)}.signature`;
+}
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify({ data }), {
@@ -12,7 +18,7 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function makeClient(handler: FetchHandler) {
+function makeClient(handler: FetchHandler, auth: ItdClientOptions['auth'] = 'test-token') {
   const calls: { url: string; method: string; body: unknown; headers: Headers }[] = [];
   const fetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
@@ -28,7 +34,7 @@ function makeClient(handler: FetchHandler) {
   const itd = new ItdClient({
     baseUrl: 'https://itd.test',
     fetch,
-    auth: 'test-token',
+    auth,
     retry: false,
     rateLimit: false,
     mode: 'server',
@@ -450,9 +456,15 @@ describe('область экземпляра', () => {
     expect(b.calls).toHaveLength(1);
   });
 
-  it('один экземпляр изолирует ответы разных клиентов', async () => {
+  it('один экземпляр объединяет ответы копий одного аккаунта', async () => {
     const a = makeClient(() => json({ id: '1', content: 'из клиента A' }));
-    const b = makeClient(() => json({ id: '1', content: 'из клиента B' }));
+    const b = makeClient(
+      () => json({ id: '1', content: 'из клиента B' }),
+      makeJwt({ sub: 'user-1', sid: 'session-b' }),
+    );
+    await a.itd.setSession({
+      accessToken: makeJwt({ sub: 'user-1', sid: 'session-a' }),
+    });
     const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
     a.itd.use(shared);
     b.itd.use(shared);
@@ -461,43 +473,164 @@ describe('область экземпляра', () => {
     const fromB = await b.itd.posts.get('1');
 
     expect(fromA.content).toBe('из клиента A');
-    expect(fromB.content).toBe('из клиента B');
+    expect(fromB.content).toBe('из клиента A');
     expect(a.calls).toHaveLength(1);
-    expect(b.calls).toHaveLength(1);
+    expect(b.calls).toHaveLength(0);
+    expect(shared.size).toBe(1);
+  });
+
+  it('объединяет одновременные запросы копий одного аккаунта', async () => {
+    let release!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const tokenA = makeJwt({ sub: 'user-1', sid: 'session-a' });
+    const tokenB = makeJwt({ sub: 'user-1', sid: 'session-b' });
+    const a = makeClient(() => response, tokenA);
+    const b = makeClient(() => json({ id: '1', content: 'лишний запрос' }), tokenB);
+    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    a.itd.use(shared);
+    b.itd.use(shared);
+
+    const fromA = a.itd.posts.get('1');
+    const fromB = b.itd.posts.get('1');
+    await vi.waitFor(() => expect(a.calls).toHaveLength(1));
+    release(json({ id: '1', content: 'общий ответ' }));
+
+    expect((await fromA).content).toBe('общий ответ');
+    expect((await fromB).content).toBe('общий ответ');
+    expect(b.calls).toHaveLength(0);
+  });
+
+  it('разделяет ответы разных аккаунтов', async () => {
+    const a = makeClient(
+      () => json({ id: '1', content: 'из аккаунта A' }),
+      makeJwt({ sub: 'user-a', sid: 'session-a' }),
+    );
+    const b = makeClient(
+      () => json({ id: '1', content: 'из аккаунта B' }),
+      makeJwt({ sub: 'user-b', sid: 'session-b' }),
+    );
+    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    a.itd.use(shared);
+    b.itd.use(shared);
+
+    expect((await a.itd.posts.get('1')).content).toBe('из аккаунта A');
+    expect((await b.itd.posts.get('1')).content).toBe('из аккаунта B');
     expect(shared.size).toBe(2);
   });
 
-  it('смена сессии клиента отбрасывает его прежние ответы', async () => {
+  it('смена sid сохраняет общий кэш аккаунта', async () => {
+    const token = makeJwt({ sub: 'user-1', sid: 'session-a' });
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    await itd.setSession({ accessToken: token });
     itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
 
     await itd.posts.get('1');
-    await itd.setSession({ accessToken: 'another-account-token' });
+    await itd.setSession({
+      accessToken: makeJwt({ sub: 'user-1', sid: 'session-b' }),
+    });
+    const afterSwitch = await itd.posts.get('1');
+
+    expect(afterSwitch.content).toBe('ответ-1');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('смена sub выбирает другой раздел кэша', async () => {
+    const { itd, calls } = makeClient(
+      (url, _init, call) => postFromUrl(url, call),
+      makeJwt({ sub: 'user-a', sid: 'session-a' }),
+    );
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    await itd.posts.get('1');
+    await itd.setSession({
+      accessToken: makeJwt({ sub: 'user-b', sid: 'session-b' }),
+    });
     const afterSwitch = await itd.posts.get('1');
 
     expect(afterSwitch.content).toBe('ответ-2');
     expect(calls).toHaveLength(2);
   });
 
-  it('не сохраняет ответ, начатый до смены сессии', async () => {
+  it('видит смену sub во внешнем источнике до проверки кэша', async () => {
+    let token = makeJwt({ sub: 'user-a', sid: 'session-a' });
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call), {
+      getToken: () => token,
+    });
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    expect((await itd.posts.get('1')).content).toBe('ответ-1');
+    expect((await itd.posts.get('1')).content).toBe('ответ-1');
+
+    token = makeJwt({ sub: 'user-b', sid: 'session-b' });
+    expect((await itd.posts.get('1')).content).toBe('ответ-2');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('не отдаёт другому аккаунту ответ, начатый до смены sub', async () => {
     let release!: (response: Response) => void;
     const oldResponse = new Promise<Response>((resolve) => {
       release = resolve;
     });
-    const { itd, calls } = makeClient((url, _init, call) =>
-      call === 1 ? oldResponse : postFromUrl(url, call),
+    const { itd, calls } = makeClient(
+      (url, _init, call) => (call === 1 ? oldResponse : postFromUrl(url, call)),
+      makeJwt({ sub: 'user-a', sid: 'session-a' }),
     );
     itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
 
     const stale = itd.posts.get('1');
     await vi.waitFor(() => expect(calls).toHaveLength(1));
-    await itd.setSession({ accessToken: 'another-account-token' });
+    await itd.setSession({
+      accessToken: makeJwt({ sub: 'user-b', sid: 'session-b' }),
+    });
     release(json({ id: '1', content: 'старый аккаунт' }));
     await stale;
 
     const fresh = await itd.posts.get('1');
     expect(fresh.content).toBe('ответ-2');
     expect(calls).toHaveLength(2);
+  });
+
+  it('разделяет auth.sessions по sid одного аккаунта', async () => {
+    const a = makeClient(
+      (_url, _init, call) => json({ sessions: [{ id: `a-${call}` }] }),
+      makeJwt({ sub: 'user-1', sid: 'session-a' }),
+    );
+    const b = makeClient(
+      (_url, _init, call) => json({ sessions: [{ id: `b-${call}` }] }),
+      makeJwt({ sub: 'user-1', sid: 'session-b' }),
+    );
+    const shared = cache({ ttl: 60_000, routes: ['auth.sessions'] });
+    a.itd.use(shared);
+    b.itd.use(shared);
+
+    expect((await a.itd.auth.sessions())[0]?.id).toBe('a-1');
+    expect((await b.itd.auth.sessions())[0]?.id).toBe('b-1');
+    expect(a.calls).toHaveLength(1);
+    expect(b.calls).toHaveLength(1);
+    expect(shared.size).toBe(2);
+  });
+
+  it('мутация сессий инвалидирует варианты всех sid аккаунта', async () => {
+    const handler: FetchHandler = (url, init, call) =>
+      init.method === 'DELETE'
+        ? json({})
+        : json({ sessions: [{ id: `${url.endsWith('/sessions') ? 'list' : 'other'}-${call}` }] });
+    const a = makeClient(handler, makeJwt({ sub: 'user-1', sid: 'session-a' }));
+    const b = makeClient(handler, makeJwt({ sub: 'user-1', sid: 'session-b' }));
+    const shared = cache({ ttl: 60_000, routes: ['auth.sessions'] });
+    a.itd.use(shared);
+    b.itd.use(shared);
+
+    await a.itd.auth.sessions();
+    await b.itd.auth.sessions();
+    await a.itd.auth.revokeSession('old-session');
+    await a.itd.auth.sessions();
+    await b.itd.auth.sessions();
+
+    expect(a.calls).toHaveLength(3);
+    expect(b.calls).toHaveLength(2);
   });
 
   it('общая мутация инвалидирует связанный маршрут у других клиентов', async () => {
@@ -518,28 +651,32 @@ describe('область экземпляра', () => {
     expect(b.calls).toHaveLength(2);
   });
 
-  it('персональная мутация инвалидирует только свой раздел', async () => {
+  it('персональная мутация инвалидирует весь аккаунт, но не другие аккаунты', async () => {
     const handler: FetchHandler = (url, init) => {
       if (init.method === 'POST') return json({ markedCount: 1 });
       if (url.endsWith('/count')) return json({ count: 1 });
       return json({ notifications: [], pagination: { total: 0, hasMore: false } });
     };
-    const a = makeClient(handler);
-    const b = makeClient(handler);
+    const a = makeClient(handler, makeJwt({ sub: 'user-a', sid: 'session-a' }));
+    const copy = makeClient(handler, makeJwt({ sub: 'user-a', sid: 'session-copy' }));
+    const b = makeClient(handler, makeJwt({ sub: 'user-b', sid: 'session-b' }));
     const shared = cache({
       ttl: 60_000,
       routes: ['notifications.list', 'notifications.count'],
     });
     a.itd.use(shared);
+    copy.itd.use(shared);
     b.itd.use(shared);
 
     await fillNotifications(a.itd);
+    await fillNotifications(copy.itd);
     await fillNotifications(b.itd);
     await a.itd.notifications.markAllRead();
-    await fillNotifications(a.itd);
+    await fillNotifications(copy.itd);
     await fillNotifications(b.itd);
 
-    expect(a.calls).toHaveLength(5);
+    expect(a.calls).toHaveLength(3);
+    expect(copy.calls).toHaveLength(2);
     expect(b.calls).toHaveLength(2);
   });
 
@@ -562,14 +699,28 @@ describe('область экземпляра', () => {
 
 class FakeRealtime {
   readonly #listeners = new Map<string, Set<() => void>>();
+  readonly #authIdentity:
+    | { userId?: string | undefined; sessionId?: string | undefined }
+    | undefined;
   readonly #authScope: string | undefined;
+  readonly baseUrl: string | undefined;
 
-  constructor(authScope?: string) {
+  constructor(
+    authScope?: string,
+    authIdentity?: { userId?: string | undefined; sessionId?: string | undefined },
+    baseUrl?: string,
+  ) {
     this.#authScope = authScope;
+    this.#authIdentity = authIdentity;
+    this.baseUrl = baseUrl;
   }
 
   getAuthScope(): string | undefined {
     return this.#authScope;
+  }
+
+  getAuthIdentity() {
+    return this.#authIdentity;
   }
 
   on(event: string, listener: () => void): () => void {
@@ -628,8 +779,8 @@ describe('realtime', () => {
       url.endsWith('/count')
         ? json({ count: 2 })
         : json({ notifications: [], pagination: { total: 0, hasMore: false } });
-    const a = makeClient(handler);
-    const b = makeClient(handler);
+    const a = makeClient(handler, makeJwt({ sub: 'user-a', sid: 'session-a' }));
+    const b = makeClient(handler, makeJwt({ sub: 'user-b', sid: 'session-b' }));
     const cached = cache({
       ttl: 60_000,
       routes: ['notifications.list', 'notifications.count'],
@@ -641,7 +792,11 @@ describe('realtime', () => {
     expect(cached.size).toBe(4);
 
     const source = a.itd.realtime({ syncCount: false });
-    const realtime = new FakeRealtime(source.getAuthScope());
+    const realtime = new FakeRealtime(
+      source.getAuthScope(),
+      source.getAuthIdentity(),
+      source.baseUrl,
+    );
     const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
     expect(cached.size).toBe(2);
 
@@ -697,7 +852,11 @@ describe('realtime', () => {
     await vi.waitFor(() => expect(calls).toHaveLength(1));
 
     const source = itd.realtime({ syncCount: false });
-    const realtime = new FakeRealtime(source.getAuthScope());
+    const realtime = new FakeRealtime(
+      source.getAuthScope(),
+      source.getAuthIdentity(),
+      source.baseUrl,
+    );
     const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
     realtime.emit('notification');
 

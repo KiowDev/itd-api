@@ -3,6 +3,7 @@ import { post } from '../src/builders/post.js';
 import { createClient, ItdClient } from '../src/client.js';
 import { ItdConfigError, ItdNotFoundError } from '../src/core/errors.js';
 import type { ItdClientOptions } from '../src/types/options.js';
+import { makeJwt } from './helpers/jwt.js';
 import { createMockFetch, json, type MockHandler, noContent } from './helpers/mock-fetch.js';
 
 function makeClient(handler: MockHandler | Response[], options: ItdClientOptions = {}) {
@@ -757,6 +758,42 @@ describe('общее поведение клиента', () => {
 });
 
 describe('жизненный цикл', () => {
+  it('сохраняет realtime при смене sid и завершает при смене sub', async () => {
+    const { itd } = makeClient([], {
+      auth: makeJwt({ sub: 'user-a', sid: 'session-a' }),
+    });
+    const stream = itd.realtime({ syncCount: false });
+    const disconnect = vi.spyOn(stream, 'disconnect');
+
+    await itd.setSession({
+      accessToken: makeJwt({ sub: 'user-a', sid: 'session-b' }),
+    });
+    expect(disconnect).not.toHaveBeenCalled();
+
+    await itd.setSession({
+      accessToken: makeJwt({ sub: 'user-b', sid: 'session-c' }),
+    });
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('завершает realtime при смене sub во внешнем источнике токена', async () => {
+    let token = makeJwt({ sub: 'user-a', sid: 'session-a' });
+    const { itd } = makeClient(
+      [json({ id: '1', content: 'первый' }), json({ id: '2', content: 'второй' })],
+      { auth: { getToken: () => token } },
+    );
+    const stream = itd.realtime({ syncCount: false });
+    const disconnect = vi.spyOn(stream, 'disconnect');
+
+    await itd.posts.get('1');
+    expect(disconnect).not.toHaveBeenCalled();
+
+    token = makeJwt({ sub: 'user-b', sid: 'session-b' });
+    await itd.posts.get('2');
+
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
   it('close() закрывает порождённые потоки и снимает паузу очереди', async () => {
     const { itd } = makeClient([], { rateLimit: { concurrency: 1, retryDelays: [1000] } });
 

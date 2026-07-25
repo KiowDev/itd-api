@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readTokenSubject } from '../src/core/jwt.js';
+import { readTokenIdentity, readTokenSubject } from '../src/core/jwt.js';
 import { makeJwt } from './helpers/jwt.js';
 
 describe('readTokenSubject', () => {
@@ -34,5 +34,25 @@ describe('readTokenSubject', () => {
     expect(
       readTokenSubject(makeJwt(['список'] as unknown as Record<string, unknown>)),
     ).toBeUndefined();
+  });
+});
+
+describe('readTokenIdentity', () => {
+  it('читает одновременно sub и sid', () => {
+    const token = makeJwt({ sub: 'user-1', sid: 'session-1' });
+
+    expect(readTokenIdentity(token)).toEqual({
+      subject: 'user-1',
+      sessionId: 'session-1',
+    });
+  });
+
+  it('игнорирует непригодный sid независимо от sub', () => {
+    expect(readTokenIdentity(makeJwt({ sub: 'user-1', sid: '' }))).toEqual({
+      subject: 'user-1',
+    });
+    expect(readTokenIdentity(makeJwt({ sub: 'user-1', sid: 42 }))).toEqual({
+      subject: 'user-1',
+    });
   });
 });

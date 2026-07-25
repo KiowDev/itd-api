@@ -1,3 +1,4 @@
+import type { AuthIdentity } from '../core/auth.js';
 import { Emitter, type Listener, type Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
 import { supportsStreamingBody } from '../core/runtime.js';
@@ -143,6 +144,8 @@ export interface RealtimeDeps {
   fetch: typeof fetch;
   /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
   baseHeaders: (url: string) => Promise<Headers>;
+  /** Идентификаторы аккаунта и сессии создавшего поток клиента. */
+  getAuthIdentity?: (() => AuthIdentity) | undefined;
   /** Непрозрачная область авторизации создавшего поток клиента. */
   getAuthScope?: (() => string) | undefined;
   getToken: () => Promise<string | null>;
@@ -220,6 +223,16 @@ export class ItdRealtime {
   /** Какой транспорт используется: `sse` или `poll`. */
   get transport(): string {
     return this.#transport.name;
+  }
+
+  /** Базовый URL клиента, создавшего поток. @internal */
+  get baseUrl(): string {
+    return this.#deps.baseUrl;
+  }
+
+  /** Идентификаторы аккаунта и сессии клиента, создавшего поток. @internal */
+  getAuthIdentity(): AuthIdentity | undefined {
+    return this.#deps.getAuthIdentity?.();
   }
 
   /** Непрозрачная область авторизации создавшего поток клиента. @internal */
