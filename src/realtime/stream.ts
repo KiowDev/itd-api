@@ -143,6 +143,8 @@ export interface RealtimeDeps {
   fetch: typeof fetch;
   /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
   baseHeaders: (url: string) => Promise<Headers>;
+  /** Непрозрачная область авторизации создавшего поток клиента. */
+  getAuthScope?: (() => string) | undefined;
   getToken: () => Promise<string | null>;
   /** Обновляет токен после отказа авторизации. Возвращает `true`, если удалось. */
   refresh: () => Promise<boolean>;
@@ -218,6 +220,11 @@ export class ItdRealtime {
   /** Какой транспорт используется: `sse` или `poll`. */
   get transport(): string {
     return this.#transport.name;
+  }
+
+  /** Непрозрачная область авторизации создавшего поток клиента. @internal */
+  getAuthScope(): string | undefined {
+    return this.#deps.getAuthScope?.();
   }
 
   /** Подписывается на событие потока. @returns функция отписки */

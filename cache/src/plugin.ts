@@ -37,6 +37,7 @@ export interface CachePlugin extends ItdPlugin {
 }
 
 interface CacheEntry {
+  authScope: string;
   installation: number;
   route: CacheRouteId;
   value: unknown;
@@ -55,7 +56,9 @@ interface PendingEntry {
 
 interface KeyState {
   active: number;
+  authScope: string;
   generation: number;
+  installation: number;
 }
 
 type CacheRequest = RawRequestOptions & { cache?: CacheMode | undefined };
@@ -208,19 +211,33 @@ export function cache(options: CacheOptions): CachePlugin {
     }
   };
 
+  const invalidateRealtimeScope = (authScope: string, routes: readonly CacheRouteId[]): void => {
+    const installations = new Set<number>();
+
+    for (const entry of values.values()) {
+      if (entry.authScope === authScope) installations.add(entry.installation);
+    }
+    for (const state of keyStates.values()) {
+      if (state.authScope === authScope) installations.add(state.installation);
+    }
+
+    for (const installation of installations) invalidateInstallation(installation, routes);
+  };
+
   const createTransformer = (
     installation: number,
     getAuthScope: (() => string) | undefined,
   ): Transformer => {
     let observedAuthScope: string | undefined;
+    const fallbackAuthScope = `installation:${installation}`;
 
-    const resolveScope = (): string => {
-      const authScope = getAuthScope ? getAuthScope() : 'default';
+    const resolveAuthScope = (): string => {
+      const authScope = getAuthScope ? getAuthScope() : fallbackAuthScope;
       if (observedAuthScope !== undefined && observedAuthScope !== authScope) {
         clearInstallation(installation);
       }
       observedAuthScope = authScope;
-      return JSON.stringify([installation, authScope]);
+      return authScope;
     };
 
     return async (rawRequest, next) => {
@@ -245,12 +262,17 @@ export function cache(options: CacheOptions): CachePlugin {
       const unscopedKey = buildCacheKey(route.id, request);
       if (unscopedKey === undefined) return next(request);
 
-      const scope = resolveScope();
-      const key = JSON.stringify([scope, unscopedKey]);
+      const authScope = resolveAuthScope();
+      const key = JSON.stringify([installation, authScope, unscopedKey]);
 
       if (mode === 'reload') {
         // Прежняя загрузка только этого ключа не должна перезаписать принудительное обновление.
-        const state = keyStates.get(key) ?? { active: 0, generation: 0 };
+        const state = keyStates.get(key) ?? {
+          active: 0,
+          authScope,
+          generation: 0,
+          installation,
+        };
         state.generation += 1;
         keyStates.set(key, state);
         values.delete(key);
@@ -283,7 +305,12 @@ export function cache(options: CacheOptions): CachePlugin {
       const scopedRouteKey = installationRouteKey(installation, route.id);
       const startedInstallationRouteGeneration =
         installationRouteGenerations.get(scopedRouteKey) ?? 0;
-      const keyState = keyStates.get(key) ?? { active: 0, generation: 0 };
+      const keyState = keyStates.get(key) ?? {
+        active: 0,
+        authScope,
+        generation: 0,
+        installation,
+      };
       keyState.active += 1;
       keyStates.set(key, keyState);
       const startedKeyGeneration = keyState.generation;
@@ -291,11 +318,11 @@ export function cache(options: CacheOptions): CachePlugin {
         try {
           const result = await next(request);
           const stored = cloneValue(result);
-          const currentScope = resolveScope();
+          const currentAuthScope = resolveAuthScope();
 
           if (
             stored.cacheable &&
-            currentScope === scope &&
+            currentAuthScope === authScope &&
             generation === startedGeneration &&
             (installationGenerations.get(installation) ?? 0) === startedInstallationGeneration &&
             (routeGenerations.get(route.id) ?? 0) === startedRouteGeneration &&
@@ -303,7 +330,12 @@ export function cache(options: CacheOptions): CachePlugin {
               startedInstallationRouteGeneration &&
             keyState.generation === startedKeyGeneration
           ) {
-            values.set(key, { installation, route: route.id, value: stored.value });
+            values.set(key, {
+              authScope,
+              installation,
+              route: route.id,
+              value: stored.value,
+            });
           }
 
           // Снимок уже отделён для кэша; инициатор получает независимый исходный ответ сети.
@@ -345,11 +377,20 @@ export function cache(options: CacheOptions): CachePlugin {
         throw new CacheError('attachRealtime() принимает поток из itd.realtime()');
       }
 
-      invalidate('notifications.list', 'notifications.count');
+      const invalidateStream = (...routes: CacheRouteId[]): void => {
+        const authScope =
+          typeof stream.getAuthScope === 'function' ? stream.getAuthScope() : undefined;
+        if (authScope === undefined) invalidate(...routes);
+        else invalidateRealtimeScope(authScope, routes);
+      };
+
+      invalidateStream('notifications.list', 'notifications.count');
       const offNotification = stream.on('notification', () =>
-        invalidate('notifications.list', 'notifications.count'),
+        invalidateStream('notifications.list', 'notifications.count'),
       );
-      const offUnreadCount = stream.on('unreadCount', () => invalidate('notifications.count'));
+      const offUnreadCount = stream.on('unreadCount', () =>
+        invalidateStream('notifications.count'),
+      );
 
       return () => {
         offNotification();

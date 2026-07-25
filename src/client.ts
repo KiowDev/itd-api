@@ -378,6 +378,7 @@ export class ItdClient {
         baseUrl: this.#config.baseUrl,
         fetch: this.#config.fetch,
         baseHeaders: (url) => this.#transport.platformHeaders(url),
+        getAuthScope: () => this.#authManager.getAuthScope(),
         getToken: () => this.#authManager.getAccessToken(),
         refresh: () => this.#authManager.onUnauthorized(),
         fetchUnreadCount: () => this.notifications.count(),

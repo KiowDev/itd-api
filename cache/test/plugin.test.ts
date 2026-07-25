@@ -562,6 +562,15 @@ describe('область экземпляра', () => {
 
 class FakeRealtime {
   readonly #listeners = new Map<string, Set<() => void>>();
+  readonly #authScope: string | undefined;
+
+  constructor(authScope?: string) {
+    this.#authScope = authScope;
+  }
+
+  getAuthScope(): string | undefined {
+    return this.#authScope;
+  }
 
   on(event: string, listener: () => void): () => void {
     const listeners = this.#listeners.get(event) ?? new Set();
@@ -612,6 +621,94 @@ describe('realtime', () => {
     detach();
     realtime.emit('notification');
     expect(cached.size).toBe(2);
+  });
+
+  it('очищает уведомления только клиента, которому принадлежит поток', async () => {
+    const handler: FetchHandler = (url) =>
+      url.endsWith('/count')
+        ? json({ count: 2 })
+        : json({ notifications: [], pagination: { total: 0, hasMore: false } });
+    const a = makeClient(handler);
+    const b = makeClient(handler);
+    const cached = cache({
+      ttl: 60_000,
+      routes: ['notifications.list', 'notifications.count'],
+    });
+    a.itd.use(cached);
+    b.itd.use(cached);
+    await fillNotifications(a.itd);
+    await fillNotifications(b.itd);
+    expect(cached.size).toBe(4);
+
+    const source = a.itd.realtime({ syncCount: false });
+    const realtime = new FakeRealtime(source.getAuthScope());
+    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
+    expect(cached.size).toBe(2);
+
+    await fillNotifications(a.itd);
+    await fillNotifications(b.itd);
+    expect(a.calls).toHaveLength(4);
+    expect(b.calls).toHaveLength(2);
+
+    realtime.emit('notification');
+    expect(cached.size).toBe(2);
+
+    detach();
+    source.disconnect();
+  });
+
+  it('использует глобальную инвалидацию для потока без auth scope', async () => {
+    const handler: FetchHandler = (url) =>
+      url.endsWith('/count')
+        ? json({ count: 2 })
+        : json({ notifications: [], pagination: { total: 0, hasMore: false } });
+    const a = makeClient(handler);
+    const b = makeClient(handler);
+    const cached = cache({
+      ttl: 60_000,
+      routes: ['notifications.list', 'notifications.count'],
+    });
+    a.itd.use(cached);
+    b.itd.use(cached);
+    await fillNotifications(a.itd);
+    await fillNotifications(b.itd);
+    expect(cached.size).toBe(4);
+
+    const detach = cached.attachRealtime(new FakeRealtime() as unknown as ItdRealtime);
+
+    expect(cached.size).toBe(0);
+    detach();
+  });
+
+  it('не сохраняет уведомления, запрошенные до realtime-события', async () => {
+    let release!: (response: Response) => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const { itd, calls } = makeClient((_url, _init, call) =>
+      call === 1
+        ? oldResponse
+        : json({ notifications: [], pagination: { total: 0, hasMore: false } }),
+    );
+    const cached = cache({ ttl: 60_000, routes: ['notifications.list'] });
+    itd.use(cached);
+
+    const stale = itd.notifications.list();
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+
+    const source = itd.realtime({ syncCount: false });
+    const realtime = new FakeRealtime(source.getAuthScope());
+    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
+    realtime.emit('notification');
+
+    release(json({ notifications: [], pagination: { total: 0, hasMore: false } }));
+    await stale;
+    await itd.notifications.list();
+
+    expect(calls).toHaveLength(2);
+
+    detach();
+    source.disconnect();
   });
 
   it('проверяет переданный поток', () => {
