@@ -321,8 +321,8 @@ export class ItdTimeoutError extends ItdError {
 
 /** Запрос отменён через переданный `AbortSignal`. */
 export class ItdAbortError extends ItdError {
-  constructor(message = 'Запрос отменён') {
-    super(ItdErrorKind.Abort, message);
+  constructor(message = 'Запрос отменён', options?: { cause?: unknown }) {
+    super(ItdErrorKind.Abort, message, options);
     this.name = 'ItdAbortError';
   }
 }

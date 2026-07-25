@@ -140,6 +140,15 @@ export class AuthManager {
   #deviceId: string | undefined;
   /** Общий промис первичной выдачи `deviceId` — чтобы параллельные запросы получили один. */
   #deviceIdLoading: Promise<string> | null = null;
+  /**
+   * Счётчик смен владельца авторизации.
+   *
+   * Растёт при каждой операции, которая заменяет или очищает сессию извне: `clear`,
+   * `setSession`, `setAccessToken`, вход. `#performRefresh` снимает его значение перед
+   * сетевым запросом и сверяет перед записью — иначе запоздавший ответ обновления мог бы
+   * воскресить уже очищенную сессию поверх `signOut`.
+   */
+  #authEpoch = 0;
 
   constructor(
     config: AuthConfig,
@@ -201,6 +210,11 @@ export class AuthManager {
 
   #rotateAuthScope(): void {
     this.#authScope = nextAuthScope();
+  }
+
+  /** Отмечает смену владельца авторизации — обесценивает результат идущего обновления. */
+  #invalidateInFlight(): void {
+    this.#authEpoch += 1;
   }
 
   #identityForToken(accessToken: string | undefined): AuthIdentity {
@@ -391,6 +405,7 @@ export class AuthManager {
   /** Сохраняет токен, полученный извне, — например после подтверждения OTP. */
   async setAccessToken(accessToken: string): Promise<void> {
     await this.#loadSession();
+    this.#invalidateInFlight();
     this.#transitionAuth(accessToken);
     await this.#saveSession({ ...(this.#session ?? {}), accessToken, obtainedAt: Date.now() });
     this.#emitter.emit('tokens', { accessToken });
@@ -416,6 +431,7 @@ export class AuthManager {
   /** Заменяет сессию и связанные с ней cookie целиком. */
   async setSession(session: ItdSession): Promise<void> {
     await this.#loadSession();
+    this.#invalidateInFlight();
     this.#transitionAuth(session.accessToken);
     this.#jar.clear();
     this.#jar.deserialize(session.cookies);
@@ -437,6 +453,7 @@ export class AuthManager {
    */
   async clear(): Promise<void> {
     await this.#loadSession();
+    this.#invalidateInFlight();
     this.#transitionAuth(undefined);
     this.#session = null;
     this.#jar.clear();
@@ -554,6 +571,10 @@ export class AuthManager {
       return this.#reloginOrNull();
     }
 
+    // Снимок владельца авторизации: если он сменится, пока идёт сетевой запрос,
+    // результат обновления записывать нельзя.
+    const epoch = this.#authEpoch;
+
     try {
       // Служебный запрос идёт через плагины и повторы, но мимо очереди и слоя авторизации:
       // обновление порождается изнутри запроса, который держит слот в очереди и ждёт его результата.
@@ -569,6 +590,12 @@ export class AuthManager {
 
       const accessToken = readAccessToken(payload);
       if (!accessToken) return this.#reloginOrNull();
+
+      if (this.#authEpoch !== epoch) {
+        // Пока шёл refresh, владельца сменили (signOut / setSession / вход): его результат
+        // устарел. Не воскрешаем сохранённую сессию, отдаём актуальный токен как есть.
+        return this.#session?.accessToken ?? null;
+      }
 
       // Сервер выдаёт при обновлении **новый** refresh-токен (`Set-Cookie: refresh_token=…;
       // Max-Age=2592000`) и тут же гасит прежний. Забрать его из jar обязательно: иначе
@@ -592,6 +619,12 @@ export class AuthManager {
       return accessToken;
     } catch (error) {
       if (error instanceof ItdApiError) {
+        if (this.#authEpoch !== epoch) {
+          // Владельца сменили, пока шёл refresh: ошибка относится к уже забытой сессии —
+          // не трогаем актуальное состояние.
+          return this.#session?.accessToken ?? null;
+        }
+
         // Сессия недействительна — чистим её, иначе будем биться в стену на каждом запросе.
         this.#transitionAuth(undefined);
         this.#session = null;
@@ -696,6 +729,7 @@ export class AuthManager {
 
     // Прежний refresh-токен и cookie намеренно не переносятся: вход выдал новую сессию,
     // и держаться за старую было бы ошибкой. Идентификатор устройства добавит #saveSession.
+    this.#invalidateInFlight();
     this.#transitionAuth(accessToken);
     await this.#saveSession({ accessToken, obtainedAt: Date.now() });
     this.#emitter.emit('tokens', { accessToken });

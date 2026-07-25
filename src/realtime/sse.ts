@@ -19,6 +19,14 @@ export interface SseTransportOptions {
    * По умолчанию 90 000. `0` отключает проверку.
    */
   idleTimeout?: number;
+  /**
+   * Сколько миллисекунд ждать ответа на запрос потока, прежде чем оборвать попытку.
+   *
+   * Проверка молчания ({@link idleTimeout}) начинается только после получения тела ответа.
+   * Если `fetch` завис на установке соединения, без этого таймаута переподключение не
+   * запустится до системного сетевого таймаута. По умолчанию 20 000. `0` отключает проверку.
+   */
+  handshakeTimeout?: number;
 }
 
 /**
@@ -36,11 +44,13 @@ export class SseTransport implements RealtimeTransport {
   readonly name = 'sse';
 
   readonly #idleTimeout: number;
+  readonly #handshakeTimeout: number;
   /** Идентификатор последнего события — отправляется при переподключении. */
   #lastEventId: string | undefined;
 
   constructor(options: SseTransportOptions = {}) {
     this.#idleTimeout = options.idleTimeout ?? 90_000;
+    this.#handshakeTimeout = options.handshakeTimeout ?? 20_000;
   }
 
   async connect(context: TransportContext): Promise<void> {
@@ -57,19 +67,53 @@ export class SseTransport implements RealtimeTransport {
     // Сервер пока не присылает id, но поддержка не мешает и пригодится, если начнёт.
     if (this.#lastEventId) headers.set('Last-Event-ID', this.#lastEventId);
 
-    const response = await context.fetch(url, {
-      method: 'GET',
-      headers,
-      signal: context.signal,
-    });
+    // Отдельный контроллер, связанный с сигналом потока: помимо внешней отмены он позволяет
+    // оборвать зависшее рукопожатие своим таймаутом. Живёт до конца чтения тела.
+    const controller = new AbortController();
+    const relayAbort = () => controller.abort(context.signal.reason);
+    if (context.signal.aborted) controller.abort(context.signal.reason);
+    else context.signal.addEventListener('abort', relayAbort, { once: true });
 
-    if (response.status === 401) throw new UnauthorizedStreamError();
-    if (!response.ok) throw new Error(`Поток уведомлений вернул статус ${response.status}`);
-    if (!response.body) throw new Error('Ответ потока уведомлений пуст');
+    try {
+      const response = await this.#handshake(url, headers, context, controller);
 
-    context.onOpen();
+      if (response.status === 401) throw new UnauthorizedStreamError();
+      if (!response.ok) throw new Error(`Поток уведомлений вернул статус ${response.status}`);
+      if (!response.body) throw new Error('Ответ потока уведомлений пуст');
 
-    await this.#read(response.body, context);
+      context.onOpen();
+
+      await this.#read(response.body, context);
+    } finally {
+      context.signal.removeEventListener('abort', relayAbort);
+    }
+  }
+
+  /** Выполняет запрос потока, обрывая его, если ответ не пришёл за отведённое время. */
+  async #handshake(
+    url: string,
+    headers: Headers,
+    context: TransportContext,
+    controller: AbortController,
+  ): Promise<Response> {
+    let expired = false;
+    const timer =
+      this.#handshakeTimeout > 0
+        ? setTimeout(() => {
+            expired = true;
+            // Абортим связанный контроллер: `fetch` реджектит, и внешний код переподключится.
+            controller.abort(new Error('Истёк таймаут рукопожатия SSE'));
+          }, this.#handshakeTimeout)
+        : undefined;
+
+    try {
+      return await context.fetch(url, { method: 'GET', headers, signal: controller.signal });
+    } catch (error) {
+      if (expired) throw new Error('Поток уведомлений не ответил: истёк таймаут рукопожатия');
+      throw error;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   async #read(body: ReadableStream<Uint8Array>, context: TransportContext): Promise<void> {

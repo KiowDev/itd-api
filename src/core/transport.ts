@@ -440,14 +440,21 @@ export class Transport {
     method: string,
     timeout: number,
   ): ItdTimeoutError | ItdAbortError | ItdNetworkError {
-    const aborted = error instanceof Error && error.name === 'AbortError';
+    // Пользовательская отмена с собственным `reason` реджектит `fetch` этим значением, а не
+    // `AbortError`, — поэтому опираемся на состояние сигнала, а не только на имя ошибки.
+    const aborted = abort.signal.aborted || (error instanceof Error && error.name === 'AbortError');
 
     if (aborted && abort.timedOut()) {
       return new ItdTimeoutError({ timeout, method, path: request.path });
     }
 
     if (aborted) {
-      return new ItdAbortError(`Запрос ${method} ${request.path} отменён`);
+      // Сохраняем причину отмены: пользователь мог передать её в `abort(reason)`.
+      const reason = request.signal?.reason;
+      return new ItdAbortError(
+        `Запрос ${method} ${request.path} отменён`,
+        reason !== undefined ? { cause: reason } : undefined,
+      );
     }
 
     return new ItdNetworkError(

@@ -37,8 +37,6 @@ export class PollTransport implements RealtimeTransport {
     let firstRun = true;
     let lastUnreadCount: number | undefined;
 
-    context.onOpen();
-
     while (!context.signal.aborted) {
       const token = await context.getToken();
       if (!token) throw new UnauthorizedStreamError();
@@ -57,6 +55,11 @@ export class PollTransport implements RealtimeTransport {
 
       if (response.status === 401) throw new UnauthorizedStreamError();
       if (!response.ok) throw new Error(`Опрос уведомлений вернул статус ${response.status}`);
+
+      // Соединение считается установленным только после первого успешного ответа: иначе
+      // при постоянно недоступной сети каждая попытка обнуляла бы счётчик и maxAttempts
+      // не срабатывал бы никогда.
+      context.onOpen();
 
       const body: unknown = await response.json();
       const payload =

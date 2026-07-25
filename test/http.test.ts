@@ -289,6 +289,45 @@ describe('Transport: ошибки', () => {
     ).rejects.toThrow(ItdAbortError);
     expect(mock.callCount).toBe(1);
   });
+
+  it('отмена с пользовательским reason тоже становится ItdAbortError', async () => {
+    // Настоящий fetch реджектит именно значением reason, а не AbortError.
+    const reason = new Error('остановлено пользователем');
+    const fetchImpl = ((_url: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal?.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      })) as typeof fetch;
+
+    const config = resolveConfig({
+      baseUrl: 'https://itd.test',
+      fetch: fetchImpl,
+      timeout: 0,
+      retry: false,
+      rateLimit: false,
+    });
+    const transport = new Transport(config, {
+      cookies: undefined,
+      getDeviceId: undefined,
+      onRateLimit: undefined,
+    });
+    const controller = new AbortController();
+
+    const promise = transport.send({
+      method: 'GET',
+      path: '/api/posts',
+      signal: controller.signal,
+    });
+    controller.abort(reason);
+
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ItdAbortError);
+    expect((error as ItdAbortError).cause).toBe(reason);
+  });
 });
 
 describe('Transport: cookie и rate-limit', () => {

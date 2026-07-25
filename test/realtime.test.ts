@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../src/client.js';
 import { ItdConfigError } from '../src/core/errors.js';
+import { PollTransport } from '../src/realtime/poll.js';
 import { RECONNECT_BACKOFF, reconnectDelay } from '../src/realtime/reconnect.js';
 import { SseTransport } from '../src/realtime/sse.js';
 import { ItdRealtime, type RealtimeDeps, type RealtimeOptions } from '../src/realtime/stream.js';
@@ -86,6 +87,47 @@ describe('SSE-транспорт: подключение', () => {
         onOpen: () => {},
       }),
     ).rejects.toThrow(UnauthorizedStreamError);
+  });
+
+  it('обрывает зависшее рукопожатие по таймауту', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = new SseTransport({ handshakeTimeout: 1000 });
+      let abortReason: unknown;
+
+      const promise = transport.connect({
+        baseUrl: 'https://itd.test',
+        // fetch «зависает» на установке соединения и реагирует только на отмену.
+        fetch: ((_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            signal?.addEventListener(
+              'abort',
+              () => {
+                abortReason = signal.reason;
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          })) as unknown as typeof fetch,
+        baseHeaders: () => Promise.resolve(new Headers()),
+        getToken: () => Promise.resolve('t'),
+        signal: new AbortController().signal,
+        onEvent: () => {},
+        onParseError: () => {},
+        onOpen: () => {},
+      });
+
+      const settled = promise.catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(1000);
+      const error = await settled;
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('таймаут рукопожатия');
+      expect(abortReason).toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('получает общие заголовки клиента', async () => {
@@ -474,6 +516,32 @@ describe('поток: жизненный цикл', () => {
 
     await vi.advanceTimersByTimeAsync(2000);
     expect(transport.connects).toBe(2);
+
+    stream.disconnect();
+  });
+
+  it('poll: недоступная сеть не мешает maxAttempts сработать', async () => {
+    // Регрессия: раньше poll вызывал onOpen() до первого ответа, обнуляя счётчик попыток
+    // на каждой неудаче, — giveup не наступал никогда.
+    let fetchCalls = 0;
+    const failingFetch = (() => {
+      fetchCalls += 1;
+      return Promise.reject(new Error('нет сети'));
+    }) as unknown as typeof fetch;
+
+    const transport = new PollTransport();
+    const stream = makeStream(transport, { fetch: failingFetch }, { maxAttempts: 1 });
+
+    const giveup = vi.fn();
+    stream.on('giveup', giveup);
+    stream.on('error', () => {});
+
+    await stream.connect();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(giveup).toHaveBeenCalledOnce();
+    // Первая попытка плюс одна разрешённая повторная — и не больше.
+    expect(fetchCalls).toBe(2);
 
     stream.disconnect();
   });

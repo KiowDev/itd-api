@@ -1,3 +1,4 @@
+import { ItdConfigError } from './errors.js';
 import { pickArray, pickBoolean, pickNumber, pickObject, pickString } from './unwrap.js';
 
 /**
@@ -238,6 +239,15 @@ export class Paginator<T> implements AsyncIterable<T> {
   #pagesLoaded = 0;
 
   constructor(options: PaginatorOptions<T>) {
+    if (
+      options.maxPages !== undefined &&
+      (!Number.isInteger(options.maxPages) || options.maxPages < 1)
+    ) {
+      throw new ItdConfigError(
+        `maxPages должен быть целым числом не меньше 1, получено: ${options.maxPages}`,
+      );
+    }
+
     this.#options = options;
     this.#maxPages = options.maxPages ?? 1000;
     this.#state = options.start ?? {};
@@ -294,6 +304,9 @@ export class Paginator<T> implements AsyncIterable<T> {
    * @param max сколько элементов достаточно; без него перебираются все страницы
    */
   async collect(max?: number): Promise<T[]> {
+    // Ноль и отрицательное число — «ничего не нужно»: не делаем ни одного запроса.
+    if (max !== undefined && max <= 0) return [];
+
     const result: T[] = [];
 
     for await (const item of this) {

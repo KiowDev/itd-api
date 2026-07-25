@@ -80,6 +80,12 @@ export interface RealtimeOptions extends ReconnectOptions {
    * может незаметно «зависнуть».
    */
   idleTimeout?: number;
+  /**
+   * Сколько ждать ответа на запрос потока, прежде чем оборвать попытку, мс. По умолчанию
+   * 20 000. Защищает от зависания на установке соединения, когда {@link idleTimeout} ещё
+   * не действует. `0` отключает проверку. Только для потокового транспорта.
+   */
+  handshakeTimeout?: number;
   /** Как часто опрашивать сервер, если используется запасной транспорт. */
   pollInterval?: number;
   /**
@@ -123,6 +129,7 @@ function validateRealtimeOptions(options: RealtimeOptions): void {
   positiveInteger(options.maxAttempts, 'maxAttempts');
   duration(options.pollInterval, 'pollInterval', 1);
   duration(options.idleTimeout, 'idleTimeout', 0);
+  duration(options.handshakeTimeout, 'handshakeTimeout', 0);
 
   if (options.jitter !== undefined && !(options.jitter >= 0 && options.jitter <= 1)) {
     throw new ItdConfigError(
@@ -324,6 +331,9 @@ export class ItdRealtime {
     return new SseTransport({
       ...(this.#options.idleTimeout !== undefined
         ? { idleTimeout: this.#options.idleTimeout }
+        : {}),
+      ...(this.#options.handshakeTimeout !== undefined
+        ? { handshakeTimeout: this.#options.handshakeTimeout }
         : {}),
     });
   }

@@ -327,6 +327,67 @@ describe('диагностика неудачного обновления', () 
   });
 });
 
+describe('гонка выхода и запоздавшего обновления', () => {
+  it('clear() во время refresh не воскрешает сессию поздним ответом', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const { auth, config } = makeAuth(
+      async () => {
+        await gate;
+        return json({ accessToken: 'refreshed' });
+      },
+      { auth: { accessToken: 'old-token', refreshToken: 'r' } },
+    );
+
+    // Заранее фиксируем deviceId, чтобы его ленивое сохранение не мешало проверке гонки.
+    await auth.getDeviceId();
+
+    // Обновление стартует и виснет на ответе сервера.
+    const refreshing = auth.refresh();
+    // Выход происходит, пока refresh ещё в полёте.
+    await auth.clear();
+    // Сервер отвечает уже после выхода.
+    release();
+
+    await expect(refreshing).rejects.toBeInstanceOf(ItdAuthError);
+
+    expect(await auth.getAccessToken()).toBeNull();
+    const stored = await config.storage.get();
+    expect(stored?.accessToken).toBeUndefined();
+  });
+
+  it('setSession во время refresh не перетирается поздним ответом', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const { auth, config } = makeAuth(
+      async () => {
+        await gate;
+        return json({ accessToken: 'stale-refreshed' });
+      },
+      { auth: { accessToken: 'old-token', refreshToken: 'r' } },
+    );
+
+    await auth.getDeviceId();
+
+    const refreshing = auth.refresh();
+    await auth.setSession({ accessToken: 'explicit', obtainedAt: Date.now() });
+    release();
+
+    // Запоздавшее обновление отдаёт актуальный (заданный вручную) токен, но не свой.
+    await expect(refreshing).resolves.toBe('explicit');
+
+    expect(await auth.getAccessToken()).toBe('explicit');
+    const stored = await config.storage.get();
+    expect(stored?.accessToken).toBe('explicit');
+  });
+});
+
 describe('идентификатор устройства', () => {
   it('уходит заголовком и не меняется между запросами', async () => {
     const { http, mock } = makeAuth(() => json({ data: {} }));

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ItdConfigError } from '../src/core/errors.js';
 import {
   type Page,
   type PageState,
@@ -210,6 +211,28 @@ describe('предохранители', () => {
 
     expect(await paginator.collect(4)).toHaveLength(4);
     expect(loads).toBe(2);
+  });
+
+  it('collect(0) не делает ни одного запроса и возвращает пустой массив', async () => {
+    const load = vi.fn();
+    const paginator = new Paginator<number>({ mode: 'page', load });
+
+    expect(await paginator.collect(0)).toEqual([]);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('отклоняет некорректный maxPages', () => {
+    const load = () => Promise.resolve({ items: [1], hasMore: false, raw: null });
+
+    expect(() => new Paginator<number>({ mode: 'page', maxPages: 0, load })).toThrow(
+      ItdConfigError,
+    );
+    expect(() => new Paginator<number>({ mode: 'page', maxPages: -1, load })).toThrow(
+      ItdConfigError,
+    );
+    expect(() => new Paginator<number>({ mode: 'page', maxPages: 1.5, load })).toThrow(
+      ItdConfigError,
+    );
   });
 });
 
