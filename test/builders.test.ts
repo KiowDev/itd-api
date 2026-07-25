@@ -160,8 +160,8 @@ describe('билдер поста', () => {
   });
 
   it('требует UUID для стены и подсказывает, где его взять', () => {
-    expect(() => post('т').onWall('durov').build()).toThrow(/должен быть UUID/);
-    expect(() => post('т').onWall('durov').build()).toThrow(/itd\.users\.get/);
+    expect(() => post('т').onWall('nowkie').build()).toThrow(/должен быть UUID/);
+    expect(() => post('т').onWall('nowkie').build()).toThrow(/itd\.users\.get/);
   });
 
   it('принимает корректный UUID стены', () => {

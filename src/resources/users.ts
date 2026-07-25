@@ -122,7 +122,7 @@ export class UsersResource extends BaseResource {
    *
    * @example
    * ```ts
-   * const profile = await itd.users.get('durov');
+   * const profile = await itd.users.get('nowkie');
    * await itd.posts.create({ content: 'привет', wallRecipientId: profile.id });
    * ```
    */

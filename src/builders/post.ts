@@ -122,7 +122,7 @@ export class PostBuilder implements ItdBuilder<CreatePostInput> {
    *
    * @example
    * ```ts
-   * post().markup((m) => m.text('смотрите ').hashtag('котики').text(' от ').mention('durov'));
+   * post().markup((m) => m.text('смотрите ').hashtag('котики').text(' от ').mention('nowkie'));
    * ```
    */
   markup(input: MarkupInput): PostBuilder {

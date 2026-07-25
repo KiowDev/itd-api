@@ -225,7 +225,7 @@ export function readOffsetPage<T>(body: unknown, field: string, offset: number):
  *
  * @example Постранично
  * ```ts
- * for await (const page of itd.users.followers('durov').pages()) {
+ * for await (const page of itd.users.followers('nowkie').pages()) {
  *   console.log(page.items.length, 'из', page.total);
  * }
  * ```

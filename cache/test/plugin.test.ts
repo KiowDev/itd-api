@@ -81,8 +81,8 @@ describe('TTL/LRU-кэш', () => {
 
     const first = await itd.posts.get('1');
     const second = await itd.posts.get('1');
-    await itd.users.get('durov');
-    await itd.users.get('durov');
+    await itd.users.get('nowkie');
+    await itd.users.get('nowkie');
 
     expect(first.content).toBe('ответ-1');
     expect(second.content).toBe('ответ-1');
@@ -299,26 +299,26 @@ describe('управление и инвалидация', () => {
 
   it('очищает один маршрут или всё хранилище', async () => {
     const { itd, calls } = makeClient((url, _init, call) => {
-      if (url.includes('/api/users/')) return json({ id: 'u1', username: 'durov', call });
+      if (url.includes('/api/users/')) return json({ id: 'u1', username: 'nowkie', call });
       return postFromUrl(url, call);
     });
     const cached = cache({ ttl: 60_000, routes: ['posts.get', 'users.get'] });
     itd.use(cached);
 
     await itd.posts.get('1');
-    await itd.users.get('durov');
+    await itd.users.get('nowkie');
     expect(cached.size).toBe(2);
 
     cached.invalidate('posts.get');
     expect(cached.size).toBe(1);
     await itd.posts.get('1');
-    await itd.users.get('durov');
+    await itd.users.get('nowkie');
     expect(calls).toHaveLength(3);
 
     cached.clear();
     expect(cached.size).toBe(0);
     await itd.posts.get('1');
-    await itd.users.get('durov');
+    await itd.users.get('nowkie');
     expect(calls).toHaveLength(5);
   });
 
@@ -338,16 +338,16 @@ describe('управление и инвалидация', () => {
   it('инвалидирует только связанные с мутацией маршруты', async () => {
     const { itd, calls } = makeClient((url, init, call) => {
       if (init.method === 'POST') return json({ liked: true });
-      if (url.includes('/api/users/')) return json({ id: 'u1', username: 'durov', call });
+      if (url.includes('/api/users/')) return json({ id: 'u1', username: 'nowkie', call });
       return postFromUrl(url, call);
     });
     itd.use(cache({ ttl: 60_000, routes: ['posts.get', 'users.get'] }));
 
     await itd.posts.get('1');
-    await itd.users.get('durov');
+    await itd.users.get('nowkie');
     await itd.posts.like('1');
     await itd.posts.get('1');
-    await itd.users.get('durov');
+    await itd.users.get('nowkie');
 
     expect(calls).toHaveLength(4);
   });

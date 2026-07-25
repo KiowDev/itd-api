@@ -53,7 +53,7 @@ interface RequestOptions {
 ```
 
 **`UserRef` против `UserId`.** `UserRef` — это UUID **или** имя пользователя: подходят оба
-(`itd.users.get('durov')` и `itd.users.get('9f1c…')`). `UserId` — строго UUID; имя
+(`itd.users.get('nowkie')` и `itd.users.get('9f1c…')`). `UserId` — строго UUID; имя
 пользователя там не работает (например, `wallRecipientId`).
 
 **Даты.** Все поля дат — строки ISO-8601 (`IsoDate`). Библиотека не превращает их в `Date`;

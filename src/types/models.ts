@@ -28,7 +28,7 @@ export type UserId = string;
 /**
  * Ссылка на пользователя: **UUID либо имя пользователя**.
  *
- * Пути вида `/api/users/{id}` принимают оба варианта, поэтому `itd.users.get('durov')`
+ * Пути вида `/api/users/{id}` принимают оба варианта, поэтому `itd.users.get('nowkie')`
  * работает так же, как `itd.users.get('9f1c…')`.
  */
 export type UserRef = string;
@@ -477,7 +477,7 @@ export interface Clan {
  *
  * @example
  * ```ts
- * const result = await itd.users.follow('durov');
+ * const result = await itd.users.follow('nowkie');
  * // { following: true, followersCount: 11 }
  * ```
  */

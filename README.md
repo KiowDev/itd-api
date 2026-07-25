@@ -143,7 +143,7 @@ const next = await itd.posts.list({ tab: 'popular', cursor: page.nextCursor ?? u
 
 ```ts
 // вернёт 20 записей и остановится — это предел API, а не библиотеки
-const all = await itd.users.iterateFollowers('durov').collect();
+const all = await itd.users.iterateFollowers('nowkie').collect();
 ```
 
 **`posts.byUser()` — это стена, а не авторские посты.** В неё входят и записи, которые
@@ -191,7 +191,7 @@ const created = await itd.posts.create(
       .text('смотрите ')
       .hashtag('котики')
       .text(' от ')
-      .mention('durov')
+      .mention('nowkie')
       .text(': ')
       .bold('важно'),
   ),
@@ -208,7 +208,7 @@ renderSpans(created.content, created.spans); // безопасный HTML по �
 Для обычного текста есть автоматическое обнаружение ссылок, хэштегов и упоминаний:
 
 ```ts
-await itd.posts.create(post('#котики от @durov: https://example.com').autoSpans());
+await itd.posts.create(post('#котики от @nowkie: https://example.com').autoSpans());
 ```
 
 `renderSpans()` также выводит Markdown и ANSI и позволяет настроить маршруты упоминаний,
@@ -223,9 +223,9 @@ spans, поскольку они рассчитаны для другого те
 проверяет данные и бросает `ItdConfigError` **до** обращения к сети:
 
 ```ts
-post('привет').onWall('durov');
+post('привет').onWall('nowkie');
 // ItdConfigError: wallRecipientId должен быть UUID, а не именем пользователя
-// (получено: «durov»). Идентификатор можно взять из профиля:
+// (получено: «nowkie»). Идентификатор можно взять из профиля:
 // (await itd.users.get(username)).id
 ```
 

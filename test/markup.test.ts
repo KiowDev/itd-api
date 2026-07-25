@@ -11,14 +11,14 @@ describe('билдер разметки', () => {
       .text('смотрите ')
       .hashtag('котики')
       .text(' от ')
-      .mention('@durov')
+      .mention('@nowkie')
       .build();
 
     expect(result).toEqual({
-      content: 'смотрите #котики от @durov',
+      content: 'смотрите #котики от @nowkie',
       spans: [
         { type: SpanType.Hashtag, offset: 9, length: 7, tag: 'котики' },
-        { type: SpanType.Mention, offset: 20, length: 6, username: 'durov' },
+        { type: SpanType.Mention, offset: 20, length: 7, username: 'nowkie' },
       ],
     });
   });
@@ -104,7 +104,7 @@ describe('билдер разметки', () => {
 
 describe('автоматическая разметка', () => {
   it('находит ссылки, unicode-хэштеги и упоминания', () => {
-    const text = '🐈 #котики от @durov: https://example.com/a?q=1.';
+    const text = '🐈 #котики от @nowkie: https://example.com/a?q=1.';
     const spans = autoSpans(text);
 
     expect(spans).toEqual([
@@ -116,9 +116,9 @@ describe('автоматическая разметка', () => {
       },
       {
         type: SpanType.Mention,
-        offset: text.indexOf('@durov'),
-        length: '@durov'.length,
-        username: 'durov',
+        offset: text.indexOf('@nowkie'),
+        length: '@nowkie'.length,
+        username: 'nowkie',
       },
       {
         type: SpanType.Link,
@@ -130,14 +130,14 @@ describe('автоматическая разметка', () => {
   });
 
   it('не включает хвостовую пунктуацию в username', () => {
-    const text = 'спасибо @durov. пинг @bot- и @bot_';
+    const text = 'спасибо @nowkie. пинг @bot- и @bot_';
 
     expect(autoSpans(text)).toEqual([
       {
         type: SpanType.Mention,
-        offset: text.indexOf('@durov'),
-        length: '@durov'.length,
-        username: 'durov',
+        offset: text.indexOf('@nowkie'),
+        length: '@nowkie'.length,
+        username: 'nowkie',
       },
       {
         type: SpanType.Mention,
@@ -272,40 +272,40 @@ describe('renderSpans', () => {
   it('строит адрес упоминания из полного span при разрезании другим стилем', () => {
     expect(
       renderSpans(
-        '@durov',
+        '@nowkie',
         [
-          { type: SpanType.Mention, offset: 0, length: 6 },
+          { type: SpanType.Mention, offset: 0, length: 7 },
           { type: SpanType.Bold, offset: 0, length: 3 },
         ],
         { format: 'html' },
       ),
     ).toBe(
-      '<a href="/@durov" class="itd-mention"><strong>@du</strong></a>' +
-        '<a href="/@durov" class="itd-mention">rov</a>',
+      '<a href="/@nowkie" class="itd-mention"><strong>@no</strong></a>' +
+        '<a href="/@nowkie" class="itd-mention">wkie</a>',
     );
   });
 
   it('предпочитает username и старый tag идентификатору mention', () => {
     expect(
-      renderSpans('@durov', [
+      renderSpans('@nowkie', [
         {
           type: SpanType.Mention,
           offset: 0,
-          length: 6,
-          tag: 'durov',
+          length: 7,
+          tag: 'nowkie',
           id: '0193-uuid',
         },
       ]),
-    ).toBe('<a href="/@durov" class="itd-mention">@durov</a>');
+    ).toBe('<a href="/@nowkie" class="itd-mention">@nowkie</a>');
   });
 
   it('позволяет настроить маршруты и префикс HTML-классов', () => {
     expect(
       renderSpans(
-        '@durov #новости',
+        '@nowkie #новости',
         [
-          { type: SpanType.Mention, offset: 0, length: 6, username: 'durov' },
-          { type: SpanType.Hashtag, offset: 7, length: 8, tag: 'новости' },
+          { type: SpanType.Mention, offset: 0, length: 7, username: 'nowkie' },
+          { type: SpanType.Hashtag, offset: 8, length: 8, tag: 'новости' },
         ],
         {
           mentionUrl: (username) => `/users/${username}`,
@@ -314,43 +314,51 @@ describe('renderSpans', () => {
         },
       ),
     ).toBe(
-      '<a href="/users/durov" class="feed-mention">@durov</a> ' +
+      '<a href="/users/nowkie" class="feed-mention">@nowkie</a> ' +
         '<a href="/topics/новости" class="feed-hashtag">#новости</a>',
     );
   });
 
   it('может отключить entity-ссылки и HTML-классы', () => {
     expect(
-      renderSpans('@durov', [{ type: SpanType.Mention, offset: 0, length: 6, username: 'durov' }], {
-        classPrefix: null,
-      }),
-    ).toBe('<a href="/@durov">@durov</a>');
+      renderSpans(
+        '@nowkie',
+        [{ type: SpanType.Mention, offset: 0, length: 7, username: 'nowkie' }],
+        {
+          classPrefix: null,
+        },
+      ),
+    ).toBe('<a href="/@nowkie">@nowkie</a>');
     expect(
-      renderSpans('@durov', [{ type: SpanType.Mention, offset: 0, length: 6, username: 'durov' }], {
-        mentionUrl: () => null,
-      }),
-    ).toBe('@durov');
+      renderSpans(
+        '@nowkie',
+        [{ type: SpanType.Mention, offset: 0, length: 7, username: 'nowkie' }],
+        {
+          mentionUrl: () => null,
+        },
+      ),
+    ).toBe('@nowkie');
   });
 
   it('не принимает опасную схему из пользовательского построителя адреса', () => {
     expect(
-      renderSpans('@durov', [{ type: SpanType.Mention, offset: 0, length: 6 }], {
+      renderSpans('@nowkie', [{ type: SpanType.Mention, offset: 0, length: 7 }], {
         mentionUrl: () => 'javascript:alert(1)',
       }),
-    ).toBe('@durov');
+    ).toBe('@nowkie');
   });
 
   it('сохраняет mention и hashtag ссылками в Markdown', () => {
     expect(
       renderSpans(
-        '@durov и #новости',
+        '@nowkie и #новости',
         [
-          { type: SpanType.Mention, offset: 0, length: 6, username: 'durov' },
-          { type: SpanType.Hashtag, offset: 9, length: 8, tag: 'новости' },
+          { type: SpanType.Mention, offset: 0, length: 7, username: 'nowkie' },
+          { type: SpanType.Hashtag, offset: 10, length: 8, tag: 'новости' },
         ],
         { format: 'markdown' },
       ),
-    ).toBe('[@durov](/@durov) и [#новости](/hashtag/%D0%BD%D0%BE%D0%B2%D0%BE%D1%81%D1%82%D0%B8)');
+    ).toBe('[@nowkie](/@nowkie) и [#новости](/hashtag/%D0%BD%D0%BE%D0%B2%D0%BE%D1%81%D1%82%D0%B8)');
   });
 
   it('не экранирует обычные точки и дефисы в Markdown', () => {

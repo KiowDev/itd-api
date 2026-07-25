@@ -34,7 +34,7 @@ const FOLLOW_TYPES = new Set<string>([
  * @example
  * ```ts
  * const url = resolveNotificationUrl(notification);
- * // '/@durov/post/9f1c…?comment=2b7e…'
+ * // '/@nowkie/post/9f1c…?comment=2b7e…'
  * ```
  */
 export function resolveNotificationUrl(notification: Notification): string {

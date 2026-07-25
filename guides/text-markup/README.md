@@ -28,7 +28,7 @@ await itd.posts.create(
       .text('смотрите ')
       .hashtag('котики')
       .text(' от ')
-      .mention('durov')
+      .mention('nowkie')
       .newline()
       .bold('важно')
       .text(': ')
@@ -81,7 +81,7 @@ const linked = markup()
 
 ```ts
 await itd.posts.create(
-  post('#котики от @durov: https://example.com').autoSpans(),
+  post('#котики от @nowkie: https://example.com').autoSpans(),
 );
 ```
 
@@ -91,7 +91,7 @@ await itd.posts.create(
 ```ts
 import { autoSpans } from 'itd-api';
 
-const spans = autoSpans('спасибо @durov. #котики', {
+const spans = autoSpans('спасибо @nowkie. #котики', {
   links: true,
   mentions: true,
   hashtags: true,

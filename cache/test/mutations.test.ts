@@ -5,7 +5,7 @@ describe('каталог мутаций', () => {
   it.each([
     ['POST', '/api/posts/p1/like', 'posts.get'],
     ['PATCH', '/api/comments/c1', 'posts.comments'],
-    ['POST', '/api/users/durov/follow', 'users.followStatus'],
+    ['POST', '/api/users/nowkie/follow', 'users.followStatus'],
     ['PUT', '/api/users/me/privacy', 'users.getPrivacy'],
     ['POST', '/api/notifications/read-all', 'notifications.count'],
     ['DELETE', '/api/v1/subscription/methods/m1', 'subscription.methods'],

@@ -283,11 +283,11 @@ describe('пользователи', () => {
   });
 
   it('принимает имя пользователя вместо идентификатора', async () => {
-    const { itd, mock } = makeClient([json({ id: 'u1', username: 'durov' })]);
+    const { itd, mock } = makeClient([json({ id: 'u1', username: 'nowkie' })]);
 
-    await itd.users.get('durov');
+    await itd.users.get('nowkie');
 
-    expect(mock.calls[0]?.url).toBe('https://itd.test/api/users/durov');
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/users/nowkie');
   });
 
   it('перебирает подписчиков постранично', async () => {
@@ -298,7 +298,7 @@ describe('пользователи', () => {
 
     const { itd, mock } = makeClient([page(['1', '2'], true, 1), page(['3'], false, 2)]);
 
-    const all = await itd.users.iterateFollowers('durov').collect();
+    const all = await itd.users.iterateFollowers('nowkie').collect();
 
     expect(all).toHaveLength(3);
     expect(mock.calls[1]?.url).toContain('page=2');

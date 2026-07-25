@@ -22,7 +22,7 @@ const created = await itd.posts.create(
       .text('Смотрите ')
       .hashtag('котики')
       .text(' от ')
-      .mention('durov')
+      .mention('nowkie')
       .newline()
       .bold('Важно')
       .text(': ')
@@ -38,7 +38,7 @@ console.log(
 );
 
 // Для готового обычного текста можно найти ссылки, хэштеги и упоминания автоматически.
-const detected = post('#котики от @durov: https://example.com').autoSpans().build();
+const detected = post('#котики от @nowkie: https://example.com').autoSpans().build();
 console.log('\nautoSpans():', detected);
 
 // Один фрагмент может иметь несколько стилей; вложенность задаёт пересечения.

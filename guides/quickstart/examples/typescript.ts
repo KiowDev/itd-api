@@ -47,7 +47,7 @@ for await (const item of itd.posts.iterate({ tab: FeedTab.Popular })) {
 }
 
 // По страницам — когда нужны сведения о самой странице.
-for await (const page of itd.users.iterateFollowers('durov').pages()) {
+for await (const page of itd.users.iterateFollowers('nowkie').pages()) {
   console.log(`${page.items.length} из ${page.total ?? '?'}`);
   break;
 }
@@ -76,7 +76,7 @@ try {
 
 // ── Стена другого пользователя требует UUID ─────────────────────────────────────
 // Проверка сработает до обращения к сети и подскажет, где взять идентификатор.
-const target = await itd.users.get('durov');
+const target = await itd.users.get('nowkie');
 await itd.posts.create((p) => p.content('привет!').onWall(target.id));
 
 // ── Жалоба: тип объекта и его идентификатор нельзя рассогласовать ───────────────
