@@ -134,11 +134,7 @@ export class ItdClient {
   readonly subscription: SubscriptionResource;
   /** Сведения о платформе: изменения, анонсы, баннер события. */
   readonly platform: PlatformResource;
-  /**
-   * Телеметрия просмотров.
-   *
-   * @experimental Недокументированные эндпоинты. Библиотека никогда не отправляет их сама.
-   */
+  /** Телеметрия просмотров. */
   readonly telemetry: TelemetryResource;
 
   constructor(options: ItdClientOptions = {}, internals: ItdClientInternals = {}) {
