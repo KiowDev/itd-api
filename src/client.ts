@@ -161,14 +161,21 @@ export class ItdClient {
     // транспорт; взаимная ссылка замыкается через отложенный вызов.
     let authManager!: AuthManager;
 
-    const transport = new Transport(config, {
-      cookies: config.useCookieJar ? this.#jar : undefined,
-      getDeviceId: () => authManager.getDeviceId(),
-      onRateLimit:
-        queues && config.rateLimit?.respectHeaders
-          ? (limit, remaining, request) => this.#throttleByHeaders(limit, remaining, request)
-          : undefined,
-    });
+    // Конструкторские хуки идут первыми, за ними — динамически подключаемые хуки плагинов.
+    // Один и тот же объект передаётся транспорту и retry-слою, поэтому плагин видит каждую
+    // сетевую попытку, в том числе onRetry между ними.
+    const hooks = this.#plugins.hooks(config.hooks);
+    const transport = new Transport(
+      { ...config, hooks },
+      {
+        cookies: config.useCookieJar ? this.#jar : undefined,
+        getDeviceId: () => authManager.getDeviceId(),
+        onRateLimit:
+          queues && config.rateLimit?.respectHeaders
+            ? (limit, remaining, request) => this.#throttleByHeaders(limit, remaining, request)
+            : undefined,
+      },
+    );
     this.#transport = transport;
 
     const pluginsLayer = createPluginsMiddleware(this.#plugins);
@@ -176,7 +183,7 @@ export class ItdClient {
       retry: config.retry,
       rateLimitDelays: config.rateLimit?.retryDelays ?? [],
       pauseQueue: queues ? (ms, request) => queues.for(request.service).pause(ms) : undefined,
-      hooks: config.hooks,
+      hooks,
       logger: config.logger,
       buildUrl: (request) => transport.buildUrl(request),
     });
@@ -297,6 +304,29 @@ export class ItdClient {
     return this;
   }
 
+  /** Имена подключённых плагинов в фактическом порядке выполнения обёрток. */
+  pluginNames(): string[] {
+    return this.#plugins.names();
+  }
+
+  /** Подключён ли плагин с таким именем. */
+  hasPlugin(name: string): boolean {
+    return this.#plugins.has(name);
+  }
+
+  /**
+   * Отключает плагин и освобождает заведённые им ресурсы.
+   *
+   * Новые запросы перестают видеть плагин сразу. Очистка дождётся логического запроса,
+   * который уже проходил через его обёртку.
+   *
+   * @returns `false`, если такого плагина не было
+   * @throws {ItdConfigError} если от плагина зависит другой подключённый плагин
+   */
+  unuse(name: string): Promise<boolean> {
+    return this.#plugins.remove(name);
+  }
+
   /**
    * Регистрирует сервис платформы — домен, отличный от основного.
    *
@@ -408,12 +438,27 @@ export class ItdClient {
    * ```ts
    * await using itd = new ItdClient({ auth: token });
    * // …работа…
-   * // close() вызовется сам на выходе из блока
+   * // dispose() вызовется сам на выходе из блока
    * ```
    */
   async close(): Promise<void> {
     this.#disconnectStreams();
     if (this.#ownsQueues) this.#queues?.stop();
+  }
+
+  /**
+   * Окончательно освобождает клиент: выполняет {@link close} и отключает все плагины.
+   *
+   * В отличие от `close()`, после `dispose()` плагины не восстанавливаются автоматически.
+   * Сам клиент остаётся пригоден для обычных запросов; при необходимости плагины можно
+   * подключить заново через {@link use}.
+   */
+  async dispose(): Promise<void> {
+    const results = await Promise.allSettled([this.close(), this.#plugins.dispose()]);
+    const errors = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason);
+    if (errors.length > 0) throw new AggregateError(errors, 'Не удалось освободить клиент');
   }
 
   /** Завершает потоки до того, как запросы начнут использовать другой аккаунт. */
@@ -424,7 +469,7 @@ export class ItdClient {
 
   /** Позволяет использовать клиент с `await using`. */
   [Symbol.asyncDispose](): Promise<void> {
-    return this.close();
+    return this.dispose();
   }
 
   // Fallback для `await using` в Node 18, где `Symbol.asyncDispose` отсутствует.

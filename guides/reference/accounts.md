@@ -44,8 +44,12 @@ get storage: MultiTokenStorage
 
 ```ts
 use(plugin: ItdPlugin): this
+pluginNames(): string[]
+hasPlugin(name: string): boolean
+unuse(name: string): Promise<boolean>
 ```
-Подключает плагин всем аккаунтам — и заведённым, и будущим.
+Подключает плагин всем аккаунтам — и заведённым, и будущим; показывает общий набор или
+отключает плагин сразу у всех клиентов.
 
 ```ts
 on<K>(event: K, listener): Unsubscribe
@@ -54,8 +58,11 @@ on<K>(event: K, listener): Unsubscribe
 
 ```ts
 close(): Promise<void>
+dispose(): Promise<void>
 ```
-Закрывает все аккаунты и останавливает общую очередь. Совместим с `await using`.
+`close()` временно закрывает все аккаунты и останавливает общую очередь, не отключая
+плагины. `dispose()` дополнительно вызывает teardown плагинов. `await using` вызывает
+`dispose()`.
 
 ```ts
 [Symbol.iterator](): IterableIterator<[string, ItdClient]>

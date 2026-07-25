@@ -9,7 +9,7 @@ import {
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
 } from './core/multi-storage.js';
-import { type ItdPlugin, validatePluginDefinition } from './core/plugins.js';
+import { assertPluginRemovable, type ItdPlugin, orderPluginDefinitions } from './core/plugins.js';
 import { RequestQueuePool } from './core/rate-limit.js';
 import type { TokenStorage } from './core/storage.js';
 import type { ItdClientOptions } from './types/options.js';
@@ -147,6 +147,8 @@ export class ItdAccounts {
   readonly #eventUnsubscribers = new Map<string, Unsubscribe[]>();
   /** Плагины для всех: и для уже заведённых аккаунтов, и для будущих. */
   readonly #plugins: ItdPlugin[];
+  /** Имена плагинов, чья асинхронная очистка ещё не завершилась. */
+  readonly #removingPlugins = new Set<string>();
   /** Общая очередь. `undefined`, когда у каждого аккаунта своя. */
   readonly #queues: RequestQueuePool | undefined;
   readonly #rateLimitScope: RateLimitScope;
@@ -166,14 +168,7 @@ export class ItdAccounts {
 
     this.#base = base;
     this.#storage = storage ?? new MemoryMultiTokenStorage();
-    this.#plugins = [];
-    for (const plugin of plugins ?? []) {
-      validatePluginDefinition(plugin);
-      if (this.#plugins.some((added) => added.name === plugin.name)) {
-        throw new ItdConfigError(`плагин «${plugin.name}» уже подключён`);
-      }
-      this.#plugins.push(plugin);
-    }
+    this.#plugins = orderPluginDefinitions(plugins ?? []);
     this.#rateLimitScope = rateLimitScope ?? 'account';
     this.#createClient =
       internals.createClient ??
@@ -360,7 +355,7 @@ export class ItdAccounts {
     try {
       const errors: unknown[] = [];
       const closing = await Promise.allSettled([
-        client.close(),
+        client.dispose(),
         storageControl?.drain() ?? Promise.resolve(),
       ]);
       for (const result of closing) {
@@ -392,15 +387,56 @@ export class ItdAccounts {
    * ```
    */
   use(plugin: ItdPlugin): this {
-    validatePluginDefinition(plugin);
-    if (this.#plugins.some((added) => added.name === plugin?.name)) {
-      throw new ItdConfigError(`плагин «${plugin.name}» уже подключён`);
+    if (this.#removingPlugins.has(plugin?.name)) {
+      throw new ItdConfigError(
+        `плагин «${plugin.name}» ещё отключается; дождитесь завершения accounts.unuse()`,
+      );
     }
+    const ordered = orderPluginDefinitions([...this.#plugins, plugin]);
 
     for (const client of this.#clients.values()) client.use(plugin);
-    this.#plugins.push(plugin);
+    this.#plugins.splice(0, this.#plugins.length, ...ordered);
 
     return this;
+  }
+
+  /** Имена общих плагинов в фактическом порядке выполнения обёрток. */
+  pluginNames(): string[] {
+    return this.#plugins.map((plugin) => plugin.name);
+  }
+
+  /** Подключён ли общий плагин с таким именем. */
+  hasPlugin(name: string): boolean {
+    return this.#plugins.some((plugin) => plugin.name === name);
+  }
+
+  /**
+   * Отключает общий плагин у существующих клиентов и не применяет его к будущим.
+   *
+   * @returns `false`, если такого плагина не было
+   * @throws {ItdConfigError} если от плагина зависит другой общий плагин
+   */
+  async unuse(name: string): Promise<boolean> {
+    const index = this.#plugins.findIndex((plugin) => plugin.name === name);
+    if (index < 0) return false;
+    assertPluginRemovable(this.#plugins, name);
+    this.#plugins.splice(index, 1);
+    this.#removingPlugins.add(name);
+
+    try {
+      const results = await Promise.allSettled(
+        [...this.#clients.values()].map((client) => client.unuse(name)),
+      );
+      const errors = results
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => result.reason);
+      if (errors.length > 0) {
+        throw new AggregateError(errors, `Не удалось отключить плагин «${name}» у всех аккаунтов`);
+      }
+      return true;
+    } finally {
+      this.#removingPlugins.delete(name);
+    }
   }
 
   /**
@@ -442,7 +478,7 @@ export class ItdAccounts {
    * ```ts
    * await using accounts = new ItdAccounts({ storage });
    * // …работа…
-   * // close() вызовется сам на выходе из блока
+   * // dispose() вызовется сам на выходе из блока
    * ```
    */
   async close(): Promise<void> {
@@ -450,9 +486,29 @@ export class ItdAccounts {
     this.#queues?.stop();
   }
 
+  /**
+   * Окончательно освобождает контейнер и отключает общие плагины у всех аккаунтов.
+   *
+   * Для временной остановки потоков и очереди без отключения плагинов используйте
+   * {@link close}.
+   */
+  async dispose(): Promise<void> {
+    const results = await Promise.allSettled([
+      ...[...this.#clients.values()].map((client) => client.dispose()),
+      Promise.resolve().then(() => this.#queues?.stop()),
+    ]);
+    this.#plugins.splice(0);
+    this.#removingPlugins.clear();
+
+    const errors = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason);
+    if (errors.length > 0) throw new AggregateError(errors, 'Не удалось освободить аккаунты');
+  }
+
   /** Позволяет использовать контейнер с `await using`. */
   [Symbol.asyncDispose](): Promise<void> {
-    return this.close();
+    return this.dispose();
   }
 
   // Fallback для `await using` в Node 18, где `Symbol.asyncDispose` отсутствует, —

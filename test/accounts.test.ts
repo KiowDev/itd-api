@@ -221,6 +221,49 @@ describe('общие и личные настройки', () => {
     expect(mock.calls[1]?.headers.get('x-trace')).toBe('yes');
   });
 
+  it('показывает порядок общих плагинов и отключает их у всех аккаунтов', async () => {
+    const { accounts, mock } = makeAccounts(ok);
+    accounts.addAccount('a', { auth: 'token-a' });
+    const teardown = vi.fn();
+
+    accounts.use({
+      name: 'inner',
+      install({ use }) {
+        use((request, next) =>
+          next({ ...request, headers: { ...request.headers, 'X-Plugin': 'yes' } }),
+        );
+        return teardown;
+      },
+    });
+    accounts.use({ name: 'outer', before: ['inner'], install() {} });
+    accounts.addAccount('b', { auth: 'token-b' });
+
+    expect(accounts.pluginNames()).toEqual(['outer', 'inner']);
+    expect(accounts.hasPlugin('inner')).toBe(true);
+    expect(accounts.account('a').pluginNames()).toEqual(['outer', 'inner']);
+    expect(accounts.account('b').pluginNames()).toEqual(['outer', 'inner']);
+
+    expect(await accounts.unuse('inner')).toBe(true);
+    expect(await accounts.unuse('inner')).toBe(false);
+    expect(accounts.hasPlugin('inner')).toBe(false);
+    expect(teardown).toHaveBeenCalledTimes(2);
+
+    await accounts.account('a').request({ method: 'GET', path: '/api/ping' });
+    expect(mock.calls[0]?.headers.get('x-plugin')).toBeNull();
+  });
+
+  it('удаление аккаунта выполняет teardown его плагинов', async () => {
+    const teardown = vi.fn();
+    const { accounts } = makeAccounts(ok, {
+      plugins: [{ name: 'resourceful', install: () => teardown }],
+    });
+    accounts.addAccount('a', { auth: 'token-a' });
+
+    await accounts.removeAccount('a');
+
+    expect(teardown).toHaveBeenCalledOnce();
+  });
+
   it('повторное подключение плагина — ошибка конфигурации', () => {
     const { accounts } = makeAccounts(ok);
     const plugin = { name: 'trace', install() {} };

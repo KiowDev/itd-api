@@ -125,7 +125,8 @@ accounts.on('authError', ({ account, error }) => {
 ```
 
 Плагины, подключённые через `accounts.use(plugin)`, применяются ко всем существующим и
-будущим клиентам.
+будущим клиентам. `await accounts.unuse(name)` отключает плагин у всех, а
+`accounts.pluginNames()` показывает фактический общий порядок.
 
 ## Realtime
 

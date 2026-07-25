@@ -44,10 +44,14 @@ request<T = unknown>(options: RawRequestOptions): Promise<T>
 
 ```ts
 use(plugin: ItdPlugin): this
+pluginNames(): string[]
+hasPlugin(name: string): boolean
+unuse(name: string): Promise<boolean>
 ```
 Подключает плагин — обёртку вокруг запроса и разобранного ответа сразу для всех ресурсов.
 Официальные плагины: [`@itd-api/cache`](../plugins/README.md),
-[`@itd-api/crypto`](../plugins/README.md).
+[`@itd-api/crypto`](../plugins/README.md). Остальные методы показывают фактический порядок
+плагинов, проверяют наличие и отключают плагин с вызовом его teardown.
 
 ```ts
 defineService(definition: ServiceDefinition): this
@@ -68,9 +72,11 @@ on<K>(event: K, listener): Unsubscribe
 
 ```ts
 close(): Promise<void>
+dispose(): Promise<void>
 ```
-Освобождает ресурсы: останавливает очередь и закрывает потоки уведомлений. Совместим с
-`await using`. После вызова клиентом можно пользоваться снова.
+`close()` временно останавливает очередь и закрывает потоки уведомлений; после него клиентом
+можно пользоваться снова. `dispose()` дополнительно отключает плагины и освобождает их
+ресурсы. `await using` вызывает `dispose()`.
 
 ```ts
 getSession(): Promise<ItdSession | null>
