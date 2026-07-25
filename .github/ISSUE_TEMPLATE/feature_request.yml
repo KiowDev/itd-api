@@ -1,0 +1,31 @@
+name: Предложение
+description: Предложить новый метод, тип или изменение поведения
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за идею. Если не хватает конкретного метода API, помните про запасной путь —
+        `itd.request(...)` для произвольного запроса. Опишите, чего не хватает в самой библиотеке.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу это решает
+      description: С чем вы столкнулись и почему текущих средств не хватает.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+      description: Как это могло бы выглядеть в API. По возможности — пример вызова.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+      description: Другие варианты, которые вы рассматривали, или текущий обходной путь.
+    validations:
+      required: false

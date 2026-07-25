@@ -1,0 +1,61 @@
+name: Отчёт об ошибке
+description: Сообщить о некорректной работе библиотеки
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт. Пожалуйста, проверьте, что подобная проблема ещё не заведена
+        в [issues](https://github.com/KiowDev/itd-api/issues).
+
+        Нашли уязвимость? Не создавайте публичный issue — см. [политику безопасности](https://github.com/KiowDev/itd-api/security/policy).
+  - type: textarea
+    id: description
+    attributes:
+      label: Описание
+      description: Что происходит и что вы ожидали вместо этого.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Как воспроизвести
+      description: Минимальный пример кода или шаги. Не вставляйте токены и другие секреты.
+      render: ts
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия itd-api
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Окружение
+      multiple: true
+      options:
+        - Node.js
+        - Браузер
+        - Bun
+        - Deno
+        - React Native
+    validations:
+      required: true
+  - type: input
+    id: runtime-version
+    attributes:
+      label: Версия рантайма
+      description: Например, Node 20.11, Bun 1.1, Chrome 126.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи или ошибка
+      description: Стек ошибки или релевантный вывод. Секреты уберите.
+      render: shell
+    validations:
+      required: false
