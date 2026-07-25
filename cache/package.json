@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/cache",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Кэширование и дедупликация запросов для itd-api",
   "repository": {
     "type": "git",
@@ -62,7 +62,7 @@
     "lru-cache": "^10.4.3"
   },
   "peerDependencies": {
-    "itd-api": ">=0.0.10"
+    "itd-api": ">=0.0.11"
   },
   "peerDependenciesMeta": {
     "itd-api": {
