@@ -1,35 +1,22 @@
 name: Проверки
 
-# Переиспользуемый воркфлоу: единственное описание проверок для репозитория.
-# Вызывается из ci.yml (на пуш и pull request) и из release.yml (перед публикацией),
-# чтобы релиз проходил ровно тот же набор проверок, что и обычная сборка.
 on:
   workflow_call:
 
-# Проверкам достаточно чтения. Вызывающий воркфлоу не может расширить эти права.
 permissions:
   contents: read
 
 jobs:
-  # Инструментарий разработки (vitest 4, vite 8, attw) требует Node 20+, поэтому
-  # проверки гоняются только на поддерживаемых им версиях. Совместимость библиотеки
-  # с Node 18 проверяет отдельная задача smoke — на собранном пакете.
-  check:
-    name: Проверки на Node ${{ matrix.node }}
+  verify:
+    name: Линтер, типы и тесты
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        # 22 — текущая LTS, 20 — предыдущая, 24 — следующая.
-        node: [20, 22, 24]
 
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -43,29 +30,37 @@ jobs:
       - name: Тесты
         run: npm test
 
+      - name: Тесты пакетов workspace
+        run: npm run test --workspaces --if-present
+
+  build:
+    name: Сборка
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
       - name: Сборка
         run: npm run build
 
       - name: Корректность пакета
         run: npm run check:pack
 
-      # Скрипты в пакетах workspace названы так же, как в корневом.
       - name: Проверки пакетов workspace
         run: |
-          npm run typecheck --workspaces --if-present
-          npm run test --workspaces --if-present
           npm run build --workspaces --if-present
           npm run check:pack --workspaces --if-present
 
       - name: Упаковка тарболла
-        if: matrix.node == 22
-        # --pack-destination не создаёт каталог сам.
         run: |
           mkdir -p pack
           npm pack --pack-destination ./pack
 
       - name: Публикация тарболла как артефакта
-        if: matrix.node == 22
         uses: actions/upload-artifact@v7
         with:
           name: pack
@@ -77,13 +72,13 @@ jobs:
   # и импорт обеих точек входа в обоих форматах.
   smoke:
     name: Собранный пакет на Node ${{ matrix.node }}
-    needs: check
+    needs: build
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 20, 22, 24]
+        node: [18, 20, 22, 24, 26]
 
     steps:
       - uses: actions/setup-node@v7
