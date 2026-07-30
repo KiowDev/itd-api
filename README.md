@@ -18,6 +18,7 @@
 Независимый TypeScript-клиент REST и realtime API социальной сети **итд.com**.
 Проект не является официальным SDK и не аффилирован с итд.com.
 
+[Документация](https://kiowdev.github.io/itd-api/) ·
 [Быстрый старт](https://kiowdev.github.io/itd-api/quickstart/) ·
 [Руководства](https://kiowdev.github.io/itd-api/guides/) ·
 [Справочник API](https://kiowdev.github.io/itd-api/reference/) ·
