@@ -39,7 +39,7 @@ cached.invalidate('posts.get');
 ```
 
 Полный каталог маршрутов, подключение к нескольким клиентам и привязка к realtime описаны в
-[README пакета](../../packages/cache/README.md).
+[странице пакета](/packages/cache).
 
 Запускаемый пример:
 
@@ -279,7 +279,7 @@ my-plugin/
 
 ## Связанные разделы
 
-- [`@itd-api/cache`](../../packages/cache/README.md)
-- [`@itd-api/crypto`](../../packages/crypto/README.md)
+- [`@itd-api/cache`](/packages/cache)
+- [`@itd-api/crypto`](/packages/crypto)
 - [Методы плагинов у `ItdClient`](../reference/client.md#методы)
 - [Плагины нескольких аккаунтов](../reference/accounts.md#методы)

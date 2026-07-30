@@ -1,10 +1,9 @@
 # @itd-api/cache
 
 TTL/LRU-кэш и дедупликация одновременных запросов для
-[`itd-api`](https://github.com/KiowDev/itd-api).
+[`itd-api`](/quickstart/).
 
-[Руководство](https://kiowdev.github.io/itd-api/packages/cache) ·
-[API из TSDoc](https://kiowdev.github.io/itd-api/api/generated/cache/)
+[API из TSDoc](/api/generated/cache/)
 
 ## Установка
 

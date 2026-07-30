@@ -5,8 +5,8 @@ Turnstile-токенов.
 
 | Пакет | Точка подключения |
 |---|---|
-| [`@itd-api/proxy`](../../packages/proxy/README.md) | `ItdClientOptions.fetch` |
-| [`@itd-api/turnstile`](../../packages/turnstile/README.md) | `auth.getTurnstileToken` |
+| [`@itd-api/proxy`](/packages/proxy) | `ItdClientOptions.fetch` |
+| [`@itd-api/turnstile`](/packages/turnstile) | `auth.getTurnstileToken` |
 
 ## Браузер и CORS
 
@@ -76,11 +76,11 @@ const itd = new ItdClient({
 ```
 
 Установка Playwright, сохранение сессии и запускаемые примеры описаны в
-[руководстве по авторизации](../authentication/README.md).
+[руководстве по авторизации](../authentication/).
 
 ## Связанные разделы
 
-- [Конфигурация `baseUrl` и `fetch`](../configuration/README.md#baseurl-fetch-и-proxy)
-- [`@itd-api/proxy`](../../packages/proxy/README.md)
-- [`@itd-api/turnstile`](../../packages/turnstile/README.md)
-- [Авторизация и сессии](../authentication/README.md)
+- [Конфигурация `baseUrl` и `fetch`](../configuration/#baseurl-fetch-и-proxy)
+- [`@itd-api/proxy`](/packages/proxy)
+- [`@itd-api/turnstile`](/packages/turnstile)
+- [Авторизация и сессии](../authentication/)

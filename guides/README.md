@@ -2,33 +2,33 @@
 
 Сценарная документация `itd-api`: от первого публичного запроса до сессий,
 realtime, нескольких аккаунтов и собственных расширений. Если нужна точная сигнатура
-метода или поля ответа, переходите в [справочник API](./reference/README.md).
+метода или поля ответа, переходите в [справочник API](/reference/).
 
 ## С чего начать
 
-1. [Быстрый старт](./quickstart/README.md) — установить пакет, создать клиент,
+1. [Быстрый старт](/quickstart/) — установить пакет, создать клиент,
    прочитать данные и опубликовать пост.
-2. [Авторизация и сессии](./authentication/README.md) — выбрать способ входа и
+2. [Авторизация и сессии](/authentication/) — выбрать способ входа и
    безопасно сохранить обновляемую сессию.
-3. [Конфигурация клиента](./configuration/README.md) — настроить таймауты, повторы,
+3. [Конфигурация клиента](/configuration/) — настроить таймауты, повторы,
    очередь запросов, сервисы и lifecycle.
 
 ## По задаче
 
 | Задача | Руководство |
 |---|---|
-| Войти, обновлять токен, пережить перезапуск | [Авторизация и сессии](./authentication/README.md) |
-| Работать с несколькими профилями | [Несколько аккаунтов](./multi-accounts/README.md) |
-| Получать уведомления в реальном времени | [Realtime](./realtime/README.md) |
-| Создать форматированный пост | [Разметка текста](./text-markup/README.md) |
-| Использовать browser proxy, HTTP/SOCKS5 или Turnstile | [Интеграции](./integrations/README.md) |
-| Подключить cache/crypto или написать плагин | [Плагины](./plugins/README.md) |
-| Настроить retries, rate limits, hooks или дополнительные хосты | [Конфигурация клиента](./configuration/README.md) |
-| Найти метод, тип, ошибку или enum | [Справочник API](./reference/README.md) |
+| Войти, обновлять токен, пережить перезапуск | [Авторизация и сессии](/authentication/) |
+| Работать с несколькими профилями | [Несколько аккаунтов](/multi-accounts/) |
+| Получать уведомления в реальном времени | [Realtime](/realtime/) |
+| Создать форматированный пост | [Разметка текста](/text-markup/) |
+| Использовать browser proxy, HTTP/SOCKS5 или Turnstile | [Интеграции](/integrations/) |
+| Подключить cache/crypto или написать плагин | [Плагины](/plugins/) |
+| Настроить retries, rate limits, hooks или дополнительные хосты | [Конфигурация клиента](/configuration/) |
+| Найти метод, тип, ошибку или enum | [Справочник API](/reference/) |
 
 ## Справочник
 
-В [`reference/`](./reference/README.md) методы сгруппированы по ресурсам клиента:
+В [`reference/`](/reference/) методы сгруппированы по ресурсам клиента:
 `itd.users`, `itd.posts`, `itd.notifications` и остальным. Там же находятся модели
 данных, ошибки, пагинация, билдеры и хранилища.
 
@@ -51,7 +51,7 @@ npm run build
 
 ## Полезные ссылки
 
-- [Корневой README](../README.md)
-- [Справочник endpoint и wire-контрактов](./reference/endpoints.md)
-- [Политика безопасности](../.github/SECURITY.md)
-- [Как внести вклад](../.github/CONTRIBUTING.md)
+- [Корневой README](https://github.com/KiowDev/itd-api#readme)
+- [Справочник endpoint и wire-контрактов](/reference/endpoints)
+- [Политика безопасности](https://github.com/KiowDev/itd-api/blob/main/.github/SECURITY.md)
+- [Как внести вклад](https://github.com/KiowDev/itd-api/blob/main/.github/CONTRIBUTING.md)

@@ -210,7 +210,7 @@ Endpoint создания и редактирования комментарие
 ITD_TOKEN=<accessToken> node guides/text-markup/examples/create-post.mjs
 ```
 
-Исходник: [`examples/create-post.mjs`](./examples/create-post.mjs).
+Исходник: [`examples/create-post.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/text-markup/examples/create-post.mjs).
 
 ## Связанные разделы
 

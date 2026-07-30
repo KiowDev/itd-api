@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">itd-api logo</title>
+  <desc id="desc">A modern geometric ITD monogram with an API connection path.</desc>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="#0D1117"/>
+  <path d="M72 416H144L194 366H272L322 316H440"
+        fill="none" stroke="#58E6C2" stroke-width="14"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="72" cy="416" r="13" fill="#58E6C2"/>
+  <circle cx="194" cy="366" r="13" fill="#58E6C2"/>
+  <circle cx="322" cy="316" r="13" fill="#58E6C2"/>
+  <circle cx="440" cy="316" r="13" fill="#58E6C2"/>
+  <g fill="none" stroke="#F8FAFC" stroke-width="48" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M96 116V298L210 116V298"/>
+    <path d="M204 190H346M275 190V350"/>
+    <path d="M350 248H428V374H322"/>
+    <path d="M350 248V316Q350 374 322 374"/>
+    <path d="M314 374H450M330 374V420M434 374V420"/>
+  </g>
+  <circle cx="440" cy="316" r="7" fill="#0D1117"/>
+</svg>

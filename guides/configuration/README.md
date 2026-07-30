@@ -20,7 +20,7 @@ export const itd = new ItdClient({
 ```
 
 Так авторизация, cookie, обновление токена и темп запросов управляются в одном месте.
-Для нескольких учётных записей используйте [`ItdAccounts`](../multi-accounts/README.md).
+Для нескольких учётных записей используйте [`ItdAccounts`](../multi-accounts/).
 
 ## Таймаут и отмена
 
@@ -157,8 +157,8 @@ const itd = new ItdClient({
 ```
 
 Для HTTP/SOCKS5-proxy используйте
-[`@itd-api/proxy`](../../packages/proxy/README.md). Браузерному приложению из-за CORS
-нужен собственный серверный proxy — см. [интеграции](../integrations/README.md).
+[`@itd-api/proxy`](/packages/proxy). Браузерному приложению из-за CORS
+нужен собственный серверный proxy — см. [интеграции](../integrations/).
 
 Разовый `itd.request({ baseUrl: 'https://external.example' })` не получает Bearer
 автоматически. Если внешнему хосту действительно нужна текущая авторизация, разрешите
@@ -209,5 +209,5 @@ await itd.dispose();
 
 - [Клиент и все его опции](../reference/client.md)
 - [Ошибки](../reference/errors.md)
-- [Авторизация и сессии](../authentication/README.md)
-- [Интеграции и CORS](../integrations/README.md)
+- [Авторизация и сессии](../authentication/)
+- [Интеграции и CORS](../integrations/)

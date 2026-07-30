@@ -7,7 +7,7 @@
     "url": "git+https://github.com/KiowDev/itd-api.git",
     "directory": "packages/turnstile"
   },
-  "homepage": "https://github.com/KiowDev/itd-api/tree/main/packages/turnstile",
+  "homepage": "https://kiowdev.github.io/itd-api/packages/turnstile",
   "bugs": {
     "url": "https://github.com/KiowDev/itd-api/issues"
   },

@@ -40,7 +40,7 @@ for await (const post of itd.posts.iterate({ tab: FeedTab.Following })) {
 ```
 
 Готовый access token удобен для первого запуска. Для долгоживущего приложения настройте
-обновляемую сессию по [руководству по авторизации](../authentication/README.md).
+обновляемую сессию по [руководству по авторизации](../authentication/).
 
 Для загрузки файлов по пути и файлового хранилища сессии используйте Node-вход:
 
@@ -122,13 +122,13 @@ try {
 
 ## Куда дальше
 
-- [Авторизация и сессии](../authentication/README.md)
-- [Конфигурация клиента](../configuration/README.md)
-- [Разметка текста](../text-markup/README.md)
-- [Realtime](../realtime/README.md)
-- [Несколько аккаунтов](../multi-accounts/README.md)
-- [Интеграции](../integrations/README.md)
-- [Плагины](../plugins/README.md)
+- [Авторизация и сессии](../authentication/)
+- [Конфигурация клиента](../configuration/)
+- [Разметка текста](../text-markup/)
+- [Realtime](../realtime/)
+- [Несколько аккаунтов](../multi-accounts/)
+- [Интеграции](../integrations/)
+- [Плагины](../plugins/)
 
 ## Примеры
 
@@ -137,7 +137,7 @@ ITD_TOKEN=<accessToken> node guides/quickstart/examples/quick-start.mjs
 npx tsx guides/quickstart/examples/typescript.ts
 ```
 
-- [`examples/quick-start.mjs`](./examples/quick-start.mjs) — профиль и чтение ленты.
-- [`examples/typescript.ts`](./examples/typescript.ts) — типы, билдеры, пагинация и ошибки.
+- [`examples/quick-start.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/quickstart/examples/quick-start.mjs) — профиль и чтение ленты.
+- [`examples/typescript.ts`](https://github.com/KiowDev/itd-api/blob/main/guides/quickstart/examples/typescript.ts) — типы, билдеры, пагинация и ошибки.
 
-Точные сигнатуры всех ресурсов — в [справочнике API](../reference/README.md).
+Точные сигнатуры всех ресурсов — в [справочнике API](../reference/).

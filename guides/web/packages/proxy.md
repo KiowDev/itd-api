@@ -1,9 +1,8 @@
 # @itd-api/proxy
 
-HTTP/HTTPS- и SOCKS5-прокси для [`itd-api`](https://www.npmjs.com/package/itd-api).
+HTTP/HTTPS- и SOCKS5-прокси для [`itd-api`](/quickstart/).
 
-[Руководство](https://kiowdev.github.io/itd-api/packages/proxy) ·
-[API из TSDoc](https://kiowdev.github.io/itd-api/api/generated/proxy/)
+[API из TSDoc](/api/generated/proxy/)
 
 Направляет все запросы клиента через прокси: `fetch` из этого пакета передаётся клиенту опцией `fetch`. Только для Node, Bun и Deno.
 
@@ -70,7 +69,3 @@ setGlobalDispatcher(createProxyDispatcher('socks5://127.0.0.1:1080'));
 ### `parseProxy(proxy)`
 
 Разбирает адрес в `{ kind, secure, host, port, username, password }`. Бросает `ProxyError` на неизвестной схеме или битом адресе.
-
-## Лицензия
-
-MIT

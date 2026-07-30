@@ -132,11 +132,11 @@ ITD_TOKENS='бот-1=<accessToken>,бот-2=<accessToken>' \
   node guides/multi-accounts/examples/multi-accounts.mjs
 ```
 
-Исходник: [`examples/multi-accounts.mjs`](./examples/multi-accounts.mjs).
+Исходник: [`examples/multi-accounts.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/multi-accounts/examples/multi-accounts.mjs).
 
 ## Связанные разделы
 
 - [Сессии и хранилища](../reference/storage.md)
 - [Справочник `ItdAccounts`](../reference/accounts.md)
-- [Авторизация и сессии](../authentication/README.md)
-- [Конфигурация очередей](../configuration/README.md#очередь-и-rate-limiting)
+- [Авторизация и сессии](../authentication/)
+- [Конфигурация очередей](../configuration/#очередь-и-rate-limiting)

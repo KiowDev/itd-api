@@ -4,7 +4,7 @@
 поднимается `connect()` и держится само: клиент отслеживает молчание сервера, обновляет
 токен и переподключается после обрыва. Транспорт выбирается автоматически: SSE, а если
 среда не умеет читать тело по частям — опрос REST. Полное руководство —
-[Realtime](../realtime/README.md).
+[Realtime](../realtime/).
 
 ```ts
 const stream = itd.realtime(options?: RealtimeOptions): ItdRealtime

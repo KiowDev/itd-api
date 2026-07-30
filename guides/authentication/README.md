@@ -156,9 +156,9 @@ itd.on('authError', ({ error }) => {
 
 ## Примеры
 
-- [`examples/bot-with-session.mjs`](./examples/bot-with-session.mjs) — ручной токен
+- [`examples/bot-with-session.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/authentication/examples/bot-with-session.mjs) — ручной токен
   Turnstile при первом входе и сохранение сессии.
-- [`examples/turnstile-login.mjs`](./examples/turnstile-login.mjs) — автоматическое
+- [`examples/turnstile-login.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/authentication/examples/turnstile-login.mjs) — автоматическое
   получение Turnstile через браузер.
 
 Запуск из корня:
@@ -176,4 +176,4 @@ ITD_EMAIL=you@example.com ITD_PASSWORD=secret \
 - [Сессии и хранилища](../reference/storage.md)
 - [Методы `itd.auth`](../reference/auth.md)
 - [Опции клиента](../reference/client.md#опции-конструктора)
-- [Несколько аккаунтов](../multi-accounts/README.md)
+- [Несколько аккаунтов](../multi-accounts/)

@@ -1,9 +1,8 @@
 # @itd-api/turnstile
 
-Токен Cloudflare Turnstile для входа по логину и паролю в [`itd-api`](https://github.com/KiowDev/itd-api).
+Токен Cloudflare Turnstile для входа по логину и паролю в [`itd-api`](/quickstart/).
 
-[Руководство](https://kiowdev.github.io/itd-api/packages/turnstile) ·
-[API из TSDoc](https://kiowdev.github.io/itd-api/api/generated/turnstile/)
+[API из TSDoc](/api/generated/turnstile/)
 
 Вход на итд.com требует токен капчи, а получить его можно только в браузере. Этот пакет
 поднимает браузер, берёт токен и отдаёт функцию, которая подставляется в `auth` клиента.
@@ -126,7 +125,3 @@ createTurnstileSolver({
 
 Код `110200` в `widgetCode` означает, что ключ не разрешён для указанного домена, —
 повторять бессмысленно, и пакет этого не делает.
-
-## Лицензия
-
-MIT

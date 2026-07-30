@@ -7,7 +7,7 @@
     "url": "git+https://github.com/KiowDev/itd-api.git",
     "directory": "packages/crypto"
   },
-  "homepage": "https://github.com/KiowDev/itd-api/tree/main/packages/crypto",
+  "homepage": "https://kiowdev.github.io/itd-api/packages/crypto",
   "bugs": {
     "url": "https://github.com/KiowDev/itd-api/issues"
   },

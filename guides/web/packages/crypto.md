@@ -1,10 +1,9 @@
 # @itd-api/crypto
 
 Скрытые сообщения в постах, комментариях и профилях итд.com — плагин к
-[`itd-api`](https://github.com/KiowDev/itd-api).
+[`itd-api`](/quickstart/).
 
-[Руководство](https://kiowdev.github.io/itd-api/packages/crypto) ·
-[API из TSDoc](https://kiowdev.github.io/itd-api/api/generated/crypto/)
+[API из TSDoc](/api/generated/crypto/)
 
 Текст прячется в невидимых Unicode-символах внутри обычного поста либо записывается
 видимым шифротекстом. Читатель видит только обложку, а тот, у кого подключён этот пакет,
@@ -228,7 +227,3 @@ await itd.posts.create({ content: 'секрет' }, { encrypt: CipherName.Invisi
   `itd.posts.get()`.
 - **Поток realtime не покрыт**: плагины работают в HTTP-транспорте, а поток событий идёт
   мимо него.
-
-## Лицензия
-
-MIT

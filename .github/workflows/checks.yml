@@ -36,7 +36,7 @@ jobs:
         run: npm run test --workspaces --if-present
 
   build:
-    name: Сборка
+    name: Сборка пакета и документации
     needs: verify
     runs-on: ubuntu-latest
     steps:
@@ -49,6 +49,9 @@ jobs:
 
       - name: Сборка
         run: npm run build
+
+      - name: Документация
+        run: npm run docs:check
 
       - name: Корректность пакета
         run: npm run check:pack

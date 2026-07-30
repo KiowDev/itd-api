@@ -1,32 +1,38 @@
 {
   "$schema": "https://typedoc.org/schema.json",
 
-  // Исходные точки входа пакета.
-  "entryPoints": ["src/index.ts", "src/node.ts"],
-  "out": "docs",
-  "readme": "README.md",
-  "name": "itd-api",
+  // Точка входа, tsconfig, имя и каталог задаются scripts/build-docs.mjs
+  // отдельно для каждого публичного npm entry point.
+  "readme": "none",
+  "includeVersion": true,
+
+  "plugin": [
+    "typedoc-plugin-markdown",
+    "typedoc-vitepress-theme"
+  ],
+  "docsRoot": "guides/web",
+  "sidebar": {
+    "autoConfiguration": true,
+    "format": "vitepress",
+    "collapsed": true,
+    "pretty": true
+  },
+  "cleanOutputDir": true,
+  "hideBreadcrumbs": false,
+  "useCodeBlocks": true,
 
   "excludeInternal": true,
   "excludePrivate": true,
   "excludeProtected": true,
   "excludeExternals": true,
-
   "categorizeByGroup": true,
-  "navigationLinks": {
-    "GitHub": "https://github.com/KiowDev/itd-api"
-  },
-
-  "treatWarningsAsErrors": true,
-  "intentionallyNotExported": [
-    "ItdClientInternals",
-    "ItdAccountsInternals"
-  ],
   "externalSymbolLinkMappings": {
     "itd-api": {
       "RequestOptionKeysComplete": "#"
     }
   },
+
+  "treatWarningsAsErrors": true,
   "validation": {
     "notExported": true,
     "invalidLink": true,

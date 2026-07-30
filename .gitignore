@@ -1,6 +1,10 @@
 node_modules/
 dist/
 docs/
+/.vitepress/
+guides/web/api/generated/
+guides/.vitepress/cache/
+guides/.vitepress/dist/
 sources/
 coverage/
 pack/

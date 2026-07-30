@@ -115,11 +115,11 @@ SSE-соединений, поэтому открывайте поток тол�
 ITD_TOKEN=<accessToken> node guides/realtime/examples/notifications.mjs
 ```
 
-Исходник: [`examples/notifications.mjs`](./examples/notifications.mjs).
+Исходник: [`examples/notifications.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/realtime/examples/notifications.mjs).
 
 ## Связанные разделы
 
 - [Справочник realtime](../reference/realtime.md)
 - [Уведомления](../reference/notifications.md)
-- [Авторизация и обновление сессии](../authentication/README.md)
-- [Несколько аккаунтов](../multi-accounts/README.md)
+- [Авторизация и обновление сессии](../authentication/)
+- [Несколько аккаунтов](../multi-accounts/)

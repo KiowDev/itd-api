@@ -2,7 +2,7 @@
 
 Контейнер именованных `ItdClient`: у каждого аккаунта свой токен, cookie и `deviceId`,
 а сессии всех складываются в одно хранилище (`MultiTokenStorage`). Имя аккаунта выбираете вы;
-сервер о нём ничего не знает. Полное руководство — [Несколько аккаунтов](../multi-accounts/README.md).
+сервер о нём ничего не знает. Полное руководство — [Несколько аккаунтов](../multi-accounts/).
 
 ```ts
 new ItdAccounts(options?: ItdAccountsOptions)
@@ -54,7 +54,7 @@ unuse(name: string): Promise<boolean>
 ```ts
 on<K>(event: K, listener): Unsubscribe
 ```
-Подписка на [события авторизации всех аккаунтов](#события) сразу.
+Подписка на [события авторизации всех аккаунтов](#события-accountevents) сразу.
 
 ```ts
 close(): Promise<void>

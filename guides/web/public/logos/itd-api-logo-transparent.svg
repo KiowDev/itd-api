@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">itd-api transparent logo</title>
+  <desc id="desc">A geometric ITD monogram with an API connection path on a transparent background.</desc>
+  <path d="M60 416H140L192 364H272L324 312H452"
+        fill="none" stroke="#16BFA0" stroke-width="14"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="60" cy="416" r="13" fill="#16BFA0"/>
+  <circle cx="192" cy="364" r="13" fill="#16BFA0"/>
+  <circle cx="324" cy="312" r="13" fill="#16BFA0"/>
+  <circle cx="452" cy="312" r="13" fill="#16BFA0"/>
+  <g fill="none" stroke="#111318" stroke-width="48" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M84 108V294L204 108V294"/>
+    <path d="M198 184H346M272 184V346"/>
+    <path d="M350 242H434V372H320"/>
+    <path d="M350 242V314Q350 372 320 372"/>
+    <path d="M312 372H458M328 372V422M442 372V422"/>
+  </g>
+  <circle cx="452" cy="312" r="7" fill="#FFFFFF"/>
+</svg>

@@ -7,7 +7,7 @@
     "url": "git+https://github.com/KiowDev/itd-api.git",
     "directory": "packages/proxy"
   },
-  "homepage": "https://github.com/KiowDev/itd-api/tree/main/packages/proxy",
+  "homepage": "https://kiowdev.github.io/itd-api/packages/proxy",
   "bugs": {
     "url": "https://github.com/KiowDev/itd-api/issues"
   },

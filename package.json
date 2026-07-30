@@ -6,7 +6,7 @@
     "type": "git",
     "url": "git+https://github.com/KiowDev/itd-api.git"
   },
-  "homepage": "https://github.com/KiowDev/itd-api",
+  "homepage": "https://kiowdev.github.io/itd-api/",
   "bugs": {
     "url": "https://github.com/KiowDev/itd-api/issues"
   },
@@ -27,7 +27,6 @@
   },
   "files": [
     "dist",
-    "guides",
     "NOTICE",
     "LICENSE",
     "README.md"
@@ -83,7 +82,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check src test packages",
     "lint:fix": "biome check --write src test packages",
-    "docs": "typedoc",
+    "docs": "npm run docs:build",
+    "docs:api": "node scripts/build-docs.mjs",
+    "docs:dev": "npm run docs:api && vitepress dev guides",
+    "docs:build": "npm run docs:api && vitepress build guides",
+    "docs:preview": "vitepress preview guides",
+    "docs:check": "npm run docs:build",
     "check:pack": "publint && attw --pack .",
     "version": "npm run sync-version && git add src/core/version.ts",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
@@ -98,7 +102,10 @@
     "set-cookie-parser": "^3.1.2",
     "tsdown": "^0.22.14",
     "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.12.0",
+    "typedoc-vitepress-theme": "^1.1.3",
     "typescript": "^5.9.3",
+    "vitepress": "^1.6.4",
     "vitest": "^4.1.10"
   }
 }

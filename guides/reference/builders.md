@@ -140,5 +140,5 @@ interface RenderSpansOptions {
 }
 ```
 
-Подробное руководство по разметке — [Разметка текста](../text-markup/README.md).
+Подробное руководство по разметке — [Разметка текста](../text-markup/).
 См. [`Span`](./models.md#span), [`SpanType`](./enums.md#spantype).
