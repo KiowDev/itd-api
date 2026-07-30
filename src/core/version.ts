@@ -2,4 +2,4 @@
 // Менять вручную не нужно — значение берётся из package.json при `npm version` и сборке.
 
 /** Версия библиотеки. Попадает в `User-Agent`. */
-export const LIBRARY_VERSION = '0.1.0';
+export const LIBRARY_VERSION = '0.2.0';
