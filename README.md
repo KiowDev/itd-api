@@ -23,19 +23,20 @@
 npm install itd-api
 ```
 
-Первый публичный запрос не требует токена:
+Передайте access token и запросите посты со стены пользователя:
 
 ```ts
 import { ItdClient } from 'itd-api';
 
-const itd = new ItdClient();
-const versions = await itd.platform.version();
+const itd = new ItdClient({ auth: '<accessToken>' });
+const page = await itd.posts.byUser('nowkie', { limit: 10 });
 
-console.log(versions.android.latestVersion);
+for (const post of page.items) {
+  console.log(post.author.username, post.content);
+}
 ```
 
-Для авторизованных запросов передайте готовый токен, восстановите сохранённую сессию
-или настройте вход по
+Для долгоживущего приложения восстановите сохранённую сессию или настройте вход по
 [руководству по авторизации](./guides/authentication/README.md).
 
 ## Возможности
