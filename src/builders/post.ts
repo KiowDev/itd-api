@@ -1,4 +1,5 @@
 import { ItdConfigError } from '../core/errors.js';
+import { type ParseMarkupOptions, parseHtml, parseMarkdown } from '../spans/parse.js';
 import { validateSpans } from '../spans/validate.js';
 import { SpanType } from '../types/enums.js';
 import type { Span, UserId } from '../types/models.js';
@@ -133,6 +134,16 @@ export class PostBuilder implements ItdBuilder<CreatePostInput> {
       contentSet: true,
       spans: result.spans,
     });
+  }
+
+  /** Заменяет текст и spans результатом безопасного разбора Markdown. */
+  markdown(source: string, options: ParseMarkupOptions = {}): PostBuilder {
+    return this.markup(parseMarkdown(source, options));
+  }
+
+  /** Заменяет текст и spans результатом безопасного разбора ограниченного HTML. */
+  html(source: string, options: ParseMarkupOptions = {}): PostBuilder {
+    return this.markup(parseHtml(source, options));
   }
 
   /**

@@ -23,6 +23,8 @@ post(content?: string): PostBuilder
 | `.append(text)` | дописывает текст к уже заданному |
 | `.spans(spans)` | задаёт готовую разметку `Span[]` |
 | `.markup(input)` | заменяет текст и разметку результатом `MarkupBuilder` |
+| `.markdown(source, options?)` | преобразует поддерживаемый Markdown в текст и spans |
+| `.html(source, options?)` | преобразует безопасное подмножество HTML в текст и spans |
 | `.autoSpans(options?)` | находит ссылки, хэштеги и упоминания в тексте |
 | `.onWall(userId)` | публикует на стене пользователя (**UUID**) |
 | `.attach(file)` | прикладывает файл (загрузится перед публикацией) |
@@ -124,6 +126,22 @@ interface AutoSpansOptions {
 }
 ```
 
+## Разбор Markdown и HTML
+
+```ts
+parseMarkdown(source: string, options?: ParseMarkupOptions): TextMarkup
+parseHtml(source: string, options?: ParseMarkupOptions): TextMarkup
+
+interface ParseMarkupOptions {
+  allowedLinkProtocols?: readonly string[]; // по умолчанию http и https
+}
+```
+
+Обе функции возвращают `{ content, spans }`, пригодный для `posts.create()` и
+`PostBuilder.markup()`. Поддерживается намеренно ограниченный набор форматирования;
+опасные HTML-элементы и схемы ссылок не становятся активной разметкой. Полная таблица и
+примеры — в [руководстве по разметке](../text-markup/#markdown-и-html).
+
 ## Рендеринг разметки
 
 ```ts
@@ -133,7 +151,7 @@ renderSpans(content: string, spans: Span[] | null | undefined, options?: RenderS
 
 ```ts
 interface RenderSpansOptions {
-  format?: 'html' | 'markdown' | 'ansi';                     // по умолчанию 'html'
+  format?: SpanRenderFormat;                                 // по умолчанию Html
   mentionUrl?: (username: string) => string | null | undefined;
   hashtagUrl?: (tag: string) => string | null | undefined;
   classPrefix?: string | null;           // префикс CSS-классов; по умолчанию 'itd'

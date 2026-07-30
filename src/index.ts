@@ -202,8 +202,16 @@ export type { SubscriptionResource } from './resources/subscription.js';
 export type {
   DwellEntry,
   InteractionEntry,
+  PhotoOpenInput,
+  TelemetryBatch,
+  TelemetryBatchOptions,
+  TelemetryClock,
   TelemetryOptions,
   TelemetryResource,
+  VideoProgressInput,
+  ViewTracker,
+  ViewTrackerInput,
+  ViewTrackerOptions,
 } from './resources/telemetry.js';
 export type {
   UpdatePrivacyInput,
@@ -212,6 +220,11 @@ export type {
   UsersResource,
 } from './resources/users.js';
 export type { VerificationResource } from './resources/verification.js';
+export {
+  type ParseMarkupOptions,
+  parseHtml,
+  parseMarkdown,
+} from './spans/parse.js';
 export {
   type RenderSpansOptions,
   renderSpans,
