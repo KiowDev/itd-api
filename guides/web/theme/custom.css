@@ -157,19 +157,75 @@ body {
 }
 
 .VPFeature {
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--itd-border-color);
   border-radius: 28px;
   background: var(--itd-block-bg);
+  box-shadow: 0 1px 0 var(--itd-border-subtle);
   transition:
+    transform 180ms ease,
     border-color 180ms ease,
     background-color 180ms ease,
     box-shadow 180ms ease;
+}
+
+.VPFeature::before {
+  position: absolute;
+  top: 0;
+  right: 24px;
+  left: 24px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--itd-accent-primary), transparent);
+  opacity: 0.55;
+  content: '';
+}
+
+.VPFeature .icon {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid color-mix(in srgb, var(--itd-accent-primary) 22%, transparent);
+  border-radius: 13px;
+  background: var(--vp-c-brand-soft);
+  color: var(--itd-accent-primary);
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
 }
 
 .VPFeature.link:hover {
   border-color: color-mix(in srgb, var(--itd-accent-primary) 38%, var(--itd-border-color));
   background: var(--itd-block-hover-bg);
   box-shadow: var(--itd-shadow-elevated);
+  transform: translateY(-4px);
+}
+
+.VPFeature.link:focus-visible {
+  outline: 3px solid var(--vp-c-brand-soft);
+  outline-offset: 3px;
+}
+
+.VPFeature.link .link-text {
+  color: var(--itd-accent-primary);
+  transition: transform 180ms ease;
+}
+
+.VPFeature.link:hover .link-text {
+  transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .VPFeature,
+  .VPFeature.link .link-text {
+    transition: none;
+  }
+
+  .VPFeature.link:hover {
+    transform: none;
+  }
 }
 
 .docs-home {

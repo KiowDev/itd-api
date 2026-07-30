@@ -21,14 +21,26 @@ hero:
       link: /api/
 
 features:
-  - title: Один клиент
+  - icon: SDK
+    title: Один клиент
     details: Пользователи, посты, комментарии, уведомления, файлы, подписка и остальные ресурсы доступны через единый ItdClient.
-  - title: TypeScript прежде всего
+    link: /reference/client
+    linkText: Возможности клиента
+  - icon: TS
+    title: TypeScript прежде всего
     details: Публичные модели, параметры, ошибки и результаты типизированы, а точные сигнатуры собираются прямо из исходного кода.
-  - title: Сессии и realtime
+    link: /api/
+    linkText: Открыть API
+  - icon: RT
+    title: Сессии и realtime
     details: Обновление токенов, хранилища, несколько аккаунтов, SSE, polling и восстановление соединения уже встроены.
-  - title: Расширяемая архитектура
+    link: /realtime/
+    linkText: Настроить realtime
+  - icon: +
+    title: Расширяемая архитектура
     details: Подключайте cache, crypto, proxy и Turnstile или создавайте собственные плагины поверх публичного API.
+    link: /packages/
+    linkText: Посмотреть пакеты
 ---
 
 <div class="docs-home">
