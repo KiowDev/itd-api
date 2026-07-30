@@ -5,6 +5,20 @@
 ## Методы
 
 ```ts
+version(): Promise<PlatformVersions>
+```
+Минимальные и актуальные версии приложений Android и iOS. Endpoint публичный, поэтому
+автоматическая авторизация не отправляется. `updateUrl` возвращается без преобразования.
+
+```ts
+const versions = await itd.platform.version();
+
+console.log(versions.android.minVersion);
+console.log(versions.android.latestVersion);
+console.log(versions.android.updateUrl);
+```
+
+```ts
 changelog(): Promise<ChangelogEntry[]>
 ```
 Журнал изменений платформы. См. [`ChangelogEntry`](./models.md#changelogentry).
@@ -44,4 +58,20 @@ const status = await itd.platform.status();
 const auth = status.services.find((s) => s.id === 'auth');
 const days = auth ? statusDays(auth) : [];
 days[0]?.uptime;   // доступность за сегодня
+```
+
+## Типы версий
+
+```ts
+interface PlatformClientVersion {
+  minVersion: string;
+  latestVersion: string;
+  updateUrl: string;
+}
+
+interface PlatformVersions {
+  android: PlatformClientVersion;
+  ios: PlatformClientVersion;
+  [client: string]: PlatformClientVersion;
+}
 ```

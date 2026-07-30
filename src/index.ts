@@ -185,7 +185,11 @@ export type {
   NotificationsResource,
   UpdateNotificationSettingsInput,
 } from './resources/notifications.js';
-export type { PlatformResource } from './resources/platform.js';
+export type {
+  PlatformClientVersion,
+  PlatformResource,
+  PlatformVersions,
+} from './resources/platform.js';
 export type {
   CommentsParams,
   FeedParams,

@@ -10,6 +10,7 @@ import {
   ItdClient,
   ItdValidationError,
   type Notification,
+  type PlatformVersions,
   type Post,
   ReportReason,
   isItdApiError,
@@ -21,6 +22,10 @@ import {
 } from 'itd-api';
 
 const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
+
+// ── Версии клиентских приложений ────────────────────────────────────────────────
+const versions: PlatformVersions = await itd.platform.version();
+console.log(versions.android.latestVersion, versions.ios.latestVersion);
 
 // ── Перечисления вместо магических строк ────────────────────────────────────────
 // Работают обе формы: константа и обычная строка.

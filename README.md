@@ -502,7 +502,7 @@ Cache и Crypto, полный контракт `ItdPlugin`, собственны
 | `itd.files` | загрузка медиа |
 | `itd.hashtags` · `itd.search` | хэштеги, трендовые, глобальный поиск |
 | `itd.reports` · `itd.verification` | жалобы, заявка на верификацию |
-| `itd.subscription` · `itd.platform` | подписка, способы оплаты, анонсы, статус сервисов |
+| `itd.subscription` · `itd.platform` | подписка, способы оплаты, версии приложений, анонсы, статус сервисов |
 | `itd.realtime()` | поток уведомлений |
 | `itd.use()` · `itd.unuse()` | управляемые плагины: обёртки, hooks и teardown |
 | `itd.request()` | произвольный запрос, если метода ещё нет |

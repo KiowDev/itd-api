@@ -144,7 +144,7 @@ export class ItdClient {
   readonly verification: VerificationResource;
   /** Подписка и способы оплаты. */
   readonly subscription: SubscriptionResource;
-  /** Сведения о платформе: изменения, анонсы, баннер события. */
+  /** Сведения о платформе: версии приложений, изменения, анонсы, баннер события. */
   readonly platform: PlatformResource;
   /** Телеметрия просмотров. */
   readonly telemetry: TelemetryResource;

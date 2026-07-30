@@ -11,6 +11,23 @@ import type {
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
+/** Требования к версии одного приложения платформы. */
+export interface PlatformClientVersion {
+  /** Минимальная поддерживаемая версия приложения. */
+  minVersion: string;
+  /** Последняя доступная версия приложения. */
+  latestVersion: string;
+  /** Адрес страницы обновления приложения. */
+  updateUrl: string;
+}
+
+/** Версии клиентских приложений платформы. */
+export interface PlatformVersions {
+  android: PlatformClientVersion;
+  ios: PlatformClientVersion;
+  [client: string]: PlatformClientVersion;
+}
+
 /** Приводит `last_checked` каждого сервиса к ISO. Остальное остаётся как прислал сервер. */
 function normalizeStatus(body: PlatformStatus): PlatformStatus {
   if (!isRecord(body) || !Array.isArray(body.services)) return body;
@@ -26,11 +43,31 @@ function normalizeStatus(body: PlatformStatus): PlatformStatus {
 }
 
 /**
- * Сведения о платформе: изменения, анонсы, баннер события.
+ * Сведения о платформе: версии приложений, изменения, анонсы, баннер события.
  *
  * Доступна как `itd.platform`.
  */
 export class PlatformResource extends BaseResource {
+  /**
+   * Загружает минимальные и актуальные версии клиентских приложений.
+   *
+   * Endpoint публичный: автоматическая авторизация в запрос не добавляется.
+   *
+   * @example
+   * ```ts
+   * const versions = await itd.platform.version();
+   * console.log(versions.android.latestVersion);
+   * ```
+   */
+  version(options: RequestOptions = {}): Promise<PlatformVersions> {
+    return this.http.request<PlatformVersions>({
+      method: 'GET',
+      path: '/api/platform/version',
+      skipAuth: true,
+      ...this.requestOptions(options),
+    });
+  }
+
   /** Загружает журнал изменений. */
   async changelog(options: RequestOptions = {}): Promise<ChangelogEntry[]> {
     const body = await this.http.request({
