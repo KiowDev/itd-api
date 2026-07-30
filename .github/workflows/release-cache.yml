@@ -11,54 +11,12 @@ on:
     tags: ['cache-v*']
 
 jobs:
-  verify-tag:
-    name: Тег совпадает с версией в cache/package.json
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Сверка тега и версии
-        run: |
-          TAG="${GITHUB_REF_NAME#cache-v}"
-          PKG="$(node -p "require('./cache/package.json').version")"
-          if [ "$TAG" != "$PKG" ]; then
-            echo "Тег cache-v$TAG не совпадает с версией $PKG в cache/package.json"
-            exit 1
-          fi
-          echo "Публикуется версия $PKG"
-
-  checks:
-    needs: verify-tag
-    uses: ./.github/workflows/checks.yml
-
-  publish:
-    name: Публикация
-    needs: checks
-    runs-on: ubuntu-latest
-
+  release:
     permissions:
       contents: read
       id-token: write
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-
-      - name: Обновление npm до версии с поддержкой Trusted Publishing
-        run: |
-          npm install -g npm@latest
-          npm -v
-
-      - run: npm ci
-
-      - name: Публикация
-        run: npm publish --workspace @itd-api/cache
+    uses: ./.github/workflows/release-workspace.yml
+    with:
+      package_name: '@itd-api/cache'
+      package_path: packages/cache
+      tag_prefix: cache-v

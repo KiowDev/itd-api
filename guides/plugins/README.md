@@ -39,7 +39,7 @@ cached.invalidate('posts.get');
 ```
 
 Полный каталог маршрутов, подключение к нескольким клиентам и привязка к realtime описаны в
-[README пакета](../../cache/README.md).
+[README пакета](../../packages/cache/README.md).
 
 Запускаемый пример:
 

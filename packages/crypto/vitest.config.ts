@@ -6,7 +6,7 @@ export default defineConfig({
   // проверять только вместе с транспортом, через который он работает.
   resolve: {
     alias: {
-      'itd-api': fileURLToPath(new URL('../src/index.ts', import.meta.url)),
+      'itd-api': fileURLToPath(new URL('../../src/index.ts', import.meta.url)),
     },
   },
   test: {

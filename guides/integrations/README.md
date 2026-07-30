@@ -5,8 +5,8 @@ Turnstile-токенов.
 
 | Пакет | Точка подключения |
 |---|---|
-| [`@itd-api/proxy`](../../proxy/README.md) | `ItdClientOptions.fetch` |
-| [`@itd-api/turnstile`](../../turnstile/README.md) | `auth.getTurnstileToken` |
+| [`@itd-api/proxy`](../../packages/proxy/README.md) | `ItdClientOptions.fetch` |
+| [`@itd-api/turnstile`](../../packages/turnstile/README.md) | `auth.getTurnstileToken` |
 
 ## Proxy
 

@@ -416,7 +416,7 @@ Deno и React Native ограничение не действует.
 ### Прокси (HTTP/SOCKS5)
 
 Чтобы направить запросы клиента через прокси, возьмите `fetch` из пакета
-[`@itd-api/proxy`](./proxy/README.md):
+[`@itd-api/proxy`](./packages/proxy/README.md):
 
 ```sh
 npm i @itd-api/proxy
@@ -439,7 +439,7 @@ await fetch.close(); // закрывает пул соединений
 Через тот же `fetch` пойдут авторизация, cookie, очередь, повторы и поток уведомлений.
 Только для Node/Bun/Deno. Подключение proxy и Turnstile разобрано в
 [руководстве по интеграциям](./guides/integrations/README.md), параметры транспорта — в
-[README пакета](./proxy/README.md).
+[README пакета](./packages/proxy/README.md).
 
 ---
 

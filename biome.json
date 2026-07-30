@@ -5,17 +5,9 @@
       "src/**/*.ts",
       "test/**/*.ts",
       "*.config.ts",
-      "turnstile/src/**/*.ts",
-      "turnstile/*.config.ts",
-      "crypto/src/**/*.ts",
-      "crypto/test/**/*.ts",
-      "crypto/*.config.ts",
-      "proxy/src/**/*.ts",
-      "proxy/test/**/*.ts",
-      "proxy/*.config.ts",
-      "cache/src/**/*.ts",
-      "cache/test/**/*.ts",
-      "cache/*.config.ts"
+      "packages/*/src/**/*.ts",
+      "packages/*/test/**/*.ts",
+      "packages/*/*.config.ts"
     ]
   },
   "formatter": {

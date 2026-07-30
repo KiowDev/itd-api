@@ -22,7 +22,9 @@ jobs:
       - run: npm ci
 
       - name: Типы
-        run: npm run typecheck
+        run: |
+          npm run typecheck
+          npm run typecheck --workspaces --if-present
 
       - name: Линтер и форматирование
         run: npm run lint

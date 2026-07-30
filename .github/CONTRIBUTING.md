@@ -25,7 +25,7 @@ cd itd-api
 npm install
 ```
 
-Проект использует workspaces (`turnstile`, `crypto`, `proxy`, `cache`) — они
+Проект использует workspaces из `packages/*` (`turnstile`, `crypto`, `proxy`, `cache`) — они
 устанавливаются вместе с основным пакетом.
 
 ## Рабочий цикл

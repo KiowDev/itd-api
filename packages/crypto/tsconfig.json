@@ -30,7 +30,7 @@
     // от того, собран ли соседний пакет. При сборке `itd-api` помечен как external
     // и в бандл не попадает — см. tsdown.config.ts.
     "paths": {
-      "itd-api": ["../src/index.ts"]
+      "itd-api": ["../../src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "*.config.ts"]

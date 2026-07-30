@@ -1,23 +1,24 @@
 {
-  "name": "@itd-api/turnstile",
+  "name": "@itd-api/cache",
   "version": "0.0.2",
-  "description": "Получение токена Cloudflare Turnstile для входа в itd-api через локальный браузер",
+  "description": "Кэширование и дедупликация запросов для itd-api",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KiowDev/itd-api.git",
-    "directory": "turnstile"
+    "directory": "packages/cache"
   },
-  "homepage": "https://github.com/KiowDev/itd-api/tree/main/turnstile",
+  "homepage": "https://github.com/KiowDev/itd-api/tree/main/packages/cache",
   "bugs": {
     "url": "https://github.com/KiowDev/itd-api/issues"
   },
   "author": "Kiow",
   "keywords": [
     "itd",
-    "turnstile",
-    "cloudflare",
-    "playwright",
-    "captcha"
+    "itd-api",
+    "plugin",
+    "cache",
+    "deduplication",
+    "lru"
   ],
   "license": "MIT",
   "type": "module",
@@ -53,16 +54,18 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "test": "vitest run",
-    "smoke": "node scripts/smoke.mjs",
     "typecheck": "tsc --noEmit",
     "check:pack": "publint && attw --pack .",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
+  "dependencies": {
+    "lru-cache": "^11.5.2"
+  },
   "peerDependencies": {
-    "playwright": ">=1.40.0"
+    "itd-api": ">=0.0.11"
   },
   "peerDependenciesMeta": {
-    "playwright": {
+    "itd-api": {
       "optional": true
     }
   },

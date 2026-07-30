@@ -1,13 +1,13 @@
 {
-  "name": "@itd-api/crypto",
-  "version": "0.0.1",
-  "description": "Скрытые сообщения в постах и профилях итд.com: плагин шифрования для itd-api",
+  "name": "@itd-api/proxy",
+  "version": "0.0.2",
+  "description": "HTTP/HTTPS- и SOCKS5-прокси для itd-api: готовый fetch через прокси",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KiowDev/itd-api.git",
-    "directory": "crypto"
+    "directory": "packages/proxy"
   },
-  "homepage": "https://github.com/KiowDev/itd-api/tree/main/crypto",
+  "homepage": "https://github.com/KiowDev/itd-api/tree/main/packages/proxy",
   "bugs": {
     "url": "https://github.com/KiowDev/itd-api/issues"
   },
@@ -15,10 +15,10 @@
   "keywords": [
     "itd",
     "itd-api",
-    "plugin",
-    "steganography",
-    "cipher",
-    "zero-width"
+    "proxy",
+    "socks5",
+    "http-proxy",
+    "undici"
   ],
   "license": "MIT",
   "type": "module",
@@ -58,13 +58,9 @@
     "check:pack": "publint && attw --pack .",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
-  "peerDependencies": {
-    "itd-api": ">=0.0.6"
-  },
-  "peerDependenciesMeta": {
-    "itd-api": {
-      "optional": true
-    }
+  "dependencies": {
+    "socks": "^2.8.9",
+    "undici": "^6.28.0"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

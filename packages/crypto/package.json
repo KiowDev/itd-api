@@ -1,13 +1,13 @@
 {
-  "name": "@itd-api/cache",
-  "version": "0.0.2",
-  "description": "Кэширование и дедупликация запросов для itd-api",
+  "name": "@itd-api/crypto",
+  "version": "0.0.1",
+  "description": "Скрытые сообщения в постах и профилях итд.com: плагин шифрования для itd-api",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KiowDev/itd-api.git",
-    "directory": "cache"
+    "directory": "packages/crypto"
   },
-  "homepage": "https://github.com/KiowDev/itd-api/tree/main/cache",
+  "homepage": "https://github.com/KiowDev/itd-api/tree/main/packages/crypto",
   "bugs": {
     "url": "https://github.com/KiowDev/itd-api/issues"
   },
@@ -16,9 +16,9 @@
     "itd",
     "itd-api",
     "plugin",
-    "cache",
-    "deduplication",
-    "lru"
+    "steganography",
+    "cipher",
+    "zero-width"
   ],
   "license": "MIT",
   "type": "module",
@@ -58,11 +58,8 @@
     "check:pack": "publint && attw --pack .",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
-  "dependencies": {
-    "lru-cache": "^11.5.2"
-  },
   "peerDependencies": {
-    "itd-api": ">=0.0.11"
+    "itd-api": ">=0.0.6"
   },
   "peerDependenciesMeta": {
     "itd-api": {

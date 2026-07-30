@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      'itd-api': fileURLToPath(new URL('../src/index.ts', import.meta.url)),
+      'itd-api': fileURLToPath(new URL('../../src/index.ts', import.meta.url)),
     },
   },
   test: {
