@@ -9,6 +9,8 @@ import {
   ItdApiError,
   ItdAuthError,
   ItdConflictError,
+  ItdFileError,
+  ItdFileErrorReason,
   ItdForbiddenError,
   ItdNotFoundError,
   ItdPhoneVerificationError,
@@ -18,10 +20,23 @@ import {
   isItdApiError,
   isItdAuthError,
   isItdError,
+  isItdFileError,
   isItdValidationError,
 } from '../src/core/errors.js';
 
 const ctx = { method: 'POST', path: '/api/posts', status: 400 };
+
+describe('isItdFileError', () => {
+  it('распознаёт ошибку источника файла по kind', () => {
+    const error = new ItdFileError('источник недоступен', {
+      reason: ItdFileErrorReason.Network,
+      retryable: true,
+    });
+
+    expect(isItdFileError(error)).toBe(true);
+    expect(isItdFileError(new Error('источник недоступен'))).toBe(false);
+  });
+});
 
 describe('parseErrorBody', () => {
   it('разбирает форму с обёрткой error', () => {

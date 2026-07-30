@@ -10,7 +10,8 @@
  * токены библиотека продлит сама. Файл в .gitignore — в нём лежат токены доступа.
  */
 
-import { FileMultiTokenStorage, ItdAccounts, isItdApiError } from 'itd-api/node';
+import { ItdAccounts, isItdApiError } from 'itd-api';
+import { FileMultiTokenStorage } from 'itd-api/node';
 
 const accounts = new ItdAccounts({
   storage: new FileMultiTokenStorage('./.itd-sessions.json'),

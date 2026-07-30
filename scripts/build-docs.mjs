@@ -10,15 +10,30 @@ const builds = [
     entryPoint: 'src/index.ts',
     tsconfig: 'tsconfig.json',
     out: 'guides/web/api/generated/core',
-    intentionallyNotExported: ['ItdClientInternals', 'ItdAccountsInternals'],
+    intentionallyNotExported: ['ItdClientInternals'],
   },
+  // Платформенные точки входа реализуют интерфейсы ядра и ссылаются на его типы.
+  // Дублировать их описание здесь незачем: оно целиком лежит в наборе `itd-api`.
   {
     name: 'itd-api/node',
     entryPoint: 'src/node.ts',
     tsconfig: 'tsconfig.json',
     out: 'guides/web/api/generated/node',
-    intentionallyNotExported: ['ItdClient', 'ItdClientInternals'],
-    extraArgs: ['--excludeReferences'],
+    intentionallyNotExported: [
+      'FileTransferMode',
+      'ItdSession',
+      'LazyFile',
+      'MultiTokenStorage',
+      'StreamFile',
+      'TokenStorage',
+    ],
+  },
+  {
+    name: 'itd-api/web',
+    entryPoint: 'src/web.ts',
+    tsconfig: 'tsconfig.json',
+    out: 'guides/web/api/generated/web',
+    intentionallyNotExported: ['ItdSession', 'TokenStorage'],
   },
   {
     name: '@itd-api/cache',

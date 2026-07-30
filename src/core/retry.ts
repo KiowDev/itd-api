@@ -1,5 +1,11 @@
 import type { ResolvedRetryOptions } from './config.js';
-import { ItdAbortError, ItdApiError, ItdNetworkError, ItdTimeoutError } from './errors.js';
+import {
+  ItdAbortError,
+  ItdApiError,
+  ItdFileError,
+  ItdNetworkError,
+  ItdTimeoutError,
+} from './errors.js';
 
 /**
  * Решает, повторять ли запрос.
@@ -10,6 +16,7 @@ export type RetryScheduler = (
   error: unknown,
   attempt: number,
   method: string,
+  retryNetworkWrite?: boolean,
 ) => number | undefined;
 
 /**
@@ -27,7 +34,12 @@ const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * гарантирует, что запрос **не был обработан**. Обрыв сети и `5xx` такой гарантии не дают —
  * сервер мог успеть создать пост, — поэтому запись по умолчанию не повторяется.
  */
-function isRetryable(error: unknown, method: string, retryWrites: boolean): boolean {
+function isRetryable(
+  error: unknown,
+  method: string,
+  retryWrites: boolean,
+  retryNetworkWrite: boolean,
+): boolean {
   // Отмену повторять нельзя ни при каких условиях: её попросил пользователь.
   if (error instanceof ItdAbortError) return false;
 
@@ -39,7 +51,13 @@ function isRetryable(error: unknown, method: string, retryWrites: boolean): bool
     return false;
   }
 
-  if (error instanceof ItdNetworkError || error instanceof ItdTimeoutError) return safeToRepeat;
+  if (error instanceof ItdNetworkError || error instanceof ItdTimeoutError) {
+    return safeToRepeat || retryNetworkWrite;
+  }
+
+  if (error instanceof ItdFileError) {
+    return error.retryable && (safeToRepeat || retryNetworkWrite);
+  }
 
   return false;
 }
@@ -78,7 +96,7 @@ export function createRetryScheduler(
   options: ResolvedRetryOptions,
   random: () => number = Math.random,
 ): RetryScheduler {
-  return (error, attempt, method) => {
+  return (error, attempt, method, retryNetworkWrite = false) => {
     if (attempt >= options.attempts) return undefined;
 
     if (options.shouldRetry) {
@@ -87,7 +105,7 @@ export function createRetryScheduler(
         : undefined;
     }
 
-    if (!isRetryable(error, method, options.retryWrites)) return undefined;
+    if (!isRetryable(error, method, options.retryWrites, retryNetworkWrite)) return undefined;
 
     if (error instanceof ItdApiError && error.retryAfter !== undefined) {
       return error.retryAfter > options.maxDelay ? undefined : error.retryAfter;

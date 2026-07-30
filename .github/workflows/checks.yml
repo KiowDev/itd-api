@@ -112,3 +112,7 @@ jobs:
           node --input-type=module -e "import { ItdClient } from 'itd-api'; const key = Symbol.asyncDispose || Symbol.for('Symbol.asyncDispose'); if (typeof ItdClient.prototype[key] !== 'function') { throw new Error('ItdClient не disposable на текущем runtime'); }"
           node -e "require('itd-api/node');"
           node --input-type=module -e "await import('itd-api/node');"
+          node -e "require('itd-api/web');"
+          node --input-type=module -e "await import('itd-api/web');"
+          node --input-type=module -e "import { FileTokenStorage, FileMultiTokenStorage, fromPath } from 'itd-api/node'; import { LocalStorageTokenStorage } from 'itd-api/web'; for (const [name, value] of Object.entries({ FileTokenStorage, FileMultiTokenStorage, fromPath, LocalStorageTokenStorage })) { if (value === undefined) throw new Error(name + ' не экспортируется'); }"
+          node --input-type=module -e "import * as node from 'itd-api/node'; if ('ItdClient' in node) { throw new Error('itd-api/node снова переэкспортирует основной API'); }"

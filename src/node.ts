@@ -1,49 +1,166 @@
 /**
- * `itd-api/node` — то же, что `itd-api`, плюс работа с файловой системой.
+ * `itd-api/node` — файловая система для Node, Bun и Deno.
  *
- * Импортируйте эту точку входа в Node, Bun и Deno: клиент отсюда умеет загружать файлы
- * по пути (`attach('./photo.jpg')`), а `FileTokenStorage` сохраняет сессию между запусками.
- * В основном бандле работы с файлами нет намеренно — иначе браузерные сборщики пытались бы
- * разрешить `node:fs`.
+ * Здесь лежит только то, что требует `node:fs` и потому не может попасть в основной бандл:
+ * иначе браузерные сборщики пытались бы разрешить этот модуль. Клиент, аккаунты, билдеры,
+ * типы и всё остальное берутся из `itd-api` — одинаково на всех платформах.
  *
  * @example
  * ```ts
- * import { ItdClient, FileTokenStorage } from 'itd-api/node';
+ * import { ItdClient } from 'itd-api';
+ * import { FileTokenStorage, fromPath } from 'itd-api/node';
  *
  * // Когда сессия уже сохранена, `auth` не нужен — токен возьмётся из хранилища.
  * const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });
  *
- * await itd.posts.create((p) => p.content('привет').attach('./photo.jpg'));
+ * await itd.posts.create((p) => p.content('привет').attach(fromPath('./photo.jpg')));
  * ```
  *
  * @packageDocumentation
  */
 
-import { ItdAccounts as BaseAccounts, type ItdAccountsOptions } from './accounts.js';
-import { ItdClient as BaseClient, type ItdClientInternals } from './client.js';
-import { ItdConfigError } from './core/errors.js';
+import {
+  boundedFileStream,
+  type FileStreamOptions,
+  FileTransferMode,
+  type LazyFile,
+  resolveFileStreamOptions,
+  type StreamFile,
+} from './core/attachments.js';
+import { ItdConfigError, ItdFileError, ItdFileErrorReason } from './core/errors.js';
 import { createRecordMultiStorage, type MultiTokenStorage } from './core/multi-storage.js';
 import { copySession, type ItdSession, type TokenStorage } from './core/storage.js';
-import type { FileReader } from './resources/files.js';
-import type { ItdClientOptions } from './types/options.js';
 
 /** Проверяет код системной ошибки без привязки к типам конкретного рантайма. */
 function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
 }
 
-/**
- * Читает файл с диска для загрузки.
- *
- * Модуль `node:fs` подключается динамически, поэтому импорт этой точки входа не тянет
- * его в браузерные сборки.
- */
-export const nodeFileReader: FileReader = async (path) => {
-  const { readFile } = await import('node:fs/promises');
-  const { basename } = await import('node:path');
+/** Что можно уточнить у файла с диска. */
+export interface PathFileOptions extends FileStreamOptions {
+  /** Имя файла. По умолчанию — имя из пути. */
+  filename?: string | undefined;
+  /** MIME-тип. По умолчанию определяется по расширению. */
+  contentType?: string | undefined;
+}
 
-  return { data: new Uint8Array(await readFile(path)), filename: basename(path) };
-};
+/**
+ * Вложение из файла на диске.
+ *
+ * Клиент настраивать не нужно: чтение диска приезжает вместе со значением, а не через
+ * опцию, поэтому один и тот же клиент принимает и файлы с диска, и всё остальное.
+ *
+ * По умолчанию файл читается целиком непосредственно перед отправкой. Режим
+ * `{ mode: 'stream' }` передаёт его частями и открывает заново при повторной попытке.
+ * Модуль `node:fs` подключается динамически.
+ *
+ * @example
+ * ```ts
+ * import { ItdClient } from 'itd-api';
+ * import { fromPath } from 'itd-api/node';
+ *
+ * const itd = new ItdClient({ auth });
+ *
+ * await itd.posts.create((p) =>
+ *   p.content('смотрите').attach(fromPath('./photo.jpg')),
+ * );
+ * ```
+ */
+export function fromPath(
+  path: string,
+  options: PathFileOptions & { mode: typeof FileTransferMode.Stream },
+): StreamFile;
+export function fromPath(
+  path: string,
+  options?: PathFileOptions & { mode?: typeof FileTransferMode.Buffer },
+): LazyFile;
+export function fromPath(path: string, options: PathFileOptions): LazyFile | StreamFile;
+export function fromPath(path: string, options: PathFileOptions = {}): LazyFile | StreamFile {
+  const resolved = resolveFileStreamOptions(options);
+
+  if (resolved.mode === FileTransferMode.Stream) {
+    return {
+      open: async ({ signal }) => {
+        const [{ createReadStream }, { stat }, { basename }, { Readable }] = await Promise.all([
+          import('node:fs'),
+          import('node:fs/promises'),
+          import('node:path'),
+          import('node:stream'),
+        ]);
+        const info = await stat(path);
+        if (resolved.maxBytes !== undefined && info.size > resolved.maxBytes) {
+          throw new ItdFileError(
+            `файл ${path} больше предела в ${resolved.maxBytes} байт: ${info.size}`,
+            {
+              reason: ItdFileErrorReason.TooLarge,
+              limit: resolved.maxBytes,
+              actual: info.size,
+            },
+          );
+        }
+
+        const file = createReadStream(path, {
+          highWaterMark: Math.min(resolved.streamBufferBytes, 1024 * 1024),
+          ...(signal ? { signal } : {}),
+        });
+        const source = Readable.toWeb(file) as ReadableStream<Uint8Array>;
+        return {
+          stream: boundedFileStream(source, {
+            ...(resolved.maxBytes !== undefined ? { maxBytes: resolved.maxBytes } : {}),
+            streamBufferBytes: resolved.streamBufferBytes,
+            ...(signal ? { signal } : {}),
+          }),
+          filename: options.filename ?? basename(path),
+          ...(options.contentType ? { contentType: options.contentType } : {}),
+          size: info.size,
+          close: () => {
+            file.destroy();
+          },
+        };
+      },
+    };
+  }
+
+  return {
+    load: async ({ signal }) => {
+      const [{ readFile, stat }, { basename }] = await Promise.all([
+        import('node:fs/promises'),
+        import('node:path'),
+      ]);
+      if (resolved.maxBytes !== undefined) {
+        const info = await stat(path);
+        if (info.size > resolved.maxBytes) {
+          throw new ItdFileError(
+            `файл ${path} больше предела в ${resolved.maxBytes} байт: ${info.size}`,
+            {
+              reason: ItdFileErrorReason.TooLarge,
+              limit: resolved.maxBytes,
+              actual: info.size,
+            },
+          );
+        }
+      }
+
+      const file = new Uint8Array(await readFile(path, signal ? { signal } : undefined));
+      if (resolved.maxBytes !== undefined && file.byteLength > resolved.maxBytes) {
+        throw new ItdFileError(
+          `файл ${path} больше предела в ${resolved.maxBytes} байт: ${file.byteLength}`,
+          {
+            reason: ItdFileErrorReason.TooLarge,
+            limit: resolved.maxBytes,
+            actual: file.byteLength,
+          },
+        );
+      }
+
+      return {
+        file,
+        filename: options.filename ?? basename(path),
+        ...(options.contentType ? { contentType: options.contentType } : {}),
+      };
+    },
+  };
+}
 
 /**
  * Читает и разбирает JSON-файл.
@@ -240,46 +357,3 @@ export class FileMultiTokenStorage implements MultiTokenStorage {
     return accounts as Record<string, ItdSession>;
   }
 }
-
-/**
- * Клиент API итд.com с поддержкой файловой системы.
- *
- * Отличается от базового только тем, что умеет читать файлы по пути:
- * `attach('./photo.jpg')` и `itd.files.upload('./video.mp4')` работают сразу.
- */
-export class ItdClient extends BaseClient {
-  constructor(options: ItdClientOptions = {}, internals: ItdClientInternals = {}) {
-    // Чтение файлов передаётся скрытым параметром конструктора, а не мутацией уже
-    // собранного клиента: так объект работоспособен сразу и не меняется после создания.
-    // Остальные скрытые параметры (например общая очередь от ItdAccounts) идут дальше.
-    super(options, { ...internals, fileReader: nodeFileReader });
-  }
-}
-
-/** Создаёт {@link ItdClient} с поддержкой файловой системы. */
-export function createClient(options: ItdClientOptions = {}): ItdClient {
-  return new ItdClient(options);
-}
-
-/**
- * Несколько аккаунтов итд.com с поддержкой файловой системы.
- *
- * Отличается от базового только тем, что заводит клиентов, умеющих читать файлы по пути.
- * В паре с {@link FileMultiTokenStorage} сессии всех аккаунтов живут в одном файле.
- */
-export class ItdAccounts extends BaseAccounts {
-  constructor(options: ItdAccountsOptions = {}) {
-    super(options, {
-      createClient: (clientOptions, internals) => new ItdClient(clientOptions, internals),
-    });
-  }
-}
-
-/** Создаёт {@link ItdAccounts} с поддержкой файловой системы. */
-export function createAccounts(options: ItdAccountsOptions = {}): ItdAccounts {
-  return new ItdAccounts(options);
-}
-
-// Всё остальное — билдеры, типы, ошибки, перечисления — доступно отсюда же,
-// чтобы в Node хватало одного импорта. Объявленные выше имена перекрывают одноимённые.
-export * from './index.js';

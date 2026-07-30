@@ -36,11 +36,12 @@ interface TokenStorage {
 | Реализация | Импорт | Поведение |
 |---|---|---|
 | `MemoryTokenStorage` | `itd-api` | вариант по умолчанию; сессия теряется при завершении процесса |
-| `LocalStorageTokenStorage` | `itd-api` | браузерный `localStorage`; при недоступности переключается на память |
+| `LocalStorageTokenStorage` | `itd-api/web` | браузерный `localStorage`; при недоступности переключается на память |
 | `FileTokenStorage` | `itd-api/node` | JSON-файл для Node.js, Bun и Deno |
 
 ```ts
-import { LocalStorageTokenStorage } from 'itd-api';
+import { ItdClient } from 'itd-api';
+import { LocalStorageTokenStorage } from 'itd-api/web';
 
 const storage = new LocalStorageTokenStorage('my-app:itd-session');
 const itd = new ItdClient({ storage });
@@ -65,7 +66,8 @@ const storage = createTokenStorage({
 ## Файловое хранилище
 
 ```ts
-import { FileTokenStorage, ItdClient } from 'itd-api/node';
+import { ItdClient } from 'itd-api';
+import { FileTokenStorage } from 'itd-api/node';
 
 const itd = new ItdClient({
   storage: new FileTokenStorage('./.itd-session.json'),
@@ -99,7 +101,8 @@ interface MultiTokenStorage {
 | `FileMultiTokenStorage` | `itd-api/node` | все аккаунты в одном версионированном JSON-файле |
 
 ```ts
-import { FileMultiTokenStorage, ItdAccounts } from 'itd-api/node';
+import { ItdAccounts } from 'itd-api';
+import { FileMultiTokenStorage } from 'itd-api/node';
 
 const accounts = new ItdAccounts({
   storage: new FileMultiTokenStorage('./.itd-sessions.json'),
@@ -141,21 +144,25 @@ interface RecordStorageSource {
 `scopedTokenStorage(storage, account)` создаёт из `MultiTokenStorage` обычный
 `TokenStorage`, привязанный к одному имени.
 
-## Точка входа `itd-api/node`
+## Точки входа
 
-`itd-api/node` повторно экспортирует весь основной API и заменяет `ItdClient` и
-`ItdAccounts` версиями с доступом к файловой системе:
+Клиент, аккаунты, билдеры, типы и всё остальное живут в `itd-api` и одинаковы на всех
+платформах. В подточку вынесено только то, что нельзя положить в нейтральный бандл:
+
+| Точка входа | Что в ней | Почему отдельно |
+|---|---|---|
+| `itd-api` | весь API | — |
+| `itd-api/node` | `FileTokenStorage`, `FileMultiTokenStorage`, `fromPath` | требует `node:fs`, который браузерные сборщики не разрешают |
+| `itd-api/web` | `LocalStorageTokenStorage` | молчаливый откат в память стоит выбирать осознанно |
 
 ```ts
-import {
-  FileMultiTokenStorage,
-  FileTokenStorage,
-  ItdAccounts,
-  ItdClient,
-  createAccounts,
-  createClient,
-} from 'itd-api/node';
+import { ItdAccounts, ItdClient } from 'itd-api';
+import { FileMultiTokenStorage, FileTokenStorage, fromPath } from 'itd-api/node';
+import { LocalStorageTokenStorage } from 'itd-api/web';
 ```
+
+Платформенные точки входа не переэкспортируют основной API. `ItdClient` импортируется
+из `itd-api`.
 
 ## Связанные разделы
 

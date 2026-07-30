@@ -1,6 +1,7 @@
+import type { FileInput } from '../core/attachments.js';
 import { ItdConfigError } from '../core/errors.js';
 import type { UserId } from '../types/models.js';
-import type { CreateCommentInput, FileInput } from '../types/params.js';
+import type { CreateCommentInput } from '../types/params.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
 
 /** Внутреннее состояние {@link CommentBuilder}. */
@@ -90,7 +91,9 @@ export class CommentBuilder implements ItdBuilder<CreateCommentInput> {
    *
    * @example
    * ```ts
-   * await itd.posts.comment(postId, (c) => c.voice('./answer.ogg'));
+   * import { fromPath } from 'itd-api/node';
+   *
+   * await itd.posts.comment(postId, (c) => c.voice(fromPath('./answer.ogg')));
    * ```
    */
   voice(audio: FileInput): CommentBuilder {
@@ -134,7 +137,7 @@ export class CommentBuilder implements ItdBuilder<CreateCommentInput> {
  * ```ts
  * import { comment } from 'itd-api';
  *
- * await itd.posts.comment(postId, comment('согласен').attach('./meme.png'));
+ * await itd.posts.comment(postId, comment('согласен').attach({ url: memeUrl }));
  * ```
  */
 export function comment(content = ''): CommentBuilder {

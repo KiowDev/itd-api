@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { post } from '../src/builders/post.js';
 import { createClient, ItdClient } from '../src/client.js';
+import type { FileInput } from '../src/core/attachments.js';
 import { ItdConfigError, ItdNotFoundError } from '../src/core/errors.js';
 import type { ItdClientOptions } from '../src/types/options.js';
 import { makeJwt } from './helpers/jwt.js';
@@ -254,12 +255,12 @@ describe('загрузка файлов', () => {
     expect(mock.callCount).toBe(1);
   });
 
-  it('объясняет, что путь работает только в Node', async () => {
+  it('подсказывает fromPath, когда путь передан строкой', async () => {
     const { itd } = makeClient([]);
 
-    await expect(itd.posts.create((p) => p.content('т').attach('./a.png'))).rejects.toThrow(
-      /itd-api\/node/,
-    );
+    await expect(
+      itd.posts.create((p) => p.content('т').attach('./a.png' as unknown as FileInput)),
+    ).rejects.toThrow(/itd-api\/node/);
   });
 
   it('validateMime: false пропускает проверку', async () => {

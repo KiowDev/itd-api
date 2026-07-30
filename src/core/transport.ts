@@ -1,8 +1,14 @@
 import type { ClientHooks, Logger } from '../types/options.js';
 import type { CookieJar } from './cookies.js';
 import { createApiError, readRateLimit } from './error-factory.js';
-import { ItdAbortError, ItdConfigError, ItdNetworkError, ItdTimeoutError } from './errors.js';
-import type { PipelineRequest } from './pipeline.js';
+import {
+  ItdAbortError,
+  ItdConfigError,
+  ItdError,
+  ItdNetworkError,
+  ItdTimeoutError,
+} from './errors.js';
+import type { PipelineRequest, PreparedRequestBody } from './pipeline.js';
 import { dispatchRequestHook } from './plugins.js';
 import { redactBody, redactHeaders } from './redact.js';
 import { isBlob } from './runtime.js';
@@ -222,40 +228,50 @@ export class Transport {
     const headers = await this.#buildHeaders(request, url);
     const attempt = request.attempt ?? 1;
 
-    let body: BodyInit | undefined;
-    if (request.body !== undefined && request.body !== null) {
-      if (isRawBody(request.body)) {
-        // Content-Type для FormData выставляет сама среда — вместе с boundary.
-        body = request.body;
-      } else {
-        body = JSON.stringify(request.body);
-        if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-      }
-    }
-
-    const context = { method, path: request.path, url, headers, attempt };
-    await dispatchRequestHook(this.#config.hooks, 'onRequest', context, request);
-
     const timeout = request.timeout ?? this.#config.timeout;
     const abort = createAbortBundle(request.signal, timeout);
     const startedAt = Date.now();
+    let cleanupBody: (() => void | Promise<void>) | undefined;
 
-    this.#config.logger?.debug(`→ ${method} ${request.path}`, {
-      headers: redactHeaders(headers),
-      body: redactBody(request.body),
-    });
-
-    // Обработчики отмены действуют до завершения чтения тела.
     try {
+      let body: BodyInit | undefined;
+      try {
+        const prepared = await this.#prepareBody(request, headers, abort.signal, attempt);
+        body = prepared.body;
+        cleanupBody = prepared.cleanup;
+      } catch (error) {
+        const failure = this.#toTransportError(error, abort, request, method, timeout);
+        const context = { method, path: request.path, url, headers, attempt };
+        await dispatchRequestHook(
+          this.#config.hooks,
+          'onError',
+          { ...context, duration: Date.now() - startedAt, error: failure },
+          request,
+        );
+        throw failure;
+      }
+
+      const context = { method, path: request.path, url, headers, attempt };
+      await dispatchRequestHook(this.#config.hooks, 'onRequest', context, request);
+
+      this.#config.logger?.debug(`→ ${method} ${request.path}`, {
+        headers: redactHeaders(headers),
+        body: request.bodyFactory ? '[повторяемое тело]' : redactBody(request.body),
+      });
+
       let response: Response;
       try {
-        response = await this.#config.fetch(url, {
+        const init: RequestInit & { duplex?: 'half' } = {
           method,
           headers,
           signal: abort.signal,
           ...(body !== undefined ? { body } : {}),
           ...(this.#config.sendCredentials ? { credentials: 'include' as const } : {}),
-        });
+        };
+        if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) {
+          init.duplex = 'half';
+        }
+        response = await this.#config.fetch(url, init);
       } catch (error) {
         const duration = Date.now() - startedAt;
         const failure = this.#toTransportError(error, abort, request, method, timeout);
@@ -333,9 +349,65 @@ export class Transport {
 
       return request.raw ? payload : unwrapData(payload);
     } finally {
-      abort.cleanup();
+      try {
+        await cleanupBody?.();
+      } catch (error) {
+        this.#config.logger?.warn(`не удалось закрыть тело ${method} ${request.path}`, error);
+      } finally {
+        abort.cleanup();
+      }
     }
   };
+
+  /** Подготавливает тело внутри попытки, чтобы поток можно было открыть заново при retry. */
+  async #prepareBody(
+    request: PipelineRequest,
+    headers: Headers,
+    signal: AbortSignal,
+    attempt: number,
+  ): Promise<{ body: BodyInit | undefined; cleanup: (() => void | Promise<void>) | undefined }> {
+    if (request.bodyFactory) {
+      if (request.body !== undefined && request.body !== null) {
+        throw new ItdConfigError('body и bodyFactory нельзя задавать одновременно');
+      }
+
+      const pending = Promise.resolve(request.bodyFactory({ signal, attempt }));
+      let prepared: PreparedRequestBody;
+      try {
+        prepared = await abortable(pending, signal);
+      } catch (error) {
+        if (signal.aborted) {
+          void pending
+            .then(async (late) => {
+              try {
+                await late.cleanup?.();
+              } catch (cleanupError) {
+                this.#config.logger?.warn(
+                  `не удалось закрыть отложенное тело ${request.method} ${request.path}`,
+                  cleanupError,
+                );
+              }
+            })
+            .catch(() => {});
+        }
+        throw error;
+      }
+      for (const [name, value] of Object.entries(prepared.headers ?? {})) {
+        if (!headers.has(name)) setHeader(headers, name, value);
+      }
+      return { body: prepared.body, cleanup: prepared.cleanup };
+    }
+
+    if (request.body === undefined || request.body === null) {
+      return { body: undefined, cleanup: undefined };
+    }
+    if (isRawBody(request.body)) {
+      return { body: request.body, cleanup: undefined };
+    }
+
+    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    return { body: JSON.stringify(request.body), cleanup: undefined };
+  }
 
   /** Читает тело и преобразует ошибку чтения в транспортную ошибку библиотеки. */
   async #readBodyOrFail(
@@ -439,7 +511,7 @@ export class Transport {
     request: PipelineRequest,
     method: string,
     timeout: number,
-  ): ItdTimeoutError | ItdAbortError | ItdNetworkError {
+  ): ItdError {
     // Пользовательская отмена с собственным `reason` реджектит `fetch` этим значением, а не
     // `AbortError`, — поэтому опираемся на состояние сигнала, а не только на имя ошибки.
     const aborted = abort.signal.aborted || (error instanceof Error && error.name === 'AbortError');
@@ -456,6 +528,8 @@ export class Transport {
         reason !== undefined ? { cause: reason } : undefined,
       );
     }
+
+    if (error instanceof ItdError) return error;
 
     return new ItdNetworkError(
       `Не удалось выполнить ${method} ${request.path}: ${error instanceof Error ? error.message : String(error)}`,

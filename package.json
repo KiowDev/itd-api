@@ -47,6 +47,9 @@
     "*": {
       "node": [
         "./dist/node.d.ts"
+      ],
+      "web": [
+        "./dist/web.d.ts"
       ]
     }
   },
@@ -69,6 +72,16 @@
       "require": {
         "types": "./dist/node.d.cts",
         "default": "./dist/node.cjs"
+      }
+    },
+    "./web": {
+      "import": {
+        "types": "./dist/web.d.ts",
+        "default": "./dist/web.js"
+      },
+      "require": {
+        "types": "./dist/web.d.cts",
+        "default": "./dist/web.cjs"
       }
     },
     "./package.json": "./package.json"

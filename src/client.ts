@@ -1,3 +1,4 @@
+import type { FileInput } from './core/attachments.js';
 import { type AuthEvents, AuthManager } from './core/auth.js';
 import { BUILT_IN_SERVICES, type ResolvedConfig, resolveConfig } from './core/config.js';
 import { CookieJar } from './core/cookies.js';
@@ -21,7 +22,7 @@ import { Transport } from './core/transport.js';
 import { ItdRealtime, type RealtimeOptions } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
 import { CommentsResource } from './resources/comments.js';
-import { type FileReader, FilesResource } from './resources/files.js';
+import { FilesResource } from './resources/files.js';
 import { HashtagsResource } from './resources/hashtags.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { PlatformResource } from './resources/platform.js';
@@ -39,7 +40,6 @@ import type {
   RequestOptions,
   RetryOptions,
 } from './types/options.js';
-import type { FileInput } from './types/params.js';
 
 declare global {
   interface SymbolConstructor {
@@ -62,13 +62,9 @@ export function assertClientCanUnusePlugin(client: ItdClient, name: string): voi
 /**
  * Скрытые параметры конструктора — не часть публичного API.
  *
- * Через них точка входа `itd-api/node` передаёт чтение файлов с диска, не мутируя уже
- * созданный объект.
- *
  * @internal
  */
 export interface ItdClientInternals {
-  fileReader?: FileReader | undefined;
   /**
    * Готовая очередь запросов — так {@link ItdAccounts} с `rateLimitScope: 'shared'` даёт
    * нескольким клиентам одну на всех. Свою клиент в этом случае не заводит и, что важнее,
@@ -248,10 +244,7 @@ export class ItdClient {
     const handler = composePipeline(middlewares, transport.send);
     this.#http = new HttpClient({ handler, plugins: this.#plugins, baseUrl: config.baseUrl });
 
-    this.files = new FilesResource(
-      this.#http,
-      internals.fileReader ? { readFile: internals.fileReader } : {},
-    );
+    this.files = new FilesResource(this.#http, { fetch: config.fetch });
 
     const uploadFiles = (files: FileInput[], requestOptions?: RequestOptions) =>
       this.files.uploadMany(files, requestOptions ?? {});

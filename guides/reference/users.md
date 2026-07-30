@@ -25,11 +25,14 @@ removeBanner(options?: RequestOptions): Promise<MyProfile>
 `removeBanner()` отправляет в тот же endpoint `{ bannerId: null }`.
 
 ```ts
-await itd.users.setBanner('./banner.webp');
+import { fromPath } from 'itd-api/node';
+
+await itd.users.setBanner(fromPath('./banner.webp'));
 await itd.users.removeBanner();
 ```
 
-В браузере вместо пути передайте `File`, `Blob`, `ArrayBuffer` или `Uint8Array`. Для
+Метод принимает любую [форму вложения](./files.md#формы-вложений): в браузере передайте
+`File`, `Blob`, `ArrayBuffer` или `Uint8Array`, а `{ url }` работает везде. Для
 баннера используйте изображение JPEG, PNG, GIF, WebP, AVIF, HEIC или HEIF. Точный предел
 размера и разрешения сервером не опубликован, поэтому библиотека не выдумывает ограничение
 и не отклоняет файл по этим признакам до ответа API.

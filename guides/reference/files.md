@@ -1,76 +1,204 @@
 # Файлы — `itd.files`
 
-Загрузка и удаление медиа. Обычно вызывать напрямую не нужно: [`itd.posts.create()`](./posts.md)
-и `itd.posts.comment()` загружают файлы сами через поле `files`.
-
-Загрузка файла **по пути** (строка) работает только в Node, Bun и Deno — подключите точку
-входа `itd-api/node`. В браузере и React Native передавайте `File` или `Blob`.
+Загрузка и удаление медиа. Публикующие методы (`itd.posts.create()`,
+`itd.posts.comment()` и другие) сами вызывают загрузку значений из поля `files`.
 
 ## Методы
 
 ```ts
 upload(input: FileInput, options?: UploadOptions): Promise<UploadedFile>
-```
-Загружает файл и возвращает его идентификатор и CDN-адрес. Таймаут по умолчанию —
-`DEFAULT_UPLOAD_TIMEOUT` (300 000 мс): видео не укладывается в обычные 30 секунд.
-
-```ts
 uploadMany(files: FileInput[], options?: UploadOptions): Promise<string[]>
+get(fileId: string, options?: RequestOptions): Promise<unknown>
+remove(fileId: string, options?: RequestOptions): Promise<void>
 ```
-Загружает несколько файлов **последовательно**, сохраняя порядок. Возвращает идентификаторы
-вложений в порядке входных файлов.
 
-```ts
-remove(fileId: string): Promise<void>
-```
-Удаляет загруженный файл.
+`upload()` возвращает `{ id, url }`; `id` передаётся в `attachmentIds`.
+`uploadMany()` загружает файлы последовательно и возвращает их идентификаторы в исходном
+порядке. Таймаут загрузки по умолчанию — `DEFAULT_UPLOAD_TIMEOUT` (300 000 мс); он охватывает
+получение исходного файла и его отправку.
 
-```ts
-get(fileId: string): Promise<unknown>
-```
-Сведения о файле. На практике сервер отвечает `404` даже на только что загруженный,
-ещё не прикреплённый файл, — метод оставлен для полноты.
+`get()` может вернуть `404` для загруженного, но ещё не прикреплённого файла.
 
-## Типы
+## Формы вложений
 
 ```ts
 type FileInput =
   | Blob
   | ArrayBuffer
   | Uint8Array
-  | string                               // путь на диске (только Node/Bun/Deno)
-  | { data: Blob | ArrayBuffer | Uint8Array; filename?: string; contentType?: string };
+  | FileContent
+  | UrlFile
+  | LazyFile
+  | StreamFile;
 
-interface UploadedFile {
-  id: string;                            // передаётся в attachmentIds
-  url: string;                           // адрес на CDN
+interface FileContent {
+  file: Blob | ArrayBuffer | Uint8Array;
+  filename?: string;
+  contentType?: string;
 }
 
-interface UploadOptions extends RequestOptions {
-  filename?: string;                     // по нему определяется тип, если не задан
-  contentType?: string;                  // MIME; иначе по имени файла или самому Blob
-  validateMime?: boolean;                // проверять тип до отправки; по умолчанию true
+interface LazyFile {
+  load(context: FileContext): FileContent | Promise<FileContent>;
 }
 
-const DEFAULT_UPLOAD_TIMEOUT = 300_000;
+interface StreamFile {
+  open(context: FileContext): FileStreamContent | Promise<FileStreamContent>;
+}
+
+interface FileStreamContent {
+  stream: ReadableStream<Uint8Array>;
+  filename?: string;
+  contentType?: string;
+  size?: number;
+  close?: () => void | Promise<void>;
+}
+
+interface FileContext {
+  signal?: AbortSignal;
+  fetch: typeof fetch;
+  attempt: number;
+}
 ```
 
-## Допустимые типы
-
-Наборы MIME экспортируются из корня пакета — по ним библиотека проверяет вложения до отправки
-(`validateMime`):
+Готовые бинарные значения и `{ file }` отправляются в буферном режиме. Файлы с диска
+добавляются через `fromPath()` из `itd-api/node`; URL и пользовательские источники доступны
+в основной точке входа:
 
 ```ts
-ALLOWED_MIME_TYPES     // весь список
-IMAGE_MIME_TYPES       // изображения
-VIDEO_MIME_TYPES       // видео
-AUDIO_MIME_TYPES       // аудио (голосовые: audio/ogg)
+import { fromStream, fromUrl, ItdClient } from 'itd-api';
+import { fromPath } from 'itd-api/node';
+
+const itd = new ItdClient({ auth });
+
+await itd.posts.create((post) =>
+  post
+    .content('смотрите')
+    .attach(blob)
+    .attach(fromPath('./local.png', { mode: 'stream' }))
+    .attach(fromUrl('https://cdn.example.com/photo.jpg', { mode: 'stream' })),
+);
 ```
 
-Соответствующие строковые типы: `AllowedMimeType`, `ImageMimeType`, `VideoMimeType`
-и `AudioMimeType`.
+## Буферный и потоковый режимы
 
-Кроме типа сервер проверяет и само изображение: слишком маленькие картинки он отклоняет
-(«Не удалось проверить изображение»); 64×64 проходит. Загрузка видео может требовать
-верификации (`VIDEO_REQUIRES_VERIFICATION`), лимит частоты у `/api/files/upload` — 15 запросов
-в окне.
+`fromUrl()` и `fromPath()` по умолчанию сохраняют прежнее поведение: сначала читают файл
+целиком, затем отправляют `Blob`. Поток включается явно:
+
+```ts
+fromUrl(url, {
+  mode: 'stream',
+  maxBytes: 100 * 1024 * 1024,
+  streamBufferBytes: 4 * 1024 * 1024,
+});
+
+fromPath('./video.mp4', {
+  mode: 'stream',
+  maxBytes: 100 * 1024 * 1024,
+  streamBufferBytes: 4 * 1024 * 1024,
+});
+```
+
+`streamBufferBytes` задаёт верхнюю границу очереди, которой управляет библиотека; значение
+по умолчанию — `DEFAULT_FILE_STREAM_BUFFER_BYTES` (4 МиБ). Сам Fetch-рантайм и сетевой стек
+могут держать дополнительные внутренние буферы, поэтому это не строгий предел всей памяти
+процесса. `maxBytes` проверяется во время чтения и отменяет источник сразу после превышения.
+Для URL действует стандартный предел `DEFAULT_URL_FILE_MAX_BYTES` (100 МиБ).
+
+Потоковый multipart требует поддержку `ReadableStream` и потокового тела запроса в текущем
+Fetch-рантайме. Если сервер, прокси или рантайм не принимает такой запрос, используйте
+`mode: 'buffer'`.
+
+## Пользовательский поток
+
+`fromStream()` принимает фабрику, а не готовый поток. При сетевом сбое загрузка повторяется,
+и фабрика вызывается заново для каждой попытки:
+
+```ts
+import { fromStream } from 'itd-api';
+
+const attachment = fromStream(
+  async ({ signal, attempt }) => {
+    const response = await storage.get(objectKey, { signal });
+    return {
+      stream: response.body,
+      filename: 'photo.webp',
+      contentType: 'image/webp',
+      size: response.size,
+      close: () => response.close(),
+    };
+  },
+  {
+    maxBytes: 10 * 1024 * 1024,
+    streamBufferBytes: 2 * 1024 * 1024,
+  },
+);
+
+await itd.files.upload(attachment);
+```
+
+`open()` должен возвращать новый непрочитанный `ReadableStream`. Один поток нельзя
+переиспользовать: после отправки он заблокирован или исчерпан. `close()` вызывается после
+завершения попытки, в том числе после ошибки.
+
+Буферный `{ load }` также повторно вызывается, если получить содержимое не удалось. После
+успешного чтения результат сохраняется для повторной отправки, поэтому URL или диск не
+читаются второй раз при сбое уже во время загрузки.
+
+## Повторы и ошибки источника
+
+При сетевой ошибке или таймауте загрузка повторяется с новым телом. Потоковый URL
+запрашивается заново, файл с диска снова открывается, пользовательская фабрика снова
+вызывает `open()`. Если сервер обработал первую попытку, но ответ потерялся, на сервере
+может остаться лишний файл. `retry: false` отключает повторы.
+
+Ошибки получения файла представлены `ItdFileError`:
+
+```ts
+import { isItdFileError, ItdFileErrorReason } from 'itd-api';
+
+try {
+  await itd.files.upload(fromUrl(url, { mode: 'stream' }));
+} catch (error) {
+  if (isItdFileError(error)) {
+    console.log(error.reason, error.url, error.status, error.limit, error.actual);
+  }
+}
+```
+
+Причины: `network`, `http`, `too_large`, `stream_unavailable`, `read`. Сетевые ошибки,
+HTTP `408`, `429` и `5xx` источника допускают повтор; остальные HTTP-статусы и превышение
+размера — нет. Схемы кроме `http:` и `https:` отклоняются как `ItdConfigError`.
+
+`fromUrl()` не ограничивает хост. Если адрес приходит от недоверенного пользователя,
+проверяйте его в приложении до передачи библиотеке; это также позволяет применить правила
+для DNS, редиректов и вашей сетевой инфраструктуры в одном месте.
+
+## Настройки загрузки
+
+```ts
+interface UploadOptions extends RequestOptions {
+  filename?: string;            // используется для определения MIME
+  contentType?: string;         // иначе определяется по имени или Blob
+  validateMime?: boolean;       // по умолчанию true
+  maxBytes?: number;
+  streamBufferBytes?: number;
+}
+```
+
+`contentType` нормализуется перед проверкой: регистр и параметры вроде
+`image/jpeg; charset=binary` не влияют на сопоставление.
+
+Экспортируемые списки допустимых MIME:
+
+```ts
+ALLOWED_MIME_TYPES
+IMAGE_MIME_TYPES
+VIDEO_MIME_TYPES
+AUDIO_MIME_TYPES
+```
+
+Строковые типы: `AllowedMimeType`, `ImageMimeType`, `VideoMimeType`, `AudioMimeType`.
+
+Кроме MIME сервер проверяет само содержимое. Например, слишком маленькое изображение может
+быть отклонено, а загрузка видео может потребовать верификации
+(`VIDEO_REQUIRES_VERIFICATION`).

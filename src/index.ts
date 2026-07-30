@@ -38,6 +38,26 @@ export {
 } from './builders/post.js';
 export { type ReportBuilder, type ReportInput, report } from './builders/report.js';
 export { createClient, ItdClient } from './client.js';
+// Форма вложения сама объявляет, откуда брать содержимое, поэтому настраивать клиент
+// не нужно. Загрузка по адресу работает на всех платформах и живёт здесь; чтение с диска
+// требует `node:fs` — за ним `fromPath` из `itd-api/node`.
+export {
+  DEFAULT_FILE_STREAM_BUFFER_BYTES,
+  DEFAULT_URL_FILE_MAX_BYTES,
+  type FileContent,
+  type FileContext,
+  type FileInput,
+  type FileStreamContent,
+  type FileStreamOptions,
+  FileTransferMode,
+  type FromStreamOptions,
+  fromStream,
+  fromUrl,
+  type LazyFile,
+  type StreamFile,
+  type UrlFile,
+  type UrlFileOptions,
+} from './core/attachments.js';
 export {
   AUTH_PATHS,
   type AuthEvents,
@@ -67,6 +87,8 @@ export {
   ItdError,
   ItdErrorKind,
   type ItdFieldErrors,
+  ItdFileError,
+  ItdFileErrorReason,
   ItdForbiddenError,
   ItdNetworkError,
   ItdNotFoundError,
@@ -79,6 +101,7 @@ export {
   isItdAuthError,
   isItdConflictError,
   isItdError,
+  isItdFileError,
   isItdForbiddenError,
   isItdNotFoundError,
   isItdPhoneVerificationError,
@@ -119,10 +142,12 @@ export type {
 export { DetectedRuntime, RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export { type ServiceDefinition, ServiceRegistry } from './core/services.js';
+// Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
+// и потому не может попасть в нейтральный бандл, а `LocalStorageTokenStorage` вынесен
+// в `itd-api/web`, чтобы его молчаливый откат в память выбирали осознанно.
 export {
   createTokenStorage,
   type ItdSession,
-  LocalStorageTokenStorage,
   MemoryTokenStorage,
   type TokenStorage,
 } from './core/storage.js';
@@ -174,7 +199,6 @@ export { SignInStatus } from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export {
   DEFAULT_UPLOAD_TIMEOUT,
-  type FileReader,
   type FilesResource,
   type UploadedFile,
   type UploadOptions,
@@ -318,6 +342,5 @@ export type {
   CreatePollInput,
   CreatePostInput,
   CreateReportInput,
-  FileInput,
   UpdatePostInput,
 } from './types/params.js';

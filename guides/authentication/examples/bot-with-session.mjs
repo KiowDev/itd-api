@@ -14,7 +14,8 @@
  */
 
 import { createInterface } from 'node:readline/promises';
-import { FileTokenStorage, ItdClient, isItdApiError } from 'itd-api/node';
+import { ItdClient, isItdApiError } from 'itd-api';
+import { FileTokenStorage, fromPath } from 'itd-api/node';
 
 const itd = new ItdClient({
   // auth здесь не задаём: вход по паролю требует свежей капчи, поэтому он делается
@@ -80,8 +81,8 @@ const post = await itd.posts.create((p) =>
 
 console.log(`Опубликовано: ${post.id}`);
 
-// Пример с картинкой — раскомментируйте, подставив существующий путь:
-// await itd.posts.create((p) => p.content('смотрите').attach('./photo.jpg'));
+// Пример с картинкой — раскомментируйте, подставив существующий путь.
+// await itd.posts.create((p) => p.content('смотрите').attach(fromPath('./photo.jpg')));
 
 // Обход подписок и реакция на непонравившиеся записи.
 let liked = 0;

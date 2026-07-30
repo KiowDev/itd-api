@@ -83,7 +83,7 @@ export function assertAllowedMime(mimeType: string | undefined, filename?: strin
   if (!mimeType) {
     throw new ItdConfigError(
       `Не удалось определить тип файла${filename ? ` «${filename}»` : ''}. ` +
-        'Укажите его явно: { data, filename, contentType }.',
+        'Укажите его явно: { file, filename, contentType }.',
     );
   }
 

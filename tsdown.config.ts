@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     node: 'src/node.ts',
+    web: 'src/web.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,
@@ -13,16 +14,16 @@ export default defineConfig({
   target: 'es2022',
   platform: 'neutral',
 
-  // Общий код выносится в отдельный чанк: точка входа `itd-api/node` — надстройка
-  // над основной, и без разделения она дублировала бы всю библиотеку целиком.
-  // В tsdown разделение включено всегда и отдельной опции не требует.
+  // Общий код выносится в отдельный чанк: платформенные точки входа делят с основной
+  // общие части (`MemoryTokenStorage`, разбор сессий), и без разделения каждая тянула бы
+  // свою копию. В tsdown разделение включено всегда и отдельной опции не требует.
 
   deps: {
     // Обе зависимости вшиваются в бандл: для пользователя пакет остаётся zero-dependency.
     // Лицензии MIT продублированы в NOTICE.
     alwaysBundle: ['eventsource-parser', 'set-cookie-parser'],
 
-    // node:fs подключается только динамически из src/node.ts и не должен попадать в основной бандл.
-    neverBundle: ['node:fs', 'node:fs/promises', 'node:path'],
+    // Встроенные модули подключаются только динамически из src/node.ts.
+    neverBundle: ['node:fs', 'node:fs/promises', 'node:path', 'node:stream'],
   },
 });

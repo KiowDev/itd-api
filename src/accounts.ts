@@ -1,9 +1,4 @@
-import {
-  assertClientCanUnusePlugin,
-  assertClientCanUsePlugin,
-  ItdClient,
-  type ItdClientInternals,
-} from './client.js';
+import { assertClientCanUnusePlugin, assertClientCanUsePlugin, ItdClient } from './client.js';
 import { resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
 import { ItdConfigError } from './core/errors.js';
@@ -88,20 +83,6 @@ export interface AccountEvents {
   authError: { account: string; error: unknown };
 }
 
-/**
- * Скрытые параметры конструктора — не часть публичного API.
- *
- * Через них точка входа `itd-api/node` подставляет свою фабрику клиентов, чтобы аккаунты
- * умели читать файлы с диска.
- *
- * @internal
- */
-export interface ItdAccountsInternals {
-  createClient?:
-    | ((options: ItdClientOptions, internals: ItdClientInternals) => ItdClient)
-    | undefined;
-}
-
 /** Проверяет имя до создания клиента или частичного восстановления контейнера. */
 function validateAccountName(name: string): void {
   if (typeof name !== 'string' || name.trim() === '') {
@@ -118,7 +99,8 @@ function validateAccountName(name: string): void {
  *
  * @example Бот на нескольких аккаунтах
  * ```ts
- * import { ItdAccounts, FileMultiTokenStorage } from 'itd-api/node';
+ * import { ItdAccounts } from 'itd-api';
+ * import { FileMultiTokenStorage } from 'itd-api/node';
  *
  * await using accounts = new ItdAccounts({
  *   storage: new FileMultiTokenStorage('./.itd-sessions.json'),
@@ -159,9 +141,8 @@ export class ItdAccounts {
   readonly #rateLimitScope: RateLimitScope;
   readonly #emitter: Emitter<AccountEvents>;
   readonly #logger: Logger | undefined;
-  readonly #createClient: (options: ItdClientOptions, internals: ItdClientInternals) => ItdClient;
 
-  constructor(options: ItdAccountsOptions = {}, internals: ItdAccountsInternals = {}) {
+  constructor(options: ItdAccountsOptions = {}) {
     const { storage, plugins, rateLimitScope, ...base } = options;
 
     if (
@@ -176,9 +157,6 @@ export class ItdAccounts {
     this.#storage = storage ?? new MemoryMultiTokenStorage();
     this.#plugins = orderPluginDefinitions(plugins ?? []);
     this.#rateLimitScope = rateLimitScope ?? 'account';
-    this.#createClient =
-      internals.createClient ??
-      ((clientOptions, clientInternals) => new ItdClient(clientOptions, clientInternals));
 
     // Общая очередь заводится сразу: проверить опции лучше при создании контейнера,
     // а не при добавлении первого аккаунта.
@@ -257,7 +235,7 @@ export class ItdAccounts {
     const storageControl = controlledTokenStorage(this.#storage, name);
     let client: ItdClient | undefined;
     try {
-      client = this.#createClient(
+      client = new ItdClient(
         this.#mergeOptions(options, storageControl.storage),
         this.#queues ? { queues: this.#queues } : {},
       );

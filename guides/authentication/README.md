@@ -20,7 +20,8 @@ new ItdClient();
 В Node, Bun и Deno:
 
 ```ts
-import { FileTokenStorage, ItdClient } from 'itd-api/node';
+import { ItdClient } from 'itd-api';
+import { FileTokenStorage } from 'itd-api/node';
 
 const itd = new ItdClient({
   storage: new FileTokenStorage('./.itd-session.json'),
@@ -70,7 +71,7 @@ else redirectToLogin();
 | Хранилище | Импорт | Среда |
 |---|---|---|
 | `MemoryTokenStorage` | `itd-api` | везде |
-| `LocalStorageTokenStorage` | `itd-api` | браузер |
+| `LocalStorageTokenStorage` | `itd-api/web` | браузер |
 | `FileTokenStorage` | `itd-api/node` | Node, Bun, Deno |
 | `createTokenStorage()` | `itd-api` | Redis, БД, AsyncStorage и другие |
 

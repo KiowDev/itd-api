@@ -42,17 +42,19 @@ for await (const post of itd.posts.iterate({ tab: FeedTab.Following })) {
 Готовый access token удобен для первого запуска. Для долгоживущего приложения настройте
 обновляемую сессию по [руководству по авторизации](../authentication/).
 
-Для загрузки файлов по пути и файлового хранилища сессии используйте Node-вход:
+Файловое хранилище сессии и вложения с диска берутся из Node-входа; сам клиент —
+всегда из `itd-api`:
 
 ```ts
-import { FileTokenStorage, ItdClient } from 'itd-api/node';
+import { ItdClient } from 'itd-api';
+import { FileTokenStorage, fromPath } from 'itd-api/node';
 
 const itd = new ItdClient({
   storage: new FileTokenStorage('./.itd-session.json'),
 });
 
 await itd.posts.create((p) =>
-  p.content('привет').attach('./photo.jpg'),
+  p.content('привет').attach(fromPath('./photo.jpg')),
 );
 ```
 
@@ -68,7 +70,7 @@ await itd.posts.create({ content: 'привет' });
 await itd.posts.create((p) =>
   p
     .content('смотрите')
-    .attach('./photo.jpg')
+    .attach({ url: 'https://example.com/photo.jpg' })
     .poll((q) => q.question('нравится?').options('да', 'нет')),
 );
 

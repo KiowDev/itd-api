@@ -1,5 +1,25 @@
 import type { RawRequestOptions } from '../types/options.js';
 
+/** Тело, заново подготовленное для одной транспортной попытки. */
+export interface PreparedRequestBody {
+  body: BodyInit;
+  /** Заголовки тела, например multipart boundary. Пользовательские заголовки важнее. */
+  headers?: Record<string, string> | undefined;
+  /** Освобождает открытый файл или входящий HTTP-поток. */
+  cleanup?: (() => void | Promise<void>) | undefined;
+}
+
+/** Контекст подготовки повторяемого тела. */
+export interface RequestBodyContext {
+  signal: AbortSignal;
+  attempt: number;
+}
+
+/** Создаёт новое тело для каждой транспортной попытки. */
+export type RequestBodyFactory = (
+  context: RequestBodyContext,
+) => PreparedRequestBody | Promise<PreparedRequestBody>;
+
 /**
  * Описание запроса внутри конвейера.
  *
@@ -9,6 +29,14 @@ import type { RawRequestOptions } from '../types/options.js';
  * `Authorization`, заданный вызывающим кодом вручную.
  */
 export interface PipelineRequest extends RawRequestOptions {
+  /** Повторяемое тело. Используется внутренними ресурсами вместо `body`. @internal */
+  bodyFactory?: RequestBodyFactory | undefined;
+  /**
+   * Разрешает повтор записи после сетевого сбоя. Тело должно быть повторяемым.
+   *
+   * @internal
+   */
+  retryNetworkWrite?: boolean | undefined;
   /**
    * Заголовки, добавленные слоями конвейера.
    *

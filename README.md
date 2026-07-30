@@ -96,7 +96,7 @@ for (const post of page.items) {
 |---|---|
 | Node.js 18+ | полная, включая файловую точку входа `itd-api/node` |
 | Bun, Deno | полная |
-| Браузер | кроме файловой системы; для основного API нужен server-side proxy из-за CORS |
+| Браузер | кроме файловой системы; хранилище сессии — `itd-api/web`; для основного API нужен server-side proxy из-за CORS |
 | React Native | полная; realtime переключается на polling без потокового чтения |
 
 TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 26, а корректность

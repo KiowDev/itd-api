@@ -4,7 +4,8 @@
 и `deviceId`, но сессии складываются в одно `MultiTokenStorage`.
 
 ```ts
-import { FileMultiTokenStorage, ItdAccounts } from 'itd-api/node';
+import { ItdAccounts } from 'itd-api';
+import { FileMultiTokenStorage } from 'itd-api/node';
 
 const accounts = new ItdAccounts({
   storage: new FileMultiTokenStorage('./.itd-sessions.json'),

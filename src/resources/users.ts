@@ -1,3 +1,4 @@
+import type { FileInput } from '../core/attachments.js';
 import type { HttpClient } from '../core/http.js';
 import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { pickArray, pickBoolean, pickString } from '../core/unwrap.js';
@@ -14,7 +15,6 @@ import type {
   UserSummary,
 } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
-import type { FileInput } from '../types/params.js';
 import { BaseResource } from './base.js';
 import type { UploadedFile, UploadOptions } from './files.js';
 

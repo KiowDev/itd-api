@@ -119,14 +119,14 @@ describe('билдер поста', () => {
   it('собирает текст, вложения и опрос', () => {
     const result = post('текст')
       .attachId('att-1')
-      .attach('./a.png')
+      .attach({ url: 'https://example.com/a.png' })
       .poll((q) => q.question('ну как?').options('да', 'нет'))
       .build();
 
     expect(result).toMatchObject({
       content: 'текст',
       attachmentIds: ['att-1'],
-      files: ['./a.png'],
+      files: [{ url: 'https://example.com/a.png' }],
       poll: { question: 'ну как?' },
     });
   });
@@ -137,9 +137,17 @@ describe('билдер поста', () => {
   });
 
   it('сохраняет порядок вложений', () => {
-    const result = post('т').attach('./1.png').attach('./2.png').attach('./3.png').build();
+    const result = post('т')
+      .attach({ url: 'https://e/1.png' })
+      .attach({ url: 'https://e/2.png' })
+      .attach({ url: 'https://e/3.png' })
+      .build();
 
-    expect(result.files).toEqual(['./1.png', './2.png', './3.png']);
+    expect(result.files).toEqual([
+      { url: 'https://e/1.png' },
+      { url: 'https://e/2.png' },
+      { url: 'https://e/3.png' },
+    ]);
   });
 
   it('пост только с опросом допустим', () => {
@@ -151,7 +159,7 @@ describe('билдер поста', () => {
   });
 
   it('пост только с вложением допустим', () => {
-    expect(() => post().attach('./a.png').build()).not.toThrow();
+    expect(() => post().attach({ url: 'https://example.com/a.png' }).build()).not.toThrow();
   });
 
   it('отвергает пустой пост', () => {
@@ -277,9 +285,12 @@ describe('билдер поста', () => {
 
 describe('билдер комментария', () => {
   it('собирает текст и вложения', () => {
-    const result = comment('согласен').attach('./meme.png').build();
+    const result = comment('согласен').attach({ url: 'https://example.com/meme.png' }).build();
 
-    expect(result).toMatchObject({ content: 'согласен', files: ['./meme.png'] });
+    expect(result).toMatchObject({
+      content: 'согласен',
+      files: [{ url: 'https://example.com/meme.png' }],
+    });
   });
 
   it('отвергает пустой комментарий', () => {
@@ -287,11 +298,16 @@ describe('билдер комментария', () => {
   });
 
   it('голосовой требует ровно одно вложение и никакого текста', () => {
-    expect(() => comment().voice('./a.ogg').build()).not.toThrow();
-    expect(() => comment('текст').voice('./a.ogg').build()).toThrow(/не может быть текста/);
-    expect(() => comment().voice('./a.ogg').attach('./b.ogg').build()).toThrow(
-      /ровно одно аудиовложение, передано: 2/,
+    expect(() => comment().voice({ url: 'https://example.com/a.ogg' }).build()).not.toThrow();
+    expect(() => comment('текст').voice({ url: 'https://example.com/a.ogg' }).build()).toThrow(
+      /не может быть текста/,
     );
+    expect(() =>
+      comment()
+        .voice({ url: 'https://example.com/a.ogg' })
+        .attach({ url: 'https://example.com/b.ogg' })
+        .build(),
+    ).toThrow(/ровно одно аудиовложение, передано: 2/);
   });
 
   it('replyTo запрещён в комментарии к посту', () => {

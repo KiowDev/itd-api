@@ -5,6 +5,7 @@ import cryptoSidebar from './api/generated/crypto/typedoc-sidebar.json';
 import nodeSidebar from './api/generated/node/typedoc-sidebar.json';
 import proxySidebar from './api/generated/proxy/typedoc-sidebar.json';
 import turnstileSidebar from './api/generated/turnstile/typedoc-sidebar.json';
+import webSidebar from './api/generated/web/typedoc-sidebar.json';
 import packageJson from '../../package.json';
 
 const guideSidebar = [
@@ -96,6 +97,7 @@ const packagesSidebar = [
     items: [
       { text: 'itd-api', link: '/api/generated/core/' },
       { text: 'itd-api/node', link: '/api/generated/node/' },
+      { text: 'itd-api/web', link: '/api/generated/web/' },
       { text: '@itd-api/cache', link: '/api/generated/cache/' },
       { text: '@itd-api/crypto', link: '/api/generated/crypto/' },
       { text: '@itd-api/proxy', link: '/api/generated/proxy/' },
@@ -181,6 +183,7 @@ export default defineConfig({
       '/packages/': packagesSidebar,
       '/api/generated/core/': apiSidebar('itd-api', '/api/generated/core/', coreSidebar),
       '/api/generated/node/': apiSidebar('itd-api/node', '/api/generated/node/', nodeSidebar),
+      '/api/generated/web/': apiSidebar('itd-api/web', '/api/generated/web/', webSidebar),
       '/api/generated/cache/': apiSidebar(
         '@itd-api/cache',
         '/api/generated/cache/',

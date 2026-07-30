@@ -5,6 +5,7 @@ import {
   resolvePost,
   resolvePostUpdate,
 } from '../builders/post.js';
+import type { FileInput } from '../core/attachments.js';
 import type { HttpClient } from '../core/http.js';
 import {
   type Page,
@@ -26,7 +27,7 @@ import type {
   UserRef,
 } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
-import type { CreateCommentInput, CreatePostInput, FileInput } from '../types/params.js';
+import type { CreateCommentInput, CreatePostInput } from '../types/params.js';
 import { BaseResource } from './base.js';
 
 /** Курсорная позиция из параметров: если курсор задан — с него, иначе с начала. */
@@ -162,7 +163,7 @@ export class PostsResource extends BaseResource {
    * @example
    * ```ts
    * await itd.posts.create({ content: 'привет' });
-   * await itd.posts.create((p) => p.content('привет').attach('./photo.jpg'));
+   * await itd.posts.create((p) => p.content('привет').attach({ url: 'https://example.com/photo.jpg' }));
    * ```
    */
   async create(input: PostInput, options: RequestOptions = {}): Promise<Post> {
@@ -367,7 +368,7 @@ export class PostsResource extends BaseResource {
    * @example
    * ```ts
    * await itd.posts.comment(postId, 'согласен');
-   * await itd.posts.comment(postId, (c) => c.content('смотри').attach('./meme.png'));
+   * await itd.posts.comment(postId, (c) => c.content('смотри').attach(blob));
    * ```
    */
   async comment(
@@ -394,7 +395,9 @@ export class PostsResource extends BaseResource {
    *
    * @example
    * ```ts
-   * await itd.posts.voiceComment(postId, './answer.ogg');
+   * import { fromPath } from 'itd-api/node';
+   *
+   * await itd.posts.voiceComment(postId, fromPath('./answer.ogg'));
    * ```
    */
   voiceComment(postId: string, audio: FileInput, options: RequestOptions = {}): Promise<Comment> {

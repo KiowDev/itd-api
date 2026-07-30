@@ -1,9 +1,10 @@
+import type { FileInput } from '../core/attachments.js';
 import { ItdConfigError } from '../core/errors.js';
 import { type ParseMarkupOptions, parseHtml, parseMarkdown } from '../spans/parse.js';
 import { validateSpans } from '../spans/validate.js';
 import { SpanType } from '../types/enums.js';
 import type { Span, UserId } from '../types/models.js';
-import type { CreatePostInput, FileInput, UpdatePostInput } from '../types/params.js';
+import type { CreatePostInput, UpdatePostInput } from '../types/params.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, isBuilder, resolveInput } from './base.js';
 import { type AutoSpansOptions, autoSpans, type MarkupInput, resolveMarkup } from './markup.js';
 import { type PollInput, resolvePoll } from './poll.js';
@@ -246,7 +247,7 @@ export class PostBuilder implements ItdBuilder<CreatePostInput> {
  *
  * await itd.posts.create(
  *   post('смотрите что нашёл')
- *     .attach('./photo.jpg')
+ *     .attach({ url: 'https://example.com/photo.jpg' })
  *     .poll((q) => q.question('нравится?').options('да', 'нет')),
  * );
  * ```

@@ -12,7 +12,8 @@
 | Пакет | Назначение |
 |---|---|
 | [`itd-api`](./generated/core/) | основной REST/realtime-клиент, модели, ошибки и билдеры |
-| [`itd-api/node`](./generated/node/) | Node/Bun/Deno-вход с файловыми хранилищами и загрузкой по пути |
+| [`itd-api/node`](./generated/node/) | файловые хранилища и чтение файлов с диска для Node, Bun и Deno |
+| [`itd-api/web`](./generated/web/) | хранилище сессии в `localStorage` |
 
 ## Дополнительные пакеты
 

@@ -17,6 +17,8 @@ export const ItdErrorKind = Object.freeze({
   Timeout: 'timeout',
   /** Запрос отменён через `AbortSignal`. */
   Abort: 'abort',
+  /** Не удалось получить или подготовить содержимое вложения. */
+  File: 'file',
   /** Некорректная конфигурация или аргументы — обнаружено до обращения к сети. */
   Config: 'config',
 } as const);
@@ -283,6 +285,58 @@ export class ItdServerError extends ItdApiError {
   }
 }
 
+/** Причина ошибки получения вложения. */
+export const ItdFileErrorReason = Object.freeze({
+  /** Сетевой сбой при получении источника. */
+  Network: 'network',
+  /** Источник ответил ошибочным HTTP-статусом. */
+  Http: 'http',
+  /** Источник превысил разрешённый размер. */
+  TooLarge: 'too_large',
+  /** Среда или источник не предоставили поток. */
+  StreamUnavailable: 'stream_unavailable',
+  /** Поток источника завершился ошибкой. */
+  Read: 'read',
+} as const);
+export type ItdFileErrorReason = (typeof ItdFileErrorReason)[keyof typeof ItdFileErrorReason];
+
+/** Не удалось получить или прочитать содержимое вложения. */
+export class ItdFileError extends ItdError {
+  readonly reason: ItdFileErrorReason;
+  /** Адрес источника, если файл получался по сети. */
+  readonly url: string | undefined;
+  /** HTTP-статус источника. */
+  readonly status: number | undefined;
+  /** Разрешённый размер в байтах. */
+  readonly limit: number | undefined;
+  /** Обнаруженный размер в байтах. */
+  readonly actual: number | undefined;
+  /** Имеет ли смысл повторить получение источника. */
+  readonly retryable: boolean;
+
+  constructor(
+    message: string,
+    init: {
+      reason: ItdFileErrorReason;
+      url?: string | undefined;
+      status?: number | undefined;
+      limit?: number | undefined;
+      actual?: number | undefined;
+      retryable?: boolean | undefined;
+      cause?: unknown;
+    },
+  ) {
+    super(ItdErrorKind.File, message, { cause: init.cause });
+    this.name = 'ItdFileError';
+    this.reason = init.reason;
+    this.url = init.url;
+    this.status = init.status;
+    this.limit = init.limit;
+    this.actual = init.actual;
+    this.retryable = init.retryable ?? false;
+  }
+}
+
 /** Запрос не дошёл до сервера: DNS, обрыв соединения, отсутствие сети. */
 export class ItdNetworkError extends ItdError {
   /** HTTP-метод запроса. */
@@ -348,6 +402,11 @@ export function isItdError(value: unknown): value is ItdError {
 /** Ошибка, пришедшая от сервера итд.com (статус ≥ 400). */
 export function isItdApiError(value: unknown): value is ItdApiError {
   return isItdError(value) && value.kind === ItdErrorKind.Api;
+}
+
+/** Ошибка получения или чтения вложения. */
+export function isItdFileError(value: unknown): value is ItdFileError {
+  return isItdError(value) && value.kind === ItdErrorKind.File;
 }
 
 /**

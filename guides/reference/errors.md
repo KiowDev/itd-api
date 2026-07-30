@@ -28,13 +28,14 @@ ItdError
 │  ├─ ItdPhoneVerificationError PHONE_VERIFICATION_REQUIRED
 │  └─ ItdServerError            5xx — ошибка на стороне сервера
 ├─ ItdNetworkError        запрос не дошёл до сервера
+├─ ItdFileError           не удалось получить или прочитать источник вложения
 ├─ ItdTimeoutError        истёк таймаут
 ├─ ItdAbortError          отменён через AbortSignal
 └─ ItdConfigError         неверная конфигурация или аргументы (до обращения к сети; бросают билдеры)
 ```
 
-Категория ошибки — в поле `kind` (`ItdErrorKind`): `'api'` | `'network'` | `'timeout'` |
-`'abort'` | `'config'`.
+Категория ошибки — в поле `kind` (`ItdErrorKind`): `'api'` | `'file'` | `'network'` |
+`'timeout'` | `'abort'` | `'config'`.
 
 ## `ItdApiError`
 
@@ -66,6 +67,24 @@ class ItdApiError extends ItdError {
 `ItdNetworkError` / `ItdTimeoutError` содержат `method` и `path`; `ItdTimeoutError` — ещё
 и `timeout`.
 
+## `ItdFileError`
+
+Ошибка чтения источника вложения отделена от сбоя запроса к итд.com:
+
+```ts
+class ItdFileError extends ItdError {
+  reason: ItdFileErrorReason;  // network | http | too_large | stream_unavailable | read
+  url?: string;
+  status?: number;
+  limit?: number;
+  actual?: number;
+  retryable: boolean;
+}
+```
+
+`retryable` описывает источник: сетевой сбой и временный HTTP-статус можно повторить.
+Фактическое число попыток задают общие настройки `retry`.
+
 ## Функции-предикаты
 
 Определяют ошибку **по данным**, а не через `instanceof` (надёжнее при двух копиях пакета
@@ -74,6 +93,7 @@ class ItdApiError extends ItdError {
 ```ts
 isItdError(v)              // любая ошибка библиотеки
 isItdApiError(v)           // ответ сервера ≥ 400
+isItdFileError(v)          // получение или чтение источника вложения
 isItdValidationError(v)
 isItdAuthError(v)
 isItdForbiddenError(v)

@@ -9,8 +9,9 @@ new ItdClient(options?: ItdClientOptions)
 createClient(options?: ItdClientOptions): ItdClient   // то же самое, фабрика
 ```
 
-Точка входа `itd-api/node` дополнительно даёт загрузку файлов по пути и файловые хранилища
-(`FileTokenStorage`, `FileMultiTokenStorage`).
+Класс один на всех платформах и не требует платформенной настройки: хранилище задаётся
+опцией `storage`, а вложения объявляют источник сами — см.
+[Формы вложений](./files.md#формы-вложений) и [Точки входа](./storage.md#точки-входа).
 
 ## Ресурсы
 

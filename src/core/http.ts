@@ -1,5 +1,4 @@
-import type { RawRequestOptions } from '../types/options.js';
-import type { RequestHandler } from './pipeline.js';
+import type { PipelineRequest, RequestHandler } from './pipeline.js';
 import type { PluginRegistry } from './plugins.js';
 
 /** Что нужно фасаду для работы. */
@@ -53,7 +52,7 @@ export class HttpClient {
    * @throws {ItdAbortError} если запрос отменён через `signal`
    * @throws {ItdNetworkError} если запрос не дошёл до сервера
    */
-  request<T = unknown>(options: RawRequestOptions): Promise<T> {
+  request<T = unknown>(options: PipelineRequest): Promise<T> {
     return this.#handler(options) as Promise<T>;
   }
 }

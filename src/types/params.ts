@@ -1,28 +1,9 @@
 // Импорт только типовой, поэтому взаимная ссылка между params.ts и builders/poll.ts
 // стирается при компиляции и не образует цикла в собранном коде.
 import type { PollInput } from '../builders/poll.js';
+import type { FileInput } from '../core/attachments.js';
 import type { ReportReason, ReportTargetType } from './enums.js';
 import type { Span, UserId } from './models.js';
-
-/**
- * Файл для загрузки.
- *
- * Строка означает **путь на диске** и работает только в Node, Bun и Deno — для этого
- * подключите `itd-api/node`. В браузере и React Native передавайте `File` или `Blob`.
- */
-export type FileInput =
-  | Blob
-  | ArrayBuffer
-  | Uint8Array
-  | string
-  | {
-      /** Содержимое файла. */
-      data: Blob | ArrayBuffer | Uint8Array;
-      /** Имя файла. Влияет на определение типа, если `contentType` не задан. */
-      filename?: string;
-      /** MIME-тип. Если не указан, определяется по расширению или по самому `Blob`. */
-      contentType?: string;
-    };
 
 /** Данные для создания опроса. */
 export interface CreatePollInput {

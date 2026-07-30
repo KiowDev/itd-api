@@ -17,7 +17,8 @@
  * `xvfb-run -a node guides/authentication/examples/turnstile-login.mjs`.
  */
 
-import { FileTokenStorage, ItdClient, isItdApiError } from 'itd-api/node';
+import { ItdClient, isItdApiError } from 'itd-api';
+import { FileTokenStorage } from 'itd-api/node';
 import { createTurnstileSolver } from '@itd-api/turnstile';
 
 const itd = new ItdClient({

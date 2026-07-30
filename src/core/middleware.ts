@@ -219,7 +219,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
       return wait;
     }
 
-    return backoff?.(error, attempt, method);
+    return backoff?.(error, attempt, method, request.retryNetworkWrite ?? false);
   };
 
   return async (request, next) => {

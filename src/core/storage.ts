@@ -1,5 +1,3 @@
-import { hasLocalStorage } from './runtime.js';
-
 /**
  * Сохранённая сессия.
  *
@@ -74,7 +72,7 @@ export interface TokenStorage {
  * Хранилище в памяти процесса — вариант по умолчанию.
  *
  * Сессия теряется при перезапуске. Для долгоживущих ботов возьмите `FileTokenStorage`
- * из `itd-api/node`, для браузера — {@link LocalStorageTokenStorage}.
+ * из `itd-api/node`, для браузера — `LocalStorageTokenStorage` из `itd-api/web`.
  */
 export class MemoryTokenStorage implements TokenStorage {
   #session: ItdSession | null = null;
@@ -93,77 +91,6 @@ export class MemoryTokenStorage implements TokenStorage {
 
   clear(): void {
     this.#session = null;
-  }
-}
-
-/**
- * Хранилище поверх `localStorage` браузера.
- *
- * Если `localStorage` недоступен (приватный режим, серверный рендеринг), молча работает
- * как хранилище в памяти — библиотека не должна падать из-за настроек браузера.
- *
- * Помните, что `localStorage` доступен любому скрипту на странице: не используйте его,
- * если для вашего приложения это неприемлемый риск.
- *
- * После ошибки записи или удаления хранилище переключается на память до конца
- * своего жизненного цикла.
- */
-export class LocalStorageTokenStorage implements TokenStorage {
-  readonly #key: string;
-  readonly #fallback = new MemoryTokenStorage();
-  /** Доступен ли `localStorage` для дальнейших операций. */
-  #available: boolean;
-
-  /** @param key ключ в `localStorage`. По умолчанию `itd-api:session`. */
-  constructor(key = 'itd-api:session') {
-    this.#key = key;
-    this.#available = hasLocalStorage();
-  }
-
-  get(): ItdSession | null {
-    if (!this.#available) return this.#fallback.get();
-
-    try {
-      const raw = globalThis.localStorage.getItem(this.#key);
-      if (!raw) return null;
-      const parsed: unknown = JSON.parse(raw);
-      return typeof parsed === 'object' && parsed !== null ? (parsed as ItdSession) : null;
-    } catch {
-      // Повреждённое значение — ведём себя так, будто сессии нет.
-      return null;
-    }
-  }
-
-  set(session: ItdSession): void {
-    if (this.#available) {
-      try {
-        globalThis.localStorage.setItem(this.#key, JSON.stringify(session));
-        return;
-      } catch {
-        this.#degrade();
-      }
-    }
-
-    this.#fallback.set(session);
-  }
-
-  clear(): void {
-    if (this.#available) {
-      try {
-        globalThis.localStorage.removeItem(this.#key);
-        return;
-      } catch {
-        this.#degrade();
-      }
-    }
-
-    this.#fallback.clear();
-  }
-
-  /** Переводит хранилище в память без переноса прежнего значения. */
-  #degrade(): void {
-    this.#available = false;
-    this.#fallback.clear();
   }
 }
 
