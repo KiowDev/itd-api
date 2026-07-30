@@ -97,7 +97,32 @@
 
 Чем закончился вход. `Authenticated` `'authenticated'` · `OtpRequired` `'otp_required'`.
 
-## Телеметрия (экспериментально)
+## Телеметрия
 
-`InteractionType`, `ViewSource`, `ViewReason` — числовые коды для недокументированных
-эндпоинтов `itd.telemetry.*`. Библиотека сама их не отправляет.
+Числовые wire-коды для методов `itd.telemetry.*`. Библиотека сама
+телеметрию не отправляет. См. [справочник методов](./telemetry.md).
+
+`InteractionType`:
+
+- `PhotoOpen` = `1` — открытие изображения;
+- `VideoProgress` = `2` — прогресс просмотра видео.
+
+`ViewSource`:
+
+- `FeedGlobal` = `1`;
+- `FeedFollowing` = `2`;
+- `FeedClan` = `3`;
+- `Profile` = `4`;
+- `Hashtag` = `5`;
+- `PostPage` = `6`;
+- `Link` = `7`;
+- `Search` = `8`.
+
+`ViewReason`:
+
+- `Normal` = `0` — обычная прокрутка;
+- `Blur` = `1` — потеря фокуса;
+- `Hidden` = `2` — вкладка скрыта;
+- `PageHide` = `3` — уход со страницы;
+- `Unobserve` = `4` — прекращение наблюдения;
+- `ThresholdMet` = `5` — достигнут порог просмотра.

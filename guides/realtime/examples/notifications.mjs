@@ -14,8 +14,9 @@ const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
 
 // Сначала — то, что уже накопилось.
 const history = await itd.notifications.list({ limit: 5 });
+let unread = await itd.notifications.count();
 
-console.log(`Непрочитанных: ${await itd.notifications.count()}`);
+console.log(`Непрочитанных: ${unread}`);
 console.log('\nПоследние уведомления:');
 
 for (const notification of history.items) {
@@ -25,7 +26,8 @@ for (const notification of history.items) {
 }
 
 // Теперь поток новых.
-const stream = itd.realtime();
+// Начальный счётчик уже получен выше, поэтому повторный REST-запрос при connect не нужен.
+const stream = itd.realtime({ syncCount: false });
 
 stream.on('notification', ({ notification, sound }) => {
   console.log(`\n${sound ? '🔔' : '🔕'} ${formatNotificationText(notification)}`);
@@ -34,9 +36,6 @@ stream.on('notification', ({ notification, sound }) => {
   // Объекты из списка и из потока имеют одинаковую форму — их можно складывать вместе.
   history.items.unshift(notification);
 });
-
-// Счётчик непрочитанных сервер по потоку не присылает — ведём его сами.
-let unread = await itd.notifications.count();
 
 stream.on('notification', () => {
   unread += 1;

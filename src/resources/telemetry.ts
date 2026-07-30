@@ -64,8 +64,6 @@ export interface InteractionEntry {
 /**
  * Телеметрия просмотров.
  *
- * @experimental
- *
  * Методы не вызываются автоматически — телеметрия отправляется только явным вызовом.
  *
  * Оба эндпоинта принимают конверт `{ sid, e }`, где `sid` — идентификатор сессии
@@ -90,8 +88,6 @@ export class TelemetryResource extends BaseResource {
 
   /**
    * Отправляет события просмотра постов (`POST /api/v1/i`).
-   *
-   * @experimental См. предупреждение у {@link TelemetryResource}.
    */
   dwell(entries: DwellEntry[], options: TelemetryOptions = {}): Promise<unknown> {
     return this.http.request({
@@ -116,8 +112,6 @@ export class TelemetryResource extends BaseResource {
 
   /**
    * Отправляет события взаимодействия с контентом (`POST /api/v1/x`).
-   *
-   * @experimental См. предупреждение у {@link TelemetryResource}.
    */
   interaction(entries: InteractionEntry[], options: TelemetryOptions = {}): Promise<unknown> {
     return this.http.request({

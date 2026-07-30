@@ -164,11 +164,11 @@ await itd.posts.update(postId, (p) => p.content(''));
 `renderSpans()` поддерживает HTML, Markdown и ANSI:
 
 ```ts
-import { renderSpans } from 'itd-api';
+import { renderSpans, SpanRenderFormat } from 'itd-api';
 
 renderSpans(post.content, post.spans); // безопасный HTML по умолчанию
-renderSpans(post.content, post.spans, { format: 'markdown' });
-renderSpans(post.content, post.spans, { format: 'ansi' });
+renderSpans(post.content, post.spans, { format: SpanRenderFormat.Markdown });
+renderSpans(post.content, post.spans, { format: SpanRenderFormat.Ansi });
 ```
 
 HTML экранируется, опасные схемы ссылок не превращаются в `<a>`. Для собственного
@@ -199,9 +199,8 @@ renderSpans(comment.content, comment.spans);
 renderSpans(comment.content);
 ```
 
-Скачанный клиент сайта и документированный API комментариев отправляют при создании и
-редактировании только текст и вложения. Поэтому библиотека читает разметку комментариев,
-но не обещает неподтверждённую сервером запись ручных spans.
+Endpoint создания и редактирования комментариев принимают только текст и вложения.
+Поэтому библиотека читает разметку комментариев, но не отправляет ручные spans.
 
 ## Запускаемый пример
 
@@ -212,3 +211,10 @@ ITD_TOKEN=<accessToken> node guides/text-markup/examples/create-post.mjs
 ```
 
 Исходник: [`examples/create-post.mjs`](./examples/create-post.mjs).
+
+## Связанные разделы
+
+- [Билдеры](../reference/builders.md)
+- [Модели `Span`, `Post` и `Comment`](../reference/models.md#посты-и-комментарии)
+- [Посты](../reference/posts.md)
+- [Комментарии](../reference/comments.md)

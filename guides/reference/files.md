@@ -67,6 +67,9 @@ VIDEO_MIME_TYPES       // видео
 AUDIO_MIME_TYPES       // аудио (голосовые: audio/ogg)
 ```
 
+Соответствующие строковые типы: `AllowedMimeType`, `ImageMimeType`, `VideoMimeType`
+и `AudioMimeType`.
+
 Кроме типа сервер проверяет и само изображение: слишком маленькие картинки он отклоняет
 («Не удалось проверить изображение»); 64×64 проходит. Загрузка видео может требовать
 верификации (`VIDEO_REQUIRES_VERIFICATION`), лимит частоты у `/api/files/upload` — 15 запросов

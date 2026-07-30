@@ -2,7 +2,12 @@ import { SpanType } from '../types/enums.js';
 import type { Span } from '../types/models.js';
 
 /** Формат результата {@link renderSpans}. */
-export type SpanRenderFormat = 'html' | 'markdown' | 'ansi';
+export const SpanRenderFormat = Object.freeze({
+  Html: 'html',
+  Markdown: 'markdown',
+  Ansi: 'ansi',
+} as const);
+export type SpanRenderFormat = (typeof SpanRenderFormat)[keyof typeof SpanRenderFormat];
 
 export interface RenderSpansOptions {
   /** Формат результата. По умолчанию `html`. */
@@ -319,16 +324,16 @@ export function renderSpans(
     segments.push({ start, text, active });
   }
 
-  const format = options.format ?? 'html';
-  if (format === 'markdown') return renderMarkdown(segments, content, options);
+  const format = options.format ?? SpanRenderFormat.Html;
+  if (format === SpanRenderFormat.Markdown) return renderMarkdown(segments, content, options);
 
   let result = '';
   for (const segment of segments) {
     switch (format) {
-      case 'html':
+      case SpanRenderFormat.Html:
         result += renderHtmlSegment(segment.text, segment.active, content, options);
         break;
-      case 'ansi':
+      case SpanRenderFormat.Ansi:
         result += renderAnsiSegment(segment.text, segment.active);
         break;
     }

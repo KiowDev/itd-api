@@ -215,7 +215,7 @@ export type { VerificationResource } from './resources/verification.js';
 export {
   type RenderSpansOptions,
   renderSpans,
-  type SpanRenderFormat,
+  SpanRenderFormat,
 } from './spans/render.js';
 export type { Loose } from './types/enums.js';
 // Перечисления экспортируются парой «значение + тип» под одним именем:

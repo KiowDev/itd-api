@@ -131,8 +131,6 @@ export function readNotificationEvent(data: unknown): NotificationEvent {
  * Разбирает событие `unread_count` из потока.
  *
  * Возвращает `undefined`, если сервер прислал событие без вложенного `payload`.
- * Официальный клиент в этом случае **обнуляет** счётчик — это ошибка, из-за которой
- * непрочитанные пропадают из интерфейса.
  */
 export function readUnreadCountEvent(data: unknown): number | undefined {
   if (!isRecord(data)) return undefined;

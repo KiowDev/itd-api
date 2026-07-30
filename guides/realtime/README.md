@@ -44,17 +44,18 @@ stream.on('notification', ({ notification }) => {
 - обновление access token;
 - восстановление сети;
 - возвращение браузерной вкладки из фона;
-- отсутствие keep-alive дольше `idleTimeout`.
+- отсутствие данных дольше `idleTimeout`.
 
 По умолчанию используются задержки `[1, 2, 4, 8, 16, 30]` секунд с джиттером ±30% и не
-более 15 последовательных попыток. Сервер обычно отправляет `: ping` каждые 15 секунд,
-а стандартный `idleTimeout` равен 90 секундам.
+более 15 последовательных попыток. Сервер не гарантирует keep-alive, поэтому клиент
+считает молчащее соединение мёртвым через 90 секунд. Отдельный `handshakeTimeout`
+ограничивает установку SSE-соединения 20 секундами.
 
 Состояние можно отслеживать:
 
 ```ts
 stream.on('status', (status) => {
-  console.log(status); // connecting, connected, reconnecting, disconnected, error
+  console.log(status); // connecting, connected, disconnected, error
 });
 ```
 
@@ -67,18 +68,26 @@ await itd.close();
 
 ## Счётчик непрочитанных
 
-Сервер практически не присылает отдельное событие изменения счётчика. Получите начальное
-значение через REST и обновляйте локально:
+При `connect()` поток по умолчанию запрашивает начальный счётчик через REST и отправляет
+событие `unreadCount`. Последующие уведомления обычно не содержат актуального счётчика,
+поэтому увеличивайте его локально:
 
 ```ts
-let unread = await itd.notifications.count();
+let unread = 0;
 
-stream.on('notification', () => {
-  unread += 1;
+stream.on('unreadCount', (count) => {
+  unread = count;
 });
+
+stream.on('notification', (event) => {
+  unread = event.unreadCount ?? unread + 1;
+});
+
+await stream.connect();
 ```
 
-После массовой отметки о прочтении лучше снова запросить актуальное значение.
+Начальную синхронизацию можно отключить через `syncCount: false`. После массовой отметки
+о прочтении запросите актуальное значение через `itd.notifications.count()`.
 
 ## Polling fallback
 
@@ -107,3 +116,10 @@ ITD_TOKEN=<accessToken> node guides/realtime/examples/notifications.mjs
 ```
 
 Исходник: [`examples/notifications.mjs`](./examples/notifications.mjs).
+
+## Связанные разделы
+
+- [Справочник realtime](../reference/realtime.md)
+- [Уведомления](../reference/notifications.md)
+- [Авторизация и обновление сессии](../authentication/README.md)
+- [Несколько аккаунтов](../multi-accounts/README.md)

@@ -48,6 +48,9 @@ if (await itd.auth.hasRefreshSession()) await itd.auth.refresh();
 else redirectToLogin();
 ```
 
+В браузере метод возвращает `true`, потому что HttpOnly cookie недоступна JavaScript:
+это разрешение попробовать refresh, а не гарантия его успеха.
+
 Автоматическое продление отключается через `autoRefresh: false`.
 
 ## Что хранится
@@ -70,13 +73,6 @@ else redirectToLogin();
 | `LocalStorageTokenStorage` | `itd-api` | браузер |
 | `FileTokenStorage` | `itd-api/node` | Node, Bun, Deno |
 | `createTokenStorage()` | `itd-api` | Redis, БД, AsyncStorage и другие |
-
-`getUserId()` читает идентификатор из JWT без запроса, но не проверяет подпись:
-
-```ts
-const cachedId = await itd.getUserId();
-const actualProfile = await itd.users.me();
-```
 
 ## Turnstile
 
@@ -143,9 +139,24 @@ await itd.auth.resetPasswordWithOtp({
 });
 ```
 
+## OAuth
+
+`oauthUrl()` строит адрес внешнего входа относительно текущего `baseUrl`, но не
+выполняет переход:
+
+```ts
+import { OAuthProvider } from 'itd-api';
+
+window.location.href = itd.auth.oauthUrl(OAuthProvider.Yandex);
+```
+
+Доступны `OAuthProvider.Yandex` и `OAuthProvider.Google`. В нативном приложении
+откройте полученный URL в системном браузере. Точные сигнатуры — в
+[справочнике авторизации](../reference/auth.md#oauth).
+
 ## Потеря сессии
 
-Если refresh не удался, серверная ошибка приходит вызывающему коду и в событии
+Если refresh не удался, ошибка продления приходит вызывающему коду и в событии
 `authError`:
 
 ```ts
@@ -174,3 +185,10 @@ ITD_EMAIL=you@example.com ITD_PASSWORD=secret ITD_TURNSTILE=... \
 ITD_EMAIL=you@example.com ITD_PASSWORD=secret \
   node guides/authentication/examples/turnstile-login.mjs
 ```
+
+## Связанные разделы
+
+- [Сессии и хранилища](../reference/storage.md)
+- [Методы `itd.auth`](../reference/auth.md)
+- [Опции клиента](../reference/client.md#опции-конструктора)
+- [Несколько аккаунтов](../multi-accounts/README.md)

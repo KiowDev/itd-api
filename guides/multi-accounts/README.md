@@ -39,14 +39,6 @@ await accounts.close();
 | `on(event, listener)` | слушать события всех аккаунтов |
 | `close()` | закрыть все клиенты |
 
-Идентификатор профиля можно прочитать из JWT без запроса:
-
-```ts
-for (const [name, itd] of accounts) {
-  console.log(name, await itd.getUserId());
-}
-```
-
 ## Общие и личные настройки
 
 Общие опции задаются контейнеру, личные — в `addAccount()`. `headers` и `services`
@@ -141,3 +133,10 @@ ITD_TOKENS='бот-1=<accessToken>,бот-2=<accessToken>' \
 ```
 
 Исходник: [`examples/multi-accounts.mjs`](./examples/multi-accounts.mjs).
+
+## Связанные разделы
+
+- [Сессии и хранилища](../reference/storage.md)
+- [Справочник `ItdAccounts`](../reference/accounts.md)
+- [Авторизация и сессии](../authentication/README.md)
+- [Конфигурация очередей](../configuration/README.md#очередь-и-rate-limiting)

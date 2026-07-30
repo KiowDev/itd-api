@@ -48,7 +48,6 @@ try {
 
   // Клиент аккаунта — обычный ItdClient со всеми разделами.
   for (const [name, itd] of accounts) {
-    // getUserId() читает идентификатор из самого токена и не стоит ни одного запроса.
     const id = await itd.getUserId();
 
     try {

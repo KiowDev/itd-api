@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { autoSpans, markup } from '../src/builders/markup.js';
 import { post } from '../src/builders/post.js';
 import { ItdConfigError } from '../src/core/errors.js';
-import { renderSpans } from '../src/spans/render.js';
+import { renderSpans, SpanRenderFormat } from '../src/spans/render.js';
 import { SpanType } from '../src/types/enums.js';
 
 describe('билдер разметки', () => {
@@ -198,6 +198,15 @@ describe('автоматическая разметка', () => {
 });
 
 describe('renderSpans', () => {
+  it('экспортирует замороженный набор форматов', () => {
+    expect(Object.isFrozen(SpanRenderFormat)).toBe(true);
+    expect(SpanRenderFormat).toEqual({
+      Html: 'html',
+      Markdown: 'markdown',
+      Ansi: 'ansi',
+    });
+  });
+
   it('совмещает несколько стилей на одном диапазоне', () => {
     expect(
       renderSpans(
@@ -206,7 +215,7 @@ describe('renderSpans', () => {
           { type: SpanType.Bold, offset: 0, length: 5 },
           { type: SpanType.Underline, offset: 0, length: 5 },
         ],
-        { format: 'html' },
+        { format: SpanRenderFormat.Html },
       ),
     ).toBe('<u><strong>важно</strong></u>');
   });
@@ -223,7 +232,7 @@ describe('renderSpans', () => {
         { type: SpanType.Bold, offset: 0, length: 5 },
         { type: SpanType.Link, offset: 1, length: 3, url: 'https://example.com' },
       ],
-      { format: 'html' },
+      { format: SpanRenderFormat.Html },
     );
 
     expect(html).toBe(
@@ -236,7 +245,7 @@ describe('renderSpans', () => {
   it('не выводит опасную схему ссылки в HTML', () => {
     expect(
       renderSpans('нажми', [{ type: SpanType.Link, offset: 0, length: 5, url: 'javascript:x' }], {
-        format: 'html',
+        format: SpanRenderFormat.Html,
       }),
     ).toBe('нажми');
   });
@@ -244,16 +253,20 @@ describe('renderSpans', () => {
   it('создаёт Markdown и ANSI', () => {
     const spans = [{ type: SpanType.Bold, offset: 0, length: 5 }] as const;
 
-    expect(renderSpans('важно', spans, { format: 'markdown' })).toBe('**важно**');
-    expect(renderSpans('важно', spans, { format: 'ansi' })).toBe('\u001b[1mважно\u001b[0m');
+    expect(renderSpans('важно', spans, { format: SpanRenderFormat.Markdown })).toBe('**важно**');
+    expect(renderSpans('важно', spans, { format: SpanRenderFormat.Ansi })).toBe(
+      '\u001b[1mважно\u001b[0m',
+    );
   });
 
   it('выбирает CommonMark-забор длиннее внутренних серий бэктиков', () => {
     const monospace = [{ type: SpanType.Monospace, offset: 0, length: 4 }] as const;
     const surrounded = [{ type: SpanType.Monospace, offset: 0, length: 3 }] as const;
 
-    expect(renderSpans('a``b', monospace, { format: 'markdown' })).toBe('```a``b```');
-    expect(renderSpans('`a`', surrounded, { format: 'markdown' })).toBe('`` `a` ``');
+    expect(renderSpans('a``b', monospace, { format: SpanRenderFormat.Markdown })).toBe(
+      '```a``b```',
+    );
+    expect(renderSpans('`a`', surrounded, { format: SpanRenderFormat.Markdown })).toBe('`` `a` ``');
   });
 
   it('применяет Markdown-цитату один раз после сборки вложенных сегментов', () => {
@@ -264,7 +277,7 @@ describe('renderSpans', () => {
           { type: SpanType.Quote, offset: 0, length: 7 },
           { type: SpanType.Bold, offset: 0, length: 3 },
         ],
-        { format: 'markdown' },
+        { format: SpanRenderFormat.Markdown },
       ),
     ).toBe('> **раз** два');
   });
@@ -277,7 +290,7 @@ describe('renderSpans', () => {
           { type: SpanType.Mention, offset: 0, length: 7 },
           { type: SpanType.Bold, offset: 0, length: 3 },
         ],
-        { format: 'html' },
+        { format: SpanRenderFormat.Html },
       ),
     ).toBe(
       '<a href="/@nowkie" class="itd-mention"><strong>@no</strong></a>' +
@@ -356,16 +369,16 @@ describe('renderSpans', () => {
           { type: SpanType.Mention, offset: 0, length: 7, username: 'nowkie' },
           { type: SpanType.Hashtag, offset: 10, length: 8, tag: 'новости' },
         ],
-        { format: 'markdown' },
+        { format: SpanRenderFormat.Markdown },
       ),
     ).toBe('[@nowkie](/@nowkie) и [#новости](/hashtag/%D0%BD%D0%BE%D0%B2%D0%BE%D1%81%D1%82%D0%B8)');
   });
 
   it('не экранирует обычные точки и дефисы в Markdown', () => {
-    expect(renderSpans('example.com, что-то', [], { format: 'markdown' })).toBe(
+    expect(renderSpans('example.com, что-то', [], { format: SpanRenderFormat.Markdown })).toBe(
       'example.com, что-то',
     );
-    expect(renderSpans('# заголовок\n- пункт', [], { format: 'markdown' })).toBe(
+    expect(renderSpans('# заголовок\n- пункт', [], { format: SpanRenderFormat.Markdown })).toBe(
       '\\# заголовок\n\\- пункт',
     );
   });
@@ -373,7 +386,7 @@ describe('renderSpans', () => {
   it('обрезает повреждённый серверный span по строке', () => {
     expect(
       renderSpans('текст', [{ type: SpanType.Italic, offset: 3, length: 99 }], {
-        format: 'html',
+        format: SpanRenderFormat.Html,
       }),
     ).toBe('тек<em>ст</em>');
   });

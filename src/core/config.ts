@@ -20,7 +20,7 @@ export const BUILT_IN_SERVICES: readonly ServiceDefinition[] = Object.freeze([
   Object.freeze({ name: STATUS_SERVICE, baseUrl: DEFAULT_STATUS_BASE_URL, auth: false }),
 ]);
 
-/** Таймаут запроса по умолчанию. Столько же использует официальный клиент итд.com. */
+/** Таймаут запроса по умолчанию — 30 секунд. */
 export const DEFAULT_TIMEOUT = 30_000;
 
 // Значение живёт в отдельном модуле, который порождается из package.json скриптом
@@ -356,7 +356,7 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
 
 /**
  * Разворачивает запись сервисов из опций в определения: имя берётся из ключа, строка
- * означает один только базовый URL. Сам URL проверяет `ServiceRegistry.define`.
+ * означает один только базовый URL. URL проверяется при регистрации сервиса.
  */
 function resolveServices(services: ItdClientOptions['services']): ServiceDefinition[] {
   if (services === undefined) return [];

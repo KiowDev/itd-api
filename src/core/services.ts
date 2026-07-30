@@ -33,7 +33,11 @@ function isSameSite(primaryHost: string, host: string): boolean {
   return host === primaryHost || host.endsWith(`.${primaryHost}`);
 }
 
-/** Именованные сервисы клиента. */
+/**
+ * Именованные сервисы клиента.
+ *
+ * @internal
+ */
 export class ServiceRegistry {
   readonly #services = new Map<string, ServiceDefinition>();
   /** Хост основного API. */

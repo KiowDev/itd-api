@@ -8,6 +8,23 @@ Turnstile-токенов.
 | [`@itd-api/proxy`](../../packages/proxy/README.md) | `ItdClientOptions.fetch` |
 | [`@itd-api/turnstile`](../../packages/turnstile/README.md) | `auth.getTurnstileToken` |
 
+## Браузер и CORS
+
+Основной API итд.com не разрешает прямые запросы с другого origin: в preflight-ответе
+нет `Access-Control-Allow-Origin`. Для браузерного приложения укажите в `baseUrl`
+адрес собственного серверного прокси:
+
+```ts
+const itd = new ItdClient({
+  baseUrl: 'https://api.example.com/itd',
+  auth: token,
+});
+```
+
+Токен, cookie и запросы авторизации пойдут на этот адрес, поэтому прокси должен быть
+под вашим контролем. Ограничение CORS не относится к Node.js, Bun, Deno и React Native.
+Публичный сервис статуса разрешает запросы из браузера напрямую.
+
 ## Proxy
 
 Пакет создаёт совместимый `fetch`, который направляет HTTP/HTTPS-запросы через HTTP,
@@ -60,3 +77,10 @@ const itd = new ItdClient({
 
 Установка Playwright, сохранение сессии и запускаемые примеры описаны в
 [руководстве по авторизации](../authentication/README.md).
+
+## Связанные разделы
+
+- [Конфигурация `baseUrl` и `fetch`](../configuration/README.md#baseurl-fetch-и-proxy)
+- [`@itd-api/proxy`](../../packages/proxy/README.md)
+- [`@itd-api/turnstile`](../../packages/turnstile/README.md)
+- [Авторизация и сессии](../authentication/README.md)

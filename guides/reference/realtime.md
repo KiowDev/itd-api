@@ -1,9 +1,10 @@
 # Realtime — `itd.realtime()`
 
 Поток уведомлений в реальном времени. Создаётся `itd.realtime(options?)`, соединение
-поднимается `connect()` и держится само: обрывы, обновление токена, keep-alive и повторные
-попытки — внутри. Транспорт выбирается автоматически: SSE, а если среда не умеет читать тело
-по частям — опрос REST. Полное руководство — [Realtime](../realtime/README.md).
+поднимается `connect()` и держится само: клиент отслеживает молчание сервера, обновляет
+токен и переподключается после обрыва. Транспорт выбирается автоматически: SSE, а если
+среда не умеет читать тело по частям — опрос REST. Полное руководство —
+[Realtime](../realtime/README.md).
 
 ```ts
 const stream = itd.realtime(options?: RealtimeOptions): ItdRealtime
@@ -41,7 +42,7 @@ get transport: string                   // 'sse' | 'poll'
 |---|---|---|
 | `notification` | `NotificationEvent` | пришло новое уведомление |
 | `ready` | `{ userId?: string }` | сервер подтвердил подключение (первый кадр) |
-| `unreadCount` | `number` | сервер сообщил число непрочитанных (на практике редко — держите счётчик сами) |
+| `unreadCount` | `number` | получен начальный счётчик через REST или его прислал поток |
 | `status` | `RealtimeStatus` | изменилось состояние соединения |
 | `error` | `{ error, willReconnect }` | соединение оборвалось |
 | `reconnect` | `{ attempt, delay }` | запланировано переподключение |
@@ -56,8 +57,9 @@ get transport: string                   // 'sse' | 'poll'
 
 ```ts
 interface RealtimeOptions {
-  transport?: 'auto' | 'sse' | 'poll' | RealtimeTransport;   // по умолчанию 'auto'
+  transport?: 'auto' | 'sse' | 'poll';   // по умолчанию 'auto'
   idleTimeout?: number;                  // молчание сервера = мёртвое соединение; 90000
+  handshakeTimeout?: number;             // ожидание ответа SSE; 20000; 0 отключает
   pollInterval?: number;                 // период опроса для запасного транспорта
   syncCount?: boolean;                   // запросить число непрочитанных при connect; true
   reconnectOnVisible?: boolean;          // переподключаться при возврате вкладки; true (браузер)
@@ -74,5 +76,5 @@ const RealtimeStatus = {
 } as const;
 ```
 
-Можно передать и свою реализацию `RealtimeTransport` — например для WebSocket. Смена
-авторизации на другого пользователя завершает все потоки клиента; смена только сессии — нет.
+Смена авторизации на другого пользователя завершает все потоки клиента; обновление
+токена той же сессии — нет.

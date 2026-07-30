@@ -8,7 +8,20 @@ npm install itd-api
 
 Пакет поддерживает ESM и CommonJS, Node 18+, браузер, Bun, Deno и React Native.
 
-## Создание клиента
+## Первый запрос
+
+Публичные методы работают без сессии:
+
+```ts
+import { ItdClient } from 'itd-api';
+
+const itd = new ItdClient();
+const versions = await itd.platform.version();
+
+console.log(versions.android.latestVersion);
+```
+
+## Авторизованный клиент
 
 ```ts
 import { FeedTab, ItdClient } from 'itd-api';
@@ -25,6 +38,9 @@ for await (const post of itd.posts.iterate({ tab: FeedTab.Following })) {
   if (!post.isLiked) await itd.posts.like(post.id);
 }
 ```
+
+Готовый access token удобен для первого запуска. Для долгоживущего приложения настройте
+обновляемую сессию по [руководству по авторизации](../authentication/README.md).
 
 Для загрузки файлов по пути и файлового хранилища сессии используйте Node-вход:
 
@@ -107,6 +123,7 @@ try {
 ## Куда дальше
 
 - [Авторизация и сессии](../authentication/README.md)
+- [Конфигурация клиента](../configuration/README.md)
 - [Разметка текста](../text-markup/README.md)
 - [Realtime](../realtime/README.md)
 - [Несколько аккаунтов](../multi-accounts/README.md)
@@ -122,3 +139,5 @@ npx tsx guides/quickstart/examples/typescript.ts
 
 - [`examples/quick-start.mjs`](./examples/quick-start.mjs) — профиль и чтение ленты.
 - [`examples/typescript.ts`](./examples/typescript.ts) — типы, билдеры, пагинация и ошибки.
+
+Точные сигнатуры всех ресурсов — в [справочнике API](../reference/README.md).

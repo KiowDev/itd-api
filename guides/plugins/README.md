@@ -107,6 +107,31 @@ itd.use(timing);
 - вернуть результат без обращения к сети;
 - выбросить собственную ошибку.
 
+Основные публичные типы:
+
+```ts
+type Transformer = (
+  request: RawRequestOptions,
+  next: (request: RawRequestOptions) => Promise<unknown>,
+) => Promise<unknown>;
+
+type PluginTeardown = () => void | Promise<void>;
+
+interface AuthIdentity {
+  userId?: UserId;
+  sessionId?: string;
+}
+
+interface PluginContext {
+  baseUrl: string;
+  logger: Logger | undefined;
+  getAuthScope?: () => string;
+  getAuthIdentity?: () => Promise<AuthIdentity>;
+  use(transformer: Transformer): void;
+  useHooks(hooks: ClientHooks): void;
+}
+```
+
 Без явных правил подключённая раньше обёртка оказывается снаружи. Она выполняется один раз
 на логический запрос, независимо от внутренних повторов транспорта.
 
@@ -251,3 +276,10 @@ my-plugin/
 
 Пакет должен иметь собственные тесты, сборку и экспортировать фабрику либо объект,
 совместимый с `ItdPlugin`.
+
+## Связанные разделы
+
+- [`@itd-api/cache`](../../packages/cache/README.md)
+- [`@itd-api/crypto`](../../packages/crypto/README.md)
+- [Методы плагинов у `ItdClient`](../reference/client.md#методы)
+- [Плагины нескольких аккаунтов](../reference/accounts.md#методы)

@@ -6,8 +6,14 @@
 Особенности, о которых легко забыть:
 
 - **`avatar` — это эмодзи, а не URL.** На итд.com аватар — символ клана (`🩵`, `🦎`).
-  Отрисовывать его нужно как текст. Исключение — `banner`: это настоящий URL.
+  Отрисовывать его нужно как текст. Поле `banner` содержит URL изображения или `null`.
 - **`UserRef`** = UUID или username; **`UserId`** = строго UUID.
+
+```ts
+type IsoDate = string;
+type UserId = string;                    // строго UUID по смыслу API
+type UserRef = string;                   // UUID или username
+```
 
 ## Пользователи
 
@@ -75,6 +81,14 @@ interface MyProfile {
   isPrivate: boolean;
   isPhoneVerified: boolean;
   subscription: SubscriptionState;       // { isActive, expiresAt, autoRenewal }
+}
+```
+
+```ts
+interface SubscriptionState {
+  isActive: boolean;
+  expiresAt: IsoDate | null;
+  autoRenewal: boolean;
 }
 ```
 
@@ -175,6 +189,7 @@ interface Post {
   dominantEmoji?: string | null;         // преобладающая реакция
   editedAt: IsoDate | null;
   createdAt: IsoDate;
+  vs?: string;                           // служебная метка показа для itd.telemetry
   comments?: Comment[];                  // только в ответе itd.posts.get()
 }
 ```
@@ -193,6 +208,14 @@ interface Comment {
   attachments?: Attachment[];            // у голосового — одно audio/ogg
   replies?: Comment[];                   // превью; полный список — comments.replies()
   replyTo?: CommentReplyTo;              // { id, username, displayName } — только у ответов
+}
+```
+
+```ts
+interface CommentReplyTo {
+  id: string;
+  username: string;
+  displayName: string;
 }
 ```
 
@@ -223,6 +246,15 @@ interface Poll {
   hasVoted: boolean;
   votedOptionIds: string[];
   createdAt: IsoDate;
+}
+```
+
+```ts
+interface PollOption {
+  id: string;
+  text: string;
+  votesCount: number;
+  position: number;                      // начиная с нуля
 }
 ```
 
@@ -391,6 +423,14 @@ interface Announcement {
 }
 ```
 
+```ts
+interface AnnouncementButton {
+  title: string;
+  style: string;
+  action: { type: string; [key: string]: unknown };
+}
+```
+
 ### PlatformStatus
 
 ```ts
@@ -427,6 +467,13 @@ interface StatusDay {
 }
 ```
 
+```ts
+interface StatusIncidentLine {
+  t: IncidentKind;
+  text: string;                          // готовая строка, время МСК
+}
+```
+
 ## Вспомогательные функции
 
 Экспортируются из корня пакета:
@@ -435,6 +482,12 @@ interface StatusDay {
 toDate(value: IsoDate | null | undefined): Date | null
 ```
 Разбирает дату API в `Date`; `null`, если строки нет или она не разбирается.
+
+```ts
+utcStampToIso(value: string): string
+```
+Приводит UTC timestamp платформы к ISO-8601, если формат распознан; иначе возвращает
+исходную строку.
 
 ```ts
 statusDays(service: ServiceStatus): (StatusDay | null)[]

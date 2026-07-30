@@ -83,6 +83,15 @@ report.user(userId: string): ReportBuilder
 
 ```ts
 markup(content?: string): MarkupBuilder
+
+interface TextMarkup {
+  content: string;
+  spans: Span[];
+}
+
+type MarkupInput = BuilderInput<TextMarkup, MarkupBuilder>;
+type MarkupContent = string | MarkupInput;
+type MarkupSpan = Omit<Span, 'offset' | 'length'>;
 ```
 
 | Метод | Описание |

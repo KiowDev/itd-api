@@ -7,7 +7,7 @@
  * Скрипт создаёт один настоящий пост в аккаунте из ITD_TOKEN.
  */
 
-import { ItdClient, SpanType, markup, post, renderSpans } from 'itd-api';
+import { ItdClient, SpanRenderFormat, SpanType, markup, post, renderSpans } from 'itd-api';
 
 if (!process.env.ITD_TOKEN) {
   throw new Error('Передайте access token в переменной окружения ITD_TOKEN');
@@ -34,7 +34,7 @@ console.log(`Создан пост ${created.id}`);
 console.log('HTML:', renderSpans(created.content, created.spans));
 console.log(
   'Markdown:',
-  renderSpans(created.content, created.spans, { format: 'markdown' }),
+  renderSpans(created.content, created.spans, { format: SpanRenderFormat.Markdown }),
 );
 
 // Для готового обычного текста можно найти ссылки, хэштеги и упоминания автоматически.

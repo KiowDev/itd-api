@@ -2,6 +2,7 @@
 
 Точка входа. Группирует ресурсы (`itd.posts`, `itd.users`, …) и берёт на себя авторизацию,
 обновление токена, повторы и очередь запросов. Достаточно **одного экземпляра на приложение**.
+Практические рекомендации — в [руководстве по конфигурации](../configuration/README.md).
 
 ```ts
 new ItdClient(options?: ItdClientOptions)
@@ -49,7 +50,7 @@ hasPlugin(name: string): boolean
 unuse(name: string): Promise<boolean>
 ```
 Подключает плагин — обёртку вокруг запроса и разобранного ответа сразу для всех ресурсов.
-Официальные плагины: [`@itd-api/cache`](../plugins/README.md),
+Пакеты, поддерживаемые проектом itd-api: [`@itd-api/cache`](../plugins/README.md),
 [`@itd-api/crypto`](../plugins/README.md). Остальные методы показывают фактический порядок
 плагинов, проверяют наличие и отключают плагин с вызовом его teardown.
 
@@ -59,6 +60,30 @@ serviceBaseUrl(name: string): string
 ```
 Регистрирует / читает домен платформы, отличный от основного (запросы с `{ service: 'имя' }`).
 Bearer-токен по умолчанию уходит только на основной хост и его поддомены.
+
+```ts
+interface ServiceDefinition {
+  name: string;
+  baseUrl: string;
+  headers?: Record<string, string>;
+  auth?: boolean;
+}
+```
+
+```ts
+itd.defineService({
+  name: 'example',
+  baseUrl: 'https://api.example.com',
+  headers: { 'X-Client': 'my-app' },
+  auth: false,
+});
+
+await itd.request({ method: 'GET', service: 'example', path: '/health' });
+```
+
+Для внешнего хоста Bearer разрешается только явным `auth: true`. Зарегистрированное имя
+нельзя заменить другим определением. Основной API и каждый именованный сервис используют
+отдельную очередь запросов.
 
 ```ts
 realtime(options?: RealtimeOptions): ItdRealtime
@@ -85,6 +110,9 @@ getUserId(): Promise<UserId | undefined>
 ```
 Читает / восстанавливает текущую сессию целиком и идентификатор аккаунта из токена (без запроса).
 
+> ⚠️ `getUserId()` только декодирует JWT и не проверяет его подпись. Используйте результат
+> для локального разделения состояния, но не как доказательство аутентификации.
+
 ## События
 
 Метод `itd.on(event, listener)` — ключи `AuthEvents`:
@@ -105,7 +133,7 @@ interface ItdClientOptions {
   auth?: AuthInput;                      // см. ниже
   storage?: TokenStorage;                // по умолчанию MemoryTokenStorage
   autoRefresh?: boolean;                 // обновлять токен при 401; по умолчанию true
-  reloginOnRefreshFailure?: boolean;     // войти заново при неудаче refresh (нужны email+пароль)
+  reloginOnRefreshFailure?: boolean;     // повторный вход при неудаче refresh; по умолчанию true
   fetch?: typeof fetch;                  // своя реализация: Deno, RN, тесты, прокси
   timeout?: number;                      // по умолчанию 30000; 0 — без ограничения
   retry?: RetryOptions | false;
@@ -122,12 +150,17 @@ interface ItdClientOptions {
 ### Авторизация (`AuthInput`)
 
 ```ts
+interface CredentialsAuth {
+  email: string;
+  password: string;
+  turnstileToken?: string;
+  getTurnstileToken?: () => string | Promise<string>;
+}
+
 type AuthInput =
   | string                                              // готовый accessToken
   | { accessToken: string; refreshToken?: string }      // восстановить сессию
-  | { email: string; password: string;                  // залогиниться самому
-      turnstileToken?: string;
-      getTurnstileToken?: () => string | Promise<string> }
+  | CredentialsAuth                                     // залогиниться самому
   | { getToken: () => string | null | Promise<string | null> };  // токен извне
 ```
 
@@ -144,6 +177,14 @@ interface RetryOptions {
 }
 ```
 
+Безопасные чтения (`GET`, `HEAD`, `OPTIONS`) повторяются после сетевого сбоя, таймаута
+или `5xx`. Запись по умолчанию не повторяется: сервер мог выполнить её до обрыва, и
+повтор создал бы дубль. `retryWrites: true` снимает это ограничение.
+
+`429` обрабатывается отдельно и повторяется даже для записи, поскольку операция при
+таком ответе не выполнена. `shouldRetry` заменяет стандартное решение для обычных
+сетевых ошибок и `5xx`, но не политику `429`.
+
 ### Очередь и лимиты (`RateLimitOptions`)
 
 ```ts
@@ -154,6 +195,24 @@ interface RateLimitOptions {
   respectHeaders?: boolean;              // тормозить по x-ratelimit-*; по умолчанию true
 }
 ```
+
+`concurrency` ограничивает число одновременных запросов, а `rps` — их темп. Для общего
+лимита всего приложения используйте один экземпляр `ItdClient`.
+
+Основной API и каждый именованный `service` имеют отдельную очередь. Пауза после `429`
+на сервисе статуса не задерживает основной API. Разовый `baseUrl` без имени сервиса
+использует основную очередь.
+
+Лимиты задаются сервером отдельно для разных endpoint. Наблюдаемые значения
+`x-ratelimit-limit`: 90 для `/api/posts`, 40 для `/api/users/me` и
+`/api/notifications/`, 25 для `/api/v1/auth/refresh`, 15 для `/api/files/upload`.
+Сервер не сообщает `Retry-After` и время сброса окна, поэтому при `429` клиент по
+умолчанию использует паузы 1, 5, 30, 60 и 90 секунд. После последней попытки
+выбрасывается `ItdRateLimitError`.
+
+При `respectHeaders: true` очередь заранее приостанавливается, когда
+`x-ratelimit-remaining` достигает нуля. Значения заголовков доступны в
+`ItdRateLimitError.rateLimit` и `ItdRateLimitError.rateLimitRemaining`.
 
 ### Хуки (`ClientHooks`)
 
@@ -182,3 +241,21 @@ interface RawRequestOptions extends RequestOptions {
   raw?: boolean;                         // вернуть тело без снятия обёртки { data }
 }
 ```
+
+`service` выбирает зарегистрированный хост. `baseUrl` имеет более высокий приоритет и
+задаёт хост только этому запросу. Для внешнего `baseUrl` авторизация выключена
+автоматически; `skipAuth: false` явно разрешает отправить текущий Bearer-токен.
+
+```ts
+type QueryValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | readonly (string | number | boolean)[];
+
+type QueryParams = Record<string, QueryValue>;
+```
+
+`null` и `undefined` пропускаются, массив записывается повторяющимися параметрами.
