@@ -117,7 +117,7 @@ export class FilesResource extends BaseResource {
    *
    * @remarks
    * Сервер отвечает `404` даже на только что загруженный файл, который ещё никуда
-   * не прикреплён, — проверено на боевом API. Практической пользы у метода пока нет,
+   * не прикреплён. Практической пользы у метода пока нет,
    * он оставлен для полноты.
    */
   get(fileId: string, options: RequestOptions = {}): Promise<unknown> {

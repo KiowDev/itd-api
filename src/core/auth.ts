@@ -26,8 +26,6 @@ export const AUTH_PATHS = {
   resetPassword: '/api/v1/auth/reset-password',
   changePassword: '/api/v1/auth/change-password',
   sessions: '/api/v1/auth/sessions',
-  /** Префикс внешнего входа: к нему дописывается имя провайдера. */
-  oauthLogin: '/api/v1/auth/login',
 } as const;
 
 /**

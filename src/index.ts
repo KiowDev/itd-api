@@ -170,7 +170,7 @@ export type {
   ResetPasswordInput,
   SignInResult,
 } from './resources/auth.js';
-export { OAuthProvider, SignInStatus } from './resources/auth.js';
+export { SignInStatus } from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export {
   DEFAULT_UPLOAD_TIMEOUT,
@@ -245,6 +245,7 @@ export type {
   AnnouncementButton,
   Attachment,
   Author,
+  AuthState,
   ChangelogEntry,
   Clan,
   Comment,

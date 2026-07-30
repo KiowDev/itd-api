@@ -1,11 +1,19 @@
 # Авторизация — `itd.auth`
 
-Вход, регистрация, подтверждение по коду, пароли, OAuth и управление сессиями. Обычно
+Вход, регистрация, подтверждение по коду, пароли и управление сессиями. Обычно
 клиент авторизуется сам через опцию `auth` конструктора; эти методы нужны для ручных
 сценариев входа. Полное руководство — [Авторизация](../authentication/README.md).
 
 Вход, регистрация и сброс пароля требуют одноразовый **Turnstile token**. Ключ виджета —
 экспорт `TURNSTILE_SITE_KEY`.
+
+## Состояние авторизации
+
+```ts
+check(): Promise<AuthState>
+```
+Проверяет состояние авторизации и возвращает `{ authenticated, banned, user }`.
+Метод работает без токена: тогда `authenticated` равен `false`, а `user` — `null`.
 
 ## Вход и регистрация
 
@@ -108,6 +116,12 @@ revokeOtherSessions(): Promise<void>
 ## Типы
 
 ```ts
+interface AuthState {
+  authenticated: boolean;
+  banned: boolean;
+  user: MyProfile | null;
+}
+
 interface Credentials {
   email: string;
   password: string;
@@ -133,7 +147,6 @@ type SignInResult =
   | { status: 'authenticated'; accessToken: string }
   | { status: 'otp_required'; flowToken: string | undefined };
 
-const OAuthProvider = { Yandex: 'yandex', Google: 'google' } as const;
 const SignInStatus = { Authenticated: 'authenticated', OtpRequired: 'otp_required' } as const;
 ```
 

@@ -389,6 +389,21 @@ describe('комментарии', () => {
 });
 
 describe('авторизация', () => {
+  it('проверяет состояние авторизации без обязательного токена', async () => {
+    const { itd, mock } = makeClient([json({ authenticated: false, banned: false, user: null })], {
+      auth: undefined,
+    });
+
+    await expect(itd.auth.check()).resolves.toEqual({
+      authenticated: false,
+      banned: false,
+      user: null,
+    });
+    expect(mock.calls[0]?.method).toBe('GET');
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/profile');
+    expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
+  });
+
   it('сохраняет токен после входа', async () => {
     const { itd, mock } = makeClient([json({ accessToken: 'signed-in' }), json({ id: 'u1' })], {
       auth: undefined,
@@ -441,12 +456,6 @@ describe('авторизация', () => {
     expect(session?.accessToken).toBeUndefined();
     // Идентификатор устройства выход переживает — иначе каждый вход плодил бы новую сессию.
     expect(session?.deviceId).toEqual(expect.any(String));
-  });
-
-  it('строит адрес внешнего входа', () => {
-    const { itd } = makeClient([]);
-
-    expect(itd.auth.oauthUrl('yandex')).toBe('https://itd.test/api/v1/auth/login/yandex');
   });
 
   it('сообщает о получении токена', async () => {

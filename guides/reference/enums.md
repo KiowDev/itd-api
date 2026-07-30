@@ -89,10 +89,6 @@
 
 Вид происшествия в истории сервиса. Открытое. `Down` `'down'` · `Degraded` `'deg'`.
 
-## OAuthProvider
-
-Провайдер внешнего входа. `Yandex` `'yandex'` · `Google` `'google'`.
-
 ## SignInStatus
 
 Чем закончился вход. `Authenticated` `'authenticated'` · `OtpRequired` `'otp_required'`.

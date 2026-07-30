@@ -182,6 +182,21 @@ export interface MyProfile extends ProfileBase {
 }
 
 /**
+ * Состояние авторизации — ответ `GET /api/profile`.
+ *
+ * Endpoint доступен без сессии: в этом случае `authenticated` равен `false`,
+ * а `user` — `null`.
+ */
+export interface AuthState {
+  /** Есть ли действующая сессия. */
+  authenticated: boolean;
+  /** Заблокирован ли текущий аккаунт. */
+  banned: boolean;
+  /** Текущий пользователь либо `null` без действующей сессии. */
+  user: MyProfile | null;
+}
+
+/**
  * Чужой профиль — ответ `GET /api/users/{id|username}`.
  *
  * Вместо своей подписки содержит связь с вами и присутствие.

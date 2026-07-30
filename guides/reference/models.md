@@ -92,6 +92,20 @@ interface SubscriptionState {
 }
 ```
 
+### AuthState
+
+Состояние авторизации — ответ `itd.auth.check()`.
+
+```ts
+interface AuthState {
+  authenticated: boolean;
+  banned: boolean;
+  user: MyProfile | null;
+}
+```
+
+Без действующей сессии `authenticated` равен `false`, а `user` — `null`.
+
 ### PublicProfile
 
 Чужой профиль — ответ `itd.users.get()`.

@@ -139,21 +139,6 @@ await itd.auth.resetPasswordWithOtp({
 });
 ```
 
-## OAuth
-
-`oauthUrl()` строит адрес внешнего входа относительно текущего `baseUrl`, но не
-выполняет переход:
-
-```ts
-import { OAuthProvider } from 'itd-api';
-
-window.location.href = itd.auth.oauthUrl(OAuthProvider.Yandex);
-```
-
-Доступны `OAuthProvider.Yandex` и `OAuthProvider.Google`. В нативном приложении
-откройте полученный URL в системном браузере. Точные сигнатуры — в
-[справочнике авторизации](../reference/auth.md#oauth).
-
 ## Потеря сессии
 
 Если refresh не удался, ошибка продления приходит вызывающему коду и в событии

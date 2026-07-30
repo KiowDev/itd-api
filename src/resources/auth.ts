@@ -2,8 +2,7 @@ import { AUTH_PATHS, type AuthManager, type TURNSTILE_SITE_KEY } from '../core/a
 import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/http.js';
 import { pickArray, pickString } from '../core/unwrap.js';
-import { joinUrl } from '../core/url.js';
-import type { Session } from '../types/models.js';
+import type { AuthState, Session } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
@@ -43,13 +42,6 @@ export interface ResetPasswordInput {
   newPassword: string;
 }
 
-/** Провайдер внешнего входа. */
-export const OAuthProvider = Object.freeze({
-  Yandex: 'yandex',
-  Google: 'google',
-} as const);
-export type OAuthProvider = (typeof OAuthProvider)[keyof typeof OAuthProvider];
-
 /** Чем закончился вход: сразу токеном или запросом кода подтверждения. */
 export const SignInStatus = Object.freeze({
   Authenticated: 'authenticated',
@@ -78,6 +70,19 @@ export class AuthResource extends BaseResource {
   constructor(http: HttpClient, deps: { auth: AuthManager }) {
     super(http);
     this.#auth = deps.auth;
+  }
+
+  /**
+   * Проверяет состояние авторизации и возвращает текущего пользователя.
+   *
+   * Без авторизации возвращает `authenticated: false` и `user: null`.
+   */
+  check(options: RequestOptions = {}): Promise<AuthState> {
+    return this.http.request<AuthState>({
+      method: 'GET',
+      path: '/api/profile',
+      ...this.requestOptions(options),
+    });
   }
 
   /**
@@ -382,21 +387,6 @@ export class AuthResource extends BaseResource {
       body: { currentPassword: input.currentPassword, newPassword: input.newPassword },
       ...this.requestOptions(options),
     });
-  }
-
-  /**
-   * Возвращает адрес для входа через внешнего провайдера.
-   *
-   * Сам переход выполняет приложение: в браузере — редиректом, в приложении — открытием
-   * системного браузера.
-   *
-   * @example
-   * ```ts
-   * window.location.href = itd.auth.oauthUrl('yandex');
-   * ```
-   */
-  oauthUrl(provider: OAuthProvider): string {
-    return joinUrl(this.http.baseUrl, `${AUTH_PATHS.oauthLogin}/${provider}`);
   }
 
   /** Загружает список активных сессий. У текущей поле `isCurrent` равно `true`. */
