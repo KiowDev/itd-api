@@ -17,6 +17,31 @@ updateMe(input: UpdateProfileInput): Promise<MyProfile>
 Обновляет свой профиль. Передавайте только изменяемые поля.
 
 ```ts
+setBanner(file: FileInput, options?: UploadOptions): Promise<MyProfile>
+removeBanner(options?: RequestOptions): Promise<MyProfile>
+```
+`setBanner()` сначала загружает файл через `POST /api/files/upload`, затем передаёт
+полученный идентификатор в `PUT /api/users/me` как `{ bannerId: file.id }`.
+`removeBanner()` отправляет в тот же endpoint `{ bannerId: null }`.
+
+```ts
+await itd.users.setBanner('./banner.webp');
+await itd.users.removeBanner();
+```
+
+В браузере вместо пути передайте `File`, `Blob`, `ArrayBuffer` или `Uint8Array`. Для
+баннера используйте изображение JPEG, PNG, GIF, WebP, AVIF, HEIC или HEIF. Точный предел
+размера и разрешения сервером не опубликован, поэтому библиотека не выдумывает ограничение
+и не отклоняет файл по этим признакам до ответа API.
+
+Если файл уже загружен, второй запрос можно выполнить напрямую:
+
+```ts
+const file = await itd.files.upload(blob, { filename: 'banner.png' });
+await itd.users.updateMe({ bannerId: file.id });
+```
+
+```ts
 createProfile(input: { username: string; displayName: string; avatar?: string }): Promise<MyProfile>
 ```
 Создаёт профиль после регистрации.
@@ -133,7 +158,7 @@ interface UpdateProfileInput {
   username?: string;
   avatar?: string;                       // эмодзи-символ клана, а не URL картинки
   bio?: string;
-  banner?: string;                       // URL изображения-шапки
+  bannerId?: string | null;              // ID загруженного файла; null удаляет баннер
 }
 
 type UpdatePrivacyInput = Partial<PrivacySettings>;

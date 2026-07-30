@@ -255,9 +255,11 @@ export class ItdClient {
 
     const uploadFiles = (files: FileInput[], requestOptions?: RequestOptions) =>
       this.files.uploadMany(files, requestOptions ?? {});
+    const uploadFile = (file: FileInput, requestOptions?: RequestOptions) =>
+      this.files.upload(file, requestOptions ?? {});
 
     this.auth = new AuthResource(this.#http, { auth: this.#authManager });
-    this.users = new UsersResource(this.#http);
+    this.users = new UsersResource(this.#http, { uploadFile });
     this.posts = new PostsResource(this.#http, { uploadFiles });
     this.comments = new CommentsResource(this.#http, { uploadFiles });
     this.notifications = new NotificationsResource(this.#http);

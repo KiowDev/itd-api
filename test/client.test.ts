@@ -282,6 +282,45 @@ describe('пользователи', () => {
     expect(mock.calls[0]?.url).toBe('https://itd.test/api/users/me');
   });
 
+  it('обновляет баннер по идентификатору файла', async () => {
+    const { itd, mock } = makeClient([json({ id: 'u1', banner: 'https://cdn/banner-1.webp' })]);
+
+    await itd.users.updateMe({ bannerId: 'banner-1' });
+
+    expect(mock.calls[0]?.method).toBe('PUT');
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/users/me');
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({ bannerId: 'banner-1' });
+  });
+
+  it('загружает файл перед установкой баннера', async () => {
+    const { itd, mock } = makeClient((request) =>
+      request.url.includes('/files/upload')
+        ? json({ id: 'banner-2', url: 'https://cdn/banner.webp' })
+        : json({ id: 'u1', banner: 'https://cdn/banner.webp' }),
+    );
+
+    await itd.users.setBanner(new Blob(['image'], { type: 'image/webp' }), {
+      filename: 'banner.webp',
+    });
+
+    expect(mock.calls.map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
+      'POST /api/files/upload',
+      'PUT /api/users/me',
+    ]);
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({ bannerId: 'banner-2' });
+  });
+
+  it('удаляет баннер через bannerId: null', async () => {
+    const { itd, mock } = makeClient([json({ id: 'u1', banner: null })]);
+
+    await itd.users.removeBanner();
+
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]?.method).toBe('PUT');
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/users/me');
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({ bannerId: null });
+  });
+
   it('принимает имя пользователя вместо идентификатора', async () => {
     const { itd, mock } = makeClient([json({ id: 'u1', username: 'nowkie' })]);
 

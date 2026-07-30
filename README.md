@@ -231,6 +231,29 @@ post('привет').onWall('nowkie');
 
 ---
 
+## Баннер профиля
+
+Передайте файл — библиотека сама загрузит его и затем установит баннер по полученному ID:
+
+```ts
+// Node, Bun и Deno: клиент импортирован из `itd-api/node`
+await itd.users.setBanner('./banner.webp');
+
+// Браузер: File из <input type="file">
+await itd.users.setBanner(file);
+
+await itd.users.removeBanner();
+```
+
+Установка передаёт идентификатор загруженного файла в `bannerId`, удаление устанавливает
+`bannerId` в `null`. Для уже загруженного файла доступен низкоуровневый вариант
+`itd.users.updateMe({ bannerId: uploaded.id })`.
+
+Поддерживаемые изображения и неизвестные серверные пределы размера описаны в
+[справочнике пользователей](./guides/reference/users.md#свой-профиль).
+
+---
+
 ## Уведомления и realtime
 
 ```ts

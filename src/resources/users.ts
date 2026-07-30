@@ -1,3 +1,4 @@
+import type { HttpClient } from '../core/http.js';
 import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { pickArray, pickBoolean, pickString } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
@@ -13,7 +14,9 @@ import type {
   UserSummary,
 } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
+import type { FileInput } from '../types/params.js';
 import { BaseResource } from './base.js';
+import type { UploadedFile, UploadOptions } from './files.js';
 
 /**
  * Параметры списков пользователей.
@@ -36,8 +39,8 @@ export interface UpdateProfileInput {
   /** Эмодзи-аватар: символ клана, а не адрес картинки. */
   avatar?: string;
   bio?: string;
-  /** Адрес изображения-шапки. */
-  banner?: string;
+  /** Идентификатор загруженного файла баннера. `null` удаляет текущий баннер. */
+  bannerId?: string | null;
 }
 
 /** Изменяемые настройки приватности. */
@@ -49,6 +52,18 @@ export type UpdatePrivacyInput = Partial<PrivacySettings>;
  * Доступна как `itd.users`.
  */
 export class UsersResource extends BaseResource {
+  readonly #uploadFile: (file: FileInput, options?: UploadOptions) => Promise<UploadedFile>;
+
+  constructor(
+    http: HttpClient,
+    deps: {
+      uploadFile: (file: FileInput, options?: UploadOptions) => Promise<UploadedFile>;
+    },
+  ) {
+    super(http);
+    this.#uploadFile = deps.uploadFile;
+  }
+
   /**
    * Списки пользователей: подписчики, подписки, заблокированные.
    *
@@ -82,6 +97,27 @@ export class UsersResource extends BaseResource {
       body: input,
       ...this.requestOptions(options),
     });
+  }
+
+  /**
+   * Загружает изображение и устанавливает его баннером профиля.
+   *
+   * Для установки используется идентификатор, полученный от `/api/files/upload`.
+   * Если файл уже загружен, используйте {@link updateMe}: `{ bannerId: file.id }`.
+   *
+   * @example
+   * ```ts
+   * await itd.users.setBanner(file, { filename: 'banner.webp' });
+   * ```
+   */
+  async setBanner(file: FileInput, options: UploadOptions = {}): Promise<MyProfile> {
+    const uploaded = await this.#uploadFile(file, options);
+    return this.updateMe({ bannerId: uploaded.id }, options);
+  }
+
+  /** Удаляет баннер профиля, устанавливая `bannerId` в `null`. */
+  removeBanner(options: RequestOptions = {}): Promise<MyProfile> {
+    return this.updateMe({ bannerId: null }, options);
   }
 
   /** Деактивирует аккаунт. Вернуть его можно через {@link restore}. */
