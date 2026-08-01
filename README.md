@@ -150,8 +150,8 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 - [Политика безопасности](./.github/SECURITY.md)
 - [MIT License](./LICENSE) и [NOTICE](./NOTICE)
 
-Публикация `itd-api@0.1.0` содержит проверяемое
-[npm provenance](https://registry.npmjs.org/-/npm/v1/attestations/itd-api@0.1.0).
+Пакет публикуется через npm Trusted Publishing с проверяемым
+[provenance](https://www.npmjs.com/package/itd-api).
 
 ## Лицензия
 

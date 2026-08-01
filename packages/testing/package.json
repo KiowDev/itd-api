@@ -37,7 +37,7 @@
     "check:pack": "publint && attw --pack .",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
-  "peerDependencies": { "itd-api": ">=0.2.0" },
+  "peerDependencies": { "itd-api": "^0.3.0" },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@types/node": "^26.1.1",
