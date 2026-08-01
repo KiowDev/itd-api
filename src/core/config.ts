@@ -1,4 +1,5 @@
 import type { AuthInput, ClientHooks, ItdClientOptions, Logger } from '../types/options.js';
+import { type ItdClock, systemClock } from './clock.js';
 import { ItdConfigError } from './errors.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
 import type { ServiceDefinition } from './services.js';
@@ -80,6 +81,7 @@ export interface ResolvedRateLimitOptions {
  */
 export interface AuthConfig {
   baseUrl: string;
+  clock: ItdClock;
   auth: AuthInput | undefined;
   storage: TokenStorage;
   useCookieJar: boolean;
@@ -391,6 +393,16 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
   }
 
   const timeout = requirePositive(options.timeout ?? DEFAULT_TIMEOUT, 'timeout');
+
+  if (
+    options.clock !== undefined &&
+    (typeof options.clock !== 'object' ||
+      options.clock === null ||
+      typeof options.clock.now !== 'function' ||
+      typeof options.clock.schedule !== 'function')
+  ) {
+    throw new ItdConfigError('clock должен предоставлять методы now() и schedule()');
+  }
   requireOptionalBoolean(options.autoRefresh, 'autoRefresh');
   requireOptionalBoolean(options.reloginOnRefreshFailure, 'reloginOnRefreshFailure');
 
@@ -417,6 +429,7 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
     autoRefresh: options.autoRefresh ?? true,
     reloginOnRefreshFailure: options.reloginOnRefreshFailure ?? true,
     fetch: resolveFetch(options.fetch),
+    clock: options.clock ?? systemClock,
     timeout,
     retry: resolveRetry(options.retry),
     rateLimit: resolveRateLimit(options.rateLimit),

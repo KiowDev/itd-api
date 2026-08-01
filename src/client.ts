@@ -160,7 +160,8 @@ export class ItdClient {
     // её и в этом случае: отдельный аккаунт вправе не вставать в общую очередь.
     const shared = config.rateLimit ? internals.queues : undefined;
     const queues =
-      shared ?? (config.rateLimit ? new RequestQueuePool(config.rateLimit) : undefined);
+      shared ??
+      (config.rateLimit ? new RequestQueuePool(config.rateLimit, config.clock) : undefined);
     this.#queues = queues;
     // Гасить в `close()` можно только свою: остановка чужой отменила бы ожидающие запросы
     // соседних аккаунтов.
@@ -189,6 +190,7 @@ export class ItdClient {
 
     const pluginsLayer = createPluginsMiddleware(this.#plugins);
     const retriesLayer = createRetryMiddleware({
+      clock: config.clock,
       retry: config.retry,
       rateLimitDelays: config.rateLimit?.retryDelays ?? [],
       pauseQueue: queues ? (ms, request) => queues.for(request.service).pause(ms) : undefined,
@@ -426,6 +428,7 @@ export class ItdClient {
         onConnect: () => this.#streams.add(stream),
         onClose: () => this.#streams.delete(stream),
         logger: this.#config.logger,
+        clock: this.#config.clock,
       },
       options,
     );

@@ -3,6 +3,7 @@ import { resolveConfig } from '../src/core/config.js';
 import { CookieJar } from '../src/core/cookies.js';
 import {
   ItdAbortError,
+  ItdApiError,
   ItdNetworkError,
   ItdNotFoundError,
   ItdTimeoutError,
@@ -199,6 +200,29 @@ describe('Transport: ошибки', () => {
       path: '/api/posts',
       constructor: ItdValidationError,
     });
+  });
+
+  it('разбирает HTTP-дату Retry-After по часам клиента', async () => {
+    const clock = {
+      now: () => 0,
+      schedule: () => () => {},
+    };
+    const { transport } = makeTransport(
+      [
+        json(
+          { error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Повторите запрос позже' } },
+          { status: 429, headers: { 'retry-after': 'Thu, 01 Jan 1970 00:00:05 GMT' } },
+        ),
+      ],
+      { clock },
+    );
+
+    const error = await transport
+      .send({ method: 'GET', path: '/api/posts' })
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ItdApiError);
+    expect((error as ItdApiError).retryAfter).toBe(5_000);
   });
 
   it('сбой сети становится ItdNetworkError', async () => {

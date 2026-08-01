@@ -19,6 +19,7 @@
 
 | Пакет | Назначение |
 |---|---|
+| [`@itd-api/testing`](./generated/testing/) | средства тестирования без сетевых запросов |
 | [`@itd-api/cache`](./generated/cache/) | кэширование и дедупликация запросов |
 | [`@itd-api/crypto`](./generated/crypto/) | скрытые сообщения и шифрование |
 | [`@itd-api/proxy`](./generated/proxy/) | HTTP/HTTPS- и SOCKS5-прокси |

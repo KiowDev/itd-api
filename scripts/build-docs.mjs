@@ -36,6 +36,12 @@ const builds = [
     intentionallyNotExported: ['ItdSession', 'TokenStorage'],
   },
   {
+    name: '@itd-api/testing',
+    entryPoint: 'packages/testing/src/index.ts',
+    tsconfig: 'packages/testing/tsconfig.json',
+    out: 'guides/web/api/generated/testing',
+  },
+  {
     name: '@itd-api/cache',
     entryPoint: 'packages/cache/src/index.ts',
     tsconfig: 'packages/cache/tsconfig.json',

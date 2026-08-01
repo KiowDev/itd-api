@@ -1,4 +1,5 @@
 import type { ClientHooks, Logger, RawRequestOptions, RequestOptions } from '../types/options.js';
+import { type ItdClock, systemClock } from './clock.js';
 import { type ResolvedRetryOptions, resolveRetry } from './config.js';
 import { ItdAbortError, isItdApiError, isItdRateLimitError } from './errors.js';
 import {
@@ -13,19 +14,19 @@ import type { ServiceRegistry } from './services.js';
 import { normalizeBaseUrl } from './url.js';
 
 /** Ожидание повтора, которое уважает отмену запроса. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(clock: ItdClock, ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => clock.schedule(resolve, ms));
   if (signal.aborted) {
     return Promise.reject(new ItdAbortError('Запрос отменён во время ожидания повтора'));
   }
 
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const cancel = clock.schedule(() => {
       signal.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
     const onAbort = () => {
-      clearTimeout(timer);
+      cancel();
       reject(new ItdAbortError('Запрос отменён во время ожидания повтора'));
     };
     signal.addEventListener('abort', onAbort, { once: true });
@@ -155,6 +156,7 @@ export function createAuthMiddleware(deps: AuthMiddlewareDeps): RequestMiddlewar
 
 /** Что нужно слою повторов. */
 export interface RetryMiddlewareDeps {
+  clock?: ItdClock;
   /** Глобальные настройки повторов. `undefined` — по умолчанию не повторять. */
   retry: ResolvedRetryOptions | undefined;
   /**
@@ -253,7 +255,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
           `повтор ${method} ${request.path}, попытка ${attempt + 1} через ${delay} мс`,
         );
 
-        await sleep(delay, request.signal);
+        await sleep(deps.clock ?? systemClock, delay, request.signal);
       }
     }
   };

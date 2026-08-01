@@ -248,6 +248,8 @@ export interface ErrorContext {
   method: string;
   path: string;
   status: number;
+  /** Текущее время в миллисекундах с начала эпохи Unix. */
+  now?: number | undefined;
   statusText?: string | undefined;
   headers?: Headers | undefined;
   response?: Response | undefined;
@@ -279,7 +281,7 @@ export function createApiError(context: ErrorContext): ItdApiError {
     path: context.path,
     raw: safeRawBody(context.body),
     response: context.response,
-    retryAfter: parseRetryAfter(context.headers?.get('retry-after')),
+    retryAfter: parseRetryAfter(context.headers?.get('retry-after'), context.now),
   };
 
   if (parsed.code === 'PHONE_VERIFICATION_REQUIRED') {

@@ -1,4 +1,5 @@
 import type { AuthIdentity } from '../core/auth.js';
+import { type ItdClock, systemClock } from '../core/clock.js';
 import { Emitter, type Listener, type Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
 import { supportsStreamingBody } from '../core/runtime.js';
@@ -183,6 +184,7 @@ function validateRealtimeOptions(options: RealtimeOptions): void {
 export interface RealtimeDeps {
   baseUrl: string;
   fetch: typeof fetch;
+  clock?: ItdClock;
   /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
   baseHeaders: (url: string) => Promise<Headers>;
   /** Идентификаторы аккаунта и сессии создавшего поток клиента. */
@@ -244,7 +246,7 @@ export class ItdRealtime {
   #wanted = false;
   #status: RealtimeStatus = RealtimeStatus.Disconnected;
   #attempt = 0;
-  #timer: ReturnType<typeof setTimeout> | undefined;
+  #cancelTimer: (() => void) | undefined;
   #detachEnvironment: (() => void) | undefined;
 
   constructor(deps: RealtimeDeps, options: RealtimeOptions = {}) {
@@ -443,9 +445,9 @@ export class ItdRealtime {
   disconnect(): void {
     this.#wanted = false;
 
-    if (this.#timer !== undefined) {
-      clearTimeout(this.#timer);
-      this.#timer = undefined;
+    if (this.#cancelTimer) {
+      this.#cancelTimer();
+      this.#cancelTimer = undefined;
     }
 
     this.#detachEnvironment?.();
@@ -480,6 +482,7 @@ export class ItdRealtime {
       (kind === RealtimeTransportKind.Auto && !supportsStreamingBody())
     ) {
       return new PollTransport({
+        clock: this.#deps.clock ?? systemClock,
         ...(this.#options.pollInterval !== undefined
           ? { interval: this.#options.pollInterval }
           : {}),
@@ -487,6 +490,7 @@ export class ItdRealtime {
     }
 
     return new SseTransport({
+      clock: this.#deps.clock ?? systemClock,
       ...(this.#options.idleTimeout !== undefined
         ? { idleTimeout: this.#options.idleTimeout }
         : {}),
@@ -637,8 +641,8 @@ export class ItdRealtime {
     this.#emitter.emit('error', { error, willReconnect: true });
     this.#emitter.emit('reconnect', { attempt: this.#attempt, delay });
 
-    this.#timer = setTimeout(() => {
-      this.#timer = undefined;
+    this.#cancelTimer = (this.#deps.clock ?? systemClock).schedule(() => {
+      this.#cancelTimer = undefined;
       this.#run();
     }, delay);
   }
@@ -674,7 +678,7 @@ export class ItdRealtime {
 
     const wake = () => {
       // Реагируем, только если соединения сейчас нет и попытка не запланирована.
-      if (this.#controller || this.#timer !== undefined) return;
+      if (this.#controller || this.#cancelTimer) return;
       if (this.#status === RealtimeStatus.Disconnected) return;
 
       this.#attempt = 0;

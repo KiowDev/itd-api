@@ -1,3 +1,4 @@
+import { type ItdClock, systemClock } from './clock.js';
 import type { ResolvedRateLimitOptions } from './config.js';
 import { ItdAbortError } from './errors.js';
 
@@ -33,11 +34,13 @@ export class RequestQueue {
   #active = 0;
   /** Момент, раньше которого следующий запрос стартовать не должен. */
   #nextSlot = 0;
-  #timer: ReturnType<typeof setTimeout> | undefined;
+  readonly #clock: ItdClock;
+  #cancelTimer: (() => void) | undefined;
 
-  constructor(options: ResolvedRateLimitOptions) {
+  constructor(options: ResolvedRateLimitOptions, clock: ItdClock = systemClock) {
     this.#concurrency = options.concurrency;
     this.#minGap = options.rps ? 1000 / options.rps : 0;
+    this.#clock = clock;
   }
 
   /** Сколько задач выполняется прямо сейчас. */
@@ -107,9 +110,9 @@ export class RequestQueue {
    * ошибкой `ItdAbortError`. Уже выполняющиеся задачи доводятся до конца.
    */
   stop(): void {
-    if (this.#timer !== undefined) {
-      clearTimeout(this.#timer);
-      this.#timer = undefined;
+    if (this.#cancelTimer) {
+      this.#cancelTimer();
+      this.#cancelTimer = undefined;
     }
     this.#nextSlot = 0;
 
@@ -127,7 +130,7 @@ export class RequestQueue {
    */
   pause(ms: number): void {
     if (ms <= 0) return;
-    this.#nextSlot = Math.max(this.#nextSlot, Date.now() + ms);
+    this.#nextSlot = Math.max(this.#nextSlot, this.#clock.now() + ms);
   }
 
   /** Запускает столько ожидающих задач, сколько позволяют ограничения. */
@@ -135,21 +138,21 @@ export class RequestQueue {
     if (this.#waiting.length === 0) {
       // Последний ожидающий запрос мог быть отменён во время длинной паузы. Таймер больше
       // не нужен и не должен удерживать event loop процесса.
-      if (this.#timer !== undefined) {
-        clearTimeout(this.#timer);
-        this.#timer = undefined;
+      if (this.#cancelTimer) {
+        this.#cancelTimer();
+        this.#cancelTimer = undefined;
       }
       return;
     }
     if (this.#active >= this.#concurrency) return;
     // Ждём уже запланированного пробуждения, чтобы не плодить таймеры.
-    if (this.#timer !== undefined) return;
+    if (this.#cancelTimer) return;
 
-    const now = Date.now();
+    const now = this.#clock.now();
 
     if (this.#nextSlot > now) {
-      this.#timer = setTimeout(() => {
-        this.#timer = undefined;
+      this.#cancelTimer = this.#clock.schedule(() => {
+        this.#cancelTimer = undefined;
         this.#drain();
       }, this.#nextSlot - now);
       return;
@@ -174,13 +177,15 @@ export class RequestQueue {
  */
 export class RequestQueuePool {
   readonly #options: ResolvedRateLimitOptions;
+  readonly #clock: ItdClock;
   readonly #main: RequestQueue;
   /** Очереди сервисов заводятся при первом запросе — обычно не нужна ни одна. */
   readonly #byService = new Map<string, RequestQueue>();
 
-  constructor(options: ResolvedRateLimitOptions) {
+  constructor(options: ResolvedRateLimitOptions, clock: ItdClock = systemClock) {
     this.#options = options;
-    this.#main = new RequestQueue(options);
+    this.#clock = clock;
+    this.#main = new RequestQueue(options, clock);
   }
 
   /** Очередь хоста. */
@@ -189,7 +194,7 @@ export class RequestQueuePool {
 
     let queue = this.#byService.get(service);
     if (!queue) {
-      queue = new RequestQueue(this.#options);
+      queue = new RequestQueue(this.#options, this.#clock);
       this.#byService.set(service, queue);
     }
     return queue;

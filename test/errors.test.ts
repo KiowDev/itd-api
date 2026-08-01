@@ -234,6 +234,13 @@ describe('createApiError', () => {
     expect(error.retryAfter).toBe(30_000);
     expect(error.requestId).toBe('req-42');
   });
+
+  it('считает HTTP-дату Retry-After относительно переданного времени', () => {
+    const headers = new Headers({ 'retry-after': 'Thu, 01 Jan 1970 00:00:05 GMT' });
+    const error = createApiError({ ...ctx, status: 429, headers, body: {}, now: 0 });
+
+    expect(error.retryAfter).toBe(5_000);
+  });
 });
 
 describe('parseRetryAfter', () => {

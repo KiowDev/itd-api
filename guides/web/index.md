@@ -71,6 +71,10 @@ console.log(posts.items);</code></pre>
       вынесены в небольшие самостоятельные пакеты.
     </p>
     <div class="package-grid">
+      <a class="package-card" href="./packages/testing">
+        <code>@itd-api/testing</code>
+        <p>Сценарные ответы, сервер API в памяти и управляемый realtime.</p>
+      </a>
       <a class="package-card" href="./packages/cache">
         <code>@itd-api/cache</code>
         <p>TTL/LRU-кэш и дедупликация одинаковых запросов.</p>

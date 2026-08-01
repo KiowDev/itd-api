@@ -1,4 +1,5 @@
 import { createParser } from 'eventsource-parser';
+import { type ItdClock, systemClock } from '../core/clock.js';
 import { joinUrl } from '../core/url.js';
 import {
   type RealtimeTransport,
@@ -11,6 +12,8 @@ export const STREAM_PATH = '/api/notifications/stream';
 
 /** Настройки SSE-транспорта. */
 export interface SseTransportOptions {
+  /** Часы потока. Обычно подменяются только в тестах. */
+  clock?: ItdClock;
   /**
    * Сколько миллисекунд ждать данных, прежде чем считать соединение мёртвым.
    *
@@ -45,10 +48,12 @@ export class SseTransport implements RealtimeTransport {
 
   readonly #idleTimeout: number;
   readonly #handshakeTimeout: number;
+  readonly #clock: ItdClock;
   /** Идентификатор последнего события — отправляется при переподключении. */
   #lastEventId: string | undefined;
 
   constructor(options: SseTransportOptions = {}) {
+    this.#clock = options.clock ?? systemClock;
     this.#idleTimeout = options.idleTimeout ?? 90_000;
     this.#handshakeTimeout = options.handshakeTimeout ?? 20_000;
   }
@@ -97,9 +102,9 @@ export class SseTransport implements RealtimeTransport {
     controller: AbortController,
   ): Promise<Response> {
     let expired = false;
-    const timer =
+    const cancelTimer =
       this.#handshakeTimeout > 0
-        ? setTimeout(() => {
+        ? this.#clock.schedule(() => {
             expired = true;
             // Абортим связанный контроллер: `fetch` реджектит, и внешний код переподключится.
             controller.abort(new Error('Истёк таймаут рукопожатия SSE'));
@@ -112,7 +117,7 @@ export class SseTransport implements RealtimeTransport {
       if (expired) throw new Error('Поток уведомлений не ответил: истёк таймаут рукопожатия');
       throw error;
     } finally {
-      if (timer !== undefined) clearTimeout(timer);
+      cancelTimer?.();
     }
   }
 
@@ -144,13 +149,13 @@ export class SseTransport implements RealtimeTransport {
       },
     });
 
-    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let cancelIdleTimer: (() => void) | undefined;
 
     const armIdleTimer = () => {
       if (this.#idleTimeout <= 0) return;
-      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      cancelIdleTimer?.();
 
-      idleTimer = setTimeout(() => {
+      cancelIdleTimer = this.#clock.schedule(() => {
         // Отмена чтения завершит цикл, и внешний код переподключится.
         void reader.cancel(new Error('Поток молчит дольше допустимого')).catch(() => {});
       }, this.#idleTimeout);
@@ -167,7 +172,7 @@ export class SseTransport implements RealtimeTransport {
         parser.feed(decoder.decode(value, { stream: true }));
       }
     } finally {
-      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      cancelIdleTimer?.();
       reader.releaseLock?.();
     }
   }

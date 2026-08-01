@@ -1,4 +1,5 @@
 import { assertClientCanUnusePlugin, assertClientCanUsePlugin, ItdClient } from './client.js';
+import { systemClock } from './core/clock.js';
 import { resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
 import { ItdConfigError } from './core/errors.js';
@@ -162,7 +163,9 @@ export class ItdAccounts {
     // а не при добавлении первого аккаунта.
     const rateLimit =
       this.#rateLimitScope === 'shared' ? resolveRateLimit(base.rateLimit) : undefined;
-    this.#queues = rateLimit ? new RequestQueuePool(rateLimit) : undefined;
+    this.#queues = rateLimit
+      ? new RequestQueuePool(rateLimit, base.clock ?? systemClock)
+      : undefined;
 
     const logger = typeof base.logger === 'object' ? base.logger : undefined;
     this.#logger = logger;

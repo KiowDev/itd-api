@@ -1,3 +1,4 @@
+import { type ItdClock, systemClock } from '../core/clock.js';
 import { pickArray, pickNumber } from '../core/unwrap.js';
 import { joinUrl } from '../core/url.js';
 import type { RealtimeTransport, TransportContext } from './transport.js';
@@ -5,6 +6,8 @@ import { UnauthorizedStreamError } from './transport.js';
 
 /** Настройки опроса. */
 export interface PollTransportOptions {
+  /** Часы опроса. Обычно подменяются только в тестах. */
+  clock?: ItdClock;
   /** Как часто опрашивать сервер, мс. По умолчанию 15 000. */
   interval?: number;
   /** Сколько уведомлений запрашивать за раз. По умолчанию 20. */
@@ -26,8 +29,10 @@ export class PollTransport implements RealtimeTransport {
 
   readonly #interval: number;
   readonly #limit: number;
+  readonly #clock: ItdClock;
 
   constructor(options: PollTransportOptions = {}) {
+    this.#clock = options.clock ?? systemClock;
     this.#interval = options.interval ?? 15_000;
     this.#limit = options.limit ?? 20;
   }
@@ -126,10 +131,10 @@ export class PollTransport implements RealtimeTransport {
     if (signal.aborted) return Promise.resolve();
 
     return new Promise<void>((resolve) => {
-      const timer = setTimeout(finish, this.#interval);
+      const cancel = this.#clock.schedule(finish, this.#interval);
 
       function finish() {
-        clearTimeout(timer);
+        cancel();
         signal.removeEventListener('abort', finish);
         resolve();
       }

@@ -1,4 +1,5 @@
 import type { ClientHooks, Logger } from '../types/options.js';
+import type { ItdClock } from './clock.js';
 import type { CookieJar } from './cookies.js';
 import { createApiError, readRateLimit } from './error-factory.js';
 import {
@@ -25,6 +26,7 @@ export interface TransportConfig {
   baseUrl: string;
   fetch: typeof fetch;
   timeout: number;
+  clock: ItdClock;
   headers: Record<string, string>;
   /** Значение заголовка `User-Agent`. `undefined` — заголовок не выставляется. */
   userAgent: string | undefined;
@@ -164,7 +166,11 @@ interface AbortBundle {
  * Реализовано вручную, а не через `AbortSignal.any`: последний появился только в Node 20,
  * а библиотека поддерживает Node 18.
  */
-function createAbortBundle(userSignal: AbortSignal | undefined, timeout: number): AbortBundle {
+function createAbortBundle(
+  userSignal: AbortSignal | undefined,
+  timeout: number,
+  clock: ItdClock,
+): AbortBundle {
   const controller = new AbortController();
   let timedOut = false;
 
@@ -175,9 +181,9 @@ function createAbortBundle(userSignal: AbortSignal | undefined, timeout: number)
     else userSignal.addEventListener('abort', onUserAbort, { once: true });
   }
 
-  const timer =
+  const cancelTimer =
     timeout > 0
-      ? setTimeout(() => {
+      ? clock.schedule(() => {
           timedOut = true;
           controller.abort();
         }, timeout)
@@ -187,7 +193,7 @@ function createAbortBundle(userSignal: AbortSignal | undefined, timeout: number)
     signal: controller.signal,
     timedOut: () => timedOut,
     cleanup: () => {
-      if (timer !== undefined) clearTimeout(timer);
+      cancelTimer?.();
       userSignal?.removeEventListener('abort', onUserAbort);
     },
   };
@@ -229,8 +235,8 @@ export class Transport {
     const attempt = request.attempt ?? 1;
 
     const timeout = request.timeout ?? this.#config.timeout;
-    const abort = createAbortBundle(request.signal, timeout);
-    const startedAt = Date.now();
+    const abort = createAbortBundle(request.signal, timeout, this.#config.clock);
+    const startedAt = this.#config.clock.now();
     let cleanupBody: (() => void | Promise<void>) | undefined;
 
     try {
@@ -245,7 +251,7 @@ export class Transport {
         await dispatchRequestHook(
           this.#config.hooks,
           'onError',
-          { ...context, duration: Date.now() - startedAt, error: failure },
+          { ...context, duration: this.#config.clock.now() - startedAt, error: failure },
           request,
         );
         throw failure;
@@ -273,7 +279,7 @@ export class Transport {
         }
         response = await this.#config.fetch(url, init);
       } catch (error) {
-        const duration = Date.now() - startedAt;
+        const duration = this.#config.clock.now() - startedAt;
         const failure = this.#toTransportError(error, abort, request, method, timeout);
 
         await dispatchRequestHook(
@@ -304,7 +310,7 @@ export class Transport {
           {
             ...context,
             status: response.status,
-            duration: Date.now() - startedAt,
+            duration: this.#config.clock.now() - startedAt,
             response,
           },
           request,
@@ -319,13 +325,14 @@ export class Transport {
         abort,
         timeout,
       );
-      const duration = Date.now() - startedAt;
+      const duration = this.#config.clock.now() - startedAt;
 
       if (!response.ok) {
         const error = createApiError({
           method,
           path: request.path,
           status: response.status,
+          now: this.#config.clock.now(),
           statusText: response.statusText,
           headers: response.headers,
           response,
@@ -418,7 +425,7 @@ export class Transport {
     abort: AbortBundle,
     timeout: number,
   ): Promise<unknown> {
-    const startedAt = Date.now();
+    const startedAt = this.#config.clock.now();
 
     try {
       return await abortable(readBody(response), abort.signal);
@@ -432,7 +439,7 @@ export class Transport {
         'onError',
         {
           ...context,
-          duration: Date.now() - startedAt,
+          duration: this.#config.clock.now() - startedAt,
           error: failure,
         },
         request,

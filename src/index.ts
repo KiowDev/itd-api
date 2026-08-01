@@ -65,6 +65,7 @@ export {
   DEVICE_ID_HEADER,
   TURNSTILE_SITE_KEY,
 } from './core/auth.js';
+export { type ItdClock, systemClock } from './core/clock.js';
 export {
   BUILT_IN_SERVICES,
   DEFAULT_BASE_URL,

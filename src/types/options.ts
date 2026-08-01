@@ -1,3 +1,4 @@
+import type { ItdClock } from '../core/clock.js';
 import type { RuntimeMode } from '../core/runtime.js';
 import type { ServiceDefinition } from '../core/services.js';
 import type { TokenStorage } from '../core/storage.js';
@@ -201,6 +202,8 @@ export interface ItdClientOptions {
   reloginOnRefreshFailure?: boolean | undefined;
   /** Своя реализация `fetch`: для Deno, React Native, тестов или прокси. */
   fetch?: typeof fetch | undefined;
+  /** Часы для тайм-аутов, повторов и очередей. Обычно подменяются только в тестах. */
+  clock?: ItdClock | undefined;
   /** Таймаут запроса в мс. По умолчанию 30000 — столько же использует сайт итд.com. `0` снимает ограничение. */
   timeout?: number | undefined;
   /** Повторные попытки. `false` отключает их полностью. */

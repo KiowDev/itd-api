@@ -405,7 +405,11 @@ export class AuthManager {
     await this.#loadSession();
     this.#invalidateInFlight();
     this.#transitionAuth(accessToken);
-    await this.#saveSession({ ...(this.#session ?? {}), accessToken, obtainedAt: Date.now() });
+    await this.#saveSession({
+      ...(this.#session ?? {}),
+      accessToken,
+      obtainedAt: this.#config.clock.now(),
+    });
     this.#emitter.emit('tokens', { accessToken });
   }
 
@@ -517,13 +521,15 @@ export class AuthManager {
 
   #sessionFromConfig(auth: AuthInput | undefined): ItdSession | null {
     if (!auth) return null;
-    if (typeof auth === 'string') return { accessToken: auth, obtainedAt: Date.now() };
+    if (typeof auth === 'string') {
+      return { accessToken: auth, obtainedAt: this.#config.clock.now() };
+    }
 
     if ('accessToken' in auth) {
       return {
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
-        obtainedAt: Date.now(),
+        obtainedAt: this.#config.clock.now(),
       };
     }
 
@@ -610,7 +616,7 @@ export class AuthManager {
         ...(this.#session ?? {}),
         accessToken,
         ...(rotated ? { refreshToken: rotated } : {}),
-        obtainedAt: Date.now(),
+        obtainedAt: this.#config.clock.now(),
       });
 
       this.#emitter.emit('tokens', { accessToken });
@@ -729,7 +735,7 @@ export class AuthManager {
     // и держаться за старую было бы ошибкой. Идентификатор устройства добавит #saveSession.
     this.#invalidateInFlight();
     this.#transitionAuth(accessToken);
-    await this.#saveSession({ accessToken, obtainedAt: Date.now() });
+    await this.#saveSession({ accessToken, obtainedAt: this.#config.clock.now() });
     this.#emitter.emit('tokens', { accessToken });
     this.#emitter.emit('signIn', { accessToken });
 
