@@ -168,6 +168,14 @@ export {
   NOTIFICATION_TYPE_ALIASES,
 } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
+export type {
+  RealtimeHandler,
+  RealtimeMiddleware,
+  RealtimeNext,
+  RealtimePredicate,
+  RealtimeSequentializer,
+  RealtimeTypeGuard,
+} from './realtime/middleware.js';
 export type { PollTransportOptions } from './realtime/poll.js';
 export {
   MAX_RECONNECT_ATTEMPTS,
@@ -175,6 +183,7 @@ export {
   RECONNECT_JITTER,
   type ReconnectOptions,
 } from './realtime/reconnect.js';
+export { RealtimeRouter, type RealtimeRouteSelector } from './realtime/router.js';
 export { type SseTransportOptions, STREAM_PATH } from './realtime/sse.js';
 export {
   ItdRealtime,
@@ -187,6 +196,21 @@ export type { RealtimeTransport, TransportContext, TransportEvent } from './real
 // Нужен тем, кто пишет свой транспорт: только этой ошибкой он сообщает потоку,
 // что токен пора обновить.
 export { UnauthorizedStreamError } from './realtime/transport.js';
+export {
+  type NotificationEventOfType,
+  type NotificationOfType,
+  type RealtimeContext,
+  type RealtimeNotificationContext,
+  type RealtimeNotificationFilter,
+  type RealtimeNotificationSelector,
+  type RealtimeNotificationUpdate,
+  type RealtimeUnknownUpdate,
+  type RealtimeUnreadCountUpdate,
+  type RealtimeUpdate,
+  type RealtimeUpdateOfType,
+  RealtimeUpdateOrigin,
+  RealtimeUpdateType,
+} from './realtime/updates.js';
 export type {
   AuthResource,
   CaptchaCredentials,

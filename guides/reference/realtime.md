@@ -28,8 +28,47 @@ on<K>(event: K, listener): Unsubscribe
 once<K>(event: K, listener): Unsubscribe
 removeAllListeners(): void
 ```
-Подписка на события / однократная подписка / снятие всех подписок (соединение при этом
-не закрывается).
+Синхронная подписка / однократная подписка / снятие всех слушателей событий.
+`removeAllListeners()` не удаляет промежуточные и асинхронные обработчики.
+
+```ts
+use(middleware: RealtimeMiddleware): Unsubscribe
+```
+Добавляет промежуточный обработчик нормализованных обновлений. Если не вызвать `next()`,
+обновление не передаётся дальше. Возвращённая функция удаляет регистрацию.
+
+```ts
+onUpdate(handler: RealtimeHandler): Unsubscribe
+
+onUpdate<T extends RealtimeUpdateType>(
+  type: T,
+  handler: RealtimeHandler<RealtimeContext<RealtimeUpdateOfType<T>>>,
+): Unsubscribe
+
+onUpdate<C extends RealtimeContext>(
+  guard: (context: RealtimeContext) => context is C,
+  handler: RealtimeHandler<C>,
+): Unsubscribe
+```
+Форма с одним обработчиком подписывает его на все нормализованные обновления. Остальные
+формы выбирают обновления по типу, функции сужения типа или обычному условию
+`(context) => boolean`.
+
+```ts
+onNotification<T extends NotificationType>(
+  selector: T | readonly T[] | RealtimeNotificationFilter<T>,
+  handler: RealtimeHandler<RealtimeNotificationContext<T>>,
+): Unsubscribe
+```
+Фильтрует уведомления по каноническому типу, `actorId`, `entityId`, `parentEntityId` и
+дополнительному условию `predicate`. Можно передать собственную функцию проверки или
+сужения типа.
+
+```ts
+drain(): Promise<void>
+```
+Ждёт активные и поставленные в очередь обновления. После `disconnect()` очередь ещё не
+начатых обновлений очищена, поэтому `drain()` ждёт только активную обработку.
 
 ```ts
 get status: RealtimeStatus              // 'connecting' | 'connected' | 'error' | 'disconnected'
@@ -48,33 +87,96 @@ get transport: string                   // 'sse' | 'poll'
 | `reconnect` | `{ attempt, delay }` | запланировано переподключение |
 | `giveup` | — | попытки исчерпаны; нужен ручной `connect()` |
 | `parseError` | `{ error, raw }` | сообщение не удалось разобрать (соединение живо) |
-| `message` | `{ name, data }` | любое событие потока в необработанном виде |
+| `message` | `{ name, data }` | получен любой исходный кадр транспорта |
+| `middlewareError` | `{ error, context }` | промежуточный обработчик завершился исключением |
+| `handlerError` | `{ error, context }` | асинхронный обработчик завершился исключением |
 
 `NotificationEvent` содержит `{ notification: Notification; unreadCount?: number }`; уведомление
 в той же форме, что и в [`itd.notifications`](./notifications.md).
+
+Служебные события `ready`, `status`, `error`, `reconnect`, `giveup` и `parseError` не проходят
+через промежуточные обработчики.
+
+## Обновления и контекст
+
+```ts
+const RealtimeUpdateType = Object.freeze({
+  Notification: 'notification',
+  UnreadCount: 'unreadCount',
+  Unknown: 'unknown',
+} as const);
+
+const RealtimeUpdateOrigin = Object.freeze({
+  Stream: 'stream',
+  Sync: 'sync',
+} as const);
+
+type RealtimeUpdate =
+  | { type: typeof RealtimeUpdateType.Notification; data: NotificationEvent }
+  | { type: typeof RealtimeUpdateType.UnreadCount; data: number }
+  | { type: typeof RealtimeUpdateType.Unknown; name: string; data: unknown };
+
+type RealtimeUpdateType = RealtimeUpdate['type'];
+type RealtimeUpdateOrigin =
+  (typeof RealtimeUpdateOrigin)[keyof typeof RealtimeUpdateOrigin];
+
+interface RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> {
+  readonly update: U;
+  readonly stream: ItdRealtime;
+  readonly raw: TransportEvent | undefined;
+  readonly origin: RealtimeUpdateOrigin;
+}
+```
+
+Один транспортный кадр создаёт не более одного нормализованного обновления. Событие
+`message` дополнительно сообщает исходный кадр, но не запускает второй проход промежуточных
+и асинхронных обработчиков. Эти же данные доступны через `context.raw`. У начального
+счётчика непрочитанных `origin` равен `RealtimeUpdateOrigin.Sync`, а `raw` — `undefined`.
+
+## Маршрутизатор `RealtimeRouter`
+
+```ts
+const router = new RealtimeRouter(selector);
+
+router.route(key, ...middleware): Unsubscribe
+router.otherwise(...middleware): Unsubscribe
+router.middleware(): RealtimeMiddleware
+```
+
+Функция выбора возвращает `PropertyKey`, `null` или `undefined` и может быть асинхронной.
+Для зарегистрированного ключа выполняется его цепочка, иначе — `otherwise`. При отсутствии
+подходящей цепочки вызывается следующий внешний промежуточный обработчик. Таблица маршрутов
+фиксируется при получении обновления; последующие `route()`, `otherwise()` и функции
+удаления действуют только на следующие обновления.
 
 ## Опции (`RealtimeOptions`)
 
 ```ts
 interface RealtimeOptions {
-  transport?: 'auto' | 'sse' | 'poll';   // по умолчанию 'auto'
+  transport?: RealtimeTransportKind | RealtimeTransport; // по умолчанию Auto
   idleTimeout?: number;                  // молчание сервера = мёртвое соединение; 90000
   handshakeTimeout?: number;             // ожидание ответа SSE; 20000; 0 отключает
   pollInterval?: number;                 // период опроса для запасного транспорта
-  syncCount?: boolean;                   // запросить число непрочитанных при connect; true
+  syncCount?: boolean;                   // запросить число непрочитанных при подключении; true
   reconnectOnVisible?: boolean;          // переподключаться при возврате вкладки; true (браузер)
   reconnectOnOnline?: boolean;           // переподключаться при восстановлении сети; true (браузер)
+  concurrency?: number;                  // одновременно обрабатываемые обновления; 1
+  sequentialize?: (context: RealtimeContext) =>
+    PropertyKey | readonly PropertyKey[] | undefined;
   // из ReconnectOptions:
   maxAttempts?: number;
   backoff?: number[];                    // лестница пауз переподключения
-  jitter?: number;                       // 0…1
+  jitter?: number;                       // доля случайного разброса, 0…1
 }
 
-const RealtimeTransportKind = { Auto: 'auto', Sse: 'sse', Poll: 'poll' } as const;
-const RealtimeStatus = {
+const RealtimeTransportKind = Object.freeze({ Auto: 'auto', Sse: 'sse', Poll: 'poll' } as const);
+const RealtimeStatus = Object.freeze({
   Connecting: 'connecting', Connected: 'connected', Error: 'error', Disconnected: 'disconnected',
-} as const;
+} as const);
 ```
+
+При `concurrency: 1` обновления завершаются в порядке получения. При большем значении
+`sequentialize` сохраняет порядок обновлений с общими ключами.
 
 Смена авторизации на другого пользователя завершает все потоки клиента; обновление
 токена той же сессии — нет.

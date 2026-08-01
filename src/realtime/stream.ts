@@ -3,21 +3,39 @@ import { Emitter, type Listener, type Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
 import { supportsStreamingBody } from '../core/runtime.js';
 import { pickString } from '../core/unwrap.js';
-import {
-  type NotificationEvent,
-  readNotificationEvent,
-  readUnreadCountEvent,
-} from '../notifications/normalize.js';
-import { RealtimeStatus } from '../types/enums.js';
+import type { NotificationEvent } from '../notifications/normalize.js';
+import { type NotificationType, RealtimeStatus } from '../types/enums.js';
 import type { Logger } from '../types/options.js';
+import {
+  RealtimeDispatcher,
+  type RealtimeHandler,
+  type RealtimeMiddleware,
+  type RealtimePredicate,
+  type RealtimeSequentializer,
+  type RealtimeTypeGuard,
+} from './middleware.js';
 import { PollTransport } from './poll.js';
 import { MAX_RECONNECT_ATTEMPTS, type ReconnectOptions, reconnectDelay } from './reconnect.js';
 import { SseTransport } from './sse.js';
 import {
   type RealtimeTransport,
   type TransportContext,
+  type TransportEvent,
   UnauthorizedStreamError,
 } from './transport.js';
+import {
+  isNotificationContext,
+  matchesNotification,
+  type RealtimeContext,
+  type RealtimeNotificationContext,
+  type RealtimeNotificationSelector,
+  type RealtimeUpdate,
+  type RealtimeUpdateOfType,
+  RealtimeUpdateOrigin,
+  RealtimeUpdateType,
+  readRealtimeUpdate,
+  validateNotificationSelector,
+} from './updates.js';
 
 /** События потока уведомлений. */
 export interface RealtimeEvents {
@@ -47,8 +65,12 @@ export interface RealtimeEvents {
   reconnect: { attempt: number; delay: number };
   /** Попытки исчерпаны — соединение восстановится только ручным `connect()`. */
   giveup: undefined;
-  /** Любое событие потока в необработанном виде, включая неизвестные библиотеке. */
-  message: { name: string; data: unknown };
+  /** Любой исходный кадр транспорта. Отправляется до нормализации и промежуточных обработчиков. */
+  message: TransportEvent;
+  /** Промежуточный обработчик потока завершился исключением. */
+  middlewareError: { error: unknown; context: RealtimeContext };
+  /** Обработчик `onUpdate` завершился исключением. */
+  handlerError: { error: unknown; context: RealtimeContext };
 }
 
 /** Способ получения событий. */
@@ -104,6 +126,10 @@ export interface RealtimeOptions extends ReconnectOptions {
   reconnectOnVisible?: boolean;
   /** Переподключаться при восстановлении сети. По умолчанию `true`. Только в браузере. */
   reconnectOnOnline?: boolean;
+  /** Максимальное число одновременно обрабатываемых обновлений. По умолчанию 1. */
+  concurrency?: number;
+  /** Возвращает ключи обновлений, которые нельзя обрабатывать одновременно. */
+  sequentialize?: RealtimeSequentializer;
 }
 
 /** Проверяет настройки потока. @throws {ItdConfigError} при некорректных значениях */
@@ -127,6 +153,10 @@ function validateRealtimeOptions(options: RealtimeOptions): void {
   };
 
   positiveInteger(options.maxAttempts, 'maxAttempts');
+  positiveInteger(options.concurrency, 'concurrency');
+  if (options.concurrency === 0) {
+    throw new ItdConfigError('realtime.concurrency должен быть больше нуля');
+  }
   duration(options.pollInterval, 'pollInterval', 1);
   duration(options.idleTimeout, 'idleTimeout', 0);
   duration(options.handshakeTimeout, 'handshakeTimeout', 0);
@@ -142,6 +172,10 @@ function validateRealtimeOptions(options: RealtimeOptions): void {
       throw new ItdConfigError('realtime.backoff должен быть непустым списком пауз');
     }
     for (const delay of options.backoff) duration(delay, 'backoff', 0);
+  }
+
+  if (options.sequentialize !== undefined && typeof options.sequentialize !== 'function') {
+    throw new ItdConfigError('realtime.sequentialize должен быть функцией');
   }
 }
 
@@ -162,6 +196,8 @@ export interface RealtimeDeps {
   fetchUnreadCount: () => Promise<number>;
   /** Вызывается при явном закрытии потока. */
   onClose?: (() => void) | undefined;
+  /** Вызывается при запуске ранее закрытого потока. */
+  onConnect?: (() => void) | undefined;
   logger?: Logger | undefined;
 }
 
@@ -173,22 +209,26 @@ export interface RealtimeDeps {
  *
  * @example
  * ```ts
+ * import { NotificationType } from 'itd-api';
+ *
  * const stream = itd.realtime();
  *
- * stream.on('notification', ({ notification, unreadCount }) => {
- *   console.log(formatNotificationText(notification), unreadCount);
+ * stream.onNotification(NotificationType.PostComment, async ({ update }) => {
+ *   await saveCommentNotification(update.data.notification);
  * });
  * stream.on('status', (status) => console.log('соединение:', status));
  *
  * await stream.connect();
  * // …позже
  * stream.disconnect();
+ * await stream.drain();
  * ```
  */
 export class ItdRealtime {
   readonly #deps: RealtimeDeps;
   readonly #options: RealtimeOptions;
   readonly #emitter: Emitter<RealtimeEvents>;
+  readonly #dispatcher: RealtimeDispatcher;
   readonly #transport: RealtimeTransport;
   readonly #maxAttempts: number;
 
@@ -220,6 +260,18 @@ export class ItdRealtime {
       if (deps.logger) deps.logger.error(message, error);
       else console.error(`[itd-api] ${message}`, error);
     });
+    this.#dispatcher = new RealtimeDispatcher(
+      {
+        concurrency: options.concurrency ?? 1,
+        ...(options.sequentialize ? { sequentialize: options.sequentialize } : {}),
+      },
+      {
+        deliver: (context) => this.#deliver(context.update),
+        middlewareError: (error, context) =>
+          this.#reportDispatchError('middlewareError', error, context),
+        handlerError: (error, context) => this.#reportDispatchError('handlerError', error, context),
+      },
+    );
   }
 
   /** Текущее состояние соединения. */
@@ -261,6 +313,98 @@ export class ItdRealtime {
   }
 
   /**
+   * Добавляет промежуточный обработчик нормализованных обновлений.
+   *
+   * Обработчики выполняются в порядке регистрации. Если `next()` не вызван, обновление не
+   * передаётся дальше по цепочке, асинхронным обработчикам и слушателям событий.
+   *
+   * @returns функция удаления обработчика
+   */
+  use(middleware: RealtimeMiddleware): Unsubscribe {
+    if (typeof middleware !== 'function') {
+      throw new ItdConfigError('realtime.use() принимает функцию обработки');
+    }
+    return this.#dispatcher.use(middleware);
+  }
+
+  /** Подписывает асинхронный обработчик на все нормализованные обновления. */
+  onUpdate(handler: RealtimeHandler): Unsubscribe;
+  /** Подписывает асинхронный обработчик на обновление указанного типа. */
+  onUpdate<T extends RealtimeUpdateType>(
+    type: T,
+    handler: RealtimeHandler<RealtimeContext<RealtimeUpdateOfType<T>>>,
+  ): Unsubscribe;
+  /** Подписывает асинхронный обработчик по функции сужения типа. */
+  onUpdate<C extends RealtimeContext>(
+    guard: RealtimeTypeGuard<C>,
+    handler: RealtimeHandler<C>,
+  ): Unsubscribe;
+  /** Подписывает асинхронный обработчик по пользовательскому условию. */
+  onUpdate(predicate: RealtimePredicate, handler: RealtimeHandler): Unsubscribe;
+  onUpdate(
+    selectorOrHandler: RealtimeUpdateType | RealtimePredicate | RealtimeHandler,
+    selectedHandler?: RealtimeHandler,
+  ): Unsubscribe {
+    const selectAll = selectedHandler === undefined;
+    const handler = selectAll ? (selectorOrHandler as RealtimeHandler) : selectedHandler;
+    if (typeof handler !== 'function') {
+      throw new ItdConfigError('realtime.onUpdate() принимает функцию обработчика');
+    }
+    if (
+      !selectAll &&
+      typeof selectorOrHandler !== 'function' &&
+      !Object.values(RealtimeUpdateType).includes(selectorOrHandler)
+    ) {
+      throw new ItdConfigError(`Неизвестный тип обновления потока: ${String(selectorOrHandler)}`);
+    }
+
+    let predicate: RealtimePredicate;
+    if (selectAll) {
+      predicate = () => true;
+    } else {
+      const selector = selectorOrHandler as RealtimeUpdateType | RealtimePredicate;
+      predicate =
+        typeof selector === 'function' ? selector : (context) => context.update.type === selector;
+    }
+
+    return this.#dispatcher.on(predicate, handler);
+  }
+
+  /** Подписывает асинхронный обработчик на уведомления, подходящие под фильтр. */
+  onNotification<T extends NotificationType>(
+    selector: RealtimeNotificationSelector<T>,
+    handler: RealtimeHandler<RealtimeNotificationContext<T>>,
+  ): Unsubscribe;
+  /** Подписывает асинхронный обработчик по функции сужения типа уведомления. */
+  onNotification<C extends RealtimeNotificationContext>(
+    guard: (context: RealtimeNotificationContext) => context is C,
+    handler: RealtimeHandler<C>,
+  ): Unsubscribe;
+  /** Подписывает асинхронный обработчик по пользовательскому условию. */
+  onNotification(
+    predicate: (context: RealtimeNotificationContext) => boolean,
+    handler: RealtimeHandler<RealtimeNotificationContext>,
+  ): Unsubscribe;
+  onNotification(
+    selector: RealtimeNotificationSelector | ((context: RealtimeNotificationContext) => boolean),
+    handler: (context: never) => unknown | Promise<unknown>,
+  ): Unsubscribe {
+    if (typeof handler !== 'function') {
+      throw new ItdConfigError('realtime.onNotification() принимает функцию обработчика');
+    }
+    if (typeof selector !== 'function') validateNotificationSelector(selector);
+
+    const predicate: RealtimePredicate = (context) => {
+      if (!isNotificationContext(context)) return false;
+      return typeof selector === 'function'
+        ? selector(context)
+        : matchesNotification(context, selector);
+    };
+
+    return this.#dispatcher.on(predicate, handler as RealtimeHandler);
+  }
+
+  /**
    * Поднимает соединение.
    *
    * Повторный вызов при уже живом соединении ничего не делает — это защита от двойного
@@ -271,12 +415,20 @@ export class ItdRealtime {
   async connect(): Promise<void> {
     if (this.#wanted) return;
     this.#wanted = true;
+    this.#deps.onConnect?.();
 
     this.#attachEnvironmentListeners();
 
     if (this.#options.syncCount !== false) {
       try {
-        this.#emitter.emit('unreadCount', await this.#deps.fetchUnreadCount());
+        const count = await this.#deps.fetchUnreadCount();
+        if (this.#wanted) {
+          this.#dispatch(
+            { type: RealtimeUpdateType.UnreadCount, data: count },
+            undefined,
+            RealtimeUpdateOrigin.Sync,
+          );
+        }
       } catch (error) {
         // Начальный счётчик — вспомогательная величина, из-за неё поток не отменяется.
         this.#deps.logger?.debug('не удалось получить число непрочитанных', error);
@@ -302,12 +454,18 @@ export class ItdRealtime {
     this.#controller?.abort();
     this.#controller = undefined;
     this.#attempt = 0;
+    this.#dispatcher.clearPending();
 
     this.#setStatus(RealtimeStatus.Disconnected);
     this.#deps.onClose?.();
   }
 
-  /** Снимает все подписки. Соединение при этом не закрывается. */
+  /** Ждёт завершения всех принятых обновлений. */
+  drain(): Promise<void> {
+    return this.#dispatcher.drain();
+  }
+
+  /** Снимает подписки `on()` и `once()`. Остальные обработчики остаются. */
   removeAllListeners(): void {
     this.#emitter.removeAllListeners();
   }
@@ -361,7 +519,7 @@ export class ItdRealtime {
           this.#attempt = 0;
           this.#setStatus(RealtimeStatus.Connected);
         },
-        onEvent: (event) => this.#handleEvent(event.name, event.data),
+        onEvent: (event) => this.#handleEvent(event),
         onParseError: (error, raw) => this.#emitter.emit('parseError', { error, raw }),
       })
       .then(
@@ -378,29 +536,63 @@ export class ItdRealtime {
       );
   }
 
-  #handleEvent(name: string, data: unknown): void {
-    this.#emitter.emit('message', { name, data });
+  #handleEvent(event: TransportEvent): void {
+    if (!this.#wanted) return;
+    this.#emitter.emit('message', event);
 
-    if (name === 'connected') {
+    if (event.name === 'connected') {
       // Строго строка: `String(null)` дал бы подписчику осмысленно выглядящее «null».
-      this.#emitter.emit('ready', { userId: pickString(data, 'userId') });
+      this.#emitter.emit('ready', { userId: pickString(event.data, 'userId') });
       return;
     }
 
-    if (name === 'notification') {
-      const event = readNotificationEvent(data);
-      this.#emitter.emit('notification', event);
+    const update = readRealtimeUpdate(event);
+    if (update) this.#dispatch(update, event, RealtimeUpdateOrigin.Stream);
+  }
 
-      // Счётчик обновляется только если сервер его прислал: сам библиотека не считает.
-      if (event.unreadCount !== undefined) this.#emitter.emit('unreadCount', event.unreadCount);
+  #dispatch(
+    update: RealtimeUpdate,
+    raw: TransportEvent | undefined,
+    origin: RealtimeUpdateOrigin,
+  ): void {
+    this.#dispatcher.dispatch({ update, stream: this, raw, origin });
+  }
+
+  #deliver(update: RealtimeUpdate): void {
+    if (update.type === RealtimeUpdateType.Notification) {
+      this.#emitter.emit('notification', update.data);
+      if (update.data.unreadCount !== undefined) {
+        this.#emitter.emit('unreadCount', update.data.unreadCount);
+      }
       return;
     }
 
-    if (name === 'unread_count') {
-      const count = readUnreadCountEvent(data);
-      // Событие без вложенного payload не содержит актуального счётчика и игнорируется.
-      if (count !== undefined) this.#emitter.emit('unreadCount', count);
+    if (update.type === RealtimeUpdateType.UnreadCount) {
+      this.#emitter.emit('unreadCount', update.data);
+      return;
     }
+
+    if (update.type === RealtimeUpdateType.Unknown) return;
+
+    assertNeverUpdate(update);
+  }
+
+  #reportDispatchError(
+    event: 'middlewareError' | 'handlerError',
+    error: unknown,
+    context: RealtimeContext,
+  ): void {
+    if (this.#emitter.listenerCount(event) > 0) {
+      this.#emitter.emit(event, { error, context });
+      return;
+    }
+
+    const message =
+      event === 'middlewareError'
+        ? 'Ошибка в промежуточном обработчике потока'
+        : 'Ошибка в обработчике обновления потока';
+    if (this.#deps.logger) this.#deps.logger.error(message, error);
+    else console.error(`[itd-api] ${message}`, error);
   }
 
   #handleFailure(error: unknown): void {
@@ -514,4 +706,8 @@ export class ItdRealtime {
     this.#status = status;
     this.#emitter.emit('status', status);
   }
+}
+
+function assertNeverUpdate(update: never): never {
+  throw new TypeError(`Необработанное обновление потока: ${String(update)}`);
 }

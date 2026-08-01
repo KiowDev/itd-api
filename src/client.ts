@@ -399,10 +399,12 @@ export class ItdClient {
    *
    * @example
    * ```ts
+   * import { NotificationType } from 'itd-api';
+   *
    * const stream = itd.realtime();
    *
-   * stream.on('notification', ({ notification }) => {
-   *   console.log(formatNotificationText(notification));
+   * stream.onNotification(NotificationType.PostComment, async ({ update }) => {
+   *   await handleComment(update.data.notification);
    * });
    * stream.on('unreadCount', (count) => setBadge(count));
    *
@@ -421,6 +423,7 @@ export class ItdClient {
         getToken: () => this.#authManager.getAccessToken(),
         refresh: () => this.#authManager.onUnauthorized(),
         fetchUnreadCount: () => this.notifications.count(),
+        onConnect: () => this.#streams.add(stream),
         onClose: () => this.#streams.delete(stream),
         logger: this.#config.logger,
       },
@@ -436,8 +439,8 @@ export class ItdClient {
    * Освобождает ресурсы клиента: закрывает все потоки уведомлений, отправляет открытые
    * накопители {@link telemetry}, затем останавливает очередь запросов.
    *
-   * После вызова клиентом можно пользоваться снова — новые запросы поднимут всё заново,
-   * но уже созданные потоки и успешно закрытые накопители останутся закрытыми.
+   * Метод дожидается активных обработчиков потока. После вызова клиентом можно пользоваться
+   * снова; ранее созданный поток можно запустить повторным `connect()`.
    *
    * Общая очередь, полученная от {@link ItdAccounts}, не останавливается: её гасит сам
    * контейнер, когда закрывает все аккаунты разом.
@@ -450,8 +453,9 @@ export class ItdClient {
    * ```
    */
   async close(): Promise<void> {
-    this.#disconnectStreams();
+    const streams = this.#disconnectStreams();
     try {
+      await Promise.all(streams.map((stream) => stream.drain()));
       await this.telemetry.close();
     } finally {
       if (this.#ownsQueues) this.#queues?.stop();
@@ -474,9 +478,11 @@ export class ItdClient {
   }
 
   /** Завершает потоки до того, как запросы начнут использовать другой аккаунт. */
-  #disconnectStreams(): void {
-    for (const stream of [...this.#streams]) stream.disconnect();
+  #disconnectStreams(): ItdRealtime[] {
+    const streams = [...this.#streams];
+    for (const stream of streams) stream.disconnect();
     this.#streams.clear();
+    return streams;
   }
 
   /** Позволяет использовать клиент с `await using`. */

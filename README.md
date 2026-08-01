@@ -54,7 +54,7 @@ for (const post of page.items) {
 |---|---|
 | REST API | пользователи, посты, комментарии, файлы, уведомления, поиск, жалобы, верификация и подписка |
 | Авторизация | access/refresh token, автоматическое обновление, OTP, хранение сессии и несколько аккаунтов |
-| Realtime | SSE с переподключением и fallback на polling |
+| Realtime | SSE и резервный опрос, промежуточные обработчики, типизированные фильтры и маршрутизация |
 | Пагинация | разные серверные схемы через единый `for await` |
 | Публикация | билдеры постов, комментариев, опросов, разметки текста и загрузки файлов |
 | Надёжность | таймауты, отмена, очередь, rate limiting, безопасные повторы, хуки и типизированные ошибки |
@@ -82,10 +82,10 @@ for (const post of page.items) {
 |---|---|
 | [Быстрый старт](https://kiowdev.github.io/itd-api/quickstart/) | создание клиента, чтение и публикация, пагинация, ошибки |
 | [Авторизация](https://kiowdev.github.io/itd-api/authentication/) | токены, Turnstile, OTP, refresh и хранение сессии |
-| [Конфигурация](https://kiowdev.github.io/itd-api/configuration/) | таймауты, повторы, очереди, сервисы, hooks и lifecycle |
+| [Конфигурация](https://kiowdev.github.io/itd-api/configuration/) | таймауты, повторы, очереди, сервисы, хуки и жизненный цикл |
 | [Несколько аккаунтов](https://kiowdev.github.io/itd-api/multi-accounts/) | `ItdAccounts`, общее хранилище и отдельные сессии |
 | [Разметка текста](https://kiowdev.github.io/itd-api/text-markup/) | spans, автоматическая разметка и отображение |
-| [Realtime](https://kiowdev.github.io/itd-api/realtime/) | события, SSE, polling и переподключение |
+| [Realtime](https://kiowdev.github.io/itd-api/realtime/) | обновления, обработчики, фильтры, маршрутизация и переподключение |
 | [Интеграции](https://kiowdev.github.io/itd-api/integrations/) | browser proxy и Turnstile |
 | [Плагины](https://kiowdev.github.io/itd-api/plugins/) | cache, crypto и создание плагина |
 | [Справочник API](https://kiowdev.github.io/itd-api/reference/) | ресурсы, методы, типы, ошибки и билдеры |
@@ -97,7 +97,7 @@ for (const post of page.items) {
 | Node.js 18+ | полная, включая файловую точку входа `itd-api/node` |
 | Bun, Deno | полная |
 | Браузер | кроме файловой системы; хранилище сессии — `itd-api/web`; для основного API нужен server-side proxy из-за CORS |
-| React Native | полная; realtime переключается на polling без потокового чтения |
+| React Native | полная; поток переключается на периодический опрос без потокового чтения |
 
 TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 26, а корректность
 публикации — через `publint` и `@arethetypeswrong/cli`.
