@@ -1,0 +1,21 @@
+export { hydrateClient } from './hydrate.js';
+export {
+  HydratableResource,
+  type HydratedActor,
+  type HydratedAttachment,
+  type HydratedAttachmentActions,
+  type HydratedAuthor,
+  type HydratedComment,
+  type HydratedCommentActions,
+  type HydratedCommentReplyTo,
+  type HydratedPage,
+  type HydratedPaginator,
+  type HydratedPost,
+  type HydratedPostActions,
+  type HydratedProfile,
+  type HydratedResource,
+  type HydratedUserActions,
+  type HydratedUserSummary,
+  type HydrateFlavor,
+  type HydrateValue,
+} from './types.js';

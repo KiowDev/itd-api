@@ -1,0 +1,52 @@
+{
+  "name": "@itd-api/hydrate",
+  "version": "0.0.1",
+  "description": "Методы действий на моделях постов, комментариев и пользователей itd-api",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KiowDev/itd-api.git",
+    "directory": "packages/hydrate"
+  },
+  "homepage": "https://kiowdev.github.io/itd-api/packages/hydrate",
+  "bugs": {
+    "url": "https://github.com/KiowDev/itd-api/issues"
+  },
+  "author": "Kiow",
+  "keywords": ["itd", "итд", "itd-api", "hydrate", "models"],
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": { "node": ">=18" },
+  "files": ["dist", "LICENSE", "README.md"],
+  "publishConfig": { "access": "public" },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:pack": "publint && attw --pack .",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
+  },
+  "peerDependencies": { "itd-api": "^0.3.0" },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@itd-api/cache": "0.0.2",
+    "@itd-api/crypto": "0.0.1",
+    "@itd-api/testing": "0.0.1",
+    "@types/node": "^26.1.1",
+    "publint": "^0.3.22",
+    "tsdown": "^0.22.14",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

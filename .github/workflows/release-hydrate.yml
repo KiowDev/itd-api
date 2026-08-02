@@ -1,0 +1,22 @@
+name: Публикация @itd-api/hydrate в npm
+
+# Запускается при пуше тега вида hydrate-v1.2.3.
+# Порядок выпуска:
+#   npm version patch --workspace @itd-api/hydrate --no-git-tag-version
+#   git commit -am "@itd-api/hydrate 0.0.2"
+#   git tag hydrate-v0.0.2
+#   git push --follow-tags
+on:
+  push:
+    tags: ['hydrate-v*']
+
+jobs:
+  release:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release-workspace.yml
+    with:
+      package_name: '@itd-api/hydrate'
+      package_path: packages/hydrate
+      tag_prefix: hydrate-v

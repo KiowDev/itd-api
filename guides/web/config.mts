@@ -2,6 +2,7 @@ import { defineConfig } from 'vitepress';
 import cacheSidebar from './api/generated/cache/typedoc-sidebar.json';
 import coreSidebar from './api/generated/core/typedoc-sidebar.json';
 import cryptoSidebar from './api/generated/crypto/typedoc-sidebar.json';
+import hydrateSidebar from './api/generated/hydrate/typedoc-sidebar.json';
 import nodeSidebar from './api/generated/node/typedoc-sidebar.json';
 import proxySidebar from './api/generated/proxy/typedoc-sidebar.json';
 import testingSidebar from './api/generated/testing/typedoc-sidebar.json';
@@ -88,6 +89,7 @@ const packagesSidebar = [
     items: [
       { text: 'Обзор', link: '/packages/' },
       { text: '@itd-api/testing', link: '/packages/testing' },
+      { text: '@itd-api/hydrate', link: '/packages/hydrate' },
       { text: '@itd-api/cache', link: '/packages/cache' },
       { text: '@itd-api/crypto', link: '/packages/crypto' },
       { text: '@itd-api/proxy', link: '/packages/proxy' },
@@ -101,6 +103,7 @@ const packagesSidebar = [
       { text: 'itd-api/node', link: '/api/generated/node/' },
       { text: 'itd-api/web', link: '/api/generated/web/' },
       { text: '@itd-api/testing', link: '/api/generated/testing/' },
+      { text: '@itd-api/hydrate', link: '/api/generated/hydrate/' },
       { text: '@itd-api/cache', link: '/api/generated/cache/' },
       { text: '@itd-api/crypto', link: '/api/generated/crypto/' },
       { text: '@itd-api/proxy', link: '/api/generated/proxy/' },
@@ -191,6 +194,11 @@ export default defineConfig({
         '@itd-api/testing',
         '/api/generated/testing/',
         testingSidebar,
+      ),
+      '/api/generated/hydrate/': apiSidebar(
+        '@itd-api/hydrate',
+        '/api/generated/hydrate/',
+        hydrateSidebar,
       ),
       '/api/generated/cache/': apiSidebar(
         '@itd-api/cache',

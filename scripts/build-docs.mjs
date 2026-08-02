@@ -42,6 +42,12 @@ const builds = [
     out: 'guides/web/api/generated/testing',
   },
   {
+    name: '@itd-api/hydrate',
+    entryPoint: 'packages/hydrate/src/index.ts',
+    tsconfig: 'packages/hydrate/tsconfig.json',
+    out: 'guides/web/api/generated/hydrate',
+  },
+  {
     name: '@itd-api/cache',
     entryPoint: 'packages/cache/src/index.ts',
     tsconfig: 'packages/cache/tsconfig.json',
