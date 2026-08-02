@@ -1,19 +1,16 @@
+import { boundedFileStream, isBoundedFileStream } from '../core/attachments/bounded-stream.js';
 import {
-  boundedFileStream,
-  downloadFile,
   type FileContent,
   type FileContext,
   type FileInput,
   type FileStreamContent,
   FileTransferMode,
-  isBoundedFileStream,
   type LazyFile,
-  normalizeMimeType,
-  openUrlFile,
-  resolveFileStreamOptions,
   type StreamFile,
   type UrlFile,
-} from '../core/attachments.js';
+} from '../core/attachments/contracts.js';
+import { resolveFileStreamOptions } from '../core/attachments/options.js';
+import { downloadFile, normalizeMimeType, openUrlFile } from '../core/attachments/url-source.js';
 import { ItdConfigError, ItdError, ItdFileError, ItdFileErrorReason } from '../core/errors.js';
 import type { HttpClient } from '../core/http.js';
 import { assertAllowedMime, mimeFromFilename } from '../core/mime.js';

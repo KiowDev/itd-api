@@ -19,14 +19,14 @@
  * @packageDocumentation
  */
 
+import { boundedFileStream } from './core/attachments/bounded-stream.js';
 import {
-  boundedFileStream,
   type FileStreamOptions,
   FileTransferMode,
   type LazyFile,
-  resolveFileStreamOptions,
   type StreamFile,
-} from './core/attachments.js';
+} from './core/attachments/contracts.js';
+import { resolveFileStreamOptions } from './core/attachments/options.js';
 import { ItdConfigError, ItdFileError, ItdFileErrorReason } from './core/errors.js';
 import { createRecordMultiStorage, type MultiTokenStorage } from './core/multi-storage.js';
 import { copySession, type ItdSession, type TokenStorage } from './core/storage.js';

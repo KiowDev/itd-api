@@ -1,4 +1,4 @@
-import type { FileInput } from './core/attachments.js';
+import type { FileInput } from './core/attachments/contracts.js';
 import { type AuthEvents, AuthManager } from './core/auth.js';
 import { BUILT_IN_SERVICES, type ResolvedConfig, resolveConfig } from './core/config.js';
 import { CookieJar } from './core/cookies.js';

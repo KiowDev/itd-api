@@ -1,4 +1,4 @@
-import type { FileInput } from '../core/attachments.js';
+import type { FileInput } from '../core/attachments/contracts.js';
 import { ItdConfigError } from '../core/errors.js';
 import type { Span, UserId } from '../models/common.js';
 import { type ParseMarkupOptions, parseHtml, parseMarkdown } from '../spans/parse.js';

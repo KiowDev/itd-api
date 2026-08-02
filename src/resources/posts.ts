@@ -5,7 +5,7 @@ import {
   resolvePost,
   resolvePostUpdate,
 } from '../builders/post.js';
-import type { FileInput } from '../core/attachments.js';
+import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/http.js';
 import {
   type Page,

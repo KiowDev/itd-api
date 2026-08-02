@@ -52,13 +52,12 @@ export {
   type FileStreamOptions,
   FileTransferMode,
   type FromStreamOptions,
-  fromStream,
-  fromUrl,
   type LazyFile,
   type StreamFile,
   type UrlFile,
   type UrlFileOptions,
-} from './core/attachments.js';
+} from './core/attachments/contracts.js';
+export { fromStream, fromUrl } from './core/attachments/factories.js';
 export {
   AUTH_PATHS,
   type AuthEvents,
