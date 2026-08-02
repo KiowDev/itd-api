@@ -10,7 +10,7 @@ import {
   ItdTimeoutError,
 } from './errors.js';
 import type { PipelineRequest, PreparedRequestBody } from './pipeline.js';
-import { dispatchRequestHook } from './plugins.js';
+import { dispatchRequestHook } from './plugins/hooks.js';
 import { redactBody, redactHeaders } from './redact.js';
 import { isBlob } from './runtime.js';
 import { unwrapData } from './unwrap.js';

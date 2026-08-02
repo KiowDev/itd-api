@@ -1,5 +1,5 @@
 import type { PipelineRequest, RequestHandler } from './pipeline.js';
-import type { PluginRegistry } from './plugins.js';
+import type { PluginRegistry } from './plugins/registry.js';
 
 /** Что нужно фасаду для работы. */
 export interface HttpClientDeps {

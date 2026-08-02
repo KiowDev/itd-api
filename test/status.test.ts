@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ItdClient } from '../src/client.js';
 import { DEFAULT_STATUS_BASE_URL } from '../src/core/config.js';
-import { utcStampToIso } from '../src/core/time.js';
-import { statusDays, toDate } from '../src/types/models.js';
+import { toDate, utcStampToIso } from '../src/core/time.js';
+import { statusDays } from '../src/models/status-helpers.js';
 import { createMockFetch, json } from './helpers/mock-fetch.js';
 
 /** Урезанный ответ `статус.итд.com` — с пропусками в истории, как отдаёт сервер. */

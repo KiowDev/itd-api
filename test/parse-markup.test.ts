@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { post } from '../src/builders/post.js';
+import type { Span } from '../src/models/common.js';
 import { parseHtml, parseMarkdown } from '../src/spans/parse.js';
 import { renderSpans, SpanRenderFormat } from '../src/spans/render.js';
 import { SpanType } from '../src/types/enums.js';
-import type { Span } from '../src/types/models.js';
 
 describe('parseMarkdown', () => {
   it('считает UTF-16 offsets и сохраняет вложенные стили', () => {

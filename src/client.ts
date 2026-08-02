@@ -14,7 +14,8 @@ import {
   type RequestMiddleware,
 } from './core/middleware.js';
 import type { PipelineRequest, RequestHandler } from './core/pipeline.js';
-import { type ItdPlugin, PluginRegistry } from './core/plugins.js';
+import type { ItdPlugin } from './core/plugins/contracts.js';
+import { PluginRegistry } from './core/plugins/registry.js';
 import { RequestQueuePool } from './core/rate-limit.js';
 import { type ServiceDefinition, ServiceRegistry } from './core/services.js';
 import type { ItdSession } from './core/storage.js';

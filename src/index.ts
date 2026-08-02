@@ -133,13 +133,13 @@ export {
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
 // Плагины работают на уровне транспорта: обёртка вокруг запроса видит и тело запроса,
-// и разобранный ответ. Подробности — в core/plugins.ts.
+// и разобранный ответ. Публичные контракты отделены от registry и порядка установки.
 export type {
   ItdPlugin,
   PluginContext,
   PluginTeardown,
   Transformer,
-} from './core/plugins.js';
+} from './core/plugins/contracts.js';
 export { DetectedRuntime, RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export { type ServiceDefinition, ServiceRegistry } from './core/services.js';

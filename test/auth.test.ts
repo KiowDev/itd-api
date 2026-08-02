@@ -11,7 +11,7 @@ import {
   createRetryMiddleware,
 } from '../src/core/middleware.js';
 import type { RequestHandler } from '../src/core/pipeline.js';
-import { PluginRegistry } from '../src/core/plugins.js';
+import { PluginRegistry } from '../src/core/plugins/registry.js';
 import { type ItdSession, MemoryTokenStorage } from '../src/core/storage.js';
 import { Transport } from '../src/core/transport.js';
 import type { ItdClientOptions, RetryOptions } from '../src/types/options.js';

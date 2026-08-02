@@ -7,7 +7,7 @@ import {
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
 } from '../src/core/multi-storage.js';
-import type { ItdPlugin } from '../src/core/plugins.js';
+import type { ItdPlugin } from '../src/core/plugins/contracts.js';
 import type { ItdSession } from '../src/core/storage.js';
 import { makeJwt } from './helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';

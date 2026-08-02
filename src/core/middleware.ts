@@ -8,7 +8,8 @@ import {
   type RequestMiddleware,
   withLayerHeaders,
 } from './pipeline.js';
-import { dispatchRequestHook, type PluginRegistry } from './plugins.js';
+import { dispatchRequestHook } from './plugins/hooks.js';
+import type { PluginRegistry } from './plugins/registry.js';
 import { createRetryScheduler, type RetryScheduler } from './retry.js';
 import type { ServiceRegistry } from './services.js';
 import { normalizeBaseUrl } from './url.js';

@@ -10,7 +10,8 @@ import {
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
 } from './core/multi-storage.js';
-import { assertPluginRemovable, type ItdPlugin, orderPluginDefinitions } from './core/plugins.js';
+import type { ItdPlugin } from './core/plugins/contracts.js';
+import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
 import { RequestQueuePool } from './core/rate-limit.js';
 import type { TokenStorage } from './core/storage.js';
 import type { ItdClientOptions, Logger } from './types/options.js';

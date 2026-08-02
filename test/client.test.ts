@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { post } from '../src/builders/post.js';
 import { createClient, ItdClient } from '../src/client.js';
-import type { FileInput } from '../src/core/attachments.js';
 import { ItdConfigError, ItdNotFoundError } from '../src/core/errors.js';
+import type { FileInput } from '../src/index.js';
 import type { ItdClientOptions } from '../src/types/options.js';
 import { makeJwt } from './helpers/jwt.js';
 import { createMockFetch, json, type MockHandler, noContent } from './helpers/mock-fetch.js';
