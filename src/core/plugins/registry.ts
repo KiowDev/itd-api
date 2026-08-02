@@ -5,6 +5,7 @@ import {
   createRequestHooks,
   type HookContext,
   type HookName,
+  hasRequestHook,
   requestHookScope,
   withRequestHookScope,
 } from './hooks.js';
@@ -200,8 +201,11 @@ export class PluginRegistry {
    * со следующего логического запроса без пересоздания транспорта.
    */
   hooks(base: ClientHooks): ClientHooks {
-    return createRequestHooks((field, context, request) =>
-      this.#runHook(field, context, request, base),
+    return createRequestHooks(
+      (field, context, request) => this.#runHook(field, context, request, base),
+      (field, request) =>
+        hasRequestHook(base, field, request) ||
+        requestHookScope(request).some((hooks) => hasRequestHook(hooks, field, request)),
     );
   }
 

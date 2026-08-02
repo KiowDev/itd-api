@@ -4,6 +4,7 @@ import { CookieJar } from '../src/core/cookies.js';
 import {
   ItdAbortError,
   ItdApiError,
+  ItdConfigError,
   ItdNetworkError,
   ItdNotFoundError,
   ItdTimeoutError,
@@ -314,6 +315,28 @@ describe('Transport: ошибки', () => {
     expect(mock.callCount).toBe(1);
   });
 
+  it('уже отменённый signal побеждает готовый ответ пользовательского fetch', async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 })) as typeof fetch;
+    const config = resolveConfig({
+      baseUrl: 'https://itd.test',
+      fetch: fetchImpl,
+      timeout: 0,
+      retry: false,
+      rateLimit: false,
+    });
+    const transport = new Transport(config, {
+      cookies: undefined,
+      getDeviceId: undefined,
+      onRateLimit: undefined,
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      transport.send({ method: 'GET', path: '/api/posts', signal: controller.signal }),
+    ).rejects.toThrow(ItdAbortError);
+  });
+
   it('отмена с пользовательским reason тоже становится ItdAbortError', async () => {
     // Настоящий fetch реджектит именно значением reason, а не AbortError.
     const reason = new Error('остановлено пользователем');
@@ -415,6 +438,16 @@ describe('Transport: хуки и логгер', () => {
     expect(onResponse).toHaveBeenCalledWith(expect.objectContaining({ status: 200 }));
   });
 
+  it('не клонирует ответ без onResponse', async () => {
+    const response = json({ data: { ok: true } });
+    const clone = vi.spyOn(response, 'clone');
+    const { transport } = makeTransport([response]);
+
+    await transport.send({ method: 'GET', path: '/api/posts' });
+
+    expect(clone).not.toHaveBeenCalled();
+  });
+
   it('onRequest может дописать заголовок', async () => {
     const { transport, mock } = makeTransport([json({})], {
       hooks: { onRequest: (context) => void context.headers.set('X-Trace', 'abc-123') },
@@ -425,12 +458,29 @@ describe('Transport: хуки и логгер', () => {
     expect(mock.calls[0]?.headers.get('x-trace')).toBe('abc-123');
   });
 
-  it('объясняет, почему кириллица в заголовке невозможна', async () => {
+  it('сохраняет причину некорректного значения заголовка', async () => {
     const { transport } = makeTransport([json({})], { headers: { 'X-App': 'мой бот' } });
 
-    await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
-      /latin1|кириллиц/,
-    );
+    const error = await transport
+      .send({ method: 'GET', path: '/api/posts' })
+      .catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ItdConfigError);
+    expect(error).toHaveProperty('message', expect.stringContaining('X-App'));
+    expect((error as ItdConfigError).cause).toBeInstanceOf(Error);
+  });
+
+  it('не выдаёт ошибку значения для некорректного имени заголовка', async () => {
+    const { transport } = makeTransport([json({})], { headers: { 'Bad Header': 'value' } });
+
+    const error = await transport
+      .send({ method: 'GET', path: '/api/posts' })
+      .catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ItdConfigError);
+    expect(error).toHaveProperty('message', expect.stringContaining('Bad Header'));
+    expect(error).not.toHaveProperty('message', expect.stringMatching(/latin1|кириллиц/));
+    expect((error as ItdConfigError).cause).toBeInstanceOf(Error);
   });
 
   it('вызывает onError при ошибке сервера', async () => {
@@ -474,6 +524,22 @@ describe('Transport: хуки и логгер', () => {
     await transport.send({ method: 'GET', path: '/api/posts' });
 
     expect(bodyUsedAtHook).toBe(false);
+  });
+
+  it('onResponse может прочитать свою копию тела, не ломая разбор ответа', async () => {
+    let hookPayload: unknown;
+    const { transport } = makeTransport([json({ data: { ok: true } })], {
+      hooks: {
+        onResponse: async ({ response }) => {
+          hookPayload = await response.json();
+        },
+      },
+    });
+
+    await expect(transport.send({ method: 'GET', path: '/api/posts' })).resolves.toEqual({
+      ok: true,
+    });
+    expect(hookPayload).toEqual({ data: { ok: true } });
   });
 
   it('маскирует токен в логе', async () => {

@@ -119,6 +119,7 @@ export interface ResponseContext extends RequestContext {
   status: number;
   /** Длительность запроса в мс. */
   duration: number;
+  /** Отдельная копия ответа: её тело можно прочитать, не мешая разбору внутри SDK. */
   response: Response;
 }
 

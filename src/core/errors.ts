@@ -388,8 +388,8 @@ export class ItdAbortError extends ItdError {
  * с одним вариантом ответа.
  */
 export class ItdConfigError extends ItdError {
-  constructor(message: string) {
-    super(ItdErrorKind.Config, message);
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(ItdErrorKind.Config, message, options);
     this.name = 'ItdConfigError';
   }
 }

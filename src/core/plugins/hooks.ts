@@ -7,18 +7,31 @@ export type HookDispatcher = <K extends HookName>(
   context: HookContext<K>,
   request: RawRequestOptions,
 ) => Promise<void>;
+type HookTester = (field: HookName, request: RawRequestOptions) => boolean;
 
 const REQUEST_HOOK_DISPATCHERS = new WeakMap<ClientHooks, HookDispatcher>();
+const REQUEST_HOOK_TESTERS = new WeakMap<ClientHooks, HookTester>();
 const PLUGIN_HOOK_SCOPE: unique symbol = Symbol('itd-api.plugin-hooks');
 type ScopedRequest = RawRequestOptions & {
   [PLUGIN_HOOK_SCOPE]?: readonly ClientHooks[];
 };
 
 /** Создаёт динамический набор hooks, связанный с диспетчером registry. @internal */
-export function createRequestHooks(dispatcher: HookDispatcher): ClientHooks {
+export function createRequestHooks(dispatcher: HookDispatcher, tester: HookTester): ClientHooks {
   const hooks: ClientHooks = {};
   REQUEST_HOOK_DISPATCHERS.set(hooks, dispatcher);
+  REQUEST_HOOK_TESTERS.set(hooks, tester);
   return hooks;
+}
+
+/** Проверяет наличие публичного или plugin-hook, не создавая дорогой контекст. @internal */
+export function hasRequestHook(
+  hooks: ClientHooks,
+  field: HookName,
+  request: RawRequestOptions,
+): boolean {
+  const tester = REQUEST_HOOK_TESTERS.get(hooks);
+  return tester ? tester(field, request) : hooks[field] !== undefined;
 }
 
 /** Привязывает к запросу неизменяемый снимок plugin hooks. @internal */

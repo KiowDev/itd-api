@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { post } from '../src/builders/post.js';
 import { createClient, ItdClient } from '../src/client.js';
-import { ItdConfigError, ItdNotFoundError } from '../src/core/errors.js';
+import { ItdAbortError, ItdConfigError, ItdNotFoundError } from '../src/core/errors.js';
 import type { FileInput } from '../src/index.js';
 import type { ItdClientOptions } from '../src/types/options.js';
 import { makeJwt } from './helpers/jwt.js';
@@ -632,10 +632,10 @@ describe('общее поведение клиента', () => {
       return feedPage(['1'], '2');
     });
 
-    const collected = await itd.posts.iterate({ signal: controller.signal }).collect();
+    const collecting = itd.posts.iterate({ signal: controller.signal }).collect();
 
+    await expect(collecting).rejects.toThrow(ItdAbortError);
     expect(mock.callCount).toBe(1);
-    expect(collected).toEqual([]);
   });
 
   it('читает сведения об ограничении частоты из ошибки', async () => {

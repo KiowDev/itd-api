@@ -10,7 +10,7 @@ import {
   ItdTimeoutError,
 } from './errors.js';
 import type { PipelineRequest, PreparedRequestBody } from './pipeline.js';
-import { dispatchRequestHook } from './plugins/hooks.js';
+import { dispatchRequestHook, hasRequestHook } from './plugins/hooks.js';
 import { redactBody, redactHeaders } from './redact.js';
 import { isBlob } from './runtime.js';
 import { unwrapData } from './unwrap.js';
@@ -62,20 +62,14 @@ export interface TransportDeps {
     | undefined;
 }
 
-/**
- * Ставит заголовок, превращая ограничение HTTP в понятное сообщение.
- *
- * Значения заголовков ограничены latin1, поэтому кириллица в них невозможна. Среда
- * сообщает об этом невнятным `Cannot convert argument to a ByteString`, что при русских
- * названиях приложений сбивает с толку.
- */
+/** Ставит заголовок, превращая ошибку среды в понятную ошибку конфигурации. */
 function setHeader(headers: Headers, name: string, value: string): void {
   try {
     headers.set(name, value);
-  } catch {
+  } catch (cause) {
     throw new ItdConfigError(
-      `Значение заголовка ${name} содержит символы вне latin1. HTTP-заголовки не могут ` +
-        'содержать кириллицу — закодируйте значение, например через encodeURIComponent.',
+      `Некорректный HTTP-заголовок ${JSON.stringify(name)}: проверьте его имя и значение.`,
+      { cause },
     );
   }
 }
@@ -131,13 +125,10 @@ function createAbortError(): Error {
 /** Прерывает ожидание промиса при срабатывании сигнала. */
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) {
-    // Готовый промис может завершиться до отложенной ошибки отмены.
-    return Promise.race([
-      promise,
-      new Promise<never>((_resolve, reject) => {
-        setTimeout(() => reject(createAbortError()), 0);
-      }),
-    ]);
+    // Результат больше не нужен, но позднее отклонение исходного промиса не должно стать
+    // необработанным. Ошибку отмены возвращаем сразу: готовый промис не может её опередить.
+    void promise.catch(() => {});
+    return Promise.reject(createAbortError());
   }
 
   let onAbort: (() => void) | undefined;
@@ -302,8 +293,9 @@ export class Transport {
 
       if (this.#config.useCookieJar) this.#deps.cookies?.setFromResponse(url, response);
 
-      // Хук получает непрочитанный ответ.
-      if (response.ok) {
+      // Хук получает собственную ветвь тела: чтение ответа внутри хука не должно лишать
+      // транспорт возможности разобрать основной ответ.
+      if (response.ok && hasRequestHook(this.#config.hooks, 'onResponse', request)) {
         await dispatchRequestHook(
           this.#config.hooks,
           'onResponse',
@@ -311,7 +303,7 @@ export class Transport {
             ...context,
             status: response.status,
             duration: this.#config.clock.now() - startedAt,
-            response,
+            response: response.clone(),
           },
           request,
         );
