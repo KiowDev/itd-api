@@ -11,6 +11,7 @@ import {
   AttachmentType,
   ItdClient,
   type ItdPlugin,
+  NotificationType,
   Paginator,
   type Post,
   type PublicProfile,
@@ -145,6 +146,38 @@ describe('hydrateClient', () => {
     await ownPost.remove();
     const restoredPost = await ownPost.restore();
     expect(restoredPost.id).toBe(ownPost.id);
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('гидратирует связанные сущности уведомлений из REST API', async () => {
+    const server = createMockServer({
+      seed: {
+        ...seed,
+        notifications: [
+          {
+            id: 'notification-1',
+            userId: 'user-bob',
+            type: NotificationType.PostComment,
+            actorIds: ['user-alice'],
+            entityId: 'comment-1',
+            parentEntityId: 'post-1',
+          },
+        ],
+      },
+    });
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
+
+    const page = await itd.notifications.list();
+    const notification = page.items[0];
+    const post = await notification?.getPost();
+    const reply = await notification?.comment?.reply((builder) =>
+      builder.content('Ответ из REST-уведомления').replyTo('user-alice'),
+    );
+
+    expect(post?.id).toBe('post-1');
+    expect(typeof post?.like).toBe('function');
+    expect(reply?.replyTo?.id).toBe('user-alice');
+    expect(typeof notification?.actors[0]?.follow).toBe('function');
     server.assertNoUnsupportedRequests();
   });
 

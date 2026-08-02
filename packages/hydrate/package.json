@@ -1,7 +1,7 @@
 {
   "name": "@itd-api/hydrate",
   "version": "0.0.1",
-  "description": "Методы действий на моделях постов, комментариев и пользователей itd-api",
+  "description": "Методы действий на моделях и уведомлениях itd-api",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KiowDev/itd-api.git",

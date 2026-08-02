@@ -64,6 +64,15 @@ const wall = await author.posts({ limit: 20 });
 Методы `isImage()`, `isVideo()` и `isAudio()` проверяют тип вложения без разбора MIME-типа и
 сужают поле `type` в TypeScript.
 
+### Уведомление
+
+`getPost()` загружает пост, к которому относится уведомление. Для уведомления о комментарии
+доступно поле `comment` со ссылкой на комментарий и действиями `reply()`, `like()`, `unlike()`,
+`update()`, `remove()`, `restore()` и `getReplies()`.
+
+Аргументы действий совпадают с аргументами ресурсов. Например, `reply()` принимает строку,
+функцию настройки построителя комментария и параметры подключённых плагинов.
+
 ## Страницы и перебор
 
 Гидратация охватывает вложенные посты, комментарии, авторов и вложения, а также все способы
@@ -89,6 +98,71 @@ await posts[0]?.comment('Первый комментарий');
 
 Один объект `Paginator` остаётся одноразовым. Для повторного прохода создайте новый через метод
 ресурса.
+
+## Realtime
+
+Уведомления и вложенные модели гидратируются до вызова промежуточных и обычных обработчиков:
+
+```ts
+import { NotificationType } from 'itd-api';
+
+const stream = itd.realtime();
+
+stream.onNotification(
+  [
+    NotificationType.Follow,
+    NotificationType.PostComment,
+    NotificationType.WallPost,
+  ],
+  async ({ update }) => {
+    const notification = update.data.notification;
+
+    switch (notification.type) {
+      case NotificationType.Follow:
+        await notification.actors[0]?.follow();
+        break;
+      case NotificationType.PostComment:
+        await notification.comment?.reply((comment) =>
+          comment.content('Спасибо за комментарий'),
+        );
+        break;
+      case NotificationType.WallPost:
+        await (await notification.getPost())?.like();
+        break;
+    }
+  },
+);
+
+await stream.connect();
+```
+
+`getPost()` возвращает `undefined`, если вид уведомления не связан с постом или сервер не
+передал его идентификатор. Поле `comment` присутствует у уведомлений о комментариях, ответах,
+упоминаниях и реакциях на комментарии.
+
+Гидратированный контекст доступен в `sequentialize`, `use()`, `onUpdate()`,
+`onNotification()` и событиях `notification`, `middlewareError` и `handlerError`. Событие
+`message` и поле `context.raw` содержат исходные данные транспорта.
+
+Для маршрутизатора укажите тип гидратированного контекста:
+
+```ts
+import { RealtimeRouter, RealtimeUpdateType } from 'itd-api';
+import type { HydratedRealtimeContext } from '@itd-api/hydrate';
+
+const router = new RealtimeRouter(
+  (context: HydratedRealtimeContext) => context.update.type,
+);
+
+router.route(RealtimeUpdateType.Notification, async (context, next) => {
+  if (context.update.type === RealtimeUpdateType.Notification) {
+    await context.update.data.notification.actors[0]?.follow();
+  }
+  await next();
+});
+
+stream.use(router.middleware());
+```
 
 ## Плагины и кэш
 

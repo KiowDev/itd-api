@@ -6,13 +6,31 @@ import type {
   CommentReplyTo,
   CommentsResource,
   ItdClient,
+  ItdRealtime,
+  Listener,
   MyProfile,
+  Notification,
+  NotificationEvent,
+  NotificationType,
   Page,
   Paginator,
   Post,
   PostsResource,
   Profile,
   PublicProfile,
+  RealtimeContext,
+  RealtimeEvents,
+  RealtimeHandler,
+  RealtimeMiddleware,
+  RealtimeNext,
+  RealtimeNotificationContext,
+  RealtimeNotificationFilter,
+  RealtimeNotificationUpdate,
+  RealtimeOptions,
+  RealtimeSequentializer,
+  RealtimeUpdateOfType,
+  RealtimeUpdateType,
+  Unsubscribe,
   UserSummary,
   UsersResource,
 } from 'itd-api';
@@ -165,50 +183,71 @@ export interface HydratedAttachmentActions {
   isAudio(): this is this & { type: typeof import('itd-api').AttachmentType.Audio };
 }
 
+/** Действия над уведомлением. */
+export interface HydratedNotificationActions {
+  /** Загружает пост, к которому относится уведомление. */
+  getPost(...args: TailParameters<PostsResource['get']>): Promise<HydratedPost | undefined>;
+  /** Комментарий, к которому относится уведомление. */
+  readonly comment?: HydratedCommentReference;
+}
+
+/** Рекурсивно гидратирует поля модели и добавляет указанный набор действий. */
+export type HydratedModel<Model, Actions extends object = object> = Omit<
+  { [Key in keyof Model]: HydrateValue<Model[Key]> },
+  keyof Actions
+> &
+  Actions;
+
 /** Автор с методами работы с его профилем. */
-export type HydratedAuthor<T extends Author = Author> = T & HydratedUserActions;
+export type HydratedAuthor<T extends Author = Author> = HydratedModel<T, HydratedUserActions>;
 
 /** Пользователь из списка с методами работы с его профилем. */
-export type HydratedUserSummary<T extends UserSummary = UserSummary> = T & HydratedUserActions;
+export type HydratedUserSummary<T extends UserSummary = UserSummary> = HydratedModel<
+  T,
+  HydratedUserActions
+>;
 
 /** Участник уведомления с методами работы с его профилем. */
-export type HydratedActor<T extends Actor = Actor> = T & HydratedUserActions;
+export type HydratedActor<T extends Actor = Actor> = HydratedModel<T, HydratedUserActions>;
 
 /** Адресат ответа с методами работы с его профилем. */
-export type HydratedCommentReplyTo<T extends CommentReplyTo = CommentReplyTo> = T &
-  HydratedUserActions;
+export type HydratedCommentReplyTo<T extends CommentReplyTo = CommentReplyTo> = HydratedModel<
+  T,
+  HydratedUserActions
+>;
 
 /** Профиль с методами действий над пользователем. */
-export type HydratedProfile<T extends Profile = Profile> = T & HydratedUserActions;
+export type HydratedProfile<T extends Profile = Profile> = HydratedModel<T, HydratedUserActions>;
+
+/** Объект со ссылкой на пользователя и действиями над ним. */
+export type HydratedUserReference<T extends object = { username: string }> = HydratedModel<
+  T,
+  HydratedUserActions
+>;
 
 /** Вложение с проверками его типа. */
-export type HydratedAttachment<T extends Attachment = Attachment> = T & HydratedAttachmentActions;
+export type HydratedAttachment<T extends Attachment = Attachment> = HydratedModel<
+  T,
+  HydratedAttachmentActions
+>;
 
 /** Комментарий с действиями и гидратированными вложенными моделями. */
-export type HydratedComment<T extends Comment = Comment> = Omit<
-  T,
-  'author' | 'attachments' | 'replies' | 'replyTo'
-> & {
-  author: HydratedAuthor<T['author']>;
-  attachments?: HydratedAttachment[];
-  replies?: HydratedComment[];
-  replyTo?: HydratedCommentReplyTo;
-} & HydratedCommentActions;
+export type HydratedComment<T extends Comment = Comment> = HydratedModel<T, HydratedCommentActions>;
 
 /** Пост с действиями и гидратированными вложенными моделями. */
-export type HydratedPost<T extends Post = Post> = Omit<
+export type HydratedPost<T extends Post = Post> = HydratedModel<T, HydratedPostActions>;
+
+/** Ссылка на комментарий из уведомления. */
+export type HydratedCommentReference = Readonly<{ id: string }> & HydratedCommentActions;
+
+/** Уведомление с действиями над связанными сущностями. */
+export type HydratedNotification<T extends Notification = Notification> = HydratedModel<
   T,
-  'author' | 'attachments' | 'wallRecipient' | 'originalPost' | 'comments'
-> & {
-  author: HydratedAuthor<T['author']>;
-  attachments: HydratedAttachment[];
-  wallRecipient?: HydratedAuthor | null;
-  originalPost?: HydratedPost | null;
-  comments?: HydratedComment[];
-} & HydratedPostActions;
+  HydratedNotificationActions
+>;
 
 /** Страница, элементы которой получили методы гидратации. */
-export type HydratedPage<T> = Omit<Page<T>, 'items'> & { items: Array<HydrateValue<T>> };
+export type HydratedPage<T> = HydratedModel<Page<T>>;
 
 /** Одноразовый перебор, возвращающий гидратированные элементы и страницы. */
 export type HydratedPaginator<T> = {
@@ -218,8 +257,16 @@ export type HydratedPaginator<T> = {
 };
 
 /** Преобразует тип результата клиента в его гидратированный вариант. */
-export type HydrateValue<T> =
-  T extends Promise<infer Value>
+export type HydrateValue<T> = T extends
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
+  ? T
+  : T extends Promise<infer Value>
     ? Promise<HydrateValue<Value>>
     : T extends Paginator<infer Item>
       ? HydratedPaginator<Item>
@@ -233,27 +280,121 @@ export type HydrateValue<T> =
               ? HydratedPost<T>
               : T extends Comment
                 ? HydratedComment<T>
-                : T extends MyProfile | PublicProfile
-                  ? HydratedProfile<T>
-                  : T extends Author
-                    ? HydratedAuthor<T>
-                    : T extends UserSummary
-                      ? HydratedUserSummary<T>
-                      : T extends Actor
-                        ? HydratedActor<T>
-                        : T extends CommentReplyTo
-                          ? HydratedCommentReplyTo<T>
-                          : T extends Attachment
-                            ? HydratedAttachment<T>
-                            : T extends Array<infer Item>
-                              ? Array<HydrateValue<Item>>
-                              : T extends ReadonlyArray<infer Item>
-                                ? ReadonlyArray<HydrateValue<Item>>
-                                : T extends (...args: never[]) => unknown
-                                  ? T
-                                  : T extends object
-                                    ? { [Key in keyof T]: HydrateValue<T[Key]> }
-                                    : T;
+                : T extends Notification
+                  ? HydratedNotification<T>
+                  : T extends MyProfile | PublicProfile
+                    ? HydratedProfile<T>
+                    : T extends Author
+                      ? HydratedAuthor<T>
+                      : T extends UserSummary
+                        ? HydratedUserSummary<T>
+                        : T extends Actor
+                          ? HydratedActor<T>
+                          : T extends CommentReplyTo
+                            ? HydratedCommentReplyTo<T>
+                            : T extends Attachment
+                              ? HydratedAttachment<T>
+                              : T extends { userId: string } | { username: string }
+                                ? HydratedUserReference<T>
+                                : T extends readonly unknown[]
+                                  ? { [Key in keyof T]: HydrateValue<T[Key]> }
+                                  : T extends (...args: never[]) => unknown
+                                    ? T
+                                    : T extends object
+                                      ? { [Key in keyof T]: HydrateValue<T[Key]> }
+                                      : T;
+
+/** Событие уведомления с гидратированной моделью. */
+export type HydratedNotificationEvent = HydratedModel<NotificationEvent>;
+
+/** Контекст realtime с гидратированным обновлением и потоком. */
+export type HydratedRealtimeContext<C extends RealtimeContext = RealtimeContext> = HydratedModel<
+  C,
+  {
+    readonly update: HydrateValue<C['update']>;
+    readonly stream: HydratedRealtime;
+    readonly raw: C['raw'];
+  }
+>;
+
+/** Контекст уведомления с типом, суженным селектором. */
+export type HydratedRealtimeNotificationContext<T extends NotificationType = NotificationType> =
+  HydratedRealtimeContext<RealtimeNotificationContext<T>>;
+
+/** Асинхронный обработчик гидратированного обновления. */
+export type HydratedRealtimeHandler<C extends RealtimeContext = RealtimeContext> = (
+  context: HydratedRealtimeContext<C>,
+) => ReturnType<RealtimeHandler<C>>;
+
+/** Промежуточный обработчик гидратированных обновлений. */
+export type HydratedRealtimeMiddleware<C extends RealtimeContext = RealtimeContext> = (
+  context: HydratedRealtimeContext<C>,
+  next: RealtimeNext,
+) => ReturnType<RealtimeMiddleware<C>>;
+
+/** Условия отбора гидратированных уведомлений. */
+export type HydratedRealtimeNotificationFilter<T extends NotificationType = NotificationType> =
+  Omit<RealtimeNotificationFilter<T>, 'predicate'> & {
+    predicate?: (context: HydratedRealtimeNotificationContext<T>) => boolean;
+  };
+
+/** Краткая или объектная форма фильтра гидратированных уведомлений. */
+export type HydratedRealtimeNotificationSelector<T extends NotificationType = NotificationType> =
+  | T
+  | readonly T[]
+  | HydratedRealtimeNotificationFilter<T>;
+
+/** Значение события гидратированного потока. */
+export type HydratedRealtimeEvent<K extends keyof RealtimeEvents> = K extends 'notification'
+  ? HydratedNotificationEvent
+  : K extends 'middlewareError' | 'handlerError'
+    ? RealtimeEvents[K] extends infer Event extends { context: RealtimeContext }
+      ? Omit<Event, 'context'> & { context: HydratedRealtimeContext<Event['context']> }
+      : never
+    : RealtimeEvents[K];
+
+/** Настройки realtime с гидратированным контекстом функции последовательности. */
+export type HydratedRealtimeOptions = Omit<RealtimeOptions, 'sequentialize'> & {
+  sequentialize?: (context: HydratedRealtimeContext) => ReturnType<RealtimeSequentializer>;
+};
+
+/** Поток, передающий гидратированные уведомления и контексты. */
+export type HydratedRealtime = {
+  on<K extends keyof RealtimeEvents>(
+    event: K,
+    listener: Listener<HydratedRealtimeEvent<K>>,
+  ): Unsubscribe;
+  once<K extends keyof RealtimeEvents>(
+    event: K,
+    listener: Listener<HydratedRealtimeEvent<K>>,
+  ): Unsubscribe;
+  use(middleware: HydratedRealtimeMiddleware): Unsubscribe;
+  onUpdate(handler: HydratedRealtimeHandler): Unsubscribe;
+  onUpdate<T extends RealtimeUpdateType>(
+    type: T,
+    handler: HydratedRealtimeHandler<RealtimeContext<RealtimeUpdateOfType<T>>>,
+  ): Unsubscribe;
+  onUpdate<C extends RealtimeContext>(
+    guard: (context: HydratedRealtimeContext) => context is HydratedRealtimeContext<C>,
+    handler: HydratedRealtimeHandler<C>,
+  ): Unsubscribe;
+  onUpdate(
+    predicate: (context: HydratedRealtimeContext) => boolean,
+    handler: HydratedRealtimeHandler,
+  ): Unsubscribe;
+  onNotification<T extends NotificationType>(
+    selector: HydratedRealtimeNotificationSelector<T>,
+    handler: HydratedRealtimeHandler<RealtimeContext<RealtimeNotificationUpdate<T>>>,
+  ): Unsubscribe;
+  onNotification<C extends RealtimeNotificationContext>(
+    guard: (context: HydratedRealtimeNotificationContext) => context is HydratedRealtimeContext<C>,
+    handler: HydratedRealtimeHandler<C>,
+  ): Unsubscribe;
+  onNotification(
+    predicate: (context: HydratedRealtimeNotificationContext) => boolean,
+    handler: HydratedRealtimeHandler<RealtimeNotificationContext>,
+  ): Unsubscribe;
+} & ItdRealtime;
 
 /** Ресурс клиента, методы которого возвращают гидратированные результаты. */
 export type HydratedResource<Resource> = {
@@ -272,7 +413,9 @@ export type HydratedResource<Resource> = {
  */
 export type HydrateFlavor<Client extends ItdClient = ItdClient> = Omit<
   Client,
-  HydratableResource
+  HydratableResource | keyof Pick<ItdClient, 'realtime'>
 > & {
   readonly [Key in Extract<keyof Client, HydratableResource>]: HydratedResource<Client[Key]>;
+} & {
+  realtime(options?: HydratedRealtimeOptions): HydratedRealtime;
 };

@@ -30,13 +30,15 @@ export type RealtimeSequentializer = (
 
 const REALTIME_MIDDLEWARE_SNAPSHOT = Symbol('itd-api.realtime.middlewareSnapshot');
 
-type SnapshottingRealtimeMiddleware = RealtimeMiddleware & {
-  [REALTIME_MIDDLEWARE_SNAPSHOT]?: () => RealtimeMiddleware;
+type SnapshottingRealtimeMiddleware<C extends RealtimeContext> = RealtimeMiddleware<C> & {
+  [REALTIME_MIDDLEWARE_SNAPSHOT]?: () => RealtimeMiddleware<C>;
 };
 
 /** @internal */
-export function captureRealtimeMiddleware(middleware: RealtimeMiddleware): RealtimeMiddleware {
-  const capture = (middleware as SnapshottingRealtimeMiddleware)[REALTIME_MIDDLEWARE_SNAPSHOT];
+export function captureRealtimeMiddleware<C extends RealtimeContext>(
+  middleware: RealtimeMiddleware<C>,
+): RealtimeMiddleware<C> {
+  const capture = (middleware as SnapshottingRealtimeMiddleware<C>)[REALTIME_MIDDLEWARE_SNAPSHOT];
   if (!capture) return middleware;
 
   const snapshot = capture();
@@ -47,10 +49,10 @@ export function captureRealtimeMiddleware(middleware: RealtimeMiddleware): Realt
 }
 
 /** @internal */
-export function withRealtimeMiddlewareSnapshot(
-  middleware: RealtimeMiddleware,
-  capture: () => RealtimeMiddleware,
-): RealtimeMiddleware {
+export function withRealtimeMiddlewareSnapshot<C extends RealtimeContext>(
+  middleware: RealtimeMiddleware<C>,
+  capture: () => RealtimeMiddleware<C>,
+): RealtimeMiddleware<C> {
   Object.defineProperty(middleware, REALTIME_MIDDLEWARE_SNAPSHOT, { value: capture });
   return middleware;
 }
@@ -79,9 +81,9 @@ export interface RealtimeDispatcherHooks {
 }
 
 /** Выполняет промежуточные обработчики по порядку и запрещает повторный вызов `next()`. */
-export async function runRealtimeMiddleware(
-  middleware: readonly RealtimeMiddleware[],
-  context: RealtimeContext,
+export async function runRealtimeMiddleware<C extends RealtimeContext>(
+  middleware: readonly RealtimeMiddleware<C>[],
+  context: C,
   terminal: RealtimeNext,
 ): Promise<void> {
   let lastIndex = -1;

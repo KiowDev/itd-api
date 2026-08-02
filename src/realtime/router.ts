@@ -9,12 +9,13 @@ import {
 import type { RealtimeContext } from './updates.js';
 
 /** Выбирает маршрут обновления. `undefined` и `null` означают отсутствие маршрута. */
-export type RealtimeRouteSelector<K extends PropertyKey> = (
-  context: RealtimeContext,
-) => K | null | undefined | Promise<K | null | undefined>;
+export type RealtimeRouteSelector<
+  K extends PropertyKey,
+  C extends RealtimeContext = RealtimeContext,
+> = (context: C) => K | null | undefined | Promise<K | null | undefined>;
 
-interface RouteRegistration {
-  readonly middleware: readonly RealtimeMiddleware[];
+interface RouteRegistration<C extends RealtimeContext> {
+  readonly middleware: readonly RealtimeMiddleware<C>[];
 }
 
 /**
@@ -34,12 +35,15 @@ interface RouteRegistration {
  * stream.use(router.middleware());
  * ```
  */
-export class RealtimeRouter<K extends PropertyKey = PropertyKey> {
-  readonly #selector: RealtimeRouteSelector<K>;
-  readonly #routes = new Map<K, RouteRegistration[]>();
-  readonly #fallback: RouteRegistration[] = [];
+export class RealtimeRouter<
+  K extends PropertyKey = PropertyKey,
+  C extends RealtimeContext = RealtimeContext,
+> {
+  readonly #selector: RealtimeRouteSelector<K, C>;
+  readonly #routes = new Map<K, RouteRegistration<C>[]>();
+  readonly #fallback: RouteRegistration<C>[] = [];
 
-  constructor(selector: RealtimeRouteSelector<K>) {
+  constructor(selector: RealtimeRouteSelector<K, C>) {
     if (typeof selector !== 'function') {
       throw new ItdConfigError('RealtimeRouter принимает функцию выбора маршрута');
     }
@@ -47,7 +51,7 @@ export class RealtimeRouter<K extends PropertyKey = PropertyKey> {
   }
 
   /** Добавляет промежуточные обработчики к маршруту и возвращает функцию их удаления. */
-  route(key: K, ...middleware: readonly RealtimeMiddleware[]): Unsubscribe {
+  route(key: K, ...middleware: readonly RealtimeMiddleware<C>[]): Unsubscribe {
     if (!isPropertyKey(key))
       throw new ItdConfigError('Ключ realtime route должен быть PropertyKey');
     const registration = this.#registration(middleware);
@@ -65,7 +69,7 @@ export class RealtimeRouter<K extends PropertyKey = PropertyKey> {
   }
 
   /** Добавляет промежуточные обработчики для обновлений без зарегистрированного маршрута. */
-  otherwise(...middleware: readonly RealtimeMiddleware[]): Unsubscribe {
+  otherwise(...middleware: readonly RealtimeMiddleware<C>[]): Unsubscribe {
     const registration = this.#registration(middleware);
     this.#fallback.push(registration);
 
@@ -76,14 +80,14 @@ export class RealtimeRouter<K extends PropertyKey = PropertyKey> {
   }
 
   /** Возвращает промежуточный обработчик для `stream.use()`. */
-  middleware(): RealtimeMiddleware {
-    const middleware: RealtimeMiddleware = (context, next) =>
+  middleware(): RealtimeMiddleware<C> {
+    const middleware: RealtimeMiddleware<C> = (context, next) =>
       this.#captureMiddleware()(context, next);
     return withRealtimeMiddlewareSnapshot(middleware, () => this.#captureMiddleware());
   }
 
-  #captureMiddleware(): RealtimeMiddleware {
-    const routes = new Map<K, readonly RealtimeMiddleware[]>();
+  #captureMiddleware(): RealtimeMiddleware<C> {
+    const routes = new Map<K, readonly RealtimeMiddleware<C>[]>();
     for (const [key, registrations] of this.#routes) {
       routes.set(
         key,
@@ -113,7 +117,7 @@ export class RealtimeRouter<K extends PropertyKey = PropertyKey> {
     };
   }
 
-  #registration(middleware: readonly RealtimeMiddleware[]): RouteRegistration {
+  #registration(middleware: readonly RealtimeMiddleware<C>[]): RouteRegistration<C> {
     if (middleware.length === 0) {
       throw new ItdConfigError('Маршрут должен содержать хотя бы один обработчик');
     }
