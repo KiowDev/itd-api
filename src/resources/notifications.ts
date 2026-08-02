@@ -1,8 +1,8 @@
 import { type Page, PaginationMode, type Paginator, readOffsetPage } from '../core/pagination.js';
 import { pickBoolean, pickNumber } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
+import type { Notification, NotificationSettings } from '../models/notifications.js';
 import { normalizeNotification } from '../notifications/normalize.js';
-import type { Notification, NotificationSettings } from '../types/models.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 

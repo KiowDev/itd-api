@@ -1,5 +1,6 @@
 import { pickArray } from '../core/unwrap.js';
-import type { Hashtag, UserSummary } from '../types/models.js';
+import type { Hashtag } from '../models/content.js';
+import type { UserSummary } from '../models/users.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 

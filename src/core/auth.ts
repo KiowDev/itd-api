@@ -1,4 +1,4 @@
-import type { UserId } from '../types/models.js';
+import type { UserId } from '../models/common.js';
 import type { AuthInput, CredentialsAuth } from '../types/options.js';
 import type { AuthConfig } from './config.js';
 import {

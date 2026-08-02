@@ -1,6 +1,6 @@
 import type { FileInput } from '../core/attachments.js';
 import { ItdConfigError } from '../core/errors.js';
-import type { UserId } from '../types/models.js';
+import type { UserId } from '../models/common.js';
 import type { CreateCommentInput } from '../types/params.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
 

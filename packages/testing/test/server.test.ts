@@ -32,6 +32,18 @@ function makeServer() {
 }
 
 describe('createMockServer', () => {
+  it('сохраняет mock-домен по умолчанию и нормализует пользовательский baseUrl', async () => {
+    const defaultServer = createMockServer();
+    const defaultClient = new ItdClient(defaultServer.clientOptions({ as: 'test-user-1' }));
+    await defaultClient.users.me();
+    expect(defaultServer.requests[0]?.url).toBe('https://mock.itd.test/api/users/me');
+
+    const customServer = createMockServer({ baseUrl: 'https://custom.test/' });
+    const customClient = new ItdClient(customServer.clientOptions({ as: 'test-user-1' }));
+    await customClient.users.me();
+    expect(customServer.requests[0]?.url).toBe('https://custom.test/api/users/me');
+  });
+
   it('выполняет пользовательский сценарий в общем состоянии', async () => {
     const server = makeServer();
     const alice = new ItdClient(server.clientOptions({ as: 'alice' }));

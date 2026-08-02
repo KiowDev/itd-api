@@ -1,4 +1,4 @@
-import type { VerificationStatus } from '../types/models.js';
+import type { VerificationStatus } from '../models/platform.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 

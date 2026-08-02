@@ -1,8 +1,8 @@
 import { ItdConfigError } from '../core/errors.js';
+import type { Notification } from '../models/notifications.js';
 import type { NotificationEvent } from '../notifications/normalize.js';
 import { readNotificationEvent, readUnreadCountEvent } from '../notifications/normalize.js';
 import type { NotificationType } from '../types/enums.js';
-import type { Notification } from '../types/models.js';
 import type { ItdRealtime } from './stream.js';
 import type { TransportEvent } from './transport.js';
 

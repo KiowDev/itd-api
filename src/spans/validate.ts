@@ -1,5 +1,5 @@
 import { ItdConfigError } from '../core/errors.js';
-import type { Span } from '../types/models.js';
+import type { Span } from '../models/common.js';
 
 /**
  * Проверяет, что spans целиком лежат внутри текста.

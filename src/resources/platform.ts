@@ -1,13 +1,8 @@
 import { STATUS_SERVICE } from '../core/config.js';
 import { utcStampToIso } from '../core/time.js';
 import { isRecord, pickArray } from '../core/unwrap.js';
-import type {
-  Announcement,
-  ChangelogEntry,
-  PlatformStatus,
-  Portal,
-  ServiceStatus,
-} from '../types/models.js';
+import type { Announcement, ChangelogEntry, Portal } from '../models/platform.js';
+import type { PlatformStatus, ServiceStatus } from '../models/status.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 

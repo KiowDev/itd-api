@@ -31,6 +31,7 @@ export {
 } from './builders/markup.js';
 export { type PollBuilder, type PollInput, poll } from './builders/poll.js';
 export {
+  type CreatePostInput,
   type PostBuilder,
   type PostInput,
   type PostUpdateInput,
@@ -152,8 +153,54 @@ export {
   MemoryTokenStorage,
   type TokenStorage,
 } from './core/storage.js';
-export { utcStampToIso } from './core/time.js';
+export { toDate, utcStampToIso } from './core/time.js';
 export type { QueryParams, QueryValue } from './core/url.js';
+export type { PaymentMethod, Session, Subscription } from './models/account.js';
+export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
+export type {
+  Attachment,
+  Comment,
+  CommentReplyTo,
+  Hashtag,
+  LikeResult,
+  PinPostResult,
+  Poll,
+  PollOption,
+  Post,
+  PostStats,
+} from './models/content.js';
+export { isMyProfile } from './models/guards.js';
+export type { Notification, NotificationSettings } from './models/notifications.js';
+export type {
+  Announcement,
+  AnnouncementButton,
+  ChangelogEntry,
+  Clan,
+  Portal,
+  Report,
+  VerificationStatus,
+} from './models/platform.js';
+export type {
+  PlatformStatus,
+  ServiceStatus,
+  StatusDay,
+  StatusIncidentLine,
+} from './models/status.js';
+export { statusDays } from './models/status-helpers.js';
+export type {
+  Actor,
+  Author,
+  AuthState,
+  FollowResult,
+  MyProfile,
+  Pin,
+  PinsResult,
+  PrivacySettings,
+  Profile,
+  PublicProfile,
+  SubscriptionState,
+  UserSummary,
+} from './models/users.js';
 // Уведомления приводятся к единой форме, поэтому объекты из REST и из потока событий
 // можно складывать в один список. Подробности — в notifications/normalize.ts.
 export {
@@ -302,51 +349,6 @@ export {
   WallAccess,
 } from './types/enums.js';
 export type {
-  Actor,
-  Announcement,
-  AnnouncementButton,
-  Attachment,
-  Author,
-  AuthState,
-  ChangelogEntry,
-  Clan,
-  Comment,
-  CommentReplyTo,
-  FollowResult,
-  Hashtag,
-  IsoDate,
-  LikeResult,
-  MyProfile,
-  Notification,
-  NotificationSettings,
-  PaymentMethod,
-  Pin,
-  PinPostResult,
-  PinsResult,
-  PlatformStatus,
-  Poll,
-  PollOption,
-  Portal,
-  Post,
-  PostStats,
-  PrivacySettings,
-  Profile,
-  PublicProfile,
-  Report,
-  ServiceStatus,
-  Session,
-  Span,
-  StatusDay,
-  StatusIncidentLine,
-  Subscription,
-  SubscriptionState,
-  UserId,
-  UserRef,
-  UserSummary,
-  VerificationStatus,
-} from './types/models.js';
-export { isMyProfile, statusDays, toDate } from './types/models.js';
-export type {
   AuthInput,
   ClientHooks,
   CredentialsAuth,
@@ -365,7 +367,7 @@ export { REQUEST_OPTION_KEYS } from './types/options.js';
 export type {
   CreateCommentInput,
   CreatePollInput,
-  CreatePostInput,
+  CreatePostData,
   CreateReportInput,
   UpdatePostInput,
 } from './types/params.js';

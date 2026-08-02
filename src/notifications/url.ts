@@ -1,5 +1,5 @@
+import type { Notification } from '../models/notifications.js';
 import { NotificationType } from '../types/enums.js';
-import type { Notification } from '../types/models.js';
 
 /** Типы, ведущие на пост. */
 const POST_TYPES = new Set<string>([

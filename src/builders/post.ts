@@ -1,11 +1,11 @@
 import type { FileInput } from '../core/attachments.js';
 import { ItdConfigError } from '../core/errors.js';
+import type { Span, UserId } from '../models/common.js';
 import { type ParseMarkupOptions, parseHtml, parseMarkdown } from '../spans/parse.js';
 import { validateSpans } from '../spans/validate.js';
 import { SpanType } from '../types/enums.js';
-import type { Span, UserId } from '../types/models.js';
-import type { CreatePostInput, UpdatePostInput } from '../types/params.js';
-import { BUILDER, type BuilderInput, type ItdBuilder, isBuilder, resolveInput } from './base.js';
+import type { CreatePostData, UpdatePostInput } from '../types/params.js';
+import { BUILDER, type BuilderInput, type ItdBuilder, isBuilder } from './base.js';
 import { type AutoSpansOptions, autoSpans, type MarkupInput, resolveMarkup } from './markup.js';
 import { type PollInput, resolvePoll } from './poll.js';
 
@@ -13,8 +13,14 @@ import { type PollInput, resolvePoll } from './poll.js';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BUILD_UPDATE = Symbol.for('itd.postBuilder.update');
 
+/** Данные для создания поста, включая поддерживаемые builder-формы вложенного опроса. */
+export interface CreatePostInput extends Omit<CreatePostData, 'poll'> {
+  /** Опрос: обычный объект, {@link PollBuilder} или функция-настройщик. */
+  poll?: PollInput;
+}
+
 /**
- * Проверяет данные поста.
+ * Проверяет и нормализует данные поста.
  *
  * Отдельного внимания заслуживает `wallRecipientId`: API принимает там **только UUID**,
  * а имя пользователя молча приводит к ошибке на сервере. Проверка здесь превращает
@@ -22,7 +28,7 @@ const BUILD_UPDATE = Symbol.for('itd.postBuilder.update');
  *
  * @throws {ItdConfigError} если пост пуст или получатель стены задан именем пользователя
  */
-export function validatePost(input: CreatePostInput): CreatePostInput {
+export function validatePost(input: CreatePostInput): CreatePostData {
   const content = typeof input?.content === 'string' ? input.content : '';
   const attachmentIds = input?.attachmentIds ?? [];
   const files = input?.files ?? [];
@@ -47,10 +53,11 @@ export function validatePost(input: CreatePostInput): CreatePostInput {
 
   // Опрос внутри обычного объекта тоже может быть билдером или функцией — приводим его
   // здесь, чтобы форма записи не влияла на результат и на проверки.
+  const { poll: inputPoll, ...data } = input;
   return {
-    ...input,
+    ...data,
     ...(input.spans !== undefined ? { spans: validateSpans(content, input.spans) } : {}),
-    ...(input.poll !== undefined ? { poll: resolvePoll(input.poll) } : {}),
+    ...(inputPoll !== undefined ? { poll: resolvePoll(inputPoll) } : {}),
   };
 }
 
@@ -76,7 +83,7 @@ interface PostState extends CreatePostInput {
  * await itd.posts.create(onWall.content('второй'));  // заготовка не испорчена
  * ```
  */
-export class PostBuilder implements ItdBuilder<CreatePostInput> {
+export class PostBuilder implements ItdBuilder<CreatePostData> {
   /** @internal */
   readonly [BUILDER] = true as const;
 
@@ -222,7 +229,7 @@ export class PostBuilder implements ItdBuilder<CreatePostInput> {
     };
   }
 
-  build(): CreatePostInput {
+  build(): CreatePostData {
     return validatePost(this.#input());
   }
 
@@ -231,7 +238,7 @@ export class PostBuilder implements ItdBuilder<CreatePostInput> {
     return validatePostUpdate(this.#input(this.#state.contentSet));
   }
 
-  toJSON(): CreatePostInput {
+  toJSON(): CreatePostData {
     return this.build();
   }
 }
@@ -265,8 +272,11 @@ export function post(content?: string): PostBuilder {
 export type PostInput = BuilderInput<CreatePostInput, PostBuilder>;
 
 /** Приводит любую форму входа к готовым данным поста. */
-export function resolvePost(input: PostInput): CreatePostInput {
-  return resolveInput(input, () => post(), validatePost);
+export function resolvePost(input: PostInput): CreatePostData {
+  const resolved = typeof input === 'function' ? input(post()) : input;
+  return isBuilder<CreatePostData>(resolved)
+    ? validatePost(resolved.build())
+    : validatePost(resolved);
 }
 
 /** Что принимает `posts.update`: объект, билдер поста или функция-настройщик. */

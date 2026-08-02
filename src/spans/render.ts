@@ -1,5 +1,5 @@
+import type { Span } from '../models/common.js';
 import { SpanType } from '../types/enums.js';
-import type { Span } from '../types/models.js';
 
 /** Формат результата {@link renderSpans}. */
 export const SpanRenderFormat = Object.freeze({

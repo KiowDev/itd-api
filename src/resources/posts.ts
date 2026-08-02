@@ -16,7 +16,7 @@ import {
 } from '../core/pagination.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
-import type { CommentSort, FeedTab } from '../types/enums.js';
+import type { UserRef } from '../models/common.js';
 import type {
   Comment,
   LikeResult,
@@ -24,10 +24,10 @@ import type {
   Poll,
   Post,
   PostStats,
-  UserRef,
-} from '../types/models.js';
+} from '../models/content.js';
+import type { CommentSort, FeedTab } from '../types/enums.js';
 import type { RequestOptions } from '../types/options.js';
-import type { CreateCommentInput, CreatePostInput } from '../types/params.js';
+import type { CreateCommentInput, CreatePostData } from '../types/params.js';
 import { BaseResource } from './base.js';
 
 /** Курсорная позиция из параметров: если курсор задан — с него, иначе с начала. */
@@ -406,7 +406,7 @@ export class PostsResource extends BaseResource {
 
   /** Загружает файлы из входных данных и объединяет их с уже готовыми идентификаторами. */
   async #collectAttachments(
-    data: CreatePostInput | CreateCommentInput,
+    data: CreatePostData | CreateCommentInput,
     options: RequestOptions,
   ): Promise<string[]> {
     const existing = data.attachmentIds ?? [];

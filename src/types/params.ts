@@ -1,9 +1,6 @@
-// Импорт только типовой, поэтому взаимная ссылка между params.ts и builders/poll.ts
-// стирается при компиляции и не образует цикла в собранном коде.
-import type { PollInput } from '../builders/poll.js';
 import type { FileInput } from '../core/attachments.js';
+import type { Span, UserId } from '../models/common.js';
 import type { ReportReason, ReportTargetType } from './enums.js';
-import type { Span, UserId } from './models.js';
 
 /** Данные для создания опроса. */
 export interface CreatePollInput {
@@ -15,8 +12,13 @@ export interface CreatePollInput {
   multipleChoice?: boolean;
 }
 
-/** Данные для создания поста. */
-export interface CreatePostInput {
+/**
+ * Нормализованные данные для создания поста.
+ *
+ * Это форма, которую возвращают `PostBuilder.build()` и `resolvePost()` после
+ * преобразования вложенных builders. Для входа `itd.posts.create()` см. {@link CreatePostInput}.
+ */
+export interface CreatePostData {
   /** Текст поста. */
   content?: string;
   /**
@@ -35,8 +37,8 @@ export interface CreatePostInput {
   attachmentIds?: string[];
   /** Файлы, которые нужно загрузить перед публикацией. Порядок сохраняется. */
   files?: FileInput[];
-  /** Опрос: обычный объект, {@link PollBuilder} или функция-настройщик. */
-  poll?: PollInput;
+  /** Готовые данные опроса. */
+  poll?: CreatePollInput;
 }
 
 /** Поля поста, которые принимает `itd.posts.update()`. */

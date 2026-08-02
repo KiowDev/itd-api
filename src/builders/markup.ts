@@ -1,7 +1,7 @@
 import { ItdConfigError } from '../core/errors.js';
+import type { Span } from '../models/common.js';
 import { validateSpans } from '../spans/validate.js';
 import { SpanType } from '../types/enums.js';
-import type { Span } from '../types/models.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
 
 /** Текст вместе с рассчитанной разметкой. */

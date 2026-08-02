@@ -1,5 +1,5 @@
+import type { Notification } from '../models/notifications.js';
 import { NotificationType } from '../types/enums.js';
-import type { Notification } from '../types/models.js';
 
 /** Имя, которое подставляется, если участник неизвестен. */
 const UNKNOWN_ACTOR = 'Пользователь';

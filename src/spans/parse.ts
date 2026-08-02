@@ -1,6 +1,6 @@
 import type { TextMarkup } from '../builders/markup.js';
+import type { Span } from '../models/common.js';
 import { SpanType } from '../types/enums.js';
-import type { Span } from '../types/models.js';
 import { validateSpans } from './validate.js';
 
 /** Настройки безопасного импорта разметки. */

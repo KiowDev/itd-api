@@ -3,17 +3,16 @@ import type { HttpClient } from '../core/http.js';
 import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { pickArray, pickBoolean, pickString } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
+import type { UserId, UserRef } from '../models/common.js';
+import type { Clan } from '../models/platform.js';
 import type {
-  Clan,
   FollowResult,
   MyProfile,
   PinsResult,
   PrivacySettings,
   PublicProfile,
-  UserId,
-  UserRef,
   UserSummary,
-} from '../types/models.js';
+} from '../models/users.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 import type { UploadedFile, UploadOptions } from './files.js';

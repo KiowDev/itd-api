@@ -1,0 +1,54 @@
+import type { ClientHooks, RawRequestOptions } from '../../types/options.js';
+
+export type HookName = keyof ClientHooks;
+export type HookContext<K extends HookName> = Parameters<NonNullable<ClientHooks[K]>>[0];
+export type HookDispatcher = <K extends HookName>(
+  field: K,
+  context: HookContext<K>,
+  request: RawRequestOptions,
+) => Promise<void>;
+
+const REQUEST_HOOK_DISPATCHERS = new WeakMap<ClientHooks, HookDispatcher>();
+const PLUGIN_HOOK_SCOPE: unique symbol = Symbol('itd-api.plugin-hooks');
+type ScopedRequest = RawRequestOptions & {
+  [PLUGIN_HOOK_SCOPE]?: readonly ClientHooks[];
+};
+
+/** Создаёт динамический набор hooks, связанный с диспетчером registry. @internal */
+export function createRequestHooks(dispatcher: HookDispatcher): ClientHooks {
+  const hooks: ClientHooks = {};
+  REQUEST_HOOK_DISPATCHERS.set(hooks, dispatcher);
+  return hooks;
+}
+
+/** Привязывает к запросу неизменяемый снимок plugin hooks. @internal */
+export function withRequestHookScope(
+  request: RawRequestOptions,
+  hooks: readonly ClientHooks[],
+): RawRequestOptions {
+  const scoped = request as ScopedRequest;
+  return scoped[PLUGIN_HOOK_SCOPE] === hooks
+    ? scoped
+    : ({ ...request, [PLUGIN_HOOK_SCOPE]: hooks } as ScopedRequest);
+}
+
+/** Читает снимок plugin hooks, привязанный к логическому запросу. @internal */
+export function requestHookScope(request: RawRequestOptions): readonly ClientHooks[] {
+  return (request as ScopedRequest)[PLUGIN_HOOK_SCOPE] ?? [];
+}
+
+/** Вызывает публичный hook с учётом динамического диспетчера plugin registry. @internal */
+export async function dispatchRequestHook<K extends HookName>(
+  hooks: ClientHooks,
+  field: K,
+  context: HookContext<K>,
+  request: RawRequestOptions,
+): Promise<void> {
+  const dispatcher = REQUEST_HOOK_DISPATCHERS.get(hooks);
+  if (dispatcher) {
+    await dispatcher(field, context, request);
+    return;
+  }
+  const hook = hooks[field] as ((value: HookContext<K>) => void | Promise<void>) | undefined;
+  await hook?.(context);
+}

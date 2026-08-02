@@ -19,6 +19,7 @@ import { RequestQueuePool } from './core/rate-limit.js';
 import { type ServiceDefinition, ServiceRegistry } from './core/services.js';
 import type { ItdSession } from './core/storage.js';
 import { Transport } from './core/transport.js';
+import type { UserId } from './models/common.js';
 import { ItdRealtime, type RealtimeOptions } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
 import { CommentsResource } from './resources/comments.js';
@@ -33,7 +34,6 @@ import { SubscriptionResource } from './resources/subscription.js';
 import { TelemetryResource } from './resources/telemetry.js';
 import { UsersResource } from './resources/users.js';
 import { VerificationResource } from './resources/verification.js';
-import type { UserId } from './types/models.js';
 import type {
   ItdClientOptions,
   RawRequestOptions,

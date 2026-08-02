@@ -1,5 +1,5 @@
 import { encodePathSegment } from '../core/url.js';
-import type { PaymentMethod, Subscription } from '../types/models.js';
+import type { PaymentMethod, Subscription } from '../models/account.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 

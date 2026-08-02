@@ -1,7 +1,7 @@
 import { type Page, PaginationMode, type Paginator, readCursorPage } from '../core/pagination.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
-import type { Hashtag, Post } from '../types/models.js';
+import type { Hashtag, Post } from '../models/content.js';
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
