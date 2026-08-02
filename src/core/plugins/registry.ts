@@ -27,7 +27,12 @@ interface InstalledPlugin {
   finishDrain: (() => void) | undefined;
 }
 
-/** Реестр подключённых плагинов и собранная из них цепочка обёрток. */
+/**
+ * Список подключённых плагинов и собранная из них цепочка обёрток.
+ *
+ * Живёт в клиенте, а работает в транспорте: {@link HttpClient} прогоняет через `run`
+ * каждый запрос, если плагины есть.
+ */
 export class PluginRegistry {
   readonly #entries = new Map<string, InstalledPlugin>();
   readonly #optionKeys = new Set<string>();
@@ -35,22 +40,27 @@ export class PluginRegistry {
   readonly #cleanups = new Set<Promise<void>>();
   #ordered: InstalledPlugin[] = [];
 
+  /** Сколько плагинов подключено. */
   get size(): number {
     return this.#entries.size;
   }
 
+  /** Имена опций активных плагинов. */
   get optionKeys(): ReadonlySet<string> {
     return this.#optionKeys.size === 0 ? NO_KEYS : this.#optionKeys;
   }
 
+  /** Имена плагинов в фактическом порядке выполнения. */
   names(): string[] {
     return this.#ordered.map(({ plugin }) => plugin.name);
   }
 
+  /** Подключён ли плагин с таким именем. */
   has(name: string): boolean {
     return this.#entries.has(name);
   }
 
+  /** Проверяет добавление без вызова `install()`. @internal */
   assertCanAdd(plugin: ItdPlugin): void {
     validatePluginDefinition(plugin);
     if (this.#removing.has(plugin.name)) {
@@ -61,6 +71,7 @@ export class PluginRegistry {
     orderPluginDefinitions([...this.#ordered.map((entry) => entry.plugin), plugin]);
   }
 
+  /** Проверяет удаление без изменения реестра. @internal */
   assertCanRemove(name: string): void {
     const entry = this.#entries.get(name);
     if (!entry) return;
@@ -70,6 +81,12 @@ export class PluginRegistry {
     );
   }
 
+  /**
+   * Подключает плагин.
+   *
+   * @throws {ItdConfigError} если плагин задан неверно, уже подключён, нарушает зависимости
+   * или заявил занятое имя опции
+   */
   add(plugin: ItdPlugin, context: Omit<PluginContext, 'use' | 'useHooks'>): void {
     this.assertCanAdd(plugin);
     const ordered = orderPluginDefinitions([...this.#ordered.map((entry) => entry.plugin), plugin]);
@@ -107,6 +124,14 @@ export class PluginRegistry {
     this.#rebuildOptionKeys();
   }
 
+  /**
+   * Отключает плагин и вызывает его функцию очистки.
+   *
+   * Новые запросы перестают видеть плагин сразу. Если его обёртка уже выполняется,
+   * очистка дождётся завершения этого логического запроса.
+   *
+   * @returns `false`, если такого плагина не было
+   */
   async remove(name: string): Promise<boolean> {
     const entry = this.#entries.get(name);
     if (!entry) return false;
@@ -130,6 +155,11 @@ export class PluginRegistry {
     }
   }
 
+  /**
+   * Отключает все плагины окончательно.
+   *
+   * Очистка идёт изнутри наружу — в порядке, обратном выполнению обёрток.
+   */
   async dispose(): Promise<void> {
     const entries = [...this.#ordered].reverse();
     const previousCleanups = [...this.#cleanups];
@@ -163,12 +193,26 @@ export class PluginRegistry {
     await cleanup;
   }
 
+  /**
+   * Объединяет конструкторские хуки с хуками подключаемых плагинов.
+   *
+   * Возвращённый объект динамический: подключение и отключение плагина начинает действовать
+   * со следующего логического запроса без пересоздания транспорта.
+   */
   hooks(base: ClientHooks): ClientHooks {
     return createRequestHooks((field, context, request) =>
       this.#runHook(field, context, request, base),
     );
   }
 
+  /**
+   * Прогоняет запрос через цепочку обёрток.
+   *
+   * Снимок цепочки берётся в начале: `unuse()` влияет на новые запросы, но не обрывает
+   * уже выполняющийся посередине.
+   *
+   * @param execute настоящий запрос, вызывается самой внутренней обёрткой
+   */
   async run(
     request: RawRequestOptions,
     execute: (request: RawRequestOptions) => Promise<unknown>,

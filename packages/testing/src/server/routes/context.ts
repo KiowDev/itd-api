@@ -1,7 +1,8 @@
 import type { MockRequest } from '../../request.js';
 import { apiErrorResponse } from '../../responses.js';
 import { compileRoute, defineRoute, type MockHandler, type MockRoute } from '../../router.js';
-import type { MockServerState, UserState } from '../state.js';
+import type { UserState } from '../entities.js';
+import type { MockServerState } from '../state.js';
 
 export interface RegisteredHandler {
   route: MockRoute;

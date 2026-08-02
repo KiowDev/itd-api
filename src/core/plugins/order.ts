@@ -56,7 +56,15 @@ export function validatePluginHooks(plugin: string, hooks: ClientHooks): void {
   }
 }
 
-/** Проверяет описание плагина без его установки. @internal */
+/**
+ * Проверяет описание плагина без его установки.
+ *
+ * Нужна не только {@link PluginRegistry}: контейнер аккаунтов обязан отклонять сломанный
+ * плагин сразу, даже когда внутри ещё нет ни одного клиента, которому можно поручить
+ * полноценную установку.
+ *
+ * @internal
+ */
 export function validatePluginDefinition(plugin: ItdPlugin): void {
   if (typeof plugin?.install !== 'function') {
     throw new ItdConfigError('Плагин должен быть объектом с методом install()');
@@ -103,7 +111,11 @@ function addEdge(
   indegree.set(to, (indegree.get(to) ?? 0) + 1);
 }
 
-/** Проверяет зависимости и возвращает плагины в порядке выполнения. @internal */
+/**
+ * Проверяет зависимости и возвращает плагины в порядке обёрток: внешний идёт раньше.
+ *
+ * @internal
+ */
 export function orderPluginDefinitions(plugins: readonly ItdPlugin[]): ItdPlugin[] {
   const entries: OrderedPlugin[] = [];
   const byName = new Map<string, OrderedPlugin>();

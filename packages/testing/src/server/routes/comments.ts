@@ -2,7 +2,7 @@ import { NotificationType } from 'itd-api';
 import { HttpMethod } from '../../constants.js';
 import { apiErrorResponse, apiResponse, emptyResponse } from '../../responses.js';
 import type { MockHandler } from '../../router.js';
-import type { CommentState, UserState } from '../state.js';
+import type { CommentState, UserState } from '../entities.js';
 import { cursorPage, type MockRouteContext, objectBody, positiveInt } from './context.js';
 
 export function registerCommentRoutes(context: MockRouteContext): void {

@@ -37,7 +37,14 @@ export function requestHookScope(request: RawRequestOptions): readonly ClientHoo
   return (request as ScopedRequest)[PLUGIN_HOOK_SCOPE] ?? [];
 }
 
-/** Вызывает публичный hook с учётом динамического диспетчера plugin registry. @internal */
+/**
+ * Вызывает публичный хук, сохраняя привязанный к логическому запросу снимок плагинов.
+ *
+ * Обычные наборы хуков по-прежнему получают только публичный контекст. Дополнительный
+ * аргумент используется исключительно внутренним составным набором PluginRegistry.
+ *
+ * @internal
+ */
 export async function dispatchRequestHook<K extends HookName>(
   hooks: ClientHooks,
   field: K,
