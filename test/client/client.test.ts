@@ -67,6 +67,20 @@ describe('посты', () => {
     expect(posts).toHaveLength(4);
   });
 
+  it('берёт maxPages из PaginationOptions, отдельно от параметров endpoint', async () => {
+    const { itd, mock } = makeClient([
+      feedPage(['1'], '2'),
+      feedPage(['2'], '3'),
+      feedPage(['3'], null),
+    ]);
+
+    const posts = await itd.posts.iterate({ tab: 'popular' }, { maxPages: 2 }).collect();
+
+    expect(posts.map((post) => post.id)).toEqual(['1', '2']);
+    expect(mock.callCount).toBe(2);
+    expect(mock.calls[0]?.url).not.toContain('maxPages');
+  });
+
   it('публикует пост', async () => {
     const { itd, mock } = makeClient([json({ id: 'p1', content: 'привет' })]);
 
@@ -756,7 +770,7 @@ describe('общее поведение клиента', () => {
       return feedPage(['1'], '2');
     });
 
-    const collecting = itd.posts.iterate({ signal: controller.signal }).collect();
+    const collecting = itd.posts.iterate({}, { signal: controller.signal }).collect();
 
     await expect(collecting).rejects.toThrow(ItdAbortError);
     expect(mock.callCount).toBe(1);
@@ -925,7 +939,7 @@ describe('общее поведение клиента', () => {
     );
 
     // Глобально до 5 попыток, но у конкретного запроса повторы выключены.
-    await expect(itd.posts.list({ retry: false })).rejects.toMatchObject({ status: 500 });
+    await expect(itd.posts.list({}, { retry: false })).rejects.toMatchObject({ status: 500 });
     expect(calls).toBe(1);
   });
 });

@@ -27,7 +27,7 @@ import type { UserId } from './models/common.js';
 import { ItdRealtime, type RealtimeOptions } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
 import { CommentsResource } from './resources/comments.js';
-import { FilesResource } from './resources/files.js';
+import { FilesResource, type UploadOptions } from './resources/files.js';
 import { HashtagsResource } from './resources/hashtags.js';
 import { NotificationsResource } from './resources/notifications.js';
 import { PlatformResource } from './resources/platform.js';
@@ -139,10 +139,13 @@ export class ItdClient {
    * Обращается к {@link files} в момент вызова, поэтому ресурс поднимается только тогда,
    * когда файл действительно отправляют.
    */
-  readonly #uploadFile = (file: FileInput, requestOptions?: RequestOptions) =>
-    this.files.upload(file, requestOptions ?? {});
+  readonly #uploadFile = (
+    file: FileInput,
+    uploadOptions?: UploadOptions,
+    requestOptions?: RequestOptions,
+  ) => this.files.upload(file, uploadOptions ?? {}, requestOptions ?? {});
   readonly #uploadFiles = (files: FileInput[], requestOptions?: RequestOptions) =>
-    this.files.uploadMany(files, requestOptions ?? {});
+    this.files.uploadMany(files, {}, requestOptions ?? {});
 
   /** Авторизация, сессии и пароли. */
   get auth(): AuthResource {
@@ -321,7 +324,7 @@ export class ItdClient {
     });
     this.#authManager = authManager;
 
-    this.#http = new HttpClient({ handler, plugins: this.#plugins, baseUrl: config.baseUrl });
+    this.#http = new HttpClient({ handler, baseUrl: config.baseUrl });
   }
 
   /** Базовый URL, к которому обращается клиент. */
@@ -358,7 +361,11 @@ export class ItdClient {
    * import { crypt } from '@itd-api/crypto';
    *
    * itd.use(crypt());
-   * await itd.posts.create({ content: 'секрет' }, { encrypt: 'invis' });
+   * await itd.posts.create({
+   *   content: 'секрет',
+   * }, {
+   *   extensions: { crypto: { encrypt: 'invisible' } },
+   * });
    * ```
    */
   use(plugin: ClientPlugin): this {

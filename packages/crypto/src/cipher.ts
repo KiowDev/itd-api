@@ -12,8 +12,14 @@ import type { Loose } from 'itd-api';
  *
  * @example
  * ```ts
- * await itd.posts.create({ content: 'секрет' }, { encrypt: CipherName.Invisible });
- * await itd.posts.create({ content: 'секрет' }, { encrypt: 'invisible' });  // и так тоже
+ * await itd.posts.create(
+ *   { content: 'секрет' },
+ *   { extensions: { crypto: { encrypt: CipherName.Invisible } } },
+ * );
+ * await itd.posts.create(
+ *   { content: 'секрет' },
+ *   { extensions: { crypto: { encrypt: 'invisible' } } }, // и так тоже
+ * );
  * ```
  */
 export const CipherName = Object.freeze({

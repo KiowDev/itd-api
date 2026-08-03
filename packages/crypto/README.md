@@ -19,7 +19,8 @@
 npm i itd-api @itd-api/crypto
 ```
 
-Нужен `itd-api` версии не ниже 0.4.0 — crypto использует стабильный `operationId` запроса.
+Нужен `itd-api` версии 0.5.x: crypto использует namespace `RequestOptions.extensions` и
+стабильный `operationId` запроса.
 
 ## Использование
 
@@ -33,7 +34,7 @@ itd.use(crypt());
 // отправка: текст прогоняется через шифр, обложка остаётся видимой
 const created = await itd.posts.create(
   { content: 'секретный текст' },
-  { encrypt: { cipher: 'invisible', cover: 'обычный пост' } },
+  { extensions: { crypto: { encrypt: { cipher: 'invisible', cover: 'обычный пост' } } } },
 );
 
 // чтение: content не меняется, расшифровка приезжает рядом
@@ -46,12 +47,15 @@ post.secret?.text;  // 'секретный текст'
 деле есть сообщение:
 
 ```ts
-await itd.posts.create({ content: 'только для своих' }, { encrypt: 'invisible' });
+await itd.posts.create(
+  { content: 'только для своих' },
+  { extensions: { crypto: { encrypt: 'invisible' } } },
+);
 ```
 
 ### Где работает
 
-Шифрование включается опцией `encrypt` у методов, принимающих текст:
+Шифрование включается опцией `extensions.crypto.encrypt` у методов, принимающих текст:
 
 Поддерживаемое действие определяется по стабильному `operationId`, а не по HTTP-пути. Поэтому
 низкоуровневому `itd.request()` с `encrypt` требуется корректный явный ID; запрос `raw`, даже на
@@ -83,7 +87,7 @@ for await (const post of itd.posts.iterate({ tab: 'following' })) {
 ```ts
 await itd.users.updateMe(
   { bio: 'скрытая подпись' },
-  { encrypt: { fields: ['bio'], cover: 'то, что видят все' } },
+  { extensions: { crypto: { encrypt: { fields: ['bio'], cover: 'то, что видят все' } } } },
 );
 
 const profile = await itd.users.get('username');
@@ -101,7 +105,10 @@ profile.secrets;  // [{ cipher: 'invisible', field: 'bio', text: 'скрытая
 какой прочитал текст, тот и попадёт в `secret.cipher`.
 
 ```ts
-await itd.posts.create({ content: 'секрет' }, { encrypt: 'beecrypt' });
+await itd.posts.create(
+  { content: 'секрет' },
+  { extensions: { crypto: { encrypt: 'beecrypt' } } },
+);
 // content уходит как «ЖъЪжЖъЖЪжъ…» — сообщение не спрятано, а записано другими буквами
 
 const post = await itd.posts.get(id);
@@ -124,7 +131,7 @@ itd.use(
 );
 
 // расшифровку можно выключить или включить у отдельного вызова
-await itd.posts.list({ decrypt: false });
+await itd.posts.list({}, { extensions: { crypto: { decrypt: false } } });
 ```
 
 Читать `secret` можно и без дополнений типов — помощниками `secretOf` и `secretsOf`:
@@ -199,7 +206,10 @@ const base64: Cipher = {
 };
 
 itd.use(crypt({ ciphers: [base64] }));
-await itd.posts.create({ content: 'секрет' }, { encrypt: 'base64' });
+await itd.posts.create(
+  { content: 'секрет' },
+  { extensions: { crypto: { encrypt: 'base64' } } },
+);
 ```
 
 `decode` возвращает `null`, когда в строке ничего нет: по этому признаку плагин и решает,
@@ -213,7 +223,10 @@ await itd.posts.create({ content: 'секрет' }, { encrypt: 'base64' });
 ```ts
 import { CipherName } from '@itd-api/crypto';
 
-await itd.posts.create({ content: 'секрет' }, { encrypt: CipherName.Invisible });
+await itd.posts.create(
+  { content: 'секрет' },
+  { extensions: { crypto: { encrypt: CipherName.Invisible } } },
+);
 ```
 
 ## Что нужно знать

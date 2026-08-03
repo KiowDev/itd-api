@@ -4,8 +4,8 @@ import { InteractionType, type ViewReason, type ViewSource } from '../types/enum
 import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
-/** Общие опции запроса телеметрии. */
-export interface TelemetryOptions extends RequestOptions {
+/** Параметры событий телеметрии. */
+export interface TelemetryOptions {
   /** Переопределяет идентификатор сессии телеметрии (`sid`) для этого запроса. */
   sid?: string;
 }
@@ -147,7 +147,7 @@ export interface TelemetryBatch {
    *
    * Опции позволяют заменить, например, отменённый `signal` при повторной попытке.
    */
-  flush(options?: TelemetryOptions): Promise<void>;
+  flush(options?: RequestOptions): Promise<void>;
   /** Отправляет накопленные события и закрывает накопитель. */
   close(): Promise<void>;
 }
@@ -253,7 +253,8 @@ class ViewTrackerImpl implements ViewTracker {
 
 class TelemetryBatchImpl implements TelemetryBatch {
   readonly #resource: TelemetryResource;
-  readonly #options: TelemetryOptions;
+  readonly #telemetryOptions: TelemetryOptions;
+  readonly #requestOptions: RequestOptions;
   readonly #clock: TelemetryClock;
   readonly #maxBatchSize: number;
   readonly #onClose: () => void;
@@ -263,13 +264,23 @@ class TelemetryBatchImpl implements TelemetryBatch {
   #flushPromise: Promise<void> | undefined;
   #closePromise: Promise<void> | undefined;
 
-  constructor(resource: TelemetryResource, options: TelemetryBatchOptions, onClose: () => void) {
-    const { maxBatchSize = DEFAULT_BATCH_SIZE, clock = SYSTEM_CLOCK, ...requestOptions } = options;
+  constructor(
+    resource: TelemetryResource,
+    options: TelemetryBatchOptions,
+    requestOptions: RequestOptions,
+    onClose: () => void,
+  ) {
+    const {
+      maxBatchSize = DEFAULT_BATCH_SIZE,
+      clock = SYSTEM_CLOCK,
+      ...telemetryOptions
+    } = options;
     if (!Number.isInteger(maxBatchSize) || maxBatchSize < 1) {
       throw new ItdConfigError('maxBatchSize должен быть целым числом от 1');
     }
     this.#resource = resource;
-    this.#options = requestOptions;
+    this.#telemetryOptions = telemetryOptions;
+    this.#requestOptions = requestOptions;
     this.#clock = clock;
     this.#maxBatchSize = maxBatchSize;
     this.#onClose = onClose;
@@ -316,11 +327,11 @@ class TelemetryBatchImpl implements TelemetryBatch {
     });
   }
 
-  flush(options: TelemetryOptions = {}): Promise<void> {
+  flush(options: RequestOptions = {}): Promise<void> {
     if (this.#state === 'closed') return Promise.resolve();
     if (this.#flushPromise) return this.#flushPromise;
 
-    const running = this.#flushAll({ ...this.#options, ...options });
+    const running = this.#flushAll({ ...this.#requestOptions, ...options });
     const tracked = running.finally(() => {
       if (this.#flushPromise === tracked) this.#flushPromise = undefined;
     });
@@ -349,11 +360,11 @@ class TelemetryBatchImpl implements TelemetryBatch {
     return tracked;
   }
 
-  async #flushAll(options: TelemetryOptions): Promise<void> {
+  async #flushAll(options: RequestOptions): Promise<void> {
     while (this.#dwell.length > 0) {
       const chunk = this.#dwell.splice(0, this.#maxBatchSize);
       try {
-        await this.#resource.dwell(chunk, options);
+        await this.#resource.dwell(chunk, this.#telemetryOptions, options);
       } catch (error) {
         this.#dwell.unshift(...chunk);
         throw error;
@@ -363,7 +374,7 @@ class TelemetryBatchImpl implements TelemetryBatch {
     while (this.#interactions.length > 0) {
       const chunk = this.#interactions.splice(0, this.#maxBatchSize);
       try {
-        await this.#resource.interaction(chunk, options);
+        await this.#resource.interaction(chunk, this.#telemetryOptions, options);
       } catch (error) {
         this.#interactions.unshift(...chunk);
         throw error;
@@ -395,12 +406,16 @@ export class TelemetryResource extends BaseResource {
   }
 
   /** Отправляет события просмотра постов (`POST /api/v1/i`). */
-  dwell(entries: readonly DwellEntry[], options: TelemetryOptions = {}): Promise<unknown> {
+  dwell(
+    entries: readonly DwellEntry[],
+    telemetryOptions: TelemetryOptions = {},
+    requestOptions: RequestOptions = {},
+  ): Promise<unknown> {
     const validated = entries.map(validateDwell);
     return this.http.operation('telemetry.dwell', {
       path: '/api/v1/i',
       body: {
-        sid: options.sid ?? this.sessionId,
+        sid: telemetryOptions.sid ?? this.sessionId,
         e: validated.map((entry) => ({
           md: entry.durationMs ?? entry.exitAt - entry.enterAt,
           et: entry.enterAt,
@@ -412,20 +427,21 @@ export class TelemetryResource extends BaseResource {
           ...(entry.repeat ? { b: 1 } : {}),
         })),
       },
-      ...this.requestOptions(options),
+      ...requestOptions,
     });
   }
 
   /** Отправляет события взаимодействия с контентом (`POST /api/v1/x`). */
   interaction(
     entries: readonly InteractionEntry[],
-    options: TelemetryOptions = {},
+    telemetryOptions: TelemetryOptions = {},
+    requestOptions: RequestOptions = {},
   ): Promise<unknown> {
     const validated = entries.map(validateInteraction);
     return this.http.operation('telemetry.interaction', {
       path: '/api/v1/x',
       body: {
-        sid: options.sid ?? this.sessionId,
+        sid: telemetryOptions.sid ?? this.sessionId,
         e: validated.map((entry) => ({
           t: entry.type,
           v: entry.vs,
@@ -436,26 +452,38 @@ export class TelemetryResource extends BaseResource {
           ...(entry.durationMs !== undefined ? { dm: Math.round(entry.durationMs) } : {}),
         })),
       },
-      ...this.requestOptions(options),
+      ...requestOptions,
     });
   }
 
   /** Начинает измерять время просмотра и отправляет результат после `finish()`. */
-  startView(input: ViewTrackerInput, options: ViewTrackerOptions = {}): ViewTracker {
-    const { clock = SYSTEM_CLOCK, ...requestOptions } = options;
+  startView(
+    input: ViewTrackerInput,
+    options: ViewTrackerOptions = {},
+    requestOptions: RequestOptions = {},
+  ): ViewTracker {
+    const { clock = SYSTEM_CLOCK, ...telemetryOptions } = options;
     return new ViewTrackerImpl(input, clock, async (entry) => {
-      await this.dwell([entry], requestOptions);
+      await this.dwell([entry], telemetryOptions, requestOptions);
     });
   }
 
   /** Отправляет событие открытия фотографии. */
-  photoOpen(input: PhotoOpenInput, options: TelemetryOptions = {}): Promise<unknown> {
-    return this.interaction([photoOpenEntry(input)], options);
+  photoOpen(
+    input: PhotoOpenInput,
+    telemetryOptions: TelemetryOptions = {},
+    requestOptions: RequestOptions = {},
+  ): Promise<unknown> {
+    return this.interaction([photoOpenEntry(input)], telemetryOptions, requestOptions);
   }
 
   /** Отправляет событие прогресса просмотра видео. */
-  videoProgress(input: VideoProgressInput, options: TelemetryOptions = {}): Promise<unknown> {
-    return this.interaction([videoProgressEntry(input)], options);
+  videoProgress(
+    input: VideoProgressInput,
+    telemetryOptions: TelemetryOptions = {},
+    requestOptions: RequestOptions = {},
+  ): Promise<unknown> {
+    return this.interaction([videoProgressEntry(input)], telemetryOptions, requestOptions);
   }
 
   /**
@@ -463,9 +491,9 @@ export class TelemetryResource extends BaseResource {
    *
    * Создание и добавление записей не выполняют сетевых запросов.
    */
-  batch(options: TelemetryBatchOptions = {}): TelemetryBatch {
+  batch(options: TelemetryBatchOptions = {}, requestOptions: RequestOptions = {}): TelemetryBatch {
     let batch: TelemetryBatchImpl;
-    batch = new TelemetryBatchImpl(this, options, () => {
+    batch = new TelemetryBatchImpl(this, options, requestOptions, () => {
       this.#batches.delete(batch);
     });
     this.#batches.add(batch);

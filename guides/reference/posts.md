@@ -131,26 +131,23 @@ interface UpdatePostInput {
   spans?: Span[];
 }
 
-interface FeedParams extends RequestOptions {
+interface FeedParams {
   tab?: FeedTab;                         // по умолчанию популярное
   limit?: number;
   cursor?: string;                       // непрозрачный, из nextCursor
-  maxPages?: number;
 }
 
-interface UserPostsParams extends RequestOptions {
+interface UserPostsParams {
   limit?: number;
   cursor?: string;
   sort?: string;
   pinnedPostId?: string;                 // поднять закреплённый пост наверх
-  maxPages?: number;
 }
 
-interface CommentsParams extends RequestOptions {
+interface CommentsParams {
   limit?: number;
   cursor?: string;                       // id последнего полученного комментария
   sort?: CommentSort;
-  maxPages?: number;
 }
 ```
 

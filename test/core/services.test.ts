@@ -491,13 +491,3 @@ describe('Сервисы и повторы', () => {
     await expect(Promise.all([primary, external])).resolves.toHaveLength(2);
   });
 });
-
-describe('Поля хоста заняты для плагинов', () => {
-  it.each(['service', 'baseUrl'])('плагин не может заявить опцию «%s»', (key) => {
-    const { itd } = makeClient();
-
-    expect(() => itd.use({ name: 'плагин', optionKeys: [key], install: () => {} })).toThrow(
-      ItdConfigError,
-    );
-  });
-});

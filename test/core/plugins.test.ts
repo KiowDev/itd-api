@@ -21,12 +21,8 @@ function makeClient(handler: MockHandler | Response[], options: ItdClientOptions
 }
 
 /** Плагин из одной обёртки — самая частая форма. */
-function plugin(
-  name: string,
-  transformer: OperationTransformer,
-  optionKeys: readonly string[] = [],
-): ClientPlugin {
-  return { name, optionKeys, install: ({ operations }) => void operations.use(transformer) };
+function plugin(name: string, transformer: OperationTransformer): ClientPlugin {
+  return { name, install: ({ operations }) => void operations.use(transformer) };
 }
 
 describe('подключение плагинов', () => {
@@ -192,93 +188,43 @@ describe('обёртки запроса', () => {
   });
 });
 
-describe('опции плагинов', () => {
-  it('доносит заявленные опции от метода ресурса до обёртки', async () => {
+describe('namespaces расширений операции', () => {
+  it('доносит extensions от метода ресурса до transformer', async () => {
     const { itd } = makeClient([json({ data: {} })]);
     let seen: unknown;
 
     itd.use(
-      plugin(
-        'crypt',
-        (request, next) => {
-          seen = (request as unknown as Record<string, unknown>).encrypt;
-          return next(request);
-        },
-        ['encrypt'],
-      ),
+      plugin('probe', (request, next) => {
+        seen = (request.extensions as { probe?: { value?: string } } | undefined)?.probe?.value;
+        return next(request);
+      }),
     );
 
     await itd.posts.create({ content: 'привет' }, {
-      encrypt: 'invis',
+      extensions: { probe: { value: 'дошло' } },
     } as Parameters<typeof itd.posts.create>[1]);
 
-    expect(seen).toBe('invis');
+    expect(seen).toBe('дошло');
   });
 
-  it('незаявленные поля опций до обёртки не доходят', async () => {
+  it('endpoint params не смешиваются с execution options', async () => {
     const { itd } = makeClient([json({ data: {} })]);
     let request: Record<string, unknown> = {};
 
     itd.use(
-      plugin(
-        'crypt',
-        (current, next) => {
-          request = current as unknown as Record<string, unknown>;
-          return next(current);
-        },
-        ['encrypt'],
-      ),
+      plugin('probe', (current, next) => {
+        request = current as unknown as Record<string, unknown>;
+        return next(current);
+      }),
     );
 
-    await itd.posts.get('1', { maxPages: 5, encrypt: 'invis' } as Parameters<
-      typeof itd.posts.get
+    await itd.posts.list({ limit: 5 }, { extensions: { probe: { value: 'дошло' } } } as Parameters<
+      typeof itd.posts.list
     >[1]);
 
-    expect(request.encrypt).toBe('invis');
-    expect(request.maxPages).toBeUndefined();
-  });
-
-  it('не даёт заявить имя поля запроса', () => {
-    const { itd } = makeClient([]);
-
-    for (const key of [
-      'operationId',
-      'path',
-      'body',
-      'method',
-      'headers',
-      'signal',
-      'retrySafety',
-      'skipAuth',
-      'raw',
-    ]) {
-      expect(() => itd.use(plugin(`p-${key}`, (r, next) => next(r), [key]))).toThrow(
-        ItdConfigError,
-      );
-    }
-  });
-
-  it('плагин с занятым именем опции не подключается вовсе', async () => {
-    const { itd, mock } = makeClient([json({ data: { id: '1' } })]);
-    let ran = false;
-
-    expect(() =>
-      itd.use({
-        name: 'hijack',
-        optionKeys: ['path'],
-        install: ({ operations }) =>
-          void operations.use((request, next) => {
-            ran = true;
-            return next(request);
-          }),
-      }),
-    ).toThrow(ItdConfigError);
-
-    await itd.posts.get('1');
-
-    // Ни обёртка не встала в цепочку, ни путь не подменился.
-    expect(ran).toBe(false);
-    expect(mock.calls[0]?.url).toContain('/api/posts/1');
+    expect(request.limit).toBeUndefined();
+    expect(request.query).toMatchObject({ limit: 5 });
+    expect(request.extensions).toEqual({ probe: { value: 'дошло' } });
   });
 });
 
@@ -624,18 +570,14 @@ describe('раздельные operation transformers и attempt interceptors', 
 });
 
 describe('отключение плагинов и очистка ресурсов', () => {
-  it('unuse удаляет обёртку, опции и имя плагина', async () => {
+  it('unuse удаляет расширения и имя плагина', async () => {
     const { itd } = makeClient([json({ data: { id: '1' } }), json({ data: { id: '2' } })]);
     let runs = 0;
     itd.use(
-      plugin(
-        'temporary',
-        (request, next) => {
-          runs += 1;
-          return next(request);
-        },
-        ['temporaryOption'],
-      ),
+      plugin('temporary', (request, next) => {
+        runs += 1;
+        return next(request);
+      }),
     );
 
     expect(itd.hasPlugin('temporary')).toBe(true);
@@ -645,9 +587,7 @@ describe('отключение плагинов и очистка ресурсо
     expect(itd.hasPlugin('temporary')).toBe(false);
     expect(itd.pluginNames()).toEqual([]);
 
-    await itd.posts.get('2', {
-      temporaryOption: true,
-    } as Parameters<typeof itd.posts.get>[1]);
+    await itd.posts.get('2');
     expect(runs).toBe(1);
   });
 

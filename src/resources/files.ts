@@ -30,7 +30,7 @@ export interface UploadedFile {
 }
 
 /** Настройки загрузки. */
-export interface UploadOptions extends RequestOptions {
+export interface UploadOptions {
   /** Имя файла. Используется для определения MIME, если тип не задан. */
   filename?: string;
   /** MIME-тип. По умолчанию определяется по имени или `Blob`. */
@@ -77,21 +77,31 @@ export class FilesResource extends BaseResource {
    * Потоковый источник открывается заново при каждой повторной попытке. Буферный источник
    * после успешного чтения переиспользуется.
    */
-  upload(input: FileInput, options: UploadOptions = {}): Promise<UploadedFile> {
-    const bodyFactory = this.#createBodyFactory(input, options);
+  upload(
+    input: FileInput,
+    uploadOptions: UploadOptions = {},
+    requestOptions: RequestOptions = {},
+  ): Promise<UploadedFile> {
+    const bodyFactory = this.#createBodyFactory(input, uploadOptions);
 
     return this.http.operation<UploadedFile>('files.upload', {
       path: '/api/files/upload',
       bodyFactory,
-      timeout: options.timeout ?? DEFAULT_UPLOAD_TIMEOUT,
-      ...this.requestOptions(options),
+      ...requestOptions,
+      timeout: requestOptions.timeout ?? DEFAULT_UPLOAD_TIMEOUT,
     });
   }
 
   /** Загружает несколько файлов последовательно, сохраняя порядок. */
-  async uploadMany(files: FileInput[], options: UploadOptions = {}): Promise<string[]> {
+  async uploadMany(
+    files: FileInput[],
+    uploadOptions: UploadOptions = {},
+    requestOptions: RequestOptions = {},
+  ): Promise<string[]> {
     const ids: string[] = [];
-    for (const file of files) ids.push((await this.upload(file, options)).id);
+    for (const file of files) {
+      ids.push((await this.upload(file, uploadOptions, requestOptions)).id);
+    }
     return ids;
   }
 
@@ -103,7 +113,7 @@ export class FilesResource extends BaseResource {
   get(fileId: string, options: RequestOptions = {}): Promise<unknown> {
     return this.http.operation('files.get', {
       path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -111,7 +121,7 @@ export class FilesResource extends BaseResource {
   remove(fileId: string, options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('files.remove', {
       path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 

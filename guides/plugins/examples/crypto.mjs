@@ -27,7 +27,7 @@ itd.use(crypt());
 try {
   const created = await itd.posts.create(
     { content: SECRET },
-    { encrypt: { cipher: 'invisible', cover: COVER } },
+    { extensions: { crypto: { encrypt: { cipher: 'invisible', cover: COVER } } } },
   );
   console.log(`Опубликован пост ${created.id}`);
 

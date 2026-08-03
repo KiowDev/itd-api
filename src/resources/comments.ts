@@ -4,14 +4,13 @@ import type { HttpClient } from '../core/http.js';
 import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { encodePathSegment } from '../core/url.js';
 import type { Comment, LikeResult } from '../models/content.js';
-import type { RequestOptions } from '../types/options.js';
+import type { PaginationOptions, RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /** Параметры запроса ответов на комментарий. */
-export interface RepliesParams extends RequestOptions {
+export interface RepliesParams {
   limit?: number;
   page?: number;
-  maxPages?: number;
 }
 
 /**
@@ -46,13 +45,21 @@ export class CommentsResource extends BaseResource {
    *
    * Здесь пагинация **постраничная**, в отличие от комментариев к посту, где курсорная.
    */
-  replies(commentId: string, params: RepliesParams = {}): Promise<Page<Comment>> {
-    return this.#replies.list({ ...params, commentId });
+  replies(
+    commentId: string,
+    params: RepliesParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<Comment>> {
+    return this.#replies.list({ ...params, commentId }, options);
   }
 
   /** Перебирает ответы на комментарий. */
-  iterateReplies(commentId: string, params: RepliesParams = {}): Paginator<Comment> {
-    return this.#replies.iterate({ ...params, commentId });
+  iterateReplies(
+    commentId: string,
+    params: RepliesParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<Comment> {
+    return this.#replies.iterate({ ...params, commentId }, options);
   }
 
   /**
@@ -83,7 +90,7 @@ export class CommentsResource extends BaseResource {
         attachmentIds,
         ...(data.replyToUserId ? { replyToUserId: data.replyToUserId } : {}),
       },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -92,7 +99,7 @@ export class CommentsResource extends BaseResource {
     return this.http.operation<Comment>('comments.update', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}`,
       body: { content },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -100,7 +107,7 @@ export class CommentsResource extends BaseResource {
   remove(commentId: string, options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('comments.remove', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -108,7 +115,7 @@ export class CommentsResource extends BaseResource {
   restore(commentId: string, options: RequestOptions = {}): Promise<Comment> {
     return this.http.operation<Comment>('comments.restore', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/restore`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -116,7 +123,7 @@ export class CommentsResource extends BaseResource {
   like(commentId: string, options: RequestOptions = {}): Promise<LikeResult> {
     return this.http.operation<LikeResult>('comments.like', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/like`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -124,7 +131,7 @@ export class CommentsResource extends BaseResource {
   unlike(commentId: string, options: RequestOptions = {}): Promise<LikeResult> {
     return this.http.operation<LikeResult>('comments.unlike', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/like`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 }

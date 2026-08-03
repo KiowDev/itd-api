@@ -38,10 +38,9 @@ iteratePosts(tag: string, params?: HashtagPostsParams): Paginator<Post>
 кириллица и пробелы допустимы. См. [`Post`](./models.md#post).
 
 ```ts
-interface HashtagPostsParams extends RequestOptions {
+interface HashtagPostsParams {
   limit?: number;
   cursor?: string;
-  maxPages?: number;
 }
 ```
 

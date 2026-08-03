@@ -47,10 +47,9 @@ updateSettings(input: UpdateNotificationSettingsInput): Promise<NotificationSett
 ## Типы
 
 ```ts
-interface NotificationListParams extends RequestOptions {
+interface NotificationListParams {
   limit?: number;
   offset?: number;                       // смещение от начала списка
-  maxPages?: number;
 }
 
 type UpdateNotificationSettingsInput = Partial<NotificationSettings>;

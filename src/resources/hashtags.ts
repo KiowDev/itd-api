@@ -2,14 +2,13 @@ import { type Page, PaginationMode, type Paginator, readCursorPage } from '../co
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import type { Hashtag, Post } from '../models/content.js';
-import type { RequestOptions } from '../types/options.js';
+import type { PaginationOptions, RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /** Параметры запроса постов по хэштегу. */
-export interface HashtagPostsParams extends RequestOptions {
+export interface HashtagPostsParams {
   limit?: number;
   cursor?: string;
-  maxPages?: number;
 }
 
 /**
@@ -35,23 +34,27 @@ export class HashtagsResource extends BaseResource {
    */
   async search(
     query?: string,
-    params: { limit?: number } & RequestOptions = {},
+    params: { limit?: number } = {},
+    options: RequestOptions = {},
   ): Promise<Hashtag[]> {
     const body = await this.http.operation('hashtags.search', {
       path: '/api/hashtags',
       query: { q: query, limit: params.limit },
-      ...this.requestOptions(params),
+      ...options,
     });
 
     return pickArray<Hashtag>(body, 'hashtags');
   }
 
   /** Загружает трендовые хэштеги. */
-  async trending(params: { limit?: number } & RequestOptions = {}): Promise<Hashtag[]> {
+  async trending(
+    params: { limit?: number } = {},
+    options: RequestOptions = {},
+  ): Promise<Hashtag[]> {
     const body = await this.http.operation('hashtags.trending', {
       path: '/api/hashtags/trending',
       query: { limit: params.limit },
-      ...this.requestOptions(params),
+      ...options,
     });
 
     return pickArray<Hashtag>(body, 'hashtags');
@@ -63,12 +66,20 @@ export class HashtagsResource extends BaseResource {
    * @param tag название без решётки; кодируется автоматически, поэтому кириллица
    * и пробелы допустимы
    */
-  posts(tag: string, params: HashtagPostsParams = {}): Promise<Page<Post>> {
-    return this.#posts.list({ ...params, tag });
+  posts(
+    tag: string,
+    params: HashtagPostsParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<Post>> {
+    return this.#posts.list({ ...params, tag }, options);
   }
 
   /** Перебирает посты по хэштегу. */
-  iteratePosts(tag: string, params: HashtagPostsParams = {}): Paginator<Post> {
-    return this.#posts.iterate({ ...params, tag });
+  iteratePosts(
+    tag: string,
+    params: HashtagPostsParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<Post> {
+    return this.#posts.iterate({ ...params, tag }, options);
   }
 }

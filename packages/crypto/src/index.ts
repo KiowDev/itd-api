@@ -15,7 +15,7 @@
  *
  * const created = await itd.posts.create(
  *   { content: 'секретный текст' },
- *   { encrypt: { cipher: 'invisible', cover: 'обычный текст' } },
+ *   { extensions: { crypto: { encrypt: { cipher: 'invisible', cover: 'обычный текст' } } } },
  * );
  *
  * const post = await itd.posts.get(created.id);
@@ -27,6 +27,14 @@
  */
 
 import type { EncryptOption, Secret } from './cipher.js';
+
+/** Настройки `@itd-api/crypto` для одной логической операции. */
+export interface CryptRequestOptions {
+  /** Чем зашифровать текст запроса. Строка — то же, что `{ cipher: '<имя>' }`. */
+  encrypt?: EncryptOption | undefined;
+  /** Искать ли скрытые сообщения в ответе. По умолчанию — как задано в `crypt()`. */
+  decrypt?: boolean | undefined;
+}
 
 export type { Cipher, EncodeOptions, EncryptOption, EncryptSpec, Secret } from './cipher.js';
 export { CipherName, secretOf, secretsOf } from './cipher.js';
@@ -55,18 +63,16 @@ export { decodeTree } from './walk.js';
 /**
  * Дополнения к типам `itd-api`.
  *
- * Опции `encrypt` и `decrypt` библиотека доносит до плагина нетронутыми, но их имена
+ * Namespace `extensions.crypto` библиотека доносит до плагина нетронутым, но его содержимое
  * знает только он — как и то, откуда в ответе берётся `secret`. Поэтому типы объявляются
- * здесь: подключается пакет — появляются и поля.
+ * здесь: подключается пакет — появляется и namespace.
  *
  * Читать `secret` можно и без этого — помощником {@link secretOf}.
  */
 declare module 'itd-api' {
-  interface RequestOptions {
-    /** Чем зашифровать текст запроса. Строка — то же, что `{ cipher: '<имя>' }`. */
-    encrypt?: EncryptOption | undefined;
-    /** Искать ли скрытые сообщения в ответе. По умолчанию — как задано в `crypt()`. */
-    decrypt?: boolean | undefined;
+  interface RequestExtensions {
+    /** Настройки скрытых сообщений для этой операции. */
+    crypto?: CryptRequestOptions | undefined;
   }
 
   interface Post {

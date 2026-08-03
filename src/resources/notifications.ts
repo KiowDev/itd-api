@@ -3,7 +3,7 @@ import { pickBoolean, pickNumber } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import type { Notification, NotificationSettings } from '../models/notifications.js';
 import { normalizeNotification } from '../notifications/normalize.js';
-import type { RequestOptions } from '../types/options.js';
+import type { PaginationOptions, RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 const NOTIFICATION_SETTING_KEYS = [
@@ -24,11 +24,10 @@ const NOTIFICATION_SETTING_KEYS = [
 const READ_BATCH_SIZE = 20;
 
 /** Параметры запроса списка уведомлений. */
-export interface NotificationListParams extends RequestOptions {
+export interface NotificationListParams {
   limit?: number;
   /** Смещение от начала списка. */
   offset?: number;
-  maxPages?: number;
 }
 
 /** Изменяемые настройки уведомлений. */
@@ -81,8 +80,11 @@ export class NotificationsResource extends BaseResource {
    * const next = await itd.notifications.list({ limit: 20, offset: page.nextOffset });
    * ```
    */
-  list(params: NotificationListParams = {}): Promise<Page<Notification>> {
-    return this.#list.list(params);
+  list(
+    params: NotificationListParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<Notification>> {
+    return this.#list.list(params, options);
   }
 
   /**
@@ -95,15 +97,18 @@ export class NotificationsResource extends BaseResource {
    * }
    * ```
    */
-  iterate(params: NotificationListParams = {}): Paginator<Notification> {
-    return this.#list.iterate(params);
+  iterate(
+    params: NotificationListParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<Notification> {
+    return this.#list.iterate(params, options);
   }
 
   /** Загружает число непрочитанных уведомлений. */
   async count(options: RequestOptions = {}): Promise<number> {
     const body = await this.http.operation('notifications.count', {
       path: '/api/notifications/count',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickNumber(body, 'count', 0);
@@ -117,7 +122,7 @@ export class NotificationsResource extends BaseResource {
   async markRead(notificationId: string, options: RequestOptions = {}): Promise<number> {
     const body = await this.http.operation('notifications.markRead', {
       path: `/api/notifications/${encodePathSegment(notificationId, 'notificationId')}/read`,
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickNumber(body, 'markedCount', 0);
@@ -141,7 +146,7 @@ export class NotificationsResource extends BaseResource {
       const body = await this.http.operation('notifications.markReadBatch', {
         path: '/api/notifications/read-batch',
         body: { ids: chunk },
-        ...this.requestOptions(options),
+        ...options,
       });
 
       marked += pickNumber(body, 'markedCount', 0);
@@ -154,7 +159,7 @@ export class NotificationsResource extends BaseResource {
   async markAllRead(options: RequestOptions = {}): Promise<number> {
     const body = await this.http.operation('notifications.markAllRead', {
       path: '/api/notifications/read-all',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickNumber(body, 'markedCount', 0);
@@ -164,7 +169,7 @@ export class NotificationsResource extends BaseResource {
   async getSettings(options: RequestOptions = {}): Promise<NotificationSettings> {
     const body = await this.http.operation('notifications.getSettings', {
       path: '/api/notifications/settings',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return readSettings(body);
@@ -189,7 +194,7 @@ export class NotificationsResource extends BaseResource {
     const body = await this.http.operation('notifications.updateSettings', {
       path: '/api/notifications/settings',
       body: payload,
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return readSettings(body);

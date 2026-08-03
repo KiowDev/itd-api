@@ -70,7 +70,7 @@ function makeAuth(
     transport.send,
   );
 
-  const http = new HttpClient({ handler: handlerFn, plugins, baseUrl: config.baseUrl });
+  const http = new HttpClient({ handler: handlerFn, baseUrl: config.baseUrl });
 
   return { auth, http, jar, mock, config, plugins };
 }

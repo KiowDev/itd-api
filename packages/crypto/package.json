@@ -60,7 +60,7 @@
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
   "peerDependencies": {
-    "itd-api": ">=0.4.0"
+    "itd-api": "^0.5.0"
   },
   "peerDependenciesMeta": {
     "itd-api": {

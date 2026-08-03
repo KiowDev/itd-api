@@ -58,7 +58,7 @@ export class PlatformResource extends BaseResource {
     return this.http.operation<PlatformVersions>('platform.version', {
       path: '/api/platform/version',
       skipAuth: true,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -66,7 +66,7 @@ export class PlatformResource extends BaseResource {
   async changelog(options: RequestOptions = {}): Promise<ChangelogEntry[]> {
     const body = await this.http.operation('platform.changelog', {
       path: '/api/platform/changelog',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return Array.isArray(body) ? (body as ChangelogEntry[]) : [];
@@ -76,7 +76,7 @@ export class PlatformResource extends BaseResource {
   async announcements(options: RequestOptions = {}): Promise<Announcement[]> {
     const body = await this.http.operation('platform.announcements', {
       path: '/api/platform/announcements',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickArray<Announcement>(body, 'announcements');
@@ -86,7 +86,7 @@ export class PlatformResource extends BaseResource {
   portal(options: RequestOptions = {}): Promise<Portal> {
     return this.http.operation<Portal>('platform.portal', {
       path: '/api/v1/portal',
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -110,7 +110,7 @@ export class PlatformResource extends BaseResource {
     const body = await this.http.operation<PlatformStatus>('platform.status', {
       service: STATUS_SERVICE,
       path: '/api/status',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return normalizeStatus(body);

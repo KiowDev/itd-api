@@ -384,16 +384,17 @@ export type {
   ItdClientOptions,
   Logger,
   OperationRequestOptions,
+  PaginationOptions,
   RateLimitOptions,
   RawRequestOptions,
   RequestContext,
+  RequestExtensions,
   RequestOptions,
   ResponseContext,
   RetryContext,
   RetryDecisionContext,
   RetryOptions,
 } from './types/options.js';
-export { REQUEST_OPTION_KEYS } from './types/options.js';
 export type {
   CreateCommentInput,
   CreatePollInput,

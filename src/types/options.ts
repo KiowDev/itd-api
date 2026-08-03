@@ -246,7 +246,16 @@ export interface ItdClientOptions {
   mode?: RuntimeMode | undefined;
 }
 
-/** Опции отдельного запроса. Доступны в каждом методе ресурсов. */
+/**
+ * Namespaces расширений отдельной операции.
+ *
+ * Пакеты дополняют интерфейс через declaration merging и владеют только своим полем.
+ * Core передаёт объект operation transformers без знания его содержимого.
+ */
+// biome-ignore lint/suspicious/noEmptyInterface: interface нужен для declaration merging пакетов
+export interface RequestExtensions {}
+
+/** Опции выполнения отдельного запроса. Передаются последним аргументом методов ресурсов. */
 export interface RequestOptions {
   /** Отмена запроса извне. */
   signal?: AbortSignal | undefined;
@@ -263,36 +272,15 @@ export interface RequestOptions {
    * интеграциям и осознанному переопределению серверного контракта.
    */
   retrySafety?: RetrySafety | undefined;
+  /** Настройки подключённых operation extensions, сгруппированные по владельцу. */
+  extensions?: RequestExtensions | undefined;
 }
 
-/**
- * Имена полей {@link RequestOptions} — единственный источник истины.
- *
- * Ресурсы переносят в описание запроса только эти поля (плюс заявленные плагинами),
- * потому что параметры методов подмешивают к ним `limit`, `cursor` и прочее, чему
- * в транспорте делать нечего. Список стоит рядом с интерфейсом, чтобы новое поле нельзя
- * было забыть.
- *
- * `satisfies` гарантирует, что каждое имя в списке — действительно поле `RequestOptions`.
- * Обратную полноту (не забыто ли новое поле) проверяет тип {@link RequestOptionKeysComplete}
- * в тесте: здесь её проверять нельзя — плагины расширяют `RequestOptions` своими опциями
- * (`encrypt`, `decrypt` и подобными), которых в этом списке быть и не должно.
- */
-export const REQUEST_OPTION_KEYS = [
-  'signal',
-  'timeout',
-  'headers',
-  'retry',
-  'retrySafety',
-] as const satisfies readonly (keyof RequestOptions)[];
-
-/**
- * Тип-страж полноты {@link REQUEST_OPTION_KEYS}: `true`, только когда список покрывает
- * все ключи `RequestOptions`. Проверяется в тесте, а не здесь, — в сборке плагина
- * интерфейс расширен, и strict-проверка на месте давала бы ложную ошибку.
- */
-export type RequestOptionKeysComplete =
-  keyof RequestOptions extends (typeof REQUEST_OPTION_KEYS)[number] ? true : never;
+/** Опции перебора страниц, не являющиеся параметрами endpoint. */
+export interface PaginationOptions extends RequestOptions {
+  /** Максимальное число страниц; без значения перебор продолжается до конца списка. */
+  maxPages?: number | undefined;
+}
 
 /** Полное описание запроса для низкоуровневого `itd.request()`. */
 export interface RawRequestOptions extends RequestOptions {

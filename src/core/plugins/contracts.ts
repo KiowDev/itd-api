@@ -134,6 +134,10 @@ export interface PluginApi {
  * отдельной транспортной попытки. Core взаимодействует с плагином только через эти контракты
  * и его lifecycle, не зная деталей реализации.
  *
+ * Настройки отдельного вызова плагин объявляет своим полем в `RequestExtensions` через
+ * declaration merging. Пользователь передаёт их в `RequestOptions.extensions`, а operation
+ * transformer читает только принадлежащий плагину namespace.
+ *
  * @example Логирование логических операций
  * ```ts
  * const logging: ClientPlugin = {
@@ -152,24 +156,6 @@ export interface PluginApi {
 export interface ClientPlugin {
   /** Имя плагина. Должно быть уникальным: повторное подключение — ошибка. */
   name: string;
-  /**
-   * Имена опций запроса, которые плагин читает у методов ресурсов.
-   *
-   * Библиотека этих опций не понимает и ничего с ними не делает — только доносит
-   * от вызова метода до operation transformer нетронутыми. Без такого списка чужие поля
-   * отсеиваются, чтобы случайная опечатка в параметрах не уезжала на сервер.
-   *
-   * Имена полей самого запроса (`path`, `body`, `headers`, `signal` и прочие из
-   * `OperationRequestOptions`) заявить нельзя: подключение такого плагина завершится ошибкой.
-   *
-   * Типы для собственных опций плагин объявляет через declaration merging:
-   * ```ts
-   * declare module 'itd-api' {
-   *   interface RequestOptions { encrypt?: string | undefined }
-   * }
-   * ```
-   */
-  optionKeys?: readonly string[];
   /** Плагины, которые обязаны быть подключены раньше этого. */
   requires?: readonly string[];
   /** Несовместимые плагины. Достаточно объявить конфликт с одной стороны. */

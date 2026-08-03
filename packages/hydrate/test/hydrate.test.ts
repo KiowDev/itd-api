@@ -310,7 +310,9 @@ describe('типы', () => {
       const post = await client.posts.get('post-id');
       const profile = await post.author.get();
       const comments = await post.comment('Текст').then((value) => value.getReplies());
-      const refreshed = await post.get({ cache: 'reload', decrypt: false });
+      const refreshed = await post.get({
+        extensions: { cache: 'reload', crypto: { decrypt: false } },
+      });
 
       expectTypeOf(post).toEqualTypeOf<HydratedPost>();
       expectTypeOf(refreshed).toEqualTypeOf<HydratedPost>();

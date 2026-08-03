@@ -3,13 +3,7 @@ import type { BuiltInOperationId } from '../core/operations.js';
 import type { Page, PageState, PaginationMode } from '../core/pagination.js';
 import { Paginator } from '../core/pagination.js';
 import type { QueryParams } from '../core/url.js';
-import { REQUEST_OPTION_KEYS, type RequestOptions } from '../types/options.js';
-
-/** Параметры перебираемого списка: опции запроса плюс предел числа страниц. */
-export interface ListParams extends RequestOptions {
-  /** Ограничение числа страниц при переборе. */
-  maxPages?: number | undefined;
-}
+import type { PaginationOptions, RequestOptions } from '../types/options.js';
 
 /**
  * Описание перебираемого эндпоинта.
@@ -20,7 +14,7 @@ export interface ListParams extends RequestOptions {
  * @typeParam T тип элемента списка
  * @typeParam P тип параметров метода
  */
-export interface ListingSpec<T, P extends ListParams> {
+export interface ListingSpec<T, P extends object> {
   /** Стабильная семантическая операция списка. */
   operationId: BuiltInOperationId | ((params: P) => BuiltInOperationId);
   /** Путь эндпоинта. */
@@ -36,11 +30,11 @@ export interface ListingSpec<T, P extends ListParams> {
 }
 
 /** Пара методов, собранная из {@link ListingSpec}: разовая загрузка и перебор. */
-export interface Listing<T, P extends ListParams> {
+export interface Listing<T, P extends object> {
   /** Загружает одну страницу с позиции, заданной параметрами. */
-  list(params: P): Promise<Page<T>>;
+  list(params: P, options?: RequestOptions): Promise<Page<T>>;
   /** Перебирает страницы, сама подставляя позиции. */
-  iterate(params: P): Paginator<T>;
+  iterate(params: P, options?: PaginationOptions): Paginator<T>;
 }
 
 /** Общая основа всех групп методов клиента. */
@@ -53,34 +47,6 @@ export class BaseResource {
   }
 
   /**
-   * Переносит опции запроса в описание транспорта.
-   *
-   * Копируются только поля {@link REQUEST_OPTION_KEYS} и опции, заявленные плагинами:
-   * параметры методов наследуют {@link RequestOptions} и приносят с собой `limit`, `cursor`
-   * и прочее, чему в описании запроса делать нечего. Чужие опции плагинов библиотека
-   * не понимает, но обязана донести до обёрток нетронутыми.
-   */
-  protected requestOptions(options: RequestOptions | undefined): Partial<RequestOptions> {
-    if (!options) return {};
-
-    const source = options as Record<string, unknown>;
-    const result: Record<string, unknown> = {};
-
-    for (const key of REQUEST_OPTION_KEYS) {
-      const value = source[key];
-      if (value !== undefined) result[key] = value;
-    }
-
-    const pluginKeys = this.http.pluginOptionKeys;
-    for (const key of pluginKeys) {
-      const value = source[key];
-      if (value !== undefined) result[key] = value;
-    }
-
-    return result as Partial<RequestOptions>;
-  }
-
-  /**
    * Собирает перебор страниц.
    *
    * @param mode схема пагинации эндпоинта
@@ -90,7 +56,7 @@ export class BaseResource {
   protected paginate<T>(
     mode: PaginationMode,
     load: (state: PageState) => Promise<Page<T>>,
-    options?: RequestOptions & { maxPages?: number; start?: PageState },
+    options?: PaginationOptions & { start?: PageState },
   ): Paginator<T> {
     return new Paginator<T>({
       mode,
@@ -119,24 +85,27 @@ export class BaseResource {
    * });
    * ```
    */
-  protected paginated<T, P extends ListParams>(spec: ListingSpec<T, P>): Listing<T, P> {
-    const load = async (params: P, state: PageState): Promise<Page<T>> => {
+  protected paginated<T, P extends object>(spec: ListingSpec<T, P>): Listing<T, P> {
+    const load = async (
+      params: P,
+      state: PageState,
+      options: RequestOptions = {},
+    ): Promise<Page<T>> => {
       const operationId =
         typeof spec.operationId === 'function' ? spec.operationId(params) : spec.operationId;
       const body = await this.http.operation(operationId, {
         path: spec.path(params),
         query: withPageState(spec.query(params), state),
-        ...this.requestOptions(params),
+        ...options,
       });
       return spec.read(body, state);
     };
 
     return {
-      list: (params) => load(params, spec.start(params)),
-      iterate: (params) =>
-        this.paginate<T>(spec.mode, (state) => load(params, state), {
-          ...(params.maxPages !== undefined ? { maxPages: params.maxPages } : {}),
-          ...(params.signal !== undefined ? { signal: params.signal } : {}),
+      list: (params, options) => load(params, spec.start(params), options),
+      iterate: (params, options) =>
+        this.paginate<T>(spec.mode, (state) => load(params, state, options), {
+          ...options,
           start: spec.start(params),
         }),
     };

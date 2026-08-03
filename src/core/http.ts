@@ -5,14 +5,11 @@ import {
   type PipelineRequestInput,
   type RequestHandler,
 } from './pipeline.js';
-import type { PluginRegistry } from './plugins/registry.js';
 
 /** Что нужно фасаду для работы. */
 export interface HttpClientDeps {
   /** Готовый обработчик — вся цепочка слоёв поверх транспорта. */
   handler: RequestHandler;
-  /** Реестр плагинов: у него ресурсы спрашивают имена заявленных опций. */
-  plugins: PluginRegistry;
   baseUrl: string;
 }
 
@@ -20,33 +17,21 @@ export interface HttpClientDeps {
  * Точка входа ресурсов в конвейер запросов.
  *
  * Принимает готовый обработчик — цепочку слоёв поверх транспорта, собранную
- * в {@link ItdClient}, — и отдаёт ресурсам метод `request` и имена опций плагинов.
+ * в {@link ItdClient}, — и отдаёт ресурсам методы `request`/`operation`.
  * О слоях и их порядке ресурсы не знают.
  */
 export class HttpClient {
   readonly #handler: RequestHandler;
-  readonly #plugins: PluginRegistry;
   readonly #baseUrl: string;
 
   constructor(deps: HttpClientDeps) {
     this.#handler = deps.handler;
-    this.#plugins = deps.plugins;
     this.#baseUrl = deps.baseUrl;
   }
 
   /** Базовый URL, к которому обращается клиент. */
   get baseUrl(): string {
     return this.#baseUrl;
-  }
-
-  /**
-   * Имена опций запроса, заявленные плагинами.
-   *
-   * Читается ресурсами: они переносят в транспорт только известные поля, а чужие,
-   * если их никто не заявил, отсеивают.
-   */
-  get pluginOptionKeys(): ReadonlySet<string> {
-    return this.#plugins.optionKeys;
   }
 
   /**

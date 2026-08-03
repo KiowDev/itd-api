@@ -146,7 +146,11 @@ describe('гидратация realtime', () => {
 
     const reply = await notification?.comment?.reply(
       (builder) => builder.content('Секретный ответ').replyTo('user-alice'),
-      { encrypt: { cipher: 'invisible', cover: 'Обычный ответ' } },
+      {
+        extensions: {
+          crypto: { encrypt: { cipher: 'invisible', cover: 'Обычный ответ' } },
+        },
+      },
     );
     expect(reply?.secret?.text).toBe('Секретный ответ');
     expect(typeof reply?.getReplies).toBe('function');

@@ -28,7 +28,7 @@ export class SearchResource extends BaseResource {
     const body = await this.http.operation('search.all', {
       path: '/api/search',
       query: { q: query },
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return {

@@ -53,8 +53,19 @@ interface RequestOptions {
   headers?: Record<string, string>;      // дополнительные заголовки
   retry?: RetryOptions | false;          // повторы только этого запроса
   retrySafety?: RetrySafety;             // точечная семантика повтора custom/raw operation
+  extensions?: RequestExtensions;        // namespace настроек подключённых плагинов
+}
+
+interface RequestExtensions {}           // расширяется пакетами через declaration merging
+
+interface PaginationOptions extends RequestOptions {
+  maxPages?: number;                     // предел только для методов-итераторов
 }
 ```
+
+Параметры endpoint и выполнения запроса не смешиваются. Если методу нужны собственные параметры,
+они идут отдельным объектом раньше последнего `RequestOptions`: `list(params, requestOptions)`.
+Методы-итераторы вместо него принимают `PaginationOptions`.
 
 **`UserRef` против `UserId`.** `UserRef` — это UUID **или** имя пользователя: подходят оба
 (`itd.users.get('nowkie')` и `itd.users.get('9f1c…')`). `UserId` — строго UUID; имя

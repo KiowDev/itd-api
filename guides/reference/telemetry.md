@@ -22,7 +22,11 @@ if (post.vs) {
 ```
 
 ```ts
-startView(input: ViewTrackerInput, options?: ViewTrackerOptions): ViewTracker
+startView(
+  input: ViewTrackerInput,
+  options?: ViewTrackerOptions,
+  requestOptions?: RequestOptions,
+): ViewTracker
 
 interface ViewTrackerInput {
   vs: string;
@@ -65,8 +69,16 @@ if (post.vs) {
 ```
 
 ```ts
-photoOpen(input: PhotoOpenInput, options?: TelemetryOptions): Promise<unknown>
-videoProgress(input: VideoProgressInput, options?: TelemetryOptions): Promise<unknown>
+photoOpen(
+  input: PhotoOpenInput,
+  telemetryOptions?: TelemetryOptions,
+  requestOptions?: RequestOptions,
+): Promise<unknown>
+videoProgress(
+  input: VideoProgressInput,
+  telemetryOptions?: TelemetryOptions,
+  requestOptions?: RequestOptions,
+): Promise<unknown>
 ```
 
 `photoOpen()` требует целый неотрицательный `mediaIndex`; `videoProgress()` — конечные
@@ -103,7 +115,7 @@ interface TelemetryBatch {
   photoOpen(input: PhotoOpenInput): this;
   videoProgress(input: VideoProgressInput): this;
   startView(input: ViewTrackerInput): ViewTracker;
-  flush(options?: TelemetryOptions): Promise<void>;
+  flush(options?: RequestOptions): Promise<void>;
   close(): Promise<void>;
 }
 ```
@@ -122,10 +134,15 @@ interface TelemetryBatch {
 Для собственных сценариев можно передать готовые события:
 
 ```ts
-dwell(entries: readonly DwellEntry[], options?: TelemetryOptions): Promise<unknown>
+dwell(
+  entries: readonly DwellEntry[],
+  telemetryOptions?: TelemetryOptions,
+  requestOptions?: RequestOptions,
+): Promise<unknown>
 interaction(
   entries: readonly InteractionEntry[],
-  options?: TelemetryOptions,
+  telemetryOptions?: TelemetryOptions,
+  requestOptions?: RequestOptions,
 ): Promise<unknown>
 ```
 
@@ -161,10 +178,16 @@ interface InteractionEntry {
 отдельного запроса или накопителя его можно переопределить:
 
 ```ts
-interface TelemetryOptions extends RequestOptions {
+interface TelemetryOptions {
   sid?: string;
 }
 ```
+
+`ViewTrackerOptions` и `TelemetryBatchOptions` расширяют настройки телеметрии клиентскими
+полями `clock` и `maxBatchSize`. `signal`, timeout, retry и plugin extensions не смешиваются
+с ними: они передаются последним аргументом `requestOptions`. Накопитель запоминает эти
+настройки при `batch(telemetryOptions, requestOptions)`, а `flush()` позволяет переопределить
+их для конкретной отправки.
 
 ## Перечисления
 

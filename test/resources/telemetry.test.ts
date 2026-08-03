@@ -159,7 +159,7 @@ describe('telemetry helpers', () => {
     const { itd, mock } = makeClient();
     const aborted = new AbortController();
     aborted.abort();
-    const batch = itd.telemetry.batch({ signal: aborted.signal });
+    const batch = itd.telemetry.batch({}, { signal: aborted.signal });
     batch.dwell({ vs: 'a', enterAt: 0, exitAt: 10, reason: ViewReason.Normal });
 
     await expect(batch.flush()).rejects.toBeInstanceOf(ItdAbortError);

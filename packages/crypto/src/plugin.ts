@@ -22,11 +22,11 @@ export interface CryptOptions {
   decrypt?: boolean | undefined;
 }
 
-/** Опции запроса, которые читает плагин. Их имена он заявляет клиенту через `optionKeys`. */
-type CryptRequest = OperationRequestOptions & {
+/** Настройки одной операции из namespace `extensions.crypto`. */
+interface CryptRequestOptions {
   encrypt?: EncryptOption | undefined;
   decrypt?: boolean | undefined;
-};
+}
 
 /**
  * Плагин скрытых сообщений.
@@ -45,7 +45,7 @@ type CryptRequest = OperationRequestOptions & {
  *
  * const created = await itd.posts.create(
  *   { content: 'секрет' },
- *   { encrypt: { cipher: 'invisible', cover: 'обычный текст' } },
+ *   { extensions: { crypto: { encrypt: { cipher: 'invisible', cover: 'обычный текст' } } } },
  * );
  *
  * const post = await itd.posts.get(created.id);
@@ -61,10 +61,10 @@ export function crypt(options: CryptOptions = {}): ClientPlugin {
   }
 
   const transformer: OperationTransformer = async (request, next) => {
-    const current = request as CryptRequest;
+    const current: CryptRequestOptions = request.extensions?.crypto ?? {};
 
     const prepared =
-      current.encrypt === undefined ? request : encryptRequest(current, current.encrypt, ciphers);
+      current.encrypt === undefined ? request : encryptRequest(request, current.encrypt, ciphers);
 
     const result = await next(prepared);
 
@@ -78,7 +78,6 @@ export function crypt(options: CryptOptions = {}): ClientPlugin {
     // Кэш должен хранить сырой ответ: тогда расшифровка применяется и к cache hit,
     // а отключение или замена crypt не оставляет в кэше уже обработанные данные.
     before: ['cache'],
-    optionKeys: ['encrypt', 'decrypt'],
     install: ({ operations }) => void operations.use(transformer),
   };
 }

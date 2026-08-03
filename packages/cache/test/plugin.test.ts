@@ -9,7 +9,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CacheError, type CachePlugin, cache } from '../src/index.js';
 
 type FetchHandler = (url: string, init: RequestInit, call: number) => Response | Promise<Response>;
-type RawRequestWithView = { view?: unknown };
+
+declare module 'itd-api' {
+  interface RequestExtensions {
+    view?: string | undefined;
+  }
+}
 
 function makeJwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown) =>
@@ -74,9 +79,9 @@ describe('настройки', () => {
     const { itd } = makeClient((url, _init, call) => postFromUrl(url, call));
     itd.use(cache({ ttl: 1_000, routes: ['posts.get'] }));
 
-    await expect(itd.posts.get('1', { cache: 'неизвестно' as 'default' })).rejects.toThrow(
-      CacheError,
-    );
+    await expect(
+      itd.posts.get('1', { extensions: { cache: 'неизвестно' as 'default' } }),
+    ).rejects.toThrow(CacheError);
   });
 });
 
@@ -150,11 +155,10 @@ describe('TTL/LRU-кэш', () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
     const optionCarrier: ClientPlugin = {
       name: 'option-carrier',
-      optionKeys: ['view'],
       install: ({ operations }) =>
         void operations.use(async (request, next) => {
           const result = (await next(request)) as Record<string, unknown>;
-          result.view = (request as RawRequestWithView).view;
+          result.view = request.extensions?.view;
           return result;
         }),
     };
@@ -162,15 +166,9 @@ describe('TTL/LRU-кэш', () => {
     itd.use(optionCarrier);
     itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
 
-    const full = await itd.posts.get('1', {
-      view: 'full',
-    } as Parameters<typeof itd.posts.get>[1]);
-    const compact = await itd.posts.get('1', {
-      view: 'compact',
-    } as Parameters<typeof itd.posts.get>[1]);
-    const fullAgain = await itd.posts.get('1', {
-      view: 'full',
-    } as Parameters<typeof itd.posts.get>[1]);
+    const full = await itd.posts.get('1', { extensions: { view: 'full' } });
+    const compact = await itd.posts.get('1', { extensions: { view: 'compact' } });
+    const fullAgain = await itd.posts.get('1', { extensions: { view: 'full' } });
 
     expect(calls).toHaveLength(2);
     expect((full as typeof full & { view: string }).view).toBe('full');
@@ -306,9 +304,11 @@ describe('управление и инвалидация', () => {
     itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
 
     expect((await itd.posts.get('1')).content).toBe('ответ-1');
-    expect((await itd.posts.get('1', { cache: 'reload' })).content).toBe('ответ-2');
+    expect((await itd.posts.get('1', { extensions: { cache: 'reload' } })).content).toBe('ответ-2');
     expect((await itd.posts.get('1')).content).toBe('ответ-2');
-    expect((await itd.posts.get('1', { cache: 'no-store' })).content).toBe('ответ-3');
+    expect((await itd.posts.get('1', { extensions: { cache: 'no-store' } })).content).toBe(
+      'ответ-3',
+    );
     expect((await itd.posts.get('1')).content).toBe('ответ-2');
 
     expect(calls).toHaveLength(3);
@@ -395,7 +395,7 @@ describe('управление и инвалидация', () => {
       method: 'POST',
       path: '/api/reports',
       body: {},
-      cache: 'неизвестно',
+      extensions: { cache: 'неизвестно' },
     } as unknown as Parameters<typeof itd.request>[0]);
 
     expect(calls).toHaveLength(1);

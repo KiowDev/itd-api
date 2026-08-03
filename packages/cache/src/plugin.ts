@@ -81,8 +81,6 @@ interface KeyState {
   generation: number;
 }
 
-type CacheRequest = OperationRequestOptions & { cache?: CacheMode | undefined };
-
 const DEFAULT_MAX_ENTRIES = 500;
 const CACHE_MODES: ReadonlySet<string> = new Set(Object.values(CacheModes));
 
@@ -137,8 +135,8 @@ function cloneValue(value: unknown): LoadedValue {
   }
 }
 
-function cacheMode(request: CacheRequest): CacheMode {
-  const mode = request.cache ?? CacheModes.Default;
+function cacheMode(request: OperationRequestOptions): CacheMode {
+  const mode = request.extensions?.cache ?? CacheModes.Default;
   if (!CACHE_MODES.has(mode)) {
     throw new CacheError(
       `cache должен быть '${CacheModes.Default}', '${CacheModes.Reload}' или '${CacheModes.NoStore}', получено: ${String(mode)}`,
@@ -256,8 +254,7 @@ export function cache(options: CacheOptions): CachePlugin {
       return { accountScope, sessionScope };
     };
 
-    return async (rawRequest, next) => {
-      const request = rawRequest as CacheRequest;
+    return async (request, next) => {
       const route = cacheRoute(request.operationId);
       const method = request.method.toUpperCase();
       const isRead = route !== undefined || method === 'GET' || method === 'HEAD';
@@ -394,7 +391,6 @@ export function cache(options: CacheOptions): CachePlugin {
 
   return {
     name: 'cache',
-    optionKeys: ['cache'],
     get size() {
       values.purgeStale();
       return values.size;

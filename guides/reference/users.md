@@ -17,7 +17,7 @@ updateMe(input: UpdateProfileInput): Promise<MyProfile>
 Обновляет свой профиль. Передавайте только изменяемые поля.
 
 ```ts
-setBanner(file: FileInput, options?: UploadOptions): Promise<MyProfile>
+setBanner(file: FileInput, uploadOptions?: UploadOptions, requestOptions?: RequestOptions): Promise<MyProfile>
 removeBanner(options?: RequestOptions): Promise<MyProfile>
 ```
 `setBanner()` сначала загружает файл через `POST /api/files/upload`, затем передаёт
@@ -166,9 +166,8 @@ interface UpdateProfileInput {
 
 type UpdatePrivacyInput = Partial<PrivacySettings>;
 
-interface UserListParams extends RequestOptions {
+interface UserListParams {
   limit?: number;                        // > 20 сервер зажимает до 20
   page?: number;                         // сервер игнорирует
-  maxPages?: number;
 }
 ```

@@ -81,7 +81,7 @@ export class AuthResource extends BaseResource {
   check(options: RequestOptions = {}): Promise<AuthState> {
     return this.http.operation<AuthState>('auth.check', {
       path: '/api/profile',
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -96,7 +96,7 @@ export class AuthResource extends BaseResource {
       body: credentials,
       skipAuth: true,
       skipAuthRefresh: true,
-      ...this.requestOptions(options),
+      ...options,
     });
 
     const flowToken = pickString(body, 'flowToken');
@@ -126,7 +126,7 @@ export class AuthResource extends BaseResource {
       body: credentials,
       skipAuth: true,
       skipAuthRefresh: true,
-      ...this.requestOptions(options),
+      ...options,
     });
 
     const accessToken = pickString(body, 'accessToken');
@@ -153,7 +153,7 @@ export class AuthResource extends BaseResource {
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
-      ...this.requestOptions(options),
+      ...options,
     });
 
     const accessToken = pickString(body, 'accessToken');
@@ -175,7 +175,7 @@ export class AuthResource extends BaseResource {
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -262,7 +262,7 @@ export class AuthResource extends BaseResource {
     await this.http.operation<void>('auth.logout', {
       path: AUTH_PATHS.logout,
       skipAuthRefresh: true,
-      ...this.requestOptions(options),
+      ...options,
     });
 
     await this.#auth.clear();
@@ -297,7 +297,7 @@ export class AuthResource extends BaseResource {
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
-      ...this.requestOptions(options),
+      ...options,
     });
 
     const flowToken = pickString(body, 'flowToken');
@@ -320,7 +320,7 @@ export class AuthResource extends BaseResource {
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -377,7 +377,7 @@ export class AuthResource extends BaseResource {
     return this.http.operation<void>('auth.changePassword', {
       path: AUTH_PATHS.changePassword,
       body: { currentPassword: input.currentPassword, newPassword: input.newPassword },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -385,7 +385,7 @@ export class AuthResource extends BaseResource {
   async sessions(options: RequestOptions = {}): Promise<Session[]> {
     const body = await this.http.operation('auth.sessions', {
       path: AUTH_PATHS.sessions,
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickArray<Session>(body, 'sessions');
@@ -395,7 +395,7 @@ export class AuthResource extends BaseResource {
   revokeSession(sessionId: string, options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('auth.revokeSession', {
       path: `${AUTH_PATHS.sessions}/${encodeURIComponent(sessionId)}`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -403,7 +403,7 @@ export class AuthResource extends BaseResource {
   revokeOtherSessions(options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('auth.revokeOtherSessions', {
       path: AUTH_PATHS.sessions,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 }

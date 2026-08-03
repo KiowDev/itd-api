@@ -26,7 +26,7 @@ import type {
   PostStats,
 } from '../models/content.js';
 import type { CommentSort, FeedTab } from '../types/enums.js';
-import type { RequestOptions } from '../types/options.js';
+import type { PaginationOptions, RequestOptions } from '../types/options.js';
 import type { CreateCommentInput, CreatePostData } from '../types/params.js';
 import { BaseResource } from './base.js';
 
@@ -36,7 +36,7 @@ function cursorStart(params: { cursor?: string | undefined }): { cursor?: string
 }
 
 /** Параметры запроса ленты. */
-export interface FeedParams extends RequestOptions {
+export interface FeedParams {
   /** Вкладка ленты. По умолчанию сервер отдаёт популярное. */
   tab?: FeedTab;
   /** Сколько постов на страницу. */
@@ -47,23 +47,20 @@ export interface FeedParams extends RequestOptions {
    * Передавайте значение как есть: его формат зависит от вкладки и может измениться.
    */
   cursor?: string;
-  /** Ограничение числа страниц при переборе. */
-  maxPages?: number;
 }
 
 /** Параметры запроса постов пользователя. */
-export interface UserPostsParams extends RequestOptions {
+export interface UserPostsParams {
   limit?: number;
   cursor?: string;
   /** Порядок сортировки. */
   sort?: string;
   /** Закреплённый пост, чтобы сервер поднял его наверх. */
   pinnedPostId?: string;
-  maxPages?: number;
 }
 
 /** Параметры запроса комментариев к посту. */
-export interface CommentsParams extends RequestOptions {
+export interface CommentsParams {
   limit?: number;
   /**
    * Курсор следующей страницы: идентификатор последнего полученного комментария.
@@ -72,7 +69,6 @@ export interface CommentsParams extends RequestOptions {
    */
   cursor?: string;
   sort?: CommentSort;
-  maxPages?: number;
 }
 
 /**
@@ -140,8 +136,8 @@ export class PostsResource extends BaseResource {
    * const next = await itd.posts.list({ tab: FeedTab.Following, cursor: page.nextCursor ?? undefined });
    * ```
    */
-  list(params: FeedParams = {}): Promise<Page<Post>> {
-    return this.#feed.list(params);
+  list(params: FeedParams = {}, options: RequestOptions = {}): Promise<Page<Post>> {
+    return this.#feed.list(params, options);
   }
 
   /**
@@ -154,8 +150,8 @@ export class PostsResource extends BaseResource {
    * }
    * ```
    */
-  iterate(params: FeedParams = {}): Paginator<Post> {
-    return this.#feed.iterate(params);
+  iterate(params: FeedParams = {}, options: PaginationOptions = {}): Paginator<Post> {
+    return this.#feed.iterate(params, options);
   }
 
   /**
@@ -183,7 +179,7 @@ export class PostsResource extends BaseResource {
         ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
         ...(data.poll ? { poll: data.poll } : {}),
       },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -195,7 +191,7 @@ export class PostsResource extends BaseResource {
   get(postId: string, options: RequestOptions = {}): Promise<Post> {
     return this.http.operation<Post>('posts.get', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -211,7 +207,7 @@ export class PostsResource extends BaseResource {
     return this.http.operation<Post>('posts.update', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}`,
       body: { content: data.content, ...(data.spans ? { spans: data.spans } : {}) },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -219,7 +215,7 @@ export class PostsResource extends BaseResource {
   remove(postId: string, options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('posts.remove', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -227,7 +223,7 @@ export class PostsResource extends BaseResource {
   restore(postId: string, options: RequestOptions = {}): Promise<Post> {
     return this.http.operation<Post>('posts.restore', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/restore`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -235,7 +231,7 @@ export class PostsResource extends BaseResource {
   like(postId: string, options: RequestOptions = {}): Promise<LikeResult> {
     return this.http.operation<LikeResult>('posts.like', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/like`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -243,7 +239,7 @@ export class PostsResource extends BaseResource {
   unlike(postId: string, options: RequestOptions = {}): Promise<LikeResult> {
     return this.http.operation<LikeResult>('posts.unlike', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/like`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -257,7 +253,7 @@ export class PostsResource extends BaseResource {
     return this.http.operation<Post>('posts.repost', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/repost`,
       body: { content },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -265,7 +261,7 @@ export class PostsResource extends BaseResource {
   unrepost(postId: string, options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('posts.unrepost', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/repost`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -273,7 +269,7 @@ export class PostsResource extends BaseResource {
   pin(postId: string, options: RequestOptions = {}): Promise<PinPostResult> {
     return this.http.operation<PinPostResult>('posts.pin', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/pin`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -281,7 +277,7 @@ export class PostsResource extends BaseResource {
   unpin(postId: string, options: RequestOptions = {}): Promise<PinPostResult> {
     return this.http.operation<PinPostResult>('posts.unpin', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/pin`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -294,7 +290,7 @@ export class PostsResource extends BaseResource {
     return this.http.operation<Poll>('posts.vote', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/poll/vote`,
       body: { optionIds },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -303,7 +299,7 @@ export class PostsResource extends BaseResource {
     const body = await this.http.operation('posts.stats', {
       path: '/api/posts/stats',
       body: { ids },
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickArray<PostStats>(body, 'posts');
@@ -319,23 +315,39 @@ export class PostsResource extends BaseResource {
    *
    * Принимает и UUID, и имя пользователя.
    */
-  byUser(user: UserRef, params: UserPostsParams = {}): Promise<Page<Post>> {
-    return this.#wall.list({ ...params, user });
+  byUser(
+    user: UserRef,
+    params: UserPostsParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<Post>> {
+    return this.#wall.list({ ...params, user }, options);
   }
 
   /** Перебирает стену пользователя. Что именно в неё входит — см. {@link byUser}. */
-  iterateByUser(user: UserRef, params: UserPostsParams = {}): Paginator<Post> {
-    return this.#wall.iterate({ ...params, user });
+  iterateByUser(
+    user: UserRef,
+    params: UserPostsParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<Post> {
+    return this.#wall.iterate({ ...params, user }, options);
   }
 
   /** Загружает страницу постов, которые пользователь отметил реакцией. */
-  likedByUser(user: UserRef, params: UserPostsParams = {}): Promise<Page<Post>> {
-    return this.#liked.list({ ...params, user });
+  likedByUser(
+    user: UserRef,
+    params: UserPostsParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<Post>> {
+    return this.#liked.list({ ...params, user }, options);
   }
 
   /** Перебирает посты, которые пользователь отметил реакцией. */
-  iterateLikedByUser(user: UserRef, params: UserPostsParams = {}): Paginator<Post> {
-    return this.#liked.iterate({ ...params, user });
+  iterateLikedByUser(
+    user: UserRef,
+    params: UserPostsParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<Post> {
+    return this.#liked.iterate({ ...params, user }, options);
   }
 
   /**
@@ -344,13 +356,21 @@ export class PostsResource extends BaseResource {
    * У этого эндпоинта курсор и признак продолжения лежат рядом со списком, а не внутри
    * объекта `pagination`, как у остальных, — разница скрыта внутри.
    */
-  comments(postId: string, params: CommentsParams = {}): Promise<Page<Comment>> {
-    return this.#comments.list({ ...params, postId });
+  comments(
+    postId: string,
+    params: CommentsParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<Comment>> {
+    return this.#comments.list({ ...params, postId }, options);
   }
 
   /** Перебирает комментарии к посту. */
-  iterateComments(postId: string, params: CommentsParams = {}): Paginator<Comment> {
-    return this.#comments.iterate({ ...params, postId });
+  iterateComments(
+    postId: string,
+    params: CommentsParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<Comment> {
+    return this.#comments.iterate({ ...params, postId }, options);
   }
 
   /**
@@ -373,7 +393,7 @@ export class PostsResource extends BaseResource {
     return this.http.operation<Comment>('posts.comment', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/comments`,
       body: { content: data.content ?? '', attachmentIds },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 

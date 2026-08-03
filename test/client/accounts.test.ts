@@ -352,9 +352,6 @@ describe('общие и личные настройки', () => {
     const broken = { name: 'сломанный' } as unknown as ClientPlugin;
 
     expect(() => accounts.use(broken)).toThrow(/install/);
-    expect(() =>
-      accounts.use({ name: 'опасные-опции', optionKeys: ['path'], install() {} }),
-    ).toThrow(/имя занято/);
     expect(() => accounts.addAccount('a', { auth: 'token' })).not.toThrow();
   });
 

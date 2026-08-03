@@ -6,8 +6,8 @@
 ## Методы
 
 ```ts
-upload(input: FileInput, options?: UploadOptions): Promise<UploadedFile>
-uploadMany(files: FileInput[], options?: UploadOptions): Promise<string[]>
+upload(input: FileInput, uploadOptions?: UploadOptions, requestOptions?: RequestOptions): Promise<UploadedFile>
+uploadMany(files: FileInput[], uploadOptions?: UploadOptions, requestOptions?: RequestOptions): Promise<string[]>
 get(fileId: string, options?: RequestOptions): Promise<unknown>
 remove(fileId: string, options?: RequestOptions): Promise<void>
 ```
@@ -176,7 +176,7 @@ HTTP `408`, `429` и `5xx` источника допускают повтор; �
 ## Настройки загрузки
 
 ```ts
-interface UploadOptions extends RequestOptions {
+interface UploadOptions {
   filename?: string;            // используется для определения MIME
   contentType?: string;         // иначе определяется по имени или Blob
   validateMime?: boolean;       // по умолчанию true
@@ -184,6 +184,9 @@ interface UploadOptions extends RequestOptions {
   streamBufferBytes?: number;
 }
 ```
+
+Таймаут, `signal`, retry и plugin extensions передаются отдельно в `requestOptions`, чтобы
+настройки чтения файла не смешивались с настройками выполнения HTTP-запроса.
 
 `contentType` нормализуется перед проверкой: регистр и параметры вроде
 `image/jpeg; charset=binary` не влияют на сопоставление.

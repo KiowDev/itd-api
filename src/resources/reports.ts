@@ -27,7 +27,7 @@ export class ReportsResource extends BaseResource {
     return this.http.operation<Report>('reports.create', {
       path: '/api/reports',
       body: data,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 }

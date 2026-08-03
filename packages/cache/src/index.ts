@@ -35,7 +35,7 @@ export {
 import type { CacheMode } from './plugin.js';
 
 declare module 'itd-api' {
-  interface RequestOptions {
+  interface RequestExtensions {
     /** Управление кэшем подключённого `@itd-api/cache`. */
     cache?: CacheMode | undefined;
   }

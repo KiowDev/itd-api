@@ -1,25 +1,6 @@
 import { ItdConfigError } from '../errors.js';
 import type { ClientPlugin } from './contracts.js';
 
-const RESERVED_OPTION_KEYS: ReadonlySet<string> = new Set([
-  'signal',
-  'timeout',
-  'headers',
-  'retry',
-  'retrySafety',
-  'operationId',
-  'method',
-  'path',
-  'service',
-  'baseUrl',
-  'query',
-  'body',
-  'skipAuth',
-  'skipAuthRefresh',
-  'skipQueue',
-  'raw',
-]);
-
 const RELATION_FIELDS = ['requires', 'conflicts', 'before', 'after'] as const;
 
 function validateNameList(plugin: ClientPlugin, field: (typeof RELATION_FIELDS)[number]): void {
@@ -61,22 +42,6 @@ export function validatePluginDefinition(plugin: ClientPlugin): void {
   const name = plugin.name;
   if (typeof name !== 'string' || name.trim() === '') {
     throw new ItdConfigError('У плагина должно быть непустое имя');
-  }
-
-  const keys = plugin.optionKeys ?? [];
-  if (!Array.isArray(keys)) {
-    throw new ItdConfigError(`плагин «${name}»: optionKeys должен быть массивом`);
-  }
-  for (const key of keys as readonly unknown[]) {
-    if (typeof key !== 'string' || key.trim() === '') {
-      throw new ItdConfigError(`Плагин «${name}» заявил пустое имя опции`);
-    }
-    if (RESERVED_OPTION_KEYS.has(key)) {
-      throw new ItdConfigError(
-        `Плагин «${name}» заявил опцию «${key}»: это поле запроса, имя занято. ` +
-          `Занятые имена: ${[...RESERVED_OPTION_KEYS].join(', ')}`,
-      );
-    }
   }
 
   for (const field of RELATION_FIELDS) validateNameList(plugin, field);

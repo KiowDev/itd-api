@@ -14,7 +14,7 @@ import type {
   PublicProfile,
   UserSummary,
 } from '../models/users.js';
-import type { RequestOptions } from '../types/options.js';
+import type { PaginationOptions, RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 import type { UploadedFile, UploadOptions } from './files.js';
 
@@ -24,12 +24,11 @@ import type { UploadedFile, UploadOptions } from './files.js';
  * ⚠️ Списки подписчиков, подписок и заблокированных на сервере **не листаются**:
  * `page` он игнорирует, а `limit` зажимает на 20. Подробности — в {@link UsersResource.followers}.
  */
-export interface UserListParams extends RequestOptions {
+export interface UserListParams {
   /** Сколько записей вернуть. Значения больше 20 сервер молча уменьшает до 20. */
   limit?: number;
   /** Номер страницы. Сервер его игнорирует — оставлен на случай, если пагинацию починят. */
   page?: number;
-  maxPages?: number;
 }
 
 /** Изменяемые поля своего профиля. */
@@ -52,12 +51,20 @@ export type UpdatePrivacyInput = Partial<PrivacySettings>;
  * Доступна как `itd.users`.
  */
 export class UsersResource extends BaseResource {
-  readonly #uploadFile: (file: FileInput, options?: UploadOptions) => Promise<UploadedFile>;
+  readonly #uploadFile: (
+    file: FileInput,
+    uploadOptions?: UploadOptions,
+    requestOptions?: RequestOptions,
+  ) => Promise<UploadedFile>;
 
   constructor(
     http: HttpClient,
     deps: {
-      uploadFile: (file: FileInput, options?: UploadOptions) => Promise<UploadedFile>;
+      uploadFile: (
+        file: FileInput,
+        uploadOptions?: UploadOptions,
+        requestOptions?: RequestOptions,
+      ) => Promise<UploadedFile>;
     },
   ) {
     super(http);
@@ -88,7 +95,7 @@ export class UsersResource extends BaseResource {
   me(options: RequestOptions = {}): Promise<MyProfile> {
     return this.http.operation<MyProfile>('users.me', {
       path: '/api/users/me',
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -97,7 +104,7 @@ export class UsersResource extends BaseResource {
     return this.http.operation<MyProfile>('users.updateMe', {
       path: '/api/users/me',
       body: input,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -112,9 +119,13 @@ export class UsersResource extends BaseResource {
    * await itd.users.setBanner(file, { filename: 'banner.webp' });
    * ```
    */
-  async setBanner(file: FileInput, options: UploadOptions = {}): Promise<MyProfile> {
-    const uploaded = await this.#uploadFile(file, options);
-    return this.updateMe({ bannerId: uploaded.id }, options);
+  async setBanner(
+    file: FileInput,
+    uploadOptions: UploadOptions = {},
+    requestOptions: RequestOptions = {},
+  ): Promise<MyProfile> {
+    const uploaded = await this.#uploadFile(file, uploadOptions, requestOptions);
+    return this.updateMe({ bannerId: uploaded.id }, requestOptions);
   }
 
   /** Удаляет баннер профиля, устанавливая `bannerId` в `null`. */
@@ -126,7 +137,7 @@ export class UsersResource extends BaseResource {
   deactivate(options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('users.deactivate', {
       path: '/api/users/me',
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -134,7 +145,7 @@ export class UsersResource extends BaseResource {
   restore(options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('users.restore', {
       path: '/api/users/me/restore',
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -146,7 +157,7 @@ export class UsersResource extends BaseResource {
     return this.http.operation<MyProfile>('users.createProfile', {
       path: '/api/users/profile',
       body: input,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -164,7 +175,7 @@ export class UsersResource extends BaseResource {
   get(user: UserRef, options: RequestOptions = {}): Promise<PublicProfile> {
     return this.http.operation<PublicProfile>('users.get', {
       path: `/api/users/${encodePathSegment(user, 'user')}`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -173,7 +184,7 @@ export class UsersResource extends BaseResource {
     const body = await this.http.operation('users.checkUsername', {
       path: '/api/users/check-username',
       query: { username },
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickBoolean(body, 'available');
@@ -182,12 +193,13 @@ export class UsersResource extends BaseResource {
   /** Ищет пользователей по строке запроса. */
   async search(
     query: string,
-    params: { limit?: number } & RequestOptions = {},
+    params: { limit?: number } = {},
+    options: RequestOptions = {},
   ): Promise<UserSummary[]> {
     const body = await this.http.operation('users.search', {
       path: '/api/users/search',
       query: { q: query, limit: params.limit },
-      ...this.requestOptions(params),
+      ...options,
     });
 
     return pickArray<UserSummary>(body, 'users');
@@ -197,7 +209,7 @@ export class UsersResource extends BaseResource {
   async whoToFollow(options: RequestOptions = {}): Promise<UserSummary[]> {
     const body = await this.http.operation('users.whoToFollow', {
       path: '/api/users/suggestions/who-to-follow',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickArray<UserSummary>(body, 'users');
@@ -207,7 +219,7 @@ export class UsersResource extends BaseResource {
   async topClans(options: RequestOptions = {}): Promise<Clan[]> {
     const body = await this.http.operation('users.topClans', {
       path: '/api/users/stats/top-clans',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return pickArray<Clan>(body, 'clans');
@@ -222,7 +234,7 @@ export class UsersResource extends BaseResource {
     return this.http.operation<FollowResult>('users.follow', {
       path: `/api/users/${encodePathSegment(user, 'user')}/follow`,
       body: {},
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -230,7 +242,7 @@ export class UsersResource extends BaseResource {
   unfollow(user: UserRef, options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('users.unfollow', {
       path: `/api/users/${encodePathSegment(user, 'user')}/follow`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -245,11 +257,16 @@ export class UsersResource extends BaseResource {
    * Числу `total` доверять тоже не стоит: оно расходится с `followersCount` из профиля —
    * на проверенных аккаунтах занижено примерно на 1–4%.
    */
-  followers(user: UserRef, params: UserListParams = {}): Promise<Page<UserSummary>> {
+  followers(
+    user: UserRef,
+    params: UserListParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<UserSummary>> {
     return this.#userPage(
       'users.followers',
       `/api/users/${encodePathSegment(user, 'user')}/followers`,
       params,
+      options,
     );
   }
 
@@ -259,29 +276,44 @@ export class UsersResource extends BaseResource {
    * ⚠️ Перебор закончится после первых 20 записей: сервер список не листает —
    * см. {@link followers}. Метод оставлен на случай, если пагинацию починят.
    */
-  iterateFollowers(user: UserRef, params: UserListParams = {}): Paginator<UserSummary> {
+  iterateFollowers(
+    user: UserRef,
+    params: UserListParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<UserSummary> {
     return this.#userPaginator(
       'users.followers',
       `/api/users/${encodePathSegment(user, 'user')}/followers`,
       params,
+      options,
     );
   }
 
   /** Загружает подписки пользователя. Ограничения те же, что у {@link followers}. */
-  following(user: UserRef, params: UserListParams = {}): Promise<Page<UserSummary>> {
+  following(
+    user: UserRef,
+    params: UserListParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<UserSummary>> {
     return this.#userPage(
       'users.following',
       `/api/users/${encodePathSegment(user, 'user')}/following`,
       params,
+      options,
     );
   }
 
   /** Перебирает подписки. Закончится после первых 20 записей — см. {@link followers}. */
-  iterateFollowing(user: UserRef, params: UserListParams = {}): Paginator<UserSummary> {
+  iterateFollowing(
+    user: UserRef,
+    params: UserListParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<UserSummary> {
     return this.#userPaginator(
       'users.following',
       `/api/users/${encodePathSegment(user, 'user')}/following`,
       params,
+      options,
     );
   }
 
@@ -300,7 +332,7 @@ export class UsersResource extends BaseResource {
     return this.http.operation<Record<string, boolean>>('users.followStatus', {
       path: '/api/users/follow-status',
       body: { userIds },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -309,7 +341,7 @@ export class UsersResource extends BaseResource {
     return this.http.operation<void>('users.block', {
       path: `/api/users/${encodePathSegment(user, 'user')}/block`,
       body: {},
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -317,25 +349,28 @@ export class UsersResource extends BaseResource {
   unblock(user: UserRef, options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('users.unblock', {
       path: `/api/users/${encodePathSegment(user, 'user')}/block`,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
   /** Загружает заблокированных пользователей. Ограничения те же, что у {@link followers}. */
-  blocked(params: UserListParams = {}): Promise<Page<UserSummary>> {
-    return this.#userPage('users.blocked', '/api/users/me/blocked', params);
+  blocked(params: UserListParams = {}, options: RequestOptions = {}): Promise<Page<UserSummary>> {
+    return this.#userPage('users.blocked', '/api/users/me/blocked', params, options);
   }
 
   /** Перебирает заблокированных. Закончится после первых 20 записей — см. {@link followers}. */
-  iterateBlocked(params: UserListParams = {}): Paginator<UserSummary> {
-    return this.#userPaginator('users.blocked', '/api/users/me/blocked', params);
+  iterateBlocked(
+    params: UserListParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<UserSummary> {
+    return this.#userPaginator('users.blocked', '/api/users/me/blocked', params, options);
   }
 
   /** Загружает настройки приватности. */
   getPrivacy(options: RequestOptions = {}): Promise<PrivacySettings> {
     return this.http.operation<PrivacySettings>('users.getPrivacy', {
       path: '/api/users/me/privacy',
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -344,7 +379,7 @@ export class UsersResource extends BaseResource {
     return this.http.operation<PrivacySettings>('users.updatePrivacy', {
       path: '/api/users/me/privacy',
       body: input,
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -356,7 +391,7 @@ export class UsersResource extends BaseResource {
   async pins(options: RequestOptions = {}): Promise<PinsResult> {
     const body = await this.http.operation('users.pins', {
       path: '/api/users/me/pins',
-      ...this.requestOptions(options),
+      ...options,
     });
 
     return {
@@ -371,7 +406,7 @@ export class UsersResource extends BaseResource {
     return this.http.operation<void>('users.setPin', {
       path: '/api/users/me/pin',
       body: { slug },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -379,7 +414,7 @@ export class UsersResource extends BaseResource {
   removePin(options: RequestOptions = {}): Promise<void> {
     return this.http.operation<void>('users.removePin', {
       path: '/api/users/me/pin',
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -387,15 +422,17 @@ export class UsersResource extends BaseResource {
     operationId: BuiltInOperationId,
     path: string,
     params: UserListParams,
+    options: RequestOptions,
   ): Promise<Page<UserSummary>> {
-    return this.#userList.list({ ...params, operationId, path });
+    return this.#userList.list({ ...params, operationId, path }, options);
   }
 
   #userPaginator(
     operationId: BuiltInOperationId,
     path: string,
     params: UserListParams,
+    options: PaginationOptions,
   ): Paginator<UserSummary> {
-    return this.#userList.iterate({ ...params, operationId, path });
+    return this.#userList.iterate({ ...params, operationId, path }, options);
   }
 }

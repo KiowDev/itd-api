@@ -18,7 +18,7 @@ const OMITTED_FIELDS = new Set([
   'retrySafety',
   'skipQueue',
   'skipAuthRefresh',
-  'cache',
+  'extensions',
 ]);
 
 /** Строка query в том же порядке и с теми же правилами, что использует itd-api. */
@@ -53,6 +53,8 @@ export function buildCacheKey(
   for (const [key, value] of Object.entries(request)) {
     if (!OMITTED_FIELDS.has(key) && value !== undefined) extras[key] = value;
   }
+  const { cache: _cacheMode, ...extensions } = request.extensions ?? {};
+  if (Object.keys(extensions).length > 0) extras.extensions = extensions;
 
   try {
     return JSON.stringify({

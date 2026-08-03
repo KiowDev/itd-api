@@ -14,8 +14,6 @@ import {
   validatePluginDefinition,
 } from './order.js';
 
-const NO_KEYS: ReadonlySet<string> = new Set<string>();
-
 interface InstalledPlugin {
   plugin: ClientPlugin;
   transformers: OperationTransformer[];
@@ -37,7 +35,6 @@ interface InstalledPlugin {
  */
 export class PluginRegistry {
   readonly #entries = new Map<string, InstalledPlugin>();
-  readonly #optionKeys = new Set<string>();
   readonly #removing = new Set<string>();
   readonly #cleanups = new Set<Promise<void>>();
   #ordered: InstalledPlugin[] = [];
@@ -45,11 +42,6 @@ export class PluginRegistry {
   /** Сколько плагинов подключено. */
   get size(): number {
     return this.#entries.size;
-  }
-
-  /** Имена опций активных плагинов. */
-  get optionKeys(): ReadonlySet<string> {
-    return this.#optionKeys.size === 0 ? NO_KEYS : this.#optionKeys;
   }
 
   /** Имена плагинов в фактическом порядке выполнения. */
@@ -89,8 +81,7 @@ export class PluginRegistry {
    * `install()` выполняется синхронно. Каждая регистрация принадлежит установившему её
    * плагину и участвует в общем порядке `before`/`after`.
    *
-   * @throws {ItdConfigError} если плагин задан неверно, уже подключён, нарушает зависимости
-   * или заявил занятое имя опции
+   * @throws {ItdConfigError} если плагин задан неверно, уже подключён или нарушает зависимости
    */
   add(plugin: ClientPlugin, context: Omit<PluginApi, 'operations' | 'attempts'>): void {
     this.assertCanAdd(plugin);
@@ -140,7 +131,6 @@ export class PluginRegistry {
       if (!entry) throw new ItdConfigError(`плагин «${definition.name}» не установлен`);
       return entry;
     });
-    this.#rebuildOptionKeys();
   }
 
   /**
@@ -157,7 +147,6 @@ export class PluginRegistry {
     this.assertCanRemove(name);
     this.#entries.delete(name);
     this.#ordered = this.#ordered.filter((current) => current !== entry);
-    this.#rebuildOptionKeys();
     this.#removing.add(name);
 
     const cleanup = this.#trackCleanup(
@@ -184,7 +173,6 @@ export class PluginRegistry {
     const previousCleanups = [...this.#cleanups];
     this.#entries.clear();
     this.#ordered = [];
-    this.#optionKeys.clear();
     for (const { plugin } of entries) this.#removing.add(plugin.name);
 
     const cleanup = this.#trackCleanup(
@@ -250,13 +238,6 @@ export class PluginRegistry {
           entry.drain = undefined;
         }
       }
-    }
-  }
-
-  #rebuildOptionKeys(): void {
-    this.#optionKeys.clear();
-    for (const { plugin } of this.#ordered) {
-      for (const key of plugin.optionKeys ?? []) this.#optionKeys.add(key);
     }
   }
 

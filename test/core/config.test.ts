@@ -2,20 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT, resolveConfig } from '../../src/core/config.js';
 import { ItdConfigError } from '../../src/core/errors.js';
 import { createTokenStorage, MemoryTokenStorage } from '../../src/core/storage.js';
-import { REQUEST_OPTION_KEYS, type RequestOptionKeysComplete } from '../../src/types/options.js';
 import { LocalStorageTokenStorage } from '../../src/web.js';
-
-describe('REQUEST_OPTION_KEYS', () => {
-  it('покрывает все поля RequestOptions', () => {
-    // Проверка на уровне типа: если в RequestOptions добавят поле, не внесённое
-    // в REQUEST_OPTION_KEYS, тип RequestOptionKeysComplete станет never и строка
-    // ниже не скомпилируется. Здесь augmentation плагинов нет, поэтому проверка честна.
-    const complete: RequestOptionKeysComplete = true;
-    expect(complete).toBe(true);
-    expect(REQUEST_OPTION_KEYS).toContain('retry');
-    expect(REQUEST_OPTION_KEYS).toContain('retrySafety');
-  });
-});
 
 describe('resolveConfig — значения по умолчанию', () => {
   it('подставляет базовый URL, таймаут и очередь', () => {

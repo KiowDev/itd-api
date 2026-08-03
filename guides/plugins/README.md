@@ -34,7 +34,7 @@ itd.use(cached);
 соответствующие маршруты во всех разделах.
 
 ```ts
-await itd.posts.get(postId, { cache: 'reload' });
+await itd.posts.get(postId, { extensions: { cache: 'reload' } });
 cached.invalidate('posts.get');
 ```
 
@@ -61,7 +61,7 @@ itd.use(crypt());
 
 const created = await itd.posts.create(
   { content: 'секретный текст' },
-  { encrypt: { cipher: 'invisible', cover: 'обычный пост' } },
+  { extensions: { crypto: { encrypt: { cipher: 'invisible', cover: 'обычный пост' } } } },
 );
 
 const post = await itd.posts.get(created.id);
@@ -242,31 +242,38 @@ await itd.unuse('connection');
 `dispose()` делает окончательную очистку и вызывает teardown всех плагинов изнутри наружу.
 `await using` вызывает `dispose()` автоматически.
 
-## Собственные опции метода
+## Namespace настроек запроса
 
-Плагин объявляет разрешённые ключи:
+Плагин расширяет `RequestExtensions` своим namespace. Никакой отдельной регистрации ключа
+во время выполнения не требуется:
 
 ```ts
 const plugin: ClientPlugin = {
   name: 'мой',
-  optionKeys: ['мояОпция'],
   install({ operations }) {
     operations.use(async (request, next) => {
-      console.log(request.мояОпция);
+      console.log(request.extensions?.мой?.режим);
       return next(request);
     });
   },
 };
 
 declare module 'itd-api' {
-  interface RequestOptions {
-    мояОпция?: string | undefined;
+  interface RequestExtensions {
+    мой?: {
+      режим?: string | undefined;
+    };
   }
 }
+
+await itd.posts.get(postId, {
+  extensions: { мой: { режим: 'подробный' } },
+});
 ```
 
-Ключи самого запроса — `path`, `body`, `headers`, `signal` и другие системные поля —
-зарезервированы. Плагин с конфликтующим `optionKeys` отклоняется при подключении.
+`RequestOptions` хранит системные параметры выполнения (`signal`, `timeout`, `retry`) отдельно
+от расширений. Каждый пакет владеет явно названным namespace, не конкурирует с системными
+полями запроса и получает его в operation transformer без фильтрации или списка строковых ключей.
 
 ## Несколько аккаунтов
 

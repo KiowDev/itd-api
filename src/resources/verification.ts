@@ -12,7 +12,7 @@ export class VerificationResource extends BaseResource {
   status(options: RequestOptions = {}): Promise<VerificationStatus> {
     return this.http.operation<VerificationStatus>('verification.status', {
       path: '/api/verification/status',
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 
@@ -21,7 +21,7 @@ export class VerificationResource extends BaseResource {
     return this.http.operation('verification.submit', {
       path: '/api/verification/submit',
       body: { videoUrl },
-      ...this.requestOptions(options),
+      ...options,
     });
   }
 }

@@ -48,10 +48,9 @@ interface CreateCommentInput {
   replyToUserId?: UserId;                // только в reply(), не в комментарии к посту
 }
 
-interface RepliesParams extends RequestOptions {
+interface RepliesParams {
   limit?: number;
   page?: number;
-  maxPages?: number;
 }
 ```
 

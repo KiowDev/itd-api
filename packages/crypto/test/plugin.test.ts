@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   beecrypt,
   CryptError,
+  type CryptRequestOptions,
   crypt,
   encodeBeeCrypt,
   encodeInvisible,
@@ -10,6 +11,8 @@ import {
   secretOf,
   stripInvisible,
 } from '../src/index.js';
+
+const cryptoOptions = (options: CryptRequestOptions) => ({ extensions: { crypto: options } });
 
 /** Перехваченный запрос: нужен и URL, и тело. */
 interface Call {
@@ -63,7 +66,7 @@ describe('шифрование запроса', () => {
     const { itd, calls } = makeClient([{ id: '1' }]);
     itd.use(crypt());
 
-    await itd.posts.create({ content: 'секрет' }, { encrypt: 'invisible' });
+    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: 'invisible' }));
 
     const sent = String(calls[0]?.body.content);
     expect(stripInvisible(sent)).toBe('');
@@ -76,7 +79,7 @@ describe('шифрование запроса', () => {
 
     await itd.posts.create(
       { content: 'секрет' },
-      { encrypt: { cipher: 'invisible', cover: 'обычный текст' } },
+      cryptoOptions({ encrypt: { cipher: 'invisible', cover: 'обычный текст' } }),
     );
 
     const sent = String(calls[0]?.body.content);
@@ -97,9 +100,9 @@ describe('шифрование запроса', () => {
     const { itd, calls } = makeClient([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }]);
     itd.use(crypt());
 
-    await itd.posts.comment('p1', 'секрет', { encrypt: 'invisible' });
-    await itd.comments.reply('c1', 'ответ', { encrypt: 'invisible' });
-    await itd.comments.update('c1', 'правка', { encrypt: 'invisible' });
+    await itd.posts.comment('p1', 'секрет', cryptoOptions({ encrypt: 'invisible' }));
+    await itd.comments.reply('c1', 'ответ', cryptoOptions({ encrypt: 'invisible' }));
+    await itd.comments.update('c1', 'правка', cryptoOptions({ encrypt: 'invisible' }));
 
     expect(calls.map((call) => invisible.decode(String(call.body.content)))).toEqual([
       'секрет',
@@ -112,10 +115,15 @@ describe('шифрование запроса', () => {
     const { itd, calls } = makeClient([{ id: 'u1' }, { id: 'u1' }]);
     itd.use(crypt());
 
-    await itd.users.updateMe({ displayName: 'имя', bio: 'подпись' }, { encrypt: 'invisible' });
     await itd.users.updateMe(
       { displayName: 'имя', bio: 'подпись' },
-      { encrypt: { cipher: 'invisible', fields: ['bio'], cover: 'видимая подпись' } },
+      cryptoOptions({ encrypt: 'invisible' }),
+    );
+    await itd.users.updateMe(
+      { displayName: 'имя', bio: 'подпись' },
+      cryptoOptions({
+        encrypt: { cipher: 'invisible', fields: ['bio'], cover: 'видимая подпись' },
+      }),
     );
 
     expect(invisible.decode(String(calls[0]?.body.displayName))).toBe('имя');
@@ -129,18 +137,20 @@ describe('шифрование запроса', () => {
     const { itd } = makeClient([{}]);
     itd.use(crypt());
 
-    await expect(itd.posts.like('p1', { encrypt: 'invisible' })).rejects.toThrow(CryptError);
+    await expect(itd.posts.like('p1', cryptoOptions({ encrypt: 'invisible' }))).rejects.toThrow(
+      CryptError,
+    );
   });
 
   it('сообщает о неизвестном шифре и о чужом поле', async () => {
     const { itd } = makeClient([{}, {}]);
     itd.use(crypt());
 
-    await expect(itd.posts.create({ content: 'x' }, { encrypt: 'coffee' })).rejects.toThrow(
-      /не подключён/,
-    );
     await expect(
-      itd.posts.create({ content: 'x' }, { encrypt: { fields: ['bio'] } }),
+      itd.posts.create({ content: 'x' }, cryptoOptions({ encrypt: 'coffee' })),
+    ).rejects.toThrow(/не подключён/);
+    await expect(
+      itd.posts.create({ content: 'x' }, cryptoOptions({ encrypt: { fields: ['bio'] } })),
     ).rejects.toThrow(/не принимает поля bio/);
   });
 
@@ -151,7 +161,7 @@ describe('шифрование запроса', () => {
     await expect(
       itd.users.updateMe(
         { displayName: 'имя', bio: 'подпись' },
-        { encrypt: { cover: 'одна на двоих' } },
+        cryptoOptions({ encrypt: { cover: 'одна на двоих' } }),
       ),
     ).rejects.toThrow(/Выберите одно через fields/);
   });
@@ -166,7 +176,7 @@ describe('разметка при шифровании', () => {
 
     await itd.posts.create(
       { content: 'секрет', spans },
-      { encrypt: { cipher: 'invisible', cover: 'жирное слово' } },
+      cryptoOptions({ encrypt: { cipher: 'invisible', cover: 'жирное слово' } }),
     );
 
     expect(calls[0]?.body.spans).toEqual(spans);
@@ -178,7 +188,7 @@ describe('разметка при шифровании', () => {
     itd.use(crypt());
 
     await expect(
-      itd.posts.create({ content: 'секрет', spans }, { encrypt: 'invisible' }),
+      itd.posts.create({ content: 'секрет', spans }, cryptoOptions({ encrypt: 'invisible' })),
     ).rejects.toThrow(/обложка не задана/);
   });
 
@@ -187,7 +197,7 @@ describe('разметка при шифровании', () => {
     itd.use(crypt());
 
     await expect(
-      itd.posts.create({ content: 'секрет', spans }, { encrypt: 'beecrypt' }),
+      itd.posts.create({ content: 'секрет', spans }, cryptoOptions({ encrypt: 'beecrypt' })),
     ).rejects.toThrow(/не оставляет видимого текста/);
   });
 
@@ -198,7 +208,7 @@ describe('разметка при шифровании', () => {
     await expect(
       itd.posts.create(
         { content: 'жирное слово', spans },
-        { encrypt: { cipher: 'invisible', cover: 'ок' } },
+        cryptoOptions({ encrypt: { cipher: 'invisible', cover: 'ок' } }),
       ),
     ).rejects.toThrow(/не укладывается в обложку/);
   });
@@ -207,7 +217,7 @@ describe('разметка при шифровании', () => {
     const { itd, calls } = makeClient([{ id: '1' }]);
     itd.use(crypt());
 
-    await itd.posts.create({ content: 'секрет' }, { encrypt: { cover: 'ок' } });
+    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: { cover: 'ок' } }));
 
     expect(stripInvisible(String(calls[0]?.body.content))).toBe('ок');
   });
@@ -289,14 +299,16 @@ describe('расшифровка ответа', () => {
 
     const once = makeClient([{ id: '1', content }]);
     once.itd.use(crypt());
-    expect((await once.itd.posts.get('1', { decrypt: false })).secret).toBeUndefined();
+    expect(
+      (await once.itd.posts.get('1', cryptoOptions({ decrypt: false }))).secret,
+    ).toBeUndefined();
   });
 
   it('crypt({ decrypt: false }) не мешает включить расшифровку у вызова', async () => {
     const { itd } = makeClient([{ id: '1', content: hidden('текст', 'секрет') }]);
     itd.use(crypt({ decrypt: false }));
 
-    const post = await itd.posts.get('1', { decrypt: true });
+    const post = await itd.posts.get('1', cryptoOptions({ decrypt: true }));
 
     expect(post.secret?.text).toBe('секрет');
   });
@@ -307,7 +319,7 @@ describe('несколько шифров', () => {
     const { itd, calls } = makeClient([{ id: '1' }]);
     itd.use(crypt());
 
-    await itd.posts.create({ content: 'секрет' }, { encrypt: {} });
+    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: {} }));
 
     expect(invisible.decode(String(calls[0]?.body.content))).toBe('секрет');
   });
@@ -316,7 +328,7 @@ describe('несколько шифров', () => {
     const { itd, calls } = makeClient([{ id: '1' }]);
     itd.use(crypt());
 
-    await itd.posts.create({ content: 'секрет' }, { encrypt: 'beecrypt' });
+    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: 'beecrypt' }));
 
     const sent = String(calls[0]?.body.content);
     expect(sent).toMatch(/^[жъЖЪ]+$/);
@@ -330,7 +342,7 @@ describe('несколько шифров', () => {
     await expect(
       itd.posts.create(
         { content: 'секрет' },
-        { encrypt: { cipher: 'beecrypt', cover: 'обложка' } },
+        cryptoOptions({ encrypt: { cipher: 'beecrypt', cover: 'обложка' } }),
       ),
     ).rejects.toThrow(/не принимает обложку/);
   });
@@ -371,7 +383,7 @@ describe('свой шифр', () => {
     const { itd, calls } = makeClient([{ id: '1' }, { id: '1', content: '[найдено]' }]);
     itd.use(crypt({ ciphers: [rot13] }));
 
-    await itd.posts.create({ content: 'секрет' }, { encrypt: 'rot13' });
+    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: 'rot13' }));
     expect(calls[0]?.body.content).toBe('[секрет]');
 
     const post = await itd.posts.get('1');
