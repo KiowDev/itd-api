@@ -68,6 +68,30 @@ export function encodePathSegment(value: string, name = 'параметр пут
   return encodeURIComponent(value);
 }
 
+/** Хост из URL в нижнем регистре. Пустая строка, если разобрать не удалось. */
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/** Origin из URL — схема, хост и порт. Пустая строка, если разобрать не удалось. */
+export function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
+}
+
+/** Тот же хост либо его поддомен. Принимает хосты, а не адреса. */
+export function isSameSite(primaryHost: string, host: string): boolean {
+  if (!primaryHost || !host) return false;
+  return host === primaryHost || host.endsWith(`.${primaryHost}`);
+}
+
 /**
  * Склеивает базовый URL и путь.
  *

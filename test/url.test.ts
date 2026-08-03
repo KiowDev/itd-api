@@ -8,7 +8,15 @@ import {
   pickString,
   unwrapData,
 } from '../src/core/unwrap.js';
-import { buildQuery, encodePathSegment, joinUrl, normalizeBaseUrl } from '../src/core/url.js';
+import {
+  buildQuery,
+  encodePathSegment,
+  hostOf,
+  isSameSite,
+  joinUrl,
+  normalizeBaseUrl,
+  originOf,
+} from '../src/core/url.js';
 
 describe('buildQuery', () => {
   it('пропускает undefined и null', () => {
@@ -90,6 +98,36 @@ describe('normalizeBaseUrl', () => {
     expect(() => normalizeBaseUrl('https://user:secret@example.com')).toThrow(ItdConfigError);
     expect(() => normalizeBaseUrl('https://example.com/api?token=secret')).toThrow(ItdConfigError);
     expect(() => normalizeBaseUrl('https://example.com/api#fragment')).toThrow(ItdConfigError);
+  });
+});
+
+describe('hostOf и originOf', () => {
+  it('разбирают адрес и приводят хост к нижнему регистру', () => {
+    expect(hostOf('https://Pbapi.Test/api/x?a=1')).toBe('pbapi.test');
+    expect(originOf('https://pbapi.test:8443/api/x')).toBe('https://pbapi.test:8443');
+  });
+
+  it('на неразобранном адресе отдают пустую строку, а не бросают', () => {
+    expect(hostOf('не-url')).toBe('');
+    expect(originOf('не-url')).toBe('');
+  });
+});
+
+describe('isSameSite', () => {
+  it('принимает сам хост и его поддомены', () => {
+    expect(isSameSite('itd.test', 'itd.test')).toBe(true);
+    expect(isSameSite('itd.test', 'chats.itd.test')).toBe(true);
+    expect(isSameSite('itd.test', 'a.b.itd.test')).toBe(true);
+  });
+
+  it('не путает похожее окончание с поддоменом', () => {
+    expect(isSameSite('itd.test', 'evil-itd.test')).toBe(false);
+    expect(isSameSite('itd.test', 'other.test')).toBe(false);
+  });
+
+  it('пустой хост не совпадает ни с чем', () => {
+    expect(isSameSite('', 'itd.test')).toBe(false);
+    expect(isSameSite('itd.test', '')).toBe(false);
   });
 });
 

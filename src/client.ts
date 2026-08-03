@@ -17,7 +17,7 @@ import type { PipelineRequest, RequestHandler } from './core/pipeline.js';
 import type { ItdPlugin } from './core/plugins/contracts.js';
 import { PluginRegistry } from './core/plugins/registry.js';
 import { RequestQueuePool } from './core/rate-limit.js';
-import { type ServiceDefinition, ServiceRegistry } from './core/services.js';
+import { mergeService, type ServiceDefinition, ServiceRegistry } from './core/services.js';
 import type { ItdSession } from './core/storage.js';
 import { Transport } from './core/transport.js';
 import type { UserId } from './models/common.js';
@@ -231,9 +231,15 @@ export class ItdClient {
     this.#jar = new CookieJar();
     this.#services = new ServiceRegistry(config.baseUrl);
 
-    // Встроенные сервисы регистрируются первыми и заменить их нельзя
-    for (const service of BUILT_IN_SERVICES) this.#services.define(service);
-    for (const service of config.services) this.#services.define(service);
+    // Встроенные сервисы регистрируются первыми; пользовательское определение с тем же
+    // именем не заменяет их, а накладывается — см. mergeService.
+    const overrides = new Map(config.services.map((service) => [service.name.trim(), service]));
+    for (const builtIn of BUILT_IN_SERVICES) {
+      const override = overrides.get(builtIn.name);
+      overrides.delete(builtIn.name);
+      this.#services.define(override ? mergeService(builtIn, override) : builtIn);
+    }
+    for (const service of overrides.values()) this.#services.define(service);
 
     // Очередь может прийти извне — общая на несколько аккаунтов. `rateLimit: false` отключает
     // её и в этом случае: отдельный аккаунт вправе не вставать в общую очередь.

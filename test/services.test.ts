@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../src/client.js';
 import { DEFAULT_STATUS_BASE_URL } from '../src/core/config.js';
 import { ItdConfigError } from '../src/core/errors.js';
-import { ServiceRegistry } from '../src/core/services.js';
+import { mergeService, ServiceRegistry } from '../src/core/services.js';
 import type { ItdClientOptions } from '../src/types/options.js';
 import { createMockFetch, json } from './helpers/mock-fetch.js';
 
@@ -98,6 +98,69 @@ describe('ServiceRegistry', () => {
       if (service?.headers) service.headers['X-Service'] = 'evil';
     }).toThrow();
     expect(registry.resolveBaseUrl('pb')).toBe('https://pbapi.test');
+  });
+});
+
+describe('mergeService', () => {
+  /** Встроенный сервис на чужом хосте, которому авторизация разрешена явно. */
+  const trusted = { name: 'pb', baseUrl: 'https://pbapi.test', auth: true };
+  /** Встроенный сервис, намеренно ходящий без токена, — как `status`. */
+  const anonymous = { name: 'st', baseUrl: 'https://status.test', auth: false };
+
+  it('берёт хост из пользовательского определения', () => {
+    const merged = mergeService(trusted, { name: 'pb', baseUrl: 'https://mirror.test/api' });
+
+    expect(merged.name).toBe('pb');
+    expect(merged.baseUrl).toBe('https://mirror.test/api');
+  });
+
+  it('auth наследуется от встроенного сервиса при любой смене хоста', () => {
+    // Авторизация — свойство сервиса, а не адреса: за прокси она нужна ровно так же,
+    // иначе переопределение хоста делало бы сервис нерабочим.
+    expect(mergeService(trusted, { name: 'pb', baseUrl: 'https://my-proxy.test' }).auth).toBe(true);
+    expect(mergeService(trusted, { name: 'pb', baseUrl: 'https://pbapi.test/' }).auth).toBe(true);
+  });
+
+  it('встроенное auth: false не превращается в true из-за хоста', () => {
+    // `status` намеренно ходит без токена — даже поддомен основного хоста это не меняет.
+    const registry = new ServiceRegistry('https://itd.test');
+    registry.define(mergeService(anonymous, { name: 'st', baseUrl: 'https://st.itd.test' }));
+
+    expect(registry.require('st').auth).toBe(false);
+  });
+
+  it('явный auth пользователя важнее всего', () => {
+    expect(
+      mergeService(trusted, { name: 'pb', baseUrl: 'https://pbapi.test', auth: false }).auth,
+    ).toBe(false);
+    expect(
+      mergeService(anonymous, { name: 'st', baseUrl: 'https://status.test', auth: true }).auth,
+    ).toBe(true);
+  });
+
+  it('явный undefined означает «выведи по хосту»', () => {
+    const merged = mergeService(trusted, {
+      name: 'pb',
+      baseUrl: 'https://my-proxy.test',
+      auth: undefined,
+    });
+    expect('auth' in merged).toBe(false);
+
+    const registry = new ServiceRegistry('https://itd.test');
+    registry.define(merged);
+    expect(registry.require('pb').auth).toBe(false);
+  });
+
+  it('заголовки наследуются, пока пользователь их не задал', () => {
+    const withHeaders = { ...trusted, headers: { Referer: 'https://pixel.test/' } };
+
+    expect(
+      mergeService(withHeaders, { name: 'pb', baseUrl: 'https://mirror.test' }).headers,
+    ).toEqual({ Referer: 'https://pixel.test/' });
+    expect(
+      mergeService(withHeaders, { name: 'pb', baseUrl: 'https://mirror.test', headers: { X: '1' } })
+        .headers,
+    ).toEqual({ X: '1' });
   });
 });
 
@@ -257,11 +320,29 @@ describe('Слой сервисов', () => {
 });
 
 describe('Сервисы в опциях клиента', () => {
-  it('не могут заменить встроенный сервис', () => {
-    // Иначе `auth: false` встроенного статуса потерялось бы молча и токен ушёл бы на чужой хост.
-    expect(() => makeClient({ services: { status: 'https://my-proxy.test/status' } })).toThrow(
-      ItdConfigError,
-    );
+  it('накладываются на встроенный сервис, а не заменяют его', async () => {
+    const { itd, mock } = makeClient({
+      auth: 'token-123',
+      services: { status: 'https://mirror.test/status' },
+    });
+
+    expect(itd.serviceBaseUrl('status')).toBe('https://mirror.test/status');
+
+    // `status` намеренно ходит без токена, и переопределение хоста это не переворачивает.
+    await itd.request({ method: 'GET', service: 'status', path: '/api/status' });
+    expect(mock.calls[0]?.url).toBe('https://mirror.test/status/api/status');
+    expect(mock.calls[0]?.headers.has('authorization')).toBe(false);
+  });
+
+  it('явный auth в переопределении побеждает', async () => {
+    const { itd, mock } = makeClient({
+      auth: 'token-123',
+      services: { status: { baseUrl: 'https://my-proxy.test', auth: true } },
+    });
+
+    await itd.request({ method: 'GET', service: 'status', path: '/api/status' });
+
+    expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer token-123');
   });
 
   it('регистрируют новый сервис целиком', async () => {

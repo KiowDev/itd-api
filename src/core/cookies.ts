@@ -1,4 +1,5 @@
 import { parse as parseSetCookie, splitCookiesString } from 'set-cookie-parser';
+import { originOf } from './url.js';
 
 /** Cookie, сохранённая в jar. */
 interface StoredCookie {
@@ -27,14 +28,6 @@ export const REFRESH_COOKIE_PATH = '/api/v1/auth';
 
 /** Разделитель origin и содержимого cookie при сериализации. В origin пробелов не бывает. */
 const SERIALIZED_SEPARATOR = ' ';
-
-function originOf(url: string): string {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return '';
-  }
-}
 
 /** Дата в миллисекунды. Некорректная дата считается отсутствующей, а не `NaN`. */
 function toTimestamp(date: Date | undefined): number | undefined {

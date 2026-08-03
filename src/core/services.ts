@@ -1,5 +1,5 @@
 import { ItdConfigError } from './errors.js';
-import { normalizeBaseUrl } from './url.js';
+import { hostOf, isSameSite, normalizeBaseUrl } from './url.js';
 
 /** Сервис платформы на отдельном домене. */
 export interface ServiceDefinition {
@@ -18,19 +18,27 @@ export interface ServiceDefinition {
   auth?: boolean | undefined;
 }
 
-/** Хост из URL. Пустая строка, если разобрать не удалось. */
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return '';
-  }
-}
+/**
+ * Накладывает пользовательское определение на встроенное.
+ *
+ * `auth` и `headers` наследуются от встроенного, пока ключ не задан явно: авторизация
+ * относится к сервису, а не к адресу. Явный `undefined` возвращает вывод по хосту.
+ *
+ * @internal
+ */
+export function mergeService(
+  builtIn: ServiceDefinition,
+  override: ServiceDefinition,
+): ServiceDefinition {
+  const auth = 'auth' in override ? override.auth : builtIn.auth;
+  const headers = 'headers' in override ? override.headers : builtIn.headers;
 
-/** Тот же хост либо его поддомен. */
-function isSameSite(primaryHost: string, host: string): boolean {
-  if (!primaryHost || !host) return false;
-  return host === primaryHost || host.endsWith(`.${primaryHost}`);
+  return {
+    name: builtIn.name,
+    baseUrl: override.baseUrl,
+    ...(headers === undefined ? {} : { headers }),
+    ...(auth === undefined ? {} : { auth }),
+  };
 }
 
 /**
