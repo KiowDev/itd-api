@@ -290,6 +290,21 @@ export class AuthManager {
   }
 
   /**
+   * Заголовки уже подготовленной авторизации без чтения storage или вызова внешнего источника.
+   *
+   * Используются после ожидания транспортной очереди: к этому моменту `getAccessToken()` уже
+   * был вызван снаружи неё, но token мог успеть смениться из-за refresh или `setSession()`.
+   *
+   * @internal
+   */
+  getCurrentAuthHeaders(): Record<string, string> {
+    const session =
+      this.#session === undefined ? this.#sessionFromConfig(this.#config.auth) : this.#session;
+    const token = session?.accessToken ?? this.#externalToken ?? null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  /**
    * Идентификатор устройства для заголовка `X-Device-Id`.
    *
    * Заводится один раз и сохраняется в сессии, чтобы пережить перезапуск процесса:
@@ -580,12 +595,12 @@ export class AuthManager {
     const epoch = this.#authEpoch;
 
     try {
-      // Служебный запрос идёт через плагины и повторы, но мимо очереди и слоя авторизации:
-      // обновление порождается изнутри запроса, который держит слот в очереди и ждёт его результата.
+      // Служебный запрос идёт через общий pipeline. Слой авторизации он пропускает, чтобы
+      // не отправлять устаревший Bearer и не запускать рекурсивный refresh. Очередь безопасна:
+      // исходная неудачная транспортная попытка освободила свой слот до вызова этого метода.
       const payload = await this.#send({
         method: 'POST',
         path: AUTH_PATHS.refresh,
-        skipQueue: true,
         skipAuth: true,
         skipAuthRefresh: true,
         // Тела нет намеренно: сервер читает refresh-токен только из cookie — см.
@@ -709,13 +724,12 @@ export class AuthManager {
   async #performSignIn(credentials: CredentialsAuth): Promise<string> {
     const turnstileToken = await this.#resolveTurnstileToken(credentials);
 
-    // Через служебный auth-конвейер: плагины и повторы сохраняются, очередь и слой
-    // авторизации обходятся, чтобы не зависнуть на запросе, который ждёт токен.
+    // Через общий pipeline: плагины, повторы и очередь сохраняются, а слой авторизации
+    // пропускается, потому что токена ещё нет.
     const payload = await this.#send({
       method: 'POST',
       path: AUTH_PATHS.signIn,
       body: { email: credentials.email, password: credentials.password, turnstileToken },
-      skipQueue: true,
       skipAuth: true,
       skipAuthRefresh: true,
     });

@@ -427,6 +427,69 @@ describe('Сервисы и повторы', () => {
       vi.useRealTimers();
     }
   });
+
+  it('aliases одного origin разделяют одну очередь', async () => {
+    const releases: Array<() => void> = [];
+    const mock = createMockFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          releases.push(() => resolve(json({ data: { ok: true } })));
+        }),
+    );
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      mode: 'server',
+      retry: false,
+      timeout: 0,
+      rateLimit: { concurrency: 1 },
+      services: {
+        first: 'https://shared.test/api-a',
+        second: 'https://shared.test/api-b',
+      },
+    });
+
+    const first = itd.request({ method: 'GET', service: 'first', path: '/ping' });
+    const second = itd.request({ method: 'GET', service: 'second', path: '/ping' });
+
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+    releases.shift()?.();
+    await vi.waitFor(() => expect(mock.callCount).toBe(2));
+    releases.shift()?.();
+
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+  });
+
+  it('разовый baseUrl другого origin использует отдельную очередь', async () => {
+    const releases: Array<() => void> = [];
+    const mock = createMockFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          releases.push(() => resolve(json({ data: { ok: true } })));
+        }),
+    );
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      mode: 'server',
+      retry: false,
+      timeout: 0,
+      rateLimit: { concurrency: 1 },
+    });
+
+    const primary = itd.request({ method: 'GET', path: '/ping' });
+    const external = itd.request({
+      method: 'GET',
+      path: '/ping',
+      baseUrl: 'https://external.test',
+    });
+
+    // Лимит concurrency применяется отдельно к каждому конечному origin.
+    await vi.waitFor(() => expect(mock.callCount).toBe(2));
+    for (const release of releases.splice(0)) release();
+
+    await expect(Promise.all([primary, external])).resolves.toHaveLength(2);
+  });
 });
 
 describe('Поля хоста заняты для плагинов', () => {

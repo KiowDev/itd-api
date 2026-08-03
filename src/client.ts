@@ -6,7 +6,9 @@ import type { Listener, Unsubscribe } from './core/emitter.js';
 import { HttpClient } from './core/http.js';
 import {
   composePipeline,
-  createAuthMiddleware,
+  createAuthHeadersMiddleware,
+  createAuthPreparationMiddleware,
+  createAuthRecoveryMiddleware,
   createPluginsMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
@@ -20,6 +22,7 @@ import { RequestQueuePool } from './core/rate-limit.js';
 import { mergeService, type ServiceDefinition, ServiceRegistry } from './core/services.js';
 import type { ItdSession } from './core/storage.js';
 import { Transport } from './core/transport.js';
+import { originOf } from './core/url.js';
 import type { UserId } from './models/common.js';
 import { ItdRealtime, type RealtimeOptions } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
@@ -278,7 +281,7 @@ export class ItdClient {
       clock: config.clock,
       retry: config.retry,
       rateLimitDelays: config.rateLimit?.retryDelays ?? [],
-      pauseQueue: queues ? (ms, request) => queues.for(request.service).pause(ms) : undefined,
+      pauseQueue: queues ? (ms, request) => this.#queueFor(request)?.pause(ms) : undefined,
       hooks,
       logger: config.logger,
       buildUrl: (request) => transport.buildUrl(request),
@@ -294,41 +297,51 @@ export class ItdClient {
           ...(config.retry.shouldRetry ? { shouldRetry: config.retry.shouldRetry } : {}),
         }
       : undefined;
-    const authPipeline = composePipeline([pluginsLayer, retriesLayer], transport.send);
-    // Служебные запросы авторизации проходят через плагины и повторы, но не через очередь
-    // и не через сам слой авторизации: они часто запускаются изнутри запроса, который уже ждёт токен.
-    // Для них POST безопасен к повтору: refresh/sign-in не создают пользовательский контент.
+    // Логические слои выполняются один раз. Внутри retry auth recovery может породить
+    // дополнительную попытку после 401. Каждая попытка готовит auth state до queue (ленивый
+    // sign-in сам пользуется pipeline), отдельно занимает slot, после ожидания синхронно
+    // читает самый свежий token и только затем вызывает transport.
+    const middlewares: RequestMiddleware[] = [pluginsLayer];
+    middlewares.push(createServicesMiddleware(this.#services));
+    middlewares.push(retriesLayer);
+    middlewares.push(
+      createAuthRecoveryMiddleware({
+        onUnauthorized: () => authManager.onUnauthorized(),
+        autoRefresh: config.autoRefresh,
+      }),
+    );
+    middlewares.push(
+      createAuthPreparationMiddleware({
+        prepareAuth: () => authManager.getAccessToken().then(() => undefined),
+      }),
+    );
+    if (queues) {
+      middlewares.push(
+        createQueueMiddleware((request, task) => {
+          const queue = this.#queueFor(request);
+          return queue ? queue.schedule(task, request.signal) : task();
+        }),
+      );
+    }
+    middlewares.push(
+      createAuthHeadersMiddleware({
+        getAuthHeaders: () => authManager.getCurrentAuthHeaders(),
+      }),
+    );
+
+    const handler = composePipeline(middlewares, transport.send);
+    // AuthManager использует тот же pipeline. Его POST-запросы получают разрешение на retry
+    // записи, но явно пропускают auth headers/recovery. Отдельная цепочка больше не нужна:
+    // исходная transport attempt освобождает queue slot до запуска refresh.
     const authHandler: RequestHandler = (request) =>
       authRetry && request.retry === undefined
-        ? authPipeline({ ...request, retry: authRetry })
-        : authPipeline(request);
+        ? handler({ ...request, retry: authRetry })
+        : handler(request);
     authManager = new AuthManager(config, authHandler, this.#jar, {
       onAccountChange: () => this.#disconnectStreams(),
     });
     this.#authManager = authManager;
 
-    // Порядок слоёв: очередь снаружи, за ней плагины, сервисы, повторы и авторизация,
-    // в сердцевине — транспорт.
-    const middlewares: RequestMiddleware[] = [];
-    if (queues) {
-      middlewares.push(
-        createQueueMiddleware((request, task) =>
-          queues.for(request.service).schedule(task, request.signal),
-        ),
-      );
-    }
-    middlewares.push(pluginsLayer);
-    middlewares.push(createServicesMiddleware(this.#services));
-    middlewares.push(retriesLayer);
-    middlewares.push(
-      createAuthMiddleware({
-        getAuthHeaders: () => authManager.getAuthHeaders(),
-        onUnauthorized: () => authManager.onUnauthorized(),
-        autoRefresh: config.autoRefresh,
-      }),
-    );
-
-    const handler = composePipeline(middlewares, transport.send);
     this.#http = new HttpClient({ handler, plugins: this.#plugins, baseUrl: config.baseUrl });
   }
 
@@ -624,10 +637,16 @@ export class ItdClient {
     const first = this.#config.rateLimit?.retryDelays[0];
     if (first === undefined) return;
 
-    this.#queues?.for(request.service).pause(first);
+    this.#queueFor(request)?.pause(first);
     this.#config.logger?.debug(
       `лимит сервера исчерпан (${remaining} из ${limit ?? '?'}), очередь ждёт ${first} мс`,
     );
+  }
+
+  /** Очередь конечного origin уже разрешённого запроса. */
+  #queueFor(request: PipelineRequest) {
+    const destination = originOf(this.#transport.buildUrl(request));
+    return this.#queues?.for(destination || undefined);
   }
 }
 

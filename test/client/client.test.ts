@@ -515,12 +515,8 @@ describe('авторизация', () => {
 
 describe('очередь и авторизация', () => {
   /**
-   * Запросы авторизации идут мимо очереди намеренно.
-   *
-   * Продление токена запускается изнутри запроса, который уже занял место в очереди
-   * и ждёт его результата. Если поставить продление в ту же очередь, оба будут ждать
-   * друг друга: при `concurrency: 1` намертво с первого же 401, при умолчании — как
-   * только столько запросов разом получат 401, сколько мест в очереди.
+   * Очередь охватывает только одну транспортную попытку. Поэтому ответ `401` сначала
+   * освобождает слот, а затем refresh может безопасно войти в ту же очередь.
    */
   function makeExpiring(rateLimit: ItdClientOptions['rateLimit']) {
     let refreshes = 0;
@@ -540,15 +536,25 @@ describe('очередь и авторизация', () => {
     return { itd, mock, refreshes: () => refreshes };
   }
 
-  it('продление не встаёт в очередь за собственным запросом', async () => {
+  it('продление входит в очередь после освобождения слота исходной попыткой', async () => {
     const { itd, refreshes } = makeExpiring({ concurrency: 1 });
+    const refreshQueueFlags: Array<boolean | undefined> = [];
+    itd.use({
+      name: 'auth-request-observer',
+      install({ use }) {
+        use(async (request, next) => {
+          if (request.path.endsWith('/refresh')) refreshQueueFlags.push(request.skipQueue);
+          return next(request);
+        });
+      },
+    });
 
     await expect(itd.users.me()).resolves.toEqual({ ok: true });
     expect(refreshes()).toBe(1);
+    expect(refreshQueueFlags).toEqual([undefined]);
   });
 
-  it('очередь не блокируется, когда все места заняты запросами с 401', async () => {
-    // Запросов ровно столько же, сколько мест: каждый держит место и ждёт продления.
+  it('одновременные 401 освобождают слоты и используют один refresh', async () => {
     const { itd, refreshes } = makeExpiring({ concurrency: 3 });
 
     const all = await Promise.all(Array.from({ length: 3 }, () => itd.users.me()));
@@ -557,7 +563,7 @@ describe('очередь и авторизация', () => {
     expect(refreshes()).toBe(1);
   });
 
-  it('отложенный вход не блокирует очередь', async () => {
+  it('отложенный вход проходит через общий pipeline без deadlock', async () => {
     const { itd, mock } = makeClient(
       (request) =>
         request.url.endsWith('/sign-in')
@@ -571,6 +577,123 @@ describe('очередь и авторизация', () => {
 
     await expect(itd.users.me()).resolves.toEqual({ ok: true });
     expect(mock.calls[0]?.url).toContain('/sign-in');
+  });
+});
+
+describe('границы очереди', () => {
+  it('локальный результат плагина не ждёт занятую транспортную очередь', async () => {
+    let releaseSlow!: () => void;
+    const { itd, mock } = makeClient(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseSlow = () => resolve(json({ data: { slow: true } }));
+        }),
+      { rateLimit: { concurrency: 1 }, timeout: 0 },
+    );
+    itd.use({
+      name: 'local-result',
+      install({ use }) {
+        use((request, next) =>
+          request.path === '/cached' ? Promise.resolve({ cached: true }) : next(request),
+        );
+      },
+    });
+
+    const slow = itd.request({ method: 'GET', path: '/slow' });
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+
+    await expect(itd.request({ method: 'GET', path: '/cached' })).resolves.toEqual({
+      cached: true,
+    });
+    expect(mock.callCount).toBe(1);
+
+    releaseSlow();
+    await expect(slow).resolves.toEqual({ slow: true });
+  });
+
+  it('backoff освобождает слот, а retry заново входит в очередь', async () => {
+    let releaseRetry!: () => void;
+    let releaseOther!: () => void;
+    const clock = {
+      now: () => 0,
+      schedule(callback: () => void, delay: number) {
+        // timeout выключен, поэтому единственный таймер — ожидание retry.
+        expect(delay).toBe(1_000);
+        releaseRetry = callback;
+        return () => {};
+      },
+    };
+    const order: string[] = [];
+    let retryCalls = 0;
+    const { itd } = makeClient(
+      (request) => {
+        const path = new URL(request.url).pathname;
+        order.push(path);
+        if (path === '/retry') {
+          retryCalls += 1;
+          return retryCalls === 1 ? json({}, { status: 500 }) : json({ data: { retried: true } });
+        }
+        return new Promise<Response>((resolve) => {
+          releaseOther = () => resolve(json({ data: { other: true } }));
+        });
+      },
+      {
+        clock,
+        timeout: 0,
+        retry: { attempts: 2, baseDelay: 1_000, maxDelay: 1_000, jitter: 0 },
+        rateLimit: { concurrency: 1 },
+      },
+    );
+
+    const retried = itd.request({ method: 'GET', path: '/retry' });
+    await vi.waitFor(() => expect(releaseRetry).toBeTypeOf('function'));
+
+    // Первый запрос ждёт backoff уже вне queue, поэтому второй использует свободный slot.
+    const other = itd.request({ method: 'GET', path: '/other' });
+    await vi.waitFor(() => expect(releaseOther).toBeTypeOf('function'));
+    expect(order).toEqual(['/retry', '/other']);
+
+    // Retry проснулся, но обязан снова встать в занятую очередь, а не вызвать fetch напрямую.
+    releaseRetry();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(order).toEqual(['/retry', '/other']);
+
+    releaseOther();
+    await expect(other).resolves.toEqual({ other: true });
+    await expect(retried).resolves.toEqual({ retried: true });
+    expect(order).toEqual(['/retry', '/other', '/retry']);
+  });
+
+  it('после ожидания очереди подставляет самый свежий токен', async () => {
+    let releaseFirst!: () => void;
+    const { itd, mock } = makeClient(
+      (_request, index) =>
+        index === 0
+          ? new Promise<Response>((resolve) => {
+              releaseFirst = () => resolve(json({ data: { first: true } }));
+            })
+          : json({ data: { second: true } }),
+      {
+        auth: 'old-token',
+        rateLimit: { concurrency: 1 },
+        timeout: 0,
+      },
+    );
+
+    const first = itd.request({ method: 'GET', path: '/first' });
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+
+    const second = itd.request({ method: 'GET', path: '/second' });
+    // Второй запрос уже подготовил auth state, но ждёт занятый транспортный slot.
+    await Promise.resolve();
+    await itd.setSession({ accessToken: 'fresh-token' });
+
+    releaseFirst();
+    await expect(first).resolves.toEqual({ first: true });
+    await expect(second).resolves.toEqual({ second: true });
+
+    expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer old-token');
+    expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer fresh-token');
   });
 });
 

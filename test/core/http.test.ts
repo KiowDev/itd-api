@@ -688,7 +688,7 @@ describe('слой очереди', () => {
     await handler({ method: 'GET', path: '/api/posts' });
     await handler({ method: 'GET', service: 'status', path: '/api/status' });
 
-    // Имя сервиса доходит до очереди — по нему выбирается очередь его хоста.
+    // Scheduler получает подготовленный запрос и сам выбирает подходящую очередь.
     expect(scheduled).toEqual([undefined, 'status']);
   });
 

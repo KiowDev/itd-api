@@ -171,7 +171,10 @@ export class RequestQueue {
 }
 
 /**
- * Очереди по хостам: основная и по одной на каждый сервис платформы.
+ * Очереди по конечным направлениям запросов.
+ *
+ * Ключом обычно служит origin уже разрешённого URL. Поэтому разные локальные имена одного
+ * хоста разделяют лимит, а запрос с разовым внешним `baseUrl` не попадает в основную очередь.
  *
  * @internal
  */
@@ -179,8 +182,8 @@ export class RequestQueuePool {
   readonly #options: ResolvedRateLimitOptions;
   readonly #clock: ItdClock;
   readonly #main: RequestQueue;
-  /** Очереди сервисов заводятся при первом запросе — обычно не нужна ни одна. */
-  readonly #byService = new Map<string, RequestQueue>();
+  /** Очереди направлений заводятся при первом запросе. */
+  readonly #byDestination = new Map<string, RequestQueue>();
 
   constructor(options: ResolvedRateLimitOptions, clock: ItdClock = systemClock) {
     this.#options = options;
@@ -188,14 +191,14 @@ export class RequestQueuePool {
     this.#main = new RequestQueue(options, clock);
   }
 
-  /** Очередь хоста. */
-  for(service: string | undefined): RequestQueue {
-    if (service === undefined) return this.#main;
+  /** Очередь направления. `undefined` сохраняет основную очередь для внутренних клиентов. */
+  for(destination: string | undefined): RequestQueue {
+    if (destination === undefined) return this.#main;
 
-    let queue = this.#byService.get(service);
+    let queue = this.#byDestination.get(destination);
     if (!queue) {
       queue = new RequestQueue(this.#options, this.#clock);
-      this.#byService.set(service, queue);
+      this.#byDestination.set(destination, queue);
     }
     return queue;
   }
@@ -203,6 +206,6 @@ export class RequestQueuePool {
   /** Останавливает все очереди. */
   stop(): void {
     this.#main.stop();
-    for (const queue of this.#byService.values()) queue.stop();
+    for (const queue of this.#byDestination.values()) queue.stop();
   }
 }

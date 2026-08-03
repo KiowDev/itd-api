@@ -37,10 +37,10 @@ function sleep(clock: ItdClock, ms: number, signal?: AbortSignal): Promise<void>
 /**
  * Слой очереди: ограничение конкурентности и частоты.
  *
- * `skipQueue` пропускает запрос мимо очереди — так поступают служебные запросы, которые
- * порождены изнутри другого запроса и не могут ждать освободившегося слота.
+ * Должен стоять непосредственно вокруг одной транспортной попытки: тогда ожидание retry
+ * не занимает слот, а каждый реальный HTTP-вызов заново учитывается ограничителем частоты.
  *
- * Очередь выбирается по запросу: у каждого сервиса платформы свой хост и свой лимит.
+ * `skipQueue` оставляет продвинутому вызывающему явный способ обойти планировщик.
  */
 export function createQueueMiddleware(
   schedule: <T>(request: PipelineRequest, task: () => Promise<T>) => Promise<T>,
@@ -52,8 +52,9 @@ export function createQueueMiddleware(
 /**
  * Слой плагинов.
  *
- * Стоит снаружи повторов и внутри очереди: плагин должен увидеть запрос и ответ по одному
- * разу, независимо от числа попыток, — иначе, например, текст поста зашифруется дважды.
+ * Стоит снаружи повторов и очереди: плагин должен увидеть запрос и ответ по одному разу,
+ * независимо от числа попыток, — иначе, например, текст поста зашифруется дважды. Плагин,
+ * который вернул локальный результат, вообще не должен занимать сетевую очередь.
  */
 export function createPluginsMiddleware(plugins: PluginRegistry): RequestMiddleware {
   return (request, next) =>
@@ -113,7 +114,7 @@ export interface AuthMiddlewareDeps {
 
 async function applyAuth(
   request: PipelineRequest,
-  deps: AuthMiddlewareDeps,
+  deps: Pick<AuthMiddlewareDeps, 'getAuthHeaders'>,
 ): Promise<PipelineRequest> {
   if (request.skipAuth) return request;
 
@@ -122,18 +123,44 @@ async function applyAuth(
 }
 
 /**
- * Слой авторизации.
+ * Подготавливает auth state до входа транспортной попытки в очередь.
  *
- * Подставляет заголовок `Authorization` и обрабатывает `401`: обновляет токен и повторяет
- * запрос ровно один раз. Стоит внутри повторов, поэтому обычным попыткам он не виден —
- * они уже работают со свежим токеном.
+ * Загрузка storage, внешний `getToken` и ленивый sign-in могут быть асинхронными; sign-in
+ * сам входит в ту же queue. Поэтому эти действия обязаны завершиться до захвата её слота.
  */
-export function createAuthMiddleware(deps: AuthMiddlewareDeps): RequestMiddleware {
+export function createAuthPreparationMiddleware(deps: {
+  prepareAuth: () => void | Promise<void>;
+}): RequestMiddleware {
   return async (request, next) => {
-    const authorized = await applyAuth(request, deps);
+    if (!request.skipAuth) await deps.prepareAuth();
+    return next(request);
+  };
+}
 
+/**
+ * Добавляет уже подготовленные заголовки непосредственно перед transport.
+ *
+ * В основном pipeline callback синхронен и не запускает I/O, поэтому слой безопасно стоит
+ * внутри queue. Если token изменился, пока запрос ждал slot, будет использовано новое значение.
+ */
+export function createAuthHeadersMiddleware(
+  deps: Pick<AuthMiddlewareDeps, 'getAuthHeaders'>,
+): RequestMiddleware {
+  return async (request, next) => next(await applyAuth(request, deps));
+}
+
+/**
+ * Обрабатывает `401`: обновляет токен и повторяет транспортную попытку ровно один раз.
+ *
+ * Стоит снаружи подготовки auth и очереди, поэтому не удерживает её slot во время refresh.
+ * Его `next` включает все эти слои: повтор заново готовит auth state и планируется.
+ */
+export function createAuthRecoveryMiddleware(
+  deps: Pick<AuthMiddlewareDeps, 'onUnauthorized' | 'autoRefresh'>,
+): RequestMiddleware {
+  return async (request, next) => {
     try {
-      return await next(authorized);
+      return await next(request);
     } catch (error) {
       // Обновляем и повторяем ровно один раз, чтобы не зациклиться, если сервер
       // отдаёт 401 и на свежем токене.
@@ -149,10 +176,21 @@ export function createAuthMiddleware(deps: AuthMiddlewareDeps): RequestMiddlewar
       const refreshed = await deps.onUnauthorized();
       if (!refreshed) throw error;
 
-      const retried = await applyAuth({ ...request, skipAuthRefresh: true }, deps);
-      return next(retried);
+      return next({ ...request, skipAuthRefresh: true });
     }
   };
+}
+
+/**
+ * Совместимая составная обёртка авторизации.
+ *
+ * Основной клиент разделяет preparation, recovery и headers вокруг очереди. Эта функция
+ * остаётся удобной для автономной сборки pipeline без queue и внутренних тестов.
+ */
+export function createAuthMiddleware(deps: AuthMiddlewareDeps): RequestMiddleware {
+  const recovery = createAuthRecoveryMiddleware(deps);
+  const headers = createAuthHeadersMiddleware(deps);
+  return (request, next) => recovery(request, (prepared) => headers(prepared, next));
 }
 
 /** Что нужно слою повторов. */
