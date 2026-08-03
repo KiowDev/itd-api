@@ -2,10 +2,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ItdClient } from '../src/client.js';
-import { ItdConfigError, ItdFileError, ItdTimeoutError } from '../src/core/errors.js';
-import { type FileInput, FileTransferMode, fromStream, fromUrl } from '../src/index.js';
-import { fromPath } from '../src/node.js';
+import { ItdClient } from '../../src/client.js';
+import { ItdConfigError, ItdFileError, ItdTimeoutError } from '../../src/core/errors.js';
+import { type FileInput, FileTransferMode, fromStream, fromUrl } from '../../src/index.js';
+import { fromPath } from '../../src/node.js';
 
 /** Ответ, как его вернул бы сервер. */
 function response(body: string, init: ResponseInit = {}): Response {

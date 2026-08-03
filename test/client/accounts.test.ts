@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAccounts, ItdAccounts, type ItdAccountsOptions } from '../src/accounts.js';
-import { ItdConfigError } from '../src/core/errors.js';
+import { createAccounts, ItdAccounts, type ItdAccountsOptions } from '../../src/accounts.js';
+import { ItdConfigError } from '../../src/core/errors.js';
 import {
   createMultiTokenStorage,
   createRecordMultiStorage,
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
-} from '../src/core/multi-storage.js';
-import type { ItdPlugin } from '../src/core/plugins/contracts.js';
-import type { ItdSession } from '../src/core/storage.js';
-import { makeJwt } from './helpers/jwt.js';
-import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';
+} from '../../src/core/multi-storage.js';
+import type { ItdPlugin } from '../../src/core/plugins/contracts.js';
+import type { ItdSession } from '../../src/core/storage.js';
+import { makeJwt } from '../helpers/jwt.js';
+import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 function makeAccounts(handler: MockHandler | Response[], options: ItdAccountsOptions = {}) {
   const mock = createMockFetch(handler);

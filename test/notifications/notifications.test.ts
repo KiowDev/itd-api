@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { ItdClient } from '../src/client.js';
+import { ItdClient } from '../../src/client.js';
 import {
   normalizeNotification,
   readNotificationEvent,
   readUnreadCountEvent,
-} from '../src/notifications/normalize.js';
-import { formatNotificationText } from '../src/notifications/text.js';
+} from '../../src/notifications/normalize.js';
+import { formatNotificationText } from '../../src/notifications/text.js';
 import {
   canonicalNotificationType,
   isKnownNotificationType,
-} from '../src/notifications/type-map.js';
-import { resolveNotificationUrl } from '../src/notifications/url.js';
-import { InteractionType, ViewReason, ViewSource } from '../src/types/enums.js';
-import type { ItdClientOptions } from '../src/types/options.js';
-import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';
+} from '../../src/notifications/type-map.js';
+import { resolveNotificationUrl } from '../../src/notifications/url.js';
+import { InteractionType, ViewReason, ViewSource } from '../../src/types/enums.js';
+import type { ItdClientOptions } from '../../src/types/options.js';
+import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 function makeClient(handler: MockHandler | Response[], options: ItdClientOptions = {}) {
   const mock = createMockFetch(handler);
@@ -475,7 +475,7 @@ describe('прочие ресурсы', () => {
   it('отправляет жалобу из билдера', async () => {
     const { itd, mock } = makeClient([json({ data: { id: 'r1', createdAt: 'сейчас' } })]);
 
-    const { report } = await import('../src/builders/report.js');
+    const { report } = await import('../../src/builders/report.js');
     await itd.reports.create(report.post('p1').reason('spam'));
 
     expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({

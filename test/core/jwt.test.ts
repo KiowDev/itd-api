@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readTokenIdentity, readTokenSubject } from '../src/core/jwt.js';
-import { makeJwt } from './helpers/jwt.js';
+import { readTokenIdentity, readTokenSubject } from '../../src/core/jwt.js';
+import { makeJwt } from '../helpers/jwt.js';
 
 describe('readTokenSubject', () => {
   it('читает sub из полезной нагрузки', () => {

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT, resolveConfig } from '../src/core/config.js';
-import { ItdConfigError } from '../src/core/errors.js';
-import { createTokenStorage, MemoryTokenStorage } from '../src/core/storage.js';
-import { REQUEST_OPTION_KEYS, type RequestOptionKeysComplete } from '../src/types/options.js';
-import { LocalStorageTokenStorage } from '../src/web.js';
+import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT, resolveConfig } from '../../src/core/config.js';
+import { ItdConfigError } from '../../src/core/errors.js';
+import { createTokenStorage, MemoryTokenStorage } from '../../src/core/storage.js';
+import { REQUEST_OPTION_KEYS, type RequestOptionKeysComplete } from '../../src/types/options.js';
+import { LocalStorageTokenStorage } from '../../src/web.js';
 
 describe('REQUEST_OPTION_KEYS', () => {
   it('покрывает все поля RequestOptions', () => {

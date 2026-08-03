@@ -4,7 +4,7 @@ import {
   getRequestId,
   parseErrorBody,
   parseRetryAfter,
-} from '../src/core/error-factory.js';
+} from '../../src/core/error-factory.js';
 import {
   ItdApiError,
   ItdAuthError,
@@ -22,7 +22,7 @@ import {
   isItdError,
   isItdFileError,
   isItdValidationError,
-} from '../src/core/errors.js';
+} from '../../src/core/errors.js';
 
 const ctx = { method: 'POST', path: '/api/posts', status: 400 };
 

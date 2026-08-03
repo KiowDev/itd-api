@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ItdClient } from '../src/client.js';
-import { ItdConfigError } from '../src/core/errors.js';
-import type { ItdPlugin, Transformer } from '../src/core/plugins/contracts.js';
-import type { ItdClientOptions } from '../src/types/options.js';
-import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';
+import { ItdClient } from '../../src/client.js';
+import { ItdConfigError } from '../../src/core/errors.js';
+import type { ItdPlugin, Transformer } from '../../src/core/plugins/contracts.js';
+import type { ItdClientOptions } from '../../src/types/options.js';
+import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 function makeClient(handler: MockHandler | Response[], options: ItdClientOptions = {}) {
   const mock = createMockFetch(handler);

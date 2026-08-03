@@ -2,9 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_USER_AGENT, LIBRARY_VERSION } from '../src/core/config.js';
+import { DEFAULT_USER_AGENT, LIBRARY_VERSION } from '../../src/core/config.js';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 describe('версия библиотеки', () => {
   it('совпадает с package.json', async () => {

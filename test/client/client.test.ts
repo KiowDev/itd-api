@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { post } from '../src/builders/post.js';
-import { createClient, ItdClient } from '../src/client.js';
-import { ItdAbortError, ItdConfigError, ItdNotFoundError } from '../src/core/errors.js';
-import type { FileInput } from '../src/index.js';
-import { TelemetryResource } from '../src/resources/telemetry.js';
-import type { ItdClientOptions } from '../src/types/options.js';
-import { makeJwt } from './helpers/jwt.js';
-import { createMockFetch, json, type MockHandler, noContent } from './helpers/mock-fetch.js';
+import { post } from '../../src/builders/post.js';
+import { createClient, ItdClient } from '../../src/client.js';
+import { ItdAbortError, ItdConfigError, ItdNotFoundError } from '../../src/core/errors.js';
+import type { FileInput } from '../../src/index.js';
+import { TelemetryResource } from '../../src/resources/telemetry.js';
+import type { ItdClientOptions } from '../../src/types/options.js';
+import { makeJwt } from '../helpers/jwt.js';
+import { createMockFetch, json, type MockHandler, noContent } from '../helpers/mock-fetch.js';
 
 function makeClient(handler: MockHandler | Response[], options: ItdClientOptions = {}) {
   const mock = createMockFetch(handler);

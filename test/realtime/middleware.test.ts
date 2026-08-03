@@ -13,7 +13,7 @@ import {
   RealtimeUpdateType,
   type TransportContext,
   type TransportEvent,
-} from '../src/index.js';
+} from '../../src/index.js';
 
 class TestTransport implements RealtimeTransport {
   readonly name = 'test';

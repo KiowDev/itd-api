@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isBuilder } from '../src/builders/base.js';
-import { comment, resolveComment } from '../src/builders/comment.js';
-import { type PollBuilder, poll, resolvePoll } from '../src/builders/poll.js';
-import { post, resolvePost, resolvePostUpdate } from '../src/builders/post.js';
-import { report, resolveReport } from '../src/builders/report.js';
-import { ItdConfigError } from '../src/core/errors.js';
+import { isBuilder } from '../../src/builders/base.js';
+import { comment, resolveComment } from '../../src/builders/comment.js';
+import { type PollBuilder, poll, resolvePoll } from '../../src/builders/poll.js';
+import { post, resolvePost, resolvePostUpdate } from '../../src/builders/post.js';
+import { report, resolveReport } from '../../src/builders/report.js';
+import { ItdConfigError } from '../../src/core/errors.js';
 
 const UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
 

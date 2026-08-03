@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ItdClient } from '../src/client.js';
-import { ItdConfigError } from '../src/core/errors.js';
-import { PollTransport } from '../src/realtime/poll.js';
-import { RECONNECT_BACKOFF, reconnectDelay } from '../src/realtime/reconnect.js';
-import { SseTransport } from '../src/realtime/sse.js';
-import { ItdRealtime, type RealtimeDeps, type RealtimeOptions } from '../src/realtime/stream.js';
+import { ItdClient } from '../../src/client.js';
+import { ItdConfigError } from '../../src/core/errors.js';
+import { PollTransport } from '../../src/realtime/poll.js';
+import { RECONNECT_BACKOFF, reconnectDelay } from '../../src/realtime/reconnect.js';
+import { SseTransport } from '../../src/realtime/sse.js';
+import { ItdRealtime, type RealtimeDeps, type RealtimeOptions } from '../../src/realtime/stream.js';
 import {
   type RealtimeTransport,
   type TransportContext,
   type TransportEvent,
   UnauthorizedStreamError,
-} from '../src/realtime/transport.js';
-import { json } from './helpers/mock-fetch.js';
+} from '../../src/realtime/transport.js';
+import { json } from '../helpers/mock-fetch.js';
 
 /** Ответ с телом-потоком: куски отдаются по одному. */
 function streamingResponse(chunks: string[], status = 200): Response {

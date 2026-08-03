@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveConfig } from '../src/core/config.js';
-import { CookieJar } from '../src/core/cookies.js';
+import { resolveConfig } from '../../src/core/config.js';
+import { CookieJar } from '../../src/core/cookies.js';
 import {
   ItdAbortError,
   ItdApiError,
@@ -9,16 +9,16 @@ import {
   ItdNotFoundError,
   ItdTimeoutError,
   ItdValidationError,
-} from '../src/core/errors.js';
+} from '../../src/core/errors.js';
 import {
   composePipeline,
   createAuthMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
-} from '../src/core/middleware.js';
-import type { PipelineRequest } from '../src/core/pipeline.js';
-import { Transport, type TransportDeps } from '../src/core/transport.js';
-import type { ItdClientOptions } from '../src/types/options.js';
+} from '../../src/core/middleware.js';
+import type { PipelineRequest } from '../../src/core/pipeline.js';
+import { Transport, type TransportDeps } from '../../src/core/transport.js';
+import type { ItdClientOptions } from '../../src/types/options.js';
 import {
   abortError,
   createHangingFetch,
@@ -26,7 +26,7 @@ import {
   json,
   type MockHandler,
   noContent,
-} from './helpers/mock-fetch.js';
+} from '../helpers/mock-fetch.js';
 
 /** Собирает транспорт с моком сети — так же, как это делает ItdClient. */
 function makeTransport(

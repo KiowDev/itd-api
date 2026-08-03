@@ -1,22 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AuthManager } from '../src/core/auth.js';
-import { resolveConfig } from '../src/core/config.js';
-import { CookieJar } from '../src/core/cookies.js';
-import { ItdAuthError, ItdConfigError } from '../src/core/errors.js';
-import { HttpClient } from '../src/core/http.js';
+import { AuthManager } from '../../src/core/auth.js';
+import { resolveConfig } from '../../src/core/config.js';
+import { CookieJar } from '../../src/core/cookies.js';
+import { ItdAuthError, ItdConfigError } from '../../src/core/errors.js';
+import { HttpClient } from '../../src/core/http.js';
 import {
   composePipeline,
   createAuthMiddleware,
   createPluginsMiddleware,
   createRetryMiddleware,
-} from '../src/core/middleware.js';
-import type { RequestHandler } from '../src/core/pipeline.js';
-import { PluginRegistry } from '../src/core/plugins/registry.js';
-import { type ItdSession, MemoryTokenStorage } from '../src/core/storage.js';
-import { Transport } from '../src/core/transport.js';
-import type { ItdClientOptions, RetryOptions } from '../src/types/options.js';
-import { makeJwt } from './helpers/jwt.js';
-import { createMockFetch, json, type MockHandler } from './helpers/mock-fetch.js';
+} from '../../src/core/middleware.js';
+import type { RequestHandler } from '../../src/core/pipeline.js';
+import { PluginRegistry } from '../../src/core/plugins/registry.js';
+import { type ItdSession, MemoryTokenStorage } from '../../src/core/storage.js';
+import { Transport } from '../../src/core/transport.js';
+import type { ItdClientOptions, RetryOptions } from '../../src/types/options.js';
+import { makeJwt } from '../helpers/jwt.js';
+import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 /** Собирает связку транспорт + авторизация так же, как это делает ItdClient. */
 function makeAuth(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AUTH_FLAG_COOKIE, CookieJar } from '../src/core/cookies.js';
+import { AUTH_FLAG_COOKIE, CookieJar } from '../../src/core/cookies.js';
 
 const URL_BASE = 'https://itd.test/api/v1/auth/refresh';
 

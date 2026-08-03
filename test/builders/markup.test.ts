@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { autoSpans, markup } from '../src/builders/markup.js';
-import { post } from '../src/builders/post.js';
-import { ItdConfigError } from '../src/core/errors.js';
-import { renderSpans, SpanRenderFormat } from '../src/spans/render.js';
-import { SpanType } from '../src/types/enums.js';
+import { autoSpans, markup } from '../../src/builders/markup.js';
+import { post } from '../../src/builders/post.js';
+import { ItdConfigError } from '../../src/core/errors.js';
+import { renderSpans, SpanRenderFormat } from '../../src/spans/render.js';
+import { SpanType } from '../../src/types/enums.js';
 
 describe('билдер разметки', () => {
   it('считает смещения хэштега и упоминания', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ItdConfigError } from '../src/core/errors.js';
+import { ItdConfigError } from '../../src/core/errors.js';
 import {
   type Page,
   type PageState,
@@ -9,7 +9,7 @@ import {
   readFlatCursorPage,
   readOffsetPage,
   readPagedPage,
-} from '../src/core/pagination.js';
+} from '../../src/core/pagination.js';
 
 describe('чтение форм ответа', () => {
   it('курсорная схема — курсор внутри pagination', () => {

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ItdClient } from '../src/client.js';
-import { DEFAULT_STATUS_BASE_URL } from '../src/core/config.js';
-import { ItdConfigError } from '../src/core/errors.js';
-import { mergeService, ServiceRegistry } from '../src/core/services.js';
-import type { ItdClientOptions } from '../src/types/options.js';
-import { createMockFetch, json } from './helpers/mock-fetch.js';
+import { ItdClient } from '../../src/client.js';
+import { DEFAULT_STATUS_BASE_URL } from '../../src/core/config.js';
+import { ItdConfigError } from '../../src/core/errors.js';
+import { mergeService, ServiceRegistry } from '../../src/core/services.js';
+import type { ItdClientOptions } from '../../src/types/options.js';
+import { createMockFetch, json } from '../helpers/mock-fetch.js';
 
 /** Клиент с моком сети. */
 function makeClient(options: ItdClientOptions = {}) {

@@ -4,14 +4,14 @@ import {
   type RealtimeEngineDeps,
   type RealtimeEngineEvents,
   type RealtimeEngineOptions,
-} from '../src/realtime/engine.js';
-import { RealtimeRouter } from '../src/realtime/router.js';
+} from '../../src/realtime/engine.js';
+import { RealtimeRouter } from '../../src/realtime/router.js';
 import type {
   RealtimeTransport,
   TransportContext,
   TransportEvent,
-} from '../src/realtime/transport.js';
-import type { RealtimeContextBase } from '../src/realtime/updates.js';
+} from '../../src/realtime/transport.js';
+import type { RealtimeContextBase } from '../../src/realtime/updates.js';
 
 interface TestUpdate {
   readonly value: number;

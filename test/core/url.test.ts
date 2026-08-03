@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ItdConfigError } from '../src/core/errors.js';
+import { ItdConfigError } from '../../src/core/errors.js';
 import {
   pickArray,
   pickBoolean,
@@ -7,7 +7,7 @@ import {
   pickObject,
   pickString,
   unwrapData,
-} from '../src/core/unwrap.js';
+} from '../../src/core/unwrap.js';
 import {
   buildQuery,
   encodePathSegment,
@@ -16,7 +16,7 @@ import {
   joinUrl,
   normalizeBaseUrl,
   originOf,
-} from '../src/core/url.js';
+} from '../../src/core/url.js';
 
 describe('buildQuery', () => {
   it('пропускает undefined и null', () => {

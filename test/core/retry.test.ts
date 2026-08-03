@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveConfig } from '../src/core/config.js';
-import { createApiError } from '../src/core/error-factory.js';
+import { resolveConfig } from '../../src/core/config.js';
+import { createApiError } from '../../src/core/error-factory.js';
 import {
   ItdAbortError,
   type ItdApiError,
   ItdNetworkError,
   ItdTimeoutError,
-} from '../src/core/errors.js';
-import { RequestQueue } from '../src/core/rate-limit.js';
-import { createRetryScheduler } from '../src/core/retry.js';
+} from '../../src/core/errors.js';
+import { RequestQueue } from '../../src/core/rate-limit.js';
+import { createRetryScheduler } from '../../src/core/retry.js';
 
 /** Настройки повторов по умолчанию. */
 function retryOptions(overrides: Partial<ReturnType<typeof defaults>> = {}) {

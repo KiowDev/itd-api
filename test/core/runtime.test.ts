@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDeviceId, isBlob, isFile } from '../src/core/runtime.js';
+import { createDeviceId, isBlob, isFile } from '../../src/core/runtime.js';
 
 /**
  * Временно убирает глобальный конструктор.

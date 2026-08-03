@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ItdClient } from '../src/client.js';
-import { createMockFetch, json } from './helpers/mock-fetch.js';
+import { ItdClient } from '../../src/client.js';
+import { createMockFetch, json } from '../helpers/mock-fetch.js';
 
 const VERSION_RESPONSE = {
   android: {

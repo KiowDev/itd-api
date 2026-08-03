@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ItdClient } from '../src/client.js';
-import { ItdAbortError, ItdConfigError } from '../src/core/errors.js';
-import { InteractionType, ViewReason, ViewSource } from '../src/types/enums.js';
-import { createMockFetch, json } from './helpers/mock-fetch.js';
+import { ItdClient } from '../../src/client.js';
+import { ItdAbortError, ItdConfigError } from '../../src/core/errors.js';
+import { InteractionType, ViewReason, ViewSource } from '../../src/types/enums.js';
+import { createMockFetch, json } from '../helpers/mock-fetch.js';
 
 function makeClient(handler: Parameters<typeof createMockFetch>[0] = () => json({ ok: true })) {
   const mock = createMockFetch(handler);
