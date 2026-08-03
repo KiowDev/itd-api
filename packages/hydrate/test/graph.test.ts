@@ -15,8 +15,8 @@ function pluginClient(transform: (value: Record<PropertyKey, unknown>) => void) 
   });
   raw.use({
     name: 'graph-fixture',
-    install({ use }) {
-      use(async (request, next) => {
+    install({ operations }) {
+      operations.use(async (request, next) => {
         const result = await next(request);
         transform(result as Record<PropertyKey, unknown>);
         return result;

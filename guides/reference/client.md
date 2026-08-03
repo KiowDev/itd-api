@@ -45,7 +45,7 @@ request<T = unknown>(options: RawRequestOptions): Promise<T>
 `{ data: … }`.
 
 ```ts
-use(plugin: ItdPlugin): this
+use(plugin: ClientPlugin): this
 pluginNames(): string[]
 hasPlugin(name: string): boolean
 unuse(name: string): Promise<boolean>

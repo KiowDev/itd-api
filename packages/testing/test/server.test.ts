@@ -1,6 +1,6 @@
 import {
+  type ClientPlugin,
   ItdClient,
-  type ItdPlugin,
   type ItdRealtime,
   type RealtimeContext,
   RealtimeUpdateType,
@@ -196,10 +196,10 @@ describe('createMockServer', () => {
 
   it('видит запрос после преобразования плагином и допускает расширение маршрутов', async () => {
     const server = makeServer();
-    const plugin: ItdPlugin = {
+    const plugin: ClientPlugin = {
       name: 'test-header',
-      install({ use }) {
-        use((request, next) =>
+      install({ operations }) {
+        operations.use((request, next) =>
           next({ ...request, headers: { ...request.headers, 'X-Plugin': 'active' } }),
         );
       },
@@ -218,19 +218,19 @@ describe('createMockServer', () => {
     remove();
   });
 
-  it('сохраняет плоский ответ списка уведомлений для raw-запросов и хуков', async () => {
+  it('сохраняет плоский ответ списка уведомлений для raw-запросов и interceptor', async () => {
     const server = makeServer();
     const client = new ItdClient(server.clientOptions({ as: 'alice' }));
     let hookBody: unknown;
     client.use({
       name: 'response-reader',
-      install({ useHooks }) {
-        useHooks({
-          async onResponse({ response, url }) {
-            if (new URL(url).pathname === '/api/notifications/') {
-              hookBody = await response.clone().json();
-            }
-          },
+      install({ attempts }) {
+        attempts.use(async ({ url }, next) => {
+          const response = await next();
+          if (new URL(url).pathname === '/api/notifications/') {
+            hookBody = await response.clone().json();
+          }
+          return response;
         });
       },
     });

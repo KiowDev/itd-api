@@ -7,7 +7,7 @@ import {
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
 } from '../../src/core/multi-storage.js';
-import type { ItdPlugin } from '../../src/core/plugins/contracts.js';
+import type { ClientPlugin } from '../../src/core/plugins/contracts.js';
 import type { ItdSession } from '../../src/core/storage.js';
 import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
@@ -205,8 +205,8 @@ describe('общие и личные настройки', () => {
 
     accounts.use({
       name: 'trace',
-      install({ use }) {
-        use((request, next) =>
+      install({ operations }) {
+        operations.use((request, next) =>
           next({ ...request, headers: { ...request.headers, 'X-Trace': 'yes' } }),
         );
       },
@@ -228,8 +228,8 @@ describe('общие и личные настройки', () => {
 
     accounts.use({
       name: 'inner',
-      install({ use }) {
-        use((request, next) =>
+      install({ operations }) {
+        operations.use((request, next) =>
           next({ ...request, headers: { ...request.headers, 'X-Plugin': 'yes' } }),
         );
         return teardown;
@@ -285,7 +285,7 @@ describe('общие и личные настройки', () => {
     const second = accounts.addAccount('b', { auth: 'token-b' });
     const teardown = vi.fn();
     let installs = 0;
-    const unstable: ItdPlugin = {
+    const unstable: ClientPlugin = {
       name: 'unstable',
       install() {
         installs += 1;
@@ -349,7 +349,7 @@ describe('общие и личные настройки', () => {
 
   it('проверяет плагин сразу, даже когда аккаунтов ещё нет', () => {
     const { accounts } = makeAccounts(ok);
-    const broken = { name: 'сломанный' } as unknown as ItdPlugin;
+    const broken = { name: 'сломанный' } as unknown as ClientPlugin;
 
     expect(() => accounts.use(broken)).toThrow(/install/);
     expect(() =>
@@ -359,7 +359,7 @@ describe('общие и личные настройки', () => {
   });
 
   it('проверяет плагины из опций при создании контейнера', () => {
-    const broken = { name: 'сломанный' } as unknown as ItdPlugin;
+    const broken = { name: 'сломанный' } as unknown as ClientPlugin;
 
     expect(() => makeAccounts(ok, { plugins: [broken] })).toThrow(/install/);
   });

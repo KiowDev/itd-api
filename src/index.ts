@@ -144,13 +144,18 @@ export {
 } from './core/operations.js';
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
-// Плагины работают на уровне транспорта: обёртка вокруг запроса видит и тело запроса,
-// и разобранный ответ. Публичные контракты отделены от registry и порядка установки.
+// Плагины расширяют два явных уровня: logical operation и отдельную transport attempt.
+// Публичные контракты отделены от registry и порядка установки.
 export type {
-  ItdPlugin,
-  PluginContext,
+  AttemptContext,
+  AttemptExtensions,
+  AttemptInterceptor,
+  AttemptNext,
+  ClientPlugin,
+  OperationExtensions,
+  OperationTransformer,
+  PluginApi,
   PluginTeardown,
-  Transformer,
 } from './core/plugins/contracts.js';
 export { DetectedRuntime, RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.

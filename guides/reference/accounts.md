@@ -43,7 +43,7 @@ get storage: MultiTokenStorage
 Состав контейнера.
 
 ```ts
-use(plugin: ItdPlugin): this
+use(plugin: ClientPlugin): this
 pluginNames(): string[]
 hasPlugin(name: string): boolean
 unuse(name: string): Promise<boolean>
@@ -85,7 +85,7 @@ dispose(): Promise<void>
 ```ts
 interface ItdAccountsOptions extends Omit<ItdClientOptions, 'auth' | 'storage' | 'deviceId'> {
   storage?: MultiTokenStorage;           // по умолчанию MemoryMultiTokenStorage
-  plugins?: readonly ItdPlugin[];        // подключаются каждому аккаунту
+  plugins?: readonly ClientPlugin[];     // подключаются каждому аккаунту
   rateLimitScope?: 'account' | 'shared'; // очередь: своя у каждого / общая; по умолчанию 'account'
 }
 

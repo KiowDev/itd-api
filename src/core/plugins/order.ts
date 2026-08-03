@@ -1,12 +1,13 @@
-import type { ClientHooks } from '../../types/options.js';
 import { ItdConfigError } from '../errors.js';
-import type { ItdPlugin } from './contracts.js';
+import type { ClientPlugin } from './contracts.js';
 
 const RESERVED_OPTION_KEYS: ReadonlySet<string> = new Set([
   'signal',
   'timeout',
   'headers',
   'retry',
+  'retrySafety',
+  'operationId',
   'method',
   'path',
   'service',
@@ -20,9 +21,8 @@ const RESERVED_OPTION_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 const RELATION_FIELDS = ['requires', 'conflicts', 'before', 'after'] as const;
-const HOOK_FIELDS = ['onRequest', 'onResponse', 'onError', 'onRetry'] as const;
 
-function validateNameList(plugin: ItdPlugin, field: (typeof RELATION_FIELDS)[number]): void {
+function validateNameList(plugin: ClientPlugin, field: (typeof RELATION_FIELDS)[number]): void {
   const values = plugin[field];
   if (values === undefined) return;
   if (!Array.isArray(values)) {
@@ -44,18 +44,6 @@ function validateNameList(plugin: ItdPlugin, field: (typeof RELATION_FIELDS)[num
   }
 }
 
-/** Проверяет набор hooks, переданный плагином. @internal */
-export function validatePluginHooks(plugin: string, hooks: ClientHooks): void {
-  if (typeof hooks !== 'object' || hooks === null) {
-    throw new ItdConfigError(`плагин «${plugin}» передал в useHooks() не объект`);
-  }
-  for (const field of HOOK_FIELDS) {
-    if (hooks[field] !== undefined && typeof hooks[field] !== 'function') {
-      throw new ItdConfigError(`плагин «${plugin}»: useHooks().${field} должен быть функцией`);
-    }
-  }
-}
-
 /**
  * Проверяет описание плагина без его установки.
  *
@@ -65,7 +53,7 @@ export function validatePluginHooks(plugin: string, hooks: ClientHooks): void {
  *
  * @internal
  */
-export function validatePluginDefinition(plugin: ItdPlugin): void {
+export function validatePluginDefinition(plugin: ClientPlugin): void {
   if (typeof plugin?.install !== 'function') {
     throw new ItdConfigError('Плагин должен быть объектом с методом install()');
   }
@@ -95,7 +83,7 @@ export function validatePluginDefinition(plugin: ItdPlugin): void {
 }
 
 interface OrderedPlugin {
-  plugin: ItdPlugin;
+  plugin: ClientPlugin;
   sequence: number;
 }
 
@@ -116,7 +104,7 @@ function addEdge(
  *
  * @internal
  */
-export function orderPluginDefinitions(plugins: readonly ItdPlugin[]): ItdPlugin[] {
+export function orderPluginDefinitions(plugins: readonly ClientPlugin[]): ClientPlugin[] {
   const entries: OrderedPlugin[] = [];
   const byName = new Map<string, OrderedPlugin>();
 
@@ -166,7 +154,7 @@ export function orderPluginDefinitions(plugins: readonly ItdPlugin[]): ItdPlugin
 
   const ready = entries.filter(({ plugin }) => indegree.get(plugin.name) === 0);
   ready.sort((a, b) => a.sequence - b.sequence);
-  const ordered: ItdPlugin[] = [];
+  const ordered: ClientPlugin[] = [];
   while (ready.length > 0) {
     const current = ready.shift();
     if (!current) break;
@@ -194,7 +182,7 @@ export function orderPluginDefinitions(plugins: readonly ItdPlugin[]): ItdPlugin
 }
 
 /** Проверяет, можно ли удалить плагин без нарушения обязательных зависимостей. @internal */
-export function assertPluginRemovable(plugins: readonly ItdPlugin[], name: string): void {
+export function assertPluginRemovable(plugins: readonly ClientPlugin[], name: string): void {
   const dependent = plugins.find((plugin) => plugin.requires?.includes(name));
   if (dependent) {
     throw new ItdConfigError(

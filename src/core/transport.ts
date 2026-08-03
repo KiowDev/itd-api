@@ -15,6 +15,7 @@ import {
   type PipelineRequestInput,
   type PreparedRequestBody,
 } from './pipeline.js';
+import { runAttemptInterceptors } from './plugins/attempts.js';
 import { dispatchRequestHook, hasRequestHook } from './plugins/hooks.js';
 import { redactBody, redactHeaders } from './redact.js';
 import { isBlob } from './runtime.js';
@@ -252,12 +253,11 @@ export class Transport {
           headers,
           attempt,
         };
-        await dispatchRequestHook(
-          this.#config.hooks,
-          'onError',
-          { ...context, duration: this.#config.clock.now() - startedAt, error: failure },
-          request,
-        );
+        await dispatchRequestHook(this.#config.hooks, 'onError', {
+          ...context,
+          duration: this.#config.clock.now() - startedAt,
+          error: failure,
+        });
         throw failure;
       }
 
@@ -269,7 +269,7 @@ export class Transport {
         headers,
         attempt,
       };
-      await dispatchRequestHook(this.#config.hooks, 'onRequest', context, request);
+      await dispatchRequestHook(this.#config.hooks, 'onRequest', context);
 
       this.#config.logger?.debug(`→ ${method} ${request.path}`, {
         headers: redactHeaders(headers),
@@ -288,22 +288,26 @@ export class Transport {
         if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) {
           init.duplex = 'half';
         }
-        response = await this.#config.fetch(url, init);
+        response = await runAttemptInterceptors(
+          request,
+          { ...context, body, signal: abort.signal },
+          async () => {
+            try {
+              return await this.#config.fetch(url, init);
+            } catch (error) {
+              throw this.#toTransportError(error, abort, request, method, timeout);
+            }
+          },
+        );
       } catch (error) {
         const duration = this.#config.clock.now() - startedAt;
-        const failure = this.#toTransportError(error, abort, request, method, timeout);
 
-        await dispatchRequestHook(
-          this.#config.hooks,
-          'onError',
-          { ...context, duration, error: failure },
-          request,
-        );
+        await dispatchRequestHook(this.#config.hooks, 'onError', { ...context, duration, error });
         this.#config.logger?.warn(
-          `× ${method} ${request.path} (${duration} мс): ${failure.message}`,
+          `× ${method} ${request.path} (${duration} мс): ${error instanceof Error ? error.message : String(error)}`,
         );
 
-        throw failure;
+        throw error;
       }
 
       if (this.#deps.onRateLimit) {
@@ -315,18 +319,13 @@ export class Transport {
 
       // Хук получает собственную ветвь тела: чтение ответа внутри хука не должно лишать
       // транспорт возможности разобрать основной ответ.
-      if (response.ok && hasRequestHook(this.#config.hooks, 'onResponse', request)) {
-        await dispatchRequestHook(
-          this.#config.hooks,
-          'onResponse',
-          {
-            ...context,
-            status: response.status,
-            duration: this.#config.clock.now() - startedAt,
-            response: response.clone(),
-          },
-          request,
-        );
+      if (response.ok && hasRequestHook(this.#config.hooks, 'onResponse')) {
+        await dispatchRequestHook(this.#config.hooks, 'onResponse', {
+          ...context,
+          status: response.status,
+          duration: this.#config.clock.now() - startedAt,
+          response: response.clone(),
+        });
       }
 
       const payload = await this.#readBodyOrFail(
@@ -351,12 +350,7 @@ export class Transport {
           body: payload,
         });
 
-        await dispatchRequestHook(
-          this.#config.hooks,
-          'onError',
-          { ...context, duration, error },
-          request,
-        );
+        await dispatchRequestHook(this.#config.hooks, 'onError', { ...context, duration, error });
         this.#config.logger?.warn(
           `← ${response.status} ${method} ${request.path} (${duration} мс): ${error.message}`,
         );
@@ -453,16 +447,11 @@ export class Transport {
 
       const failure = this.#toTransportError(error, abort, request, method, timeout);
 
-      await dispatchRequestHook(
-        this.#config.hooks,
-        'onError',
-        {
-          ...context,
-          duration: this.#config.clock.now() - startedAt,
-          error: failure,
-        },
-        request,
-      );
+      await dispatchRequestHook(this.#config.hooks, 'onError', {
+        ...context,
+        duration: this.#config.clock.now() - startedAt,
+        error: failure,
+      });
       this.#config.logger?.warn(
         `× ${method} ${request.path}: не удалось прочитать тело ответа — ${failure.message}`,
       );

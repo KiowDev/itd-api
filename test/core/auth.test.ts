@@ -141,8 +141,8 @@ describe('отложенный вход по логину и паролю', () =
     plugins.add(
       {
         name: 'recorder',
-        install({ use }) {
-          use(async (request, next) => {
+        install({ operations }) {
+          operations.use(async (request, next) => {
             paths.push(request.path);
             return next(request);
           });

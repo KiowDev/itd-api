@@ -1,7 +1,7 @@
 import {
+  type ClientPlugin,
   ItdClient,
   type ItdClientOptions,
-  type ItdPlugin,
   type ItdRealtime,
   RetrySafety,
 } from 'itd-api';
@@ -148,11 +148,11 @@ describe('TTL/LRU-кэш', () => {
 
   it('учитывает опции других плагинов, меняющие ответ', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
-    const optionCarrier: ItdPlugin = {
+    const optionCarrier: ClientPlugin = {
       name: 'option-carrier',
       optionKeys: ['view'],
-      install: ({ use }) =>
-        use(async (request, next) => {
+      install: ({ operations }) =>
+        void operations.use(async (request, next) => {
           const result = (await next(request)) as Record<string, unknown>;
           result.view = (request as RawRequestWithView).view;
           return result;
@@ -195,8 +195,8 @@ describe('TTL/LRU-кэш', () => {
     itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
     itd.use({
       name: 'function-in-response',
-      install: ({ use }) =>
-        use(async (request, next) => {
+      install: ({ operations }) =>
+        void operations.use(async (request, next) => {
           const result = (await next(request)) as Record<string, unknown>;
           result.action = () => {};
           return result;

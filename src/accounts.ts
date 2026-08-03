@@ -10,7 +10,7 @@ import {
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
 } from './core/multi-storage.js';
-import type { ItdPlugin } from './core/plugins/contracts.js';
+import type { ClientPlugin } from './core/plugins/contracts.js';
 import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
 import { RequestQueuePool } from './core/rate-limit.js';
 import type { TokenStorage } from './core/storage.js';
@@ -34,7 +34,7 @@ export interface ItdAccountsOptions
   /** Общее хранилище сессий всех аккаунтов. По умолчанию {@link MemoryMultiTokenStorage}. */
   storage?: MultiTokenStorage | undefined;
   /** Плагины, подключаемые каждому аккаунту, в том числе добавленному позже. */
-  plugins?: readonly ItdPlugin[] | undefined;
+  plugins?: readonly ClientPlugin[] | undefined;
   /**
    * Как делить очередь запросов. По умолчанию `'account'` — своя у каждого.
    *
@@ -135,7 +135,7 @@ export class ItdAccounts {
   /** Подписки на события клиентов — снимаются вместе с аккаунтом. */
   readonly #eventUnsubscribers = new Map<string, Unsubscribe[]>();
   /** Плагины для всех: и для уже заведённых аккаунтов, и для будущих. */
-  readonly #plugins: ItdPlugin[];
+  readonly #plugins: ClientPlugin[];
   /** Имена плагинов, чья асинхронная очистка ещё не завершилась. */
   readonly #removingPlugins = new Set<string>();
   /** Общая очередь. `undefined`, когда у каждого аккаунта своя. */
@@ -380,7 +380,7 @@ export class ItdAccounts {
    * accounts.use(crypt());
    * ```
    */
-  use(plugin: ItdPlugin): this {
+  use(plugin: ClientPlugin): this {
     if (this.#removingPlugins.has(plugin?.name)) {
       throw new ItdConfigError(
         `плагин «${plugin.name}» ещё отключается; дождитесь завершения accounts.unuse()`,

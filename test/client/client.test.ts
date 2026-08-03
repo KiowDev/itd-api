@@ -541,8 +541,8 @@ describe('очередь и авторизация', () => {
     const refreshQueueFlags: Array<boolean | undefined> = [];
     itd.use({
       name: 'auth-request-observer',
-      install({ use }) {
-        use(async (request, next) => {
+      install({ operations }) {
+        operations.use(async (request, next) => {
           if (request.path.endsWith('/refresh')) refreshQueueFlags.push(request.skipQueue);
           return next(request);
         });
@@ -592,8 +592,8 @@ describe('границы очереди', () => {
     );
     itd.use({
       name: 'local-result',
-      install({ use }) {
-        use((request, next) =>
+      install({ operations }) {
+        operations.use((request, next) =>
           request.path === '/cached' ? Promise.resolve({ cached: true }) : next(request),
         );
       },

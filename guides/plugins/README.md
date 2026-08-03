@@ -81,12 +81,12 @@ ITD_TOKEN=<accessToken> node guides/plugins/examples/crypto.mjs
 ## Собственный плагин
 
 ```ts
-import type { ItdPlugin } from 'itd-api';
+import type { ClientPlugin } from 'itd-api';
 
-const timing: ItdPlugin = {
+const timing: ClientPlugin = {
   name: 'timing',
-  install({ use, logger }) {
-    use(async (request, next) => {
+  install({ operations, logger }) {
+    operations.use(async (request, next) => {
       const started = Date.now();
       try {
         return await next(request);
@@ -110,10 +110,15 @@ itd.use(timing);
 Основные публичные типы:
 
 ```ts
-type Transformer = (
+type OperationTransformer = (
   request: OperationRequestOptions,
   next: (request: OperationRequestOptions) => Promise<unknown>,
 ) => Promise<unknown>;
+
+type AttemptInterceptor = (
+  context: AttemptContext,
+  next: () => Promise<Response>,
+) => Promise<Response>;
 
 type PluginTeardown = () => void | Promise<void>;
 
@@ -122,13 +127,17 @@ interface AuthIdentity {
   sessionId?: string;
 }
 
-interface PluginContext {
+interface PluginApi {
   baseUrl: string;
   logger: Logger | undefined;
   getAuthScope?: () => string;
   getAuthIdentity?: () => Promise<AuthIdentity>;
-  use(transformer: Transformer): void;
-  useHooks(hooks: ClientHooks): void;
+  operations: {
+    use(transformer: OperationTransformer): Unsubscribe;
+  };
+  attempts: {
+    use(interceptor: AttemptInterceptor): Unsubscribe;
+  };
 }
 ```
 
@@ -140,13 +149,13 @@ interface PluginContext {
 Плагин может описать отношения с другими плагинами:
 
 ```ts
-const tracing: ItdPlugin = {
+const tracing: ClientPlugin = {
   name: 'tracing',
   before: ['cache'],       // обёртка tracing снаружи cache
   requires: ['transport'], // без transport подключение завершится ошибкой
   conflicts: ['legacy-tracing'],
-  install({ use }) {
-    use((request, next) => next(request));
+  install({ operations }) {
+    operations.use((request, next) => next(request));
   },
 };
 ```
@@ -167,46 +176,55 @@ itd.pluginNames();
 itd.hasPlugin('cache');
 ```
 
-## Хуки отдельных попыток
+## Interceptors отдельных попыток
 
-`use()` видит логический запрос один раз. Для метрик и трассировки есть `useHooks()`:
+`operations.use()` видит логическую операцию один раз. Для метрик, wire logging, подписи
+запроса и diagnostic headers используется `attempts.use()` — заново для каждой попытки:
 
 ```ts
-const telemetry: ItdPlugin = {
+const telemetry: ClientPlugin = {
   name: 'telemetry',
-  install({ useHooks }) {
-    useHooks({
-      onRequest({ method, path, attempt }) {
-        console.log(`попытка ${attempt}: ${method} ${path}`);
-      },
-      onResponse({ status, duration }) {
-        console.log(status, duration);
-      },
-      onError({ error, duration }) {
-        console.error(error, duration);
-      },
-      onRetry({ attempt, delay }) {
-        console.log(`после попытки ${attempt} ждём ${delay} мс`);
-      },
+  install({ attempts }) {
+    attempts.use(async ({ operationId, url, headers, attempt }, next) => {
+      const started = performance.now();
+      headers.set('X-Attempt-Trace', `${operationId}:${attempt}`);
+      try {
+        const response = await next();
+        console.log(url, response.status, performance.now() - started);
+        return response;
+      } catch (error) {
+        console.error(url, error, performance.now() - started);
+        throw error;
+      }
     });
   },
 };
 ```
 
-Хуки, заданные в конструкторе `ItdClient`, вызываются раньше хуков плагинов. Исключение
-из хука прерывает запрос — плагину наблюдаемости лучше обрабатывать собственные ошибки
-внутри.
+Interceptor получает уже разрешённый URL, итоговые mutable-заголовки, подготовленное тело,
+сигнал и номер попытки. Семантический request здесь изменить нельзя. `next()` разрешено
+вызвать ровно один раз: retry остаётся обязанностью core. Для явного short-circuit верните
+синтетический `Response`, не вызывая `next()`.
+
+`ClientHooks` в конструкторе остаются клиентским lifecycle API, включая `onRetry`; они не
+являются plugin extension point и вызываются перед attempt chain там, где это применимо.
+
+| Контракт | Частота | Результат | Short-circuit | Resolved URL |
+| --- | ---: | --- | --- | --- |
+| `OperationTransformer` | один раз на операцию | разобранный | да, любым результатом | обычно нет |
+| `AttemptInterceptor` | каждая transport attempt | сырой `Response` | да, только `Response` | да |
+| Transport | каждая transport attempt | формирует | нет | да |
 
 ## Отключение и очистка
 
 `install()` может вернуть синхронную или асинхронную функцию очистки:
 
 ```ts
-const plugin: ItdPlugin = {
+const plugin: ClientPlugin = {
   name: 'connection',
-  install({ use }) {
+  install({ operations }) {
     const connection = openConnection();
-    use((request, next) => next(request));
+    operations.use((request, next) => next(request));
 
     return () => connection.close();
   },
@@ -229,11 +247,11 @@ await itd.unuse('connection');
 Плагин объявляет разрешённые ключи:
 
 ```ts
-const plugin: ItdPlugin = {
+const plugin: ClientPlugin = {
   name: 'мой',
   optionKeys: ['мояОпция'],
-  install({ use }) {
-    use(async (request, next) => {
+  install({ operations }) {
+    operations.use(async (request, next) => {
       console.log(request.мояОпция);
       return next(request);
     });
@@ -275,7 +293,7 @@ my-plugin/
 ```
 
 Пакет должен иметь собственные тесты, сборку и экспортировать фабрику либо объект,
-совместимый с `ItdPlugin`.
+совместимый с `ClientPlugin`.
 
 ## Связанные разделы
 

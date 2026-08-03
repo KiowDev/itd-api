@@ -1,27 +1,25 @@
-import type { ClientHooks, OperationRequestOptions } from '../../types/options.js';
+import type { OperationRequestOptions } from '../../types/options.js';
 import { ItdConfigError } from '../errors.js';
-import type { ItdPlugin, PluginContext, PluginTeardown, Transformer } from './contracts.js';
-import {
-  createRequestHooks,
-  type HookContext,
-  type HookName,
-  hasRequestHook,
-  requestHookScope,
-  withRequestHookScope,
-} from './hooks.js';
+import { type RegisteredAttemptInterceptor, withAttemptInterceptorScope } from './attempts.js';
+import type {
+  AttemptInterceptor,
+  ClientPlugin,
+  OperationTransformer,
+  PluginApi,
+  PluginTeardown,
+} from './contracts.js';
 import {
   assertPluginRemovable,
   orderPluginDefinitions,
   validatePluginDefinition,
-  validatePluginHooks,
 } from './order.js';
 
 const NO_KEYS: ReadonlySet<string> = new Set<string>();
 
 interface InstalledPlugin {
-  plugin: ItdPlugin;
-  transformers: Transformer[];
-  hooks: ClientHooks[];
+  plugin: ClientPlugin;
+  transformers: OperationTransformer[];
+  interceptors: AttemptInterceptor[];
   teardown: PluginTeardown | undefined;
   activeRequests: number;
   drain: Promise<void> | undefined;
@@ -29,10 +27,13 @@ interface InstalledPlugin {
 }
 
 /**
- * Список подключённых плагинов и собранная из них цепочка обёрток.
+ * Список подключённых плагинов и зарегистрированных ими расширений.
  *
- * Живёт в клиенте, а работает в транспорте: {@link HttpClient} прогоняет через `run`
- * каждый запрос, если плагины есть.
+ * {@link run} собирает operation transformers вокруг одной логической операции и прикрепляет
+ * к ней неизменяемый снимок attempt interceptors. Transport исполняет этот снимок отдельно
+ * для каждой сетевой попытки. Порядок плагинов одинаков для обеих цепочек.
+ *
+ * @internal
  */
 export class PluginRegistry {
   readonly #entries = new Map<string, InstalledPlugin>();
@@ -62,7 +63,7 @@ export class PluginRegistry {
   }
 
   /** Проверяет добавление без вызова `install()`. @internal */
-  assertCanAdd(plugin: ItdPlugin): void {
+  assertCanAdd(plugin: ClientPlugin): void {
     validatePluginDefinition(plugin);
     if (this.#removing.has(plugin.name)) {
       throw new ItdConfigError(
@@ -85,33 +86,50 @@ export class PluginRegistry {
   /**
    * Подключает плагин.
    *
+   * `install()` выполняется синхронно. Каждая регистрация принадлежит установившему её
+   * плагину и участвует в общем порядке `before`/`after`.
+   *
    * @throws {ItdConfigError} если плагин задан неверно, уже подключён, нарушает зависимости
    * или заявил занятое имя опции
    */
-  add(plugin: ItdPlugin, context: Omit<PluginContext, 'use' | 'useHooks'>): void {
+  add(plugin: ClientPlugin, context: Omit<PluginApi, 'operations' | 'attempts'>): void {
     this.assertCanAdd(plugin);
     const ordered = orderPluginDefinitions([...this.#ordered.map((entry) => entry.plugin), plugin]);
-    const transformers: Transformer[] = [];
-    const hooks: ClientHooks[] = [];
+    const transformers: OperationTransformer[] = [];
+    const interceptors: AttemptInterceptor[] = [];
+    const register = <T>(values: T[], value: T, kind: string): (() => void) => {
+      if (typeof value !== 'function') {
+        throw new ItdConfigError(`плагин «${plugin.name}» передал в ${kind}.use() не функцию`);
+      }
+      values.push(value);
+      let active = true;
+      return () => {
+        if (!active) return;
+        active = false;
+        const index = values.indexOf(value);
+        if (index >= 0) values.splice(index, 1);
+      };
+    };
     const installed = plugin.install({
       ...context,
-      use: (transformer) => {
-        if (typeof transformer !== 'function') {
-          throw new ItdConfigError(`плагин «${plugin.name}» передал в use() не функцию`);
-        }
-        transformers.push(transformer);
+      operations: {
+        use: (transformer) => register(transformers, transformer, 'operations'),
       },
-      useHooks: (value) => {
-        validatePluginHooks(plugin.name, value);
-        hooks.push({ ...value });
+      attempts: {
+        use: (interceptor) => register(interceptors, interceptor, 'attempts'),
       },
     });
-    const teardown = typeof installed === 'function' ? (installed as PluginTeardown) : undefined;
+    if (installed !== undefined && typeof installed !== 'function') {
+      throw new ItdConfigError(
+        `install() плагина «${plugin.name}» должен вернуть функцию или void`,
+      );
+    }
+    const teardown = installed as PluginTeardown | undefined;
 
     this.#entries.set(plugin.name, {
       plugin,
       transformers,
-      hooks,
+      interceptors,
       teardown,
       activeRequests: 0,
       drain: undefined,
@@ -128,8 +146,8 @@ export class PluginRegistry {
   /**
    * Отключает плагин и вызывает его функцию очистки.
    *
-   * Новые запросы перестают видеть плагин сразу. Если его обёртка уже выполняется,
-   * очистка дождётся завершения этого логического запроса.
+   * Новые запросы перестают видеть расширения плагина сразу. Снимок уже начавшейся операции,
+   * включая её будущие retry, остаётся неизменным; очистка дождётся завершения операции.
    *
    * @returns `false`, если такого плагина не было
    */
@@ -159,7 +177,7 @@ export class PluginRegistry {
   /**
    * Отключает все плагины окончательно.
    *
-   * Очистка идёт изнутри наружу — в порядке, обратном выполнению обёрток.
+   * Очистка идёт изнутри наружу — в порядке, обратном выполнению расширений.
    */
   async dispose(): Promise<void> {
     const entries = [...this.#ordered].reverse();
@@ -195,27 +213,12 @@ export class PluginRegistry {
   }
 
   /**
-   * Объединяет конструкторские хуки с хуками подключаемых плагинов.
+   * Прогоняет запрос через operation transformers и прикрепляет attempt interceptors.
    *
-   * Возвращённый объект динамический: подключение и отключение плагина начинает действовать
-   * со следующего логического запроса без пересоздания транспорта.
-   */
-  hooks(base: ClientHooks): ClientHooks {
-    return createRequestHooks(
-      (field, context, request) => this.#runHook(field, context, request, base),
-      (field, request) =>
-        hasRequestHook(base, field, request) ||
-        requestHookScope(request).some((hooks) => hasRequestHook(hooks, field, request)),
-    );
-  }
-
-  /**
-   * Прогоняет запрос через цепочку обёрток.
+   * Снимки обеих цепочек берутся в начале: `unuse()` влияет на новые операции, но не меняет
+   * уже выполняющуюся и не удаляет interceptors из её последующих retry.
    *
-   * Снимок цепочки берётся в начале: `unuse()` влияет на новые запросы, но не обрывает
-   * уже выполняющийся посередине.
-   *
-   * @param execute настоящий запрос, вызывается самой внутренней обёрткой
+   * @param execute выполнение логической операции, вызываемое самым внутренним transformer
    */
   async run(
     request: OperationRequestOptions,
@@ -223,9 +226,11 @@ export class PluginRegistry {
   ): Promise<unknown> {
     const entries = [...this.#ordered];
     for (const entry of entries) entry.activeRequests += 1;
-    const hookScope = entries.flatMap((entry) => entry.hooks);
+    const interceptorScope: RegisteredAttemptInterceptor[] = entries.flatMap((entry) =>
+      entry.interceptors.map((interceptor) => ({ plugin: entry.plugin.name, interceptor })),
+    );
     const scoped = (current: OperationRequestOptions): OperationRequestOptions =>
-      withRequestHookScope(current, hookScope);
+      withAttemptInterceptorScope(current, interceptorScope);
     const chain = entries
       .flatMap((entry) => entry.transformers)
       .reduceRight<(request: OperationRequestOptions) => Promise<unknown>>(
@@ -270,19 +275,5 @@ export class PluginRegistry {
       () => this.#cleanups.delete(cleanup),
     );
     return cleanup;
-  }
-
-  async #runHook<K extends HookName>(
-    field: K,
-    context: HookContext<K>,
-    request: OperationRequestOptions,
-    base: ClientHooks,
-  ): Promise<void> {
-    const baseHook = base[field] as ((value: HookContext<K>) => void | Promise<void>) | undefined;
-    await baseHook?.(context);
-    for (const hooks of requestHookScope(request)) {
-      const hook = hooks[field] as ((value: HookContext<K>) => void | Promise<void>) | undefined;
-      await hook?.(context);
-    }
   }
 }

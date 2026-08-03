@@ -9,8 +9,8 @@ import {
 } from '@itd-api/testing';
 import {
   AttachmentType,
+  type ClientPlugin,
   ItdClient,
-  type ItdPlugin,
   NotificationType,
   Paginator,
   type Post,
@@ -62,7 +62,7 @@ describe('hydrateClient', () => {
     expect(first).toBe(second);
     expect(hydrateClient(first as unknown as ItdClient)).toBe(first);
 
-    const plugin: ItdPlugin = { name: 'empty', install() {} };
+    const plugin: ClientPlugin = { name: 'empty', install() {} };
     expect(first.use(plugin)).toBe(first);
     expect(raw.hasPlugin('empty')).toBe(true);
   });
@@ -236,8 +236,8 @@ describe('hydrateClient', () => {
     });
     raw.use({
       name: 'freeze',
-      install({ use }) {
-        use(async (request, next) => {
+      install({ operations }) {
+        operations.use(async (request, next) => {
           const result = await next(request);
           Object.defineProperty(result, 'pluginMeta', { value: 'сохранено' });
           return Object.freeze(result);
@@ -279,8 +279,8 @@ describe('hydrateClient', () => {
       const raw = new ItdClient({ auth: 'test-token', retry: false, rateLimit: false });
       raw.use({
         name: `shared-${name}`,
-        install({ use }) {
-          use(async (request) => {
+        install({ operations }) {
+          operations.use(async (request) => {
             if (request.path.endsWith('/like')) {
               calls.push(name);
               return { liked: true, likesCount: 1 };

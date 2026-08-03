@@ -16,7 +16,7 @@ import {
   type RequestMiddleware,
 } from './core/middleware.js';
 import type { PipelineRequest } from './core/pipeline.js';
-import type { ItdPlugin } from './core/plugins/contracts.js';
+import type { ClientPlugin } from './core/plugins/contracts.js';
 import { PluginRegistry } from './core/plugins/registry.js';
 import { RequestQueuePool } from './core/rate-limit.js';
 import { mergeService, type ServiceDefinition, ServiceRegistry } from './core/services.js';
@@ -49,7 +49,7 @@ declare global {
 const CLIENT_PLUGIN_REGISTRIES = new WeakMap<ItdClient, PluginRegistry>();
 
 /** Проверяет возможность подключить плагин к клиенту без вызова `install()`. @internal */
-export function assertClientCanUsePlugin(client: ItdClient, plugin: ItdPlugin): void {
+export function assertClientCanUsePlugin(client: ItdClient, plugin: ClientPlugin): void {
   CLIENT_PLUGIN_REGISTRIES.get(client)?.assertCanAdd(plugin);
 }
 
@@ -254,10 +254,9 @@ export class ItdClient {
     // транспорт; взаимная ссылка замыкается через отложенный вызов.
     let authManager!: AuthManager;
 
-    // Конструкторские хуки идут первыми, за ними — динамически подключаемые хуки плагинов.
-    // Один и тот же объект передаётся транспорту и retry-слою, поэтому плагин видит каждую
-    // сетевую попытку, в том числе onRetry между ними.
-    const hooks = this.#plugins.hooks(config.hooks);
+    // Hooks конструктора наблюдают lifecycle клиента. Плагины используют отдельные
+    // operation transformers и attempt interceptors, поэтому эти контракты не смешиваются.
+    const hooks = config.hooks;
     const transport = new Transport(
       { ...config, hooks },
       {
@@ -348,9 +347,9 @@ export class ItdClient {
   /**
    * Подключает плагин.
    *
-   * Плагин работает на уровне транспорта: видит запрос до отправки и разобранный ответ,
-   * поэтому одна обёртка охватывает сразу все методы клиента. Подключать можно в любой
-   * момент, но обычно это делают сразу после создания клиента.
+   * Плагин может независимо регистрировать transformer логической операции и interceptor
+   * транспортной попытки. Оба контракта охватывают все методы клиента. Подключать плагин
+   * можно в любой момент, но обычно это делают сразу после создания клиента.
    *
    * @throws {ItdConfigError} если плагин задан неверно или уже подключён
    *
@@ -362,7 +361,7 @@ export class ItdClient {
    * await itd.posts.create({ content: 'секрет' }, { encrypt: 'invis' });
    * ```
    */
-  use(plugin: ItdPlugin): this {
+  use(plugin: ClientPlugin): this {
     this.#plugins.add(plugin, {
       baseUrl: this.#config.baseUrl,
       logger: this.#config.logger,

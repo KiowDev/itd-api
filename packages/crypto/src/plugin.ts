@@ -1,4 +1,4 @@
-import type { ItdPlugin, OperationRequestOptions, Transformer } from 'itd-api';
+import type { ClientPlugin, OperationRequestOptions, OperationTransformer } from 'itd-api';
 import type { Cipher, EncryptOption, EncryptSpec } from './cipher.js';
 import { BUILT_IN_CIPHERS } from './ciphers/index.js';
 import { CryptError } from './errors.js';
@@ -52,7 +52,7 @@ type CryptRequest = OperationRequestOptions & {
  * post.secret?.text;  // 'секрет'
  * ```
  */
-export function crypt(options: CryptOptions = {}): ItdPlugin {
+export function crypt(options: CryptOptions = {}): ClientPlugin {
   const ciphers = options.ciphers ?? BUILT_IN_CIPHERS;
   const decryptByDefault = options.decrypt ?? true;
 
@@ -60,7 +60,7 @@ export function crypt(options: CryptOptions = {}): ItdPlugin {
     throw new CryptError('Плагину нужен хотя бы один шифр');
   }
 
-  const transformer: Transformer = async (request, next) => {
+  const transformer: OperationTransformer = async (request, next) => {
     const current = request as CryptRequest;
 
     const prepared =
@@ -79,7 +79,7 @@ export function crypt(options: CryptOptions = {}): ItdPlugin {
     // а отключение или замена crypt не оставляет в кэше уже обработанные данные.
     before: ['cache'],
     optionKeys: ['encrypt', 'decrypt'],
-    install: ({ use }) => use(transformer),
+    install: ({ operations }) => void operations.use(transformer),
   };
 }
 

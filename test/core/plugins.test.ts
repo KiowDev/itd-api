@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
 import { ItdConfigError } from '../../src/core/errors.js';
-import type { ItdPlugin, Transformer } from '../../src/core/plugins/contracts.js';
+import type { ClientPlugin, OperationTransformer } from '../../src/core/plugins/contracts.js';
 import type { ItdClientOptions } from '../../src/types/options.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
@@ -23,10 +23,10 @@ function makeClient(handler: MockHandler | Response[], options: ItdClientOptions
 /** Плагин из одной обёртки — самая частая форма. */
 function plugin(
   name: string,
-  transformer: Transformer,
+  transformer: OperationTransformer,
   optionKeys: readonly string[] = [],
-): ItdPlugin {
-  return { name, optionKeys, install: ({ use }) => use(transformer) };
+): ClientPlugin {
+  return { name, optionKeys, install: ({ operations }) => void operations.use(transformer) };
 }
 
 describe('подключение плагинов', () => {
@@ -48,7 +48,7 @@ describe('подключение плагинов', () => {
     const { itd } = makeClient([]);
 
     expect(() => itd.use({ name: '  ', install: () => {} })).toThrow(ItdConfigError);
-    expect(() => itd.use({ name: 'a' } as unknown as ItdPlugin)).toThrow(ItdConfigError);
+    expect(() => itd.use({ name: 'a' } as unknown as ClientPlugin)).toThrow(ItdConfigError);
   });
 
   it('отвергает повторное подключение одного имени', () => {
@@ -62,7 +62,12 @@ describe('подключение плагинов', () => {
     const { itd } = makeClient([]);
     let seen = '';
 
-    itd.use({ name: 'probe', install: (context) => (seen = context.baseUrl) });
+    itd.use({
+      name: 'probe',
+      install(context) {
+        seen = context.baseUrl;
+      },
+    });
 
     expect(seen).toBe('https://itd.test');
   });
@@ -144,7 +149,7 @@ describe('обёртки запроса', () => {
     const order: string[] = [];
 
     const trace =
-      (name: string): Transformer =>
+      (name: string): OperationTransformer =>
       async (request, next) => {
         order.push(`→ ${name}`);
         const result = await next(request);
@@ -236,7 +241,17 @@ describe('опции плагинов', () => {
   it('не даёт заявить имя поля запроса', () => {
     const { itd } = makeClient([]);
 
-    for (const key of ['path', 'body', 'method', 'headers', 'signal', 'skipAuth', 'raw']) {
+    for (const key of [
+      'operationId',
+      'path',
+      'body',
+      'method',
+      'headers',
+      'signal',
+      'retrySafety',
+      'skipAuth',
+      'raw',
+    ]) {
       expect(() => itd.use(plugin(`p-${key}`, (r, next) => next(r), [key]))).toThrow(
         ItdConfigError,
       );
@@ -251,8 +266,8 @@ describe('опции плагинов', () => {
       itd.use({
         name: 'hijack',
         optionKeys: ['path'],
-        install: ({ use }) =>
-          use((request, next) => {
+        install: ({ operations }) =>
+          void operations.use((request, next) => {
             ran = true;
             return next(request);
           }),
@@ -269,11 +284,11 @@ describe('опции плагинов', () => {
 
 describe('плагин, упавший при подключении', () => {
   /** Ставит обёртку и только потом падает — половина работы уже сделана. */
-  function broken(onRun: () => void): ItdPlugin {
+  function broken(onRun: () => void): ClientPlugin {
     return {
       name: 'broken',
-      install: ({ use }) => {
-        use((request, next) => {
+      install: ({ operations }) => {
+        operations.use((request, next) => {
           onRun();
           return next(request);
         });
@@ -308,11 +323,11 @@ describe('плагин, упавший при подключении', () => {
   });
 });
 
-describe('Plugin API 2.0: порядок и зависимости', () => {
-  const traced = (definition: Omit<ItdPlugin, 'install'>, order: string[]): ItdPlugin => ({
+describe('порядок и зависимости плагинов', () => {
+  const traced = (definition: Omit<ClientPlugin, 'install'>, order: string[]): ClientPlugin => ({
     ...definition,
-    install({ use }) {
-      use(async (request, next) => {
+    install({ operations }) {
+      operations.use(async (request, next) => {
         order.push(`→ ${definition.name}`);
         const result = await next(request);
         order.push(`← ${definition.name}`);
@@ -372,8 +387,31 @@ describe('Plugin API 2.0: порядок и зависимости', () => {
   });
 });
 
-describe('Plugin API 2.0: lifecycle hooks', () => {
-  it('видит каждую попытку, ошибку, retry и успешный ответ', async () => {
+describe('раздельные operation transformers и attempt interceptors', () => {
+  it('применяет before/after к attempt chain в том же порядке, что к operations', async () => {
+    const { itd } = makeClient([json({ data: { id: '1' } })]);
+    const events: string[] = [];
+    const attemptPlugin = (name: string, before?: readonly string[]): ClientPlugin => ({
+      name,
+      ...(before ? { before } : {}),
+      install({ attempts }) {
+        attempts.use(async (_context, next) => {
+          events.push(`→ ${name}`);
+          const response = await next();
+          events.push(`← ${name}`);
+          return response;
+        });
+      },
+    });
+
+    itd.use(attemptPlugin('inner'));
+    itd.use(attemptPlugin('outer', ['inner']));
+    await itd.posts.get('1');
+
+    expect(events).toEqual(['→ outer', '→ inner', '← inner', '← outer']);
+  });
+
+  it('оборачивает каждую транспортную попытку и видит сырой Response', async () => {
     let attempts = 0;
     const { itd } = makeClient(
       () => {
@@ -388,20 +426,17 @@ describe('Plugin API 2.0: lifecycle hooks', () => {
 
     itd.use({
       name: 'observe',
-      install({ useHooks }) {
-        useHooks({
-          onRequest: ({ operationId, attempt }) => {
-            events.push(`request:${operationId}:${attempt}`);
-          },
-          onResponse: ({ operationId, attempt, status }) => {
-            events.push(`response:${operationId}:${attempt}:${status}`);
-          },
-          onError: ({ operationId, attempt }) => {
-            events.push(`error:${operationId}:${attempt}`);
-          },
-          onRetry: ({ operationId, attempt }) => {
-            events.push(`retry:${operationId}:${attempt}`);
-          },
+      install({ attempts: wireAttempts }) {
+        wireAttempts.use(async (context, next) => {
+          events.push(`request:${context.operationId}:${context.attempt}`);
+          try {
+            const response = await next();
+            events.push(`response:${context.operationId}:${context.attempt}:${response.status}`);
+            return response;
+          } catch (error) {
+            events.push(`error:${context.operationId}:${context.attempt}`);
+            throw error;
+          }
         });
       },
     });
@@ -410,52 +445,148 @@ describe('Plugin API 2.0: lifecycle hooks', () => {
 
     expect(events).toEqual([
       'request:posts.get:1',
-      'error:posts.get:1',
-      'retry:posts.get:1',
+      'response:posts.get:1:500',
       'request:posts.get:2',
       'response:posts.get:2:200',
     ]);
   });
 
-  it('вызывает конструкторский hook раньше plugin hook', async () => {
+  it('получает resolved URL и headers после operation transformer и client hook', async () => {
     const events: string[] = [];
-    const { itd } = makeClient([json({ data: {} })], {
+    const { itd, mock } = makeClient([json({ data: { id: '1' } })], {
       hooks: {
-        onRequest: () => {
+        onRequest: ({ headers }) => {
           events.push('client');
+          headers.set('X-Client-Hook', 'yes');
         },
       },
     });
     itd.use({
       name: 'observe',
-      install({ useHooks }) {
-        useHooks({
-          onRequest: () => {
-            events.push('plugin');
-          },
+      install({ operations, attempts: wireAttempts }) {
+        operations.use((request, next) =>
+          next({ ...request, headers: { ...request.headers, 'X-Operation': 'yes' } }),
+        );
+        wireAttempts.use(async ({ url, headers, attempt, body, signal }, next) => {
+          events.push(`attempt:${attempt}:${new URL(url).pathname}`);
+          expect(body).toBeUndefined();
+          expect(signal).toBeInstanceOf(AbortSignal);
+          expect(headers.get('x-client-hook')).toBe('yes');
+          expect(headers.get('x-operation')).toBe('yes');
+          headers.set('X-Attempt', 'yes');
+          return next();
         });
       },
     });
 
     await itd.posts.get('1');
-    expect(events).toEqual(['client', 'plugin']);
+    expect(events).toEqual(['client', 'attempt:1:/api/posts/1']);
+    expect(mock.calls[0]?.headers.get('x-attempt')).toBe('yes');
   });
 
-  it('проверяет переданный набор хуков', () => {
+  it('проверяет interceptor при регистрации', () => {
     const { itd } = makeClient([]);
 
     expect(() =>
       itd.use({
-        name: 'broken-hooks',
-        install({ useHooks }) {
-          useHooks({ onRequest: 'нет' } as unknown as Parameters<typeof useHooks>[0]);
+        name: 'broken-attempts',
+        install({ attempts }) {
+          attempts.use('нет' as unknown as Parameters<typeof attempts.use>[0]);
         },
       }),
-    ).toThrow(/onRequest должен быть функцией/);
-    expect(itd.hasPlugin('broken-hooks')).toBe(false);
+    ).toThrow(/attempts\.use\(\) не функцию/);
+    expect(itd.hasPlugin('broken-attempts')).toBe(false);
   });
 
-  it('сохраняет снимок хуков до конца уже начатого логического запроса', async () => {
+  it('возвращает независимые unsubscribe для обеих точек расширения', async () => {
+    const { itd } = makeClient([json({ data: { id: '1' } })]);
+    const events: string[] = [];
+    let stopOperation = () => {};
+    let stopAttempt = () => {};
+    itd.use({
+      name: 'removable-extensions',
+      install({ operations, attempts }) {
+        stopOperation = operations.use((request, next) => {
+          events.push('operation');
+          return next(request);
+        });
+        stopAttempt = attempts.use(async (_context, next) => {
+          events.push('attempt');
+          return next();
+        });
+      },
+    });
+
+    stopOperation();
+    stopOperation();
+    stopAttempt();
+    stopAttempt();
+    await itd.posts.get('1');
+
+    expect(events).toEqual([]);
+  });
+
+  it('не позволяет interceptor вызвать next дважды', async () => {
+    const { itd, mock } = makeClient([json({ data: { id: '1' } })]);
+    itd.use({
+      name: 'double-next',
+      install({ attempts }) {
+        attempts.use(async (_context, next) => {
+          await next();
+          return next();
+        });
+      },
+    });
+
+    await expect(itd.posts.get('1')).rejects.toThrow(/next\(\) больше одного раза/);
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('не маскирует ошибку interceptor под сетевой сбой и не повторяет её', async () => {
+    const { itd, mock } = makeClient([json({ data: { id: '1' } })], {
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+    });
+    const failure = new Error('ошибка расширения');
+    itd.use({
+      name: 'broken-attempt',
+      install({ attempts }) {
+        attempts.use(async () => {
+          throw failure;
+        });
+      },
+    });
+
+    await expect(itd.posts.get('1')).rejects.toBe(failure);
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('явно short-circuit попытку синтетическим Response', async () => {
+    const { itd, mock } = makeClient([]);
+    itd.use({
+      name: 'synthetic',
+      install({ attempts }) {
+        attempts.use(async () => json({ data: { id: 'local' } }));
+      },
+    });
+
+    await expect(itd.posts.get('1')).resolves.toMatchObject({ id: 'local' });
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('отклоняет не-Response при attempt short-circuit', async () => {
+    const { itd, mock } = makeClient([]);
+    itd.use({
+      name: 'invalid-synthetic',
+      install({ attempts }) {
+        attempts.use(async () => ({}) as Response);
+      },
+    });
+
+    await expect(itd.posts.get('1')).rejects.toThrow(/должен вернуть Response/);
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('сохраняет снимок interceptors до конца начатой логической операции', async () => {
     let attempts = 0;
     const { itd } = makeClient(
       () => {
@@ -472,21 +603,13 @@ describe('Plugin API 2.0: lifecycle hooks', () => {
 
     itd.use({
       name: 'observe',
-      install({ useHooks }) {
-        useHooks({
-          onRequest({ attempt }) {
-            events.push(`request:${attempt}`);
-            if (attempt === 1) removing = itd.unuse('observe');
-          },
-          onResponse({ attempt }) {
-            events.push(`response:${attempt}`);
-          },
-          onError({ attempt }) {
-            events.push(`error:${attempt}`);
-          },
-          onRetry({ attempt }) {
-            events.push(`retry:${attempt}`);
-          },
+      install({ attempts: wireAttempts }) {
+        wireAttempts.use(async ({ attempt }, next) => {
+          events.push(`request:${attempt}`);
+          if (attempt === 1) removing = itd.unuse('observe');
+          const response = await next();
+          events.push(`response:${attempt}:${response.status}`);
+          return response;
         });
         return teardown;
       },
@@ -495,12 +618,12 @@ describe('Plugin API 2.0: lifecycle hooks', () => {
     await itd.posts.get('1');
     await removing;
 
-    expect(events).toEqual(['request:1', 'error:1', 'retry:1', 'request:2', 'response:2']);
+    expect(events).toEqual(['request:1', 'response:1:500', 'request:2', 'response:2:200']);
     expect(teardown).toHaveBeenCalledOnce();
   });
 });
 
-describe('Plugin API 2.0: отключение и очистка', () => {
+describe('отключение плагинов и очистка ресурсов', () => {
   it('unuse удаляет обёртку, опции и имя плагина', async () => {
     const { itd } = makeClient([json({ data: { id: '1' } }), json({ data: { id: '2' } })]);
     let runs = 0;
@@ -550,8 +673,8 @@ describe('Plugin API 2.0: отключение и очистка', () => {
     const teardown = vi.fn();
     itd.use({
       name: 'resourceful',
-      install({ use }) {
-        use((request, next) => next(request));
+      install({ operations }) {
+        operations.use((request, next) => next(request));
         return teardown;
       },
     });
@@ -572,11 +695,15 @@ describe('Plugin API 2.0: отключение и очистка', () => {
     const order: string[] = [];
     itd.use({
       name: 'outer',
-      install: () => () => order.push('outer'),
+      install: () => () => {
+        order.push('outer');
+      },
     });
     itd.use({
       name: 'inner',
-      install: () => () => order.push('inner'),
+      install: () => () => {
+        order.push('inner');
+      },
     });
 
     await itd.dispose();

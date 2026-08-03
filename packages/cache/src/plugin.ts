@@ -1,10 +1,10 @@
 import type {
   AuthIdentity,
-  ItdPlugin,
+  ClientPlugin,
   ItdRealtime,
   OperationRequestOptions,
+  OperationTransformer,
   RealtimeContext,
-  Transformer,
   Unsubscribe,
 } from 'itd-api';
 import { LRUCache } from 'lru-cache';
@@ -39,7 +39,7 @@ export interface CacheOptions {
 }
 
 /** Плагин и управление созданным им хранилищем. */
-export interface CachePlugin extends ItdPlugin {
+export interface CachePlugin extends ClientPlugin {
   /** Количество готовых ответов во всех разделах кэша. */
   readonly size: number;
   /** Удаляет все ответы и не даёт выполняющимся запросам вернуть устаревший результат. */
@@ -236,7 +236,7 @@ export function cache(options: CacheOptions): CachePlugin {
     baseUrl: string,
     getAuthIdentity: (() => Promise<AuthIdentity>) | undefined,
     getAuthScope: (() => string) | undefined,
-  ): Transformer => {
+  ): OperationTransformer => {
     const fallbackAuthScope = JSON.stringify([baseUrl, `installation:${installation}`]);
 
     const resolveIdentity = async (): Promise<CacheIdentity> => {
@@ -438,9 +438,11 @@ export function cache(options: CacheOptions): CachePlugin {
         offUnreadCount();
       };
     },
-    install({ use, baseUrl, getAuthIdentity, getAuthScope }) {
+    install({ operations, baseUrl, getAuthIdentity, getAuthScope }) {
       installationSequence += 1;
-      use(createTransformer(installationSequence, baseUrl, getAuthIdentity, getAuthScope));
+      operations.use(
+        createTransformer(installationSequence, baseUrl, getAuthIdentity, getAuthScope),
+      );
     },
   };
 }

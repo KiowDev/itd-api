@@ -57,9 +57,9 @@ export function createQueueMiddleware(
 /**
  * Слой плагинов.
  *
- * Стоит снаружи повторов и очереди: плагин должен увидеть запрос и ответ по одному разу,
- * независимо от числа попыток, — иначе, например, текст поста зашифруется дважды. Плагин,
- * который вернул локальный результат, вообще не должен занимать сетевую очередь.
+ * Стоит снаружи повторов и очереди: operation transformers видят запрос и ответ по одному
+ * разу, иначе, например, текст поста зашифруется дважды. Здесь же к операции привязывается
+ * snapshot attempt interceptors; сами они выполняются транспортом на каждой попытке.
  */
 export function createPluginsMiddleware(plugins: PluginRegistry): RequestMiddleware {
   return (request, next) => plugins.run(request, next);
@@ -289,22 +289,17 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
         const delay = nextDelay(error, retryAttempt, rateLimitAttempt, request, policy, backoff);
         if (delay === undefined) throw error;
 
-        await dispatchRequestHook(
-          deps.hooks,
-          'onRetry',
-          {
-            operationId: request.operationId,
-            method,
-            path: request.path,
-            url: deps.buildUrl(request),
-            // Умолчания транспорта добавляются после слоя повторов и сюда не входят.
-            headers: new Headers({ ...request.layerHeaders, ...request.headers }),
-            attempt: transportAttempt,
-            error,
-            delay,
-          },
-          request,
-        );
+        await dispatchRequestHook(deps.hooks, 'onRetry', {
+          operationId: request.operationId,
+          method,
+          path: request.path,
+          url: deps.buildUrl(request),
+          // Умолчания транспорта добавляются после слоя повторов и сюда не входят.
+          headers: new Headers({ ...request.layerHeaders, ...request.headers }),
+          attempt: transportAttempt,
+          error,
+          delay,
+        });
 
         deps.logger?.debug(
           `повтор ${method} ${request.path}, попытка ${transportAttempt + 1} через ${delay} мс`,
