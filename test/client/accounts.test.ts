@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAccounts, ItdAccounts, type ItdAccountsOptions } from '../../src/accounts.js';
 import { ItdConfigError } from '../../src/core/errors.js';
+import { createKeyValueStore } from '../../src/core/key-value-store.js';
 import {
   createMultiTokenStorage,
-  createRecordMultiStorage,
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
 } from '../../src/core/multi-storage.js';
@@ -143,36 +143,6 @@ describe('изоляция аккаунтов', () => {
     expect(storage.get('a')).toEqual({
       accessToken: 'a',
       cookies: ['https://itd.test is_auth=1; Path=/'],
-    });
-  });
-
-  it('record-хранилище передаёт источнику стабильный снимок каждой записи', async () => {
-    const releases: (() => void)[] = [];
-    const written: Record<string, ItdSession>[] = [];
-    const storage = createRecordMultiStorage({
-      read: async () => null,
-      write: (record) =>
-        new Promise<void>((resolve) => {
-          releases.push(() => {
-            written.push(record);
-            resolve();
-          });
-        }),
-    });
-
-    const first = storage.set('a', { accessToken: 'token-a' });
-    await vi.waitFor(() => expect(releases).toHaveLength(1));
-    const second = storage.set('b', { accessToken: 'token-b' });
-
-    releases[0]?.();
-    await vi.waitFor(() => expect(releases).toHaveLength(2));
-    releases[1]?.();
-    await Promise.all([first, second]);
-
-    expect(written[0]).toEqual({ a: { accessToken: 'token-a' } });
-    expect(written[1]).toEqual({
-      a: { accessToken: 'token-a' },
-      b: { accessToken: 'token-b' },
     });
   });
 });
@@ -487,22 +457,23 @@ describe('восстановление и удаление', () => {
     const sessions = new Map<string, ItdSession>();
     let releaseWrite: (() => void) | undefined;
     const set = vi.fn(
-      (account: string, session: ItdSession) =>
+      (key: string, session: ItdSession) =>
         new Promise<void>((resolve) => {
           releaseWrite = () => {
-            sessions.set(account, session);
+            sessions.set(key, session);
             resolve();
           };
         }),
     );
-    const storage = createMultiTokenStorage({
-      get: (account) => sessions.get(account) ?? null,
+    const backend = createKeyValueStore<ItdSession>({
+      get: (key) => sessions.get(key),
       set,
-      clear: (account) => {
-        sessions.delete(account);
+      delete: (key) => {
+        sessions.delete(key);
       },
-      accounts: () => [...sessions.keys()],
+      keys: (prefix = '') => [...sessions.keys()].filter((key) => key.startsWith(prefix)),
     });
+    const storage = createMultiTokenStorage(backend);
     const { accounts } = makeAccounts(ok, { storage });
     const client = accounts.addAccount('kiow');
 
@@ -520,27 +491,28 @@ describe('восстановление и удаление', () => {
     const sessions = new Map<string, ItdSession>();
     let releaseWrite: (() => void) | undefined;
     let blockWrite = true;
-    const storage = createMultiTokenStorage({
-      get: (account) => sessions.get(account) ?? null,
-      set: (account, session) => {
+    const backend = createKeyValueStore<ItdSession>({
+      get: (key) => sessions.get(key),
+      set: (key, session) => {
         if (!blockWrite) {
-          sessions.set(account, session);
+          sessions.set(key, session);
           return;
         }
 
         return new Promise<void>((resolve) => {
           releaseWrite = () => {
             blockWrite = false;
-            sessions.set(account, session);
+            sessions.set(key, session);
             resolve();
           };
         });
       },
-      clear: (account) => {
-        sessions.delete(account);
+      delete: (key) => {
+        sessions.delete(key);
       },
-      accounts: () => [...sessions.keys()],
+      keys: (prefix = '') => [...sessions.keys()].filter((key) => key.startsWith(prefix)),
     });
+    const storage = createMultiTokenStorage(backend);
     const { accounts } = makeAccounts(ok, { storage });
     const oldClient = accounts.addAccount('kiow');
 
@@ -566,22 +538,23 @@ describe('восстановление и удаление', () => {
 });
 
 describe('своё хранилище', () => {
-  it('получает имя аккаунта в каждой операции', async () => {
+  it('кодирует имя аккаунта в ключ backend', async () => {
     const sessions = new Map<string, ItdSession>();
-    const get = vi.fn((account: string) => sessions.get(account) ?? null);
-    const set = vi.fn((account: string, session: ItdSession) => {
-      sessions.set(account, session);
+    const get = vi.fn((key: string) => sessions.get(key));
+    const set = vi.fn((key: string, session: ItdSession) => {
+      sessions.set(key, session);
     });
-    const clear = vi.fn((account: string) => {
-      sessions.delete(account);
+    const remove = vi.fn((key: string) => {
+      sessions.delete(key);
     });
 
-    const storage: MultiTokenStorage = createMultiTokenStorage({
+    const backend = createKeyValueStore<ItdSession>({
       get,
       set,
-      clear,
-      accounts: () => [...sessions.keys()],
+      delete: remove,
+      keys: (prefix = '') => [...sessions.keys()].filter((key) => key.startsWith(prefix)),
     });
+    const storage: MultiTokenStorage = createMultiTokenStorage(backend);
 
     const { accounts } = makeAccounts(ok, { storage });
     accounts.addAccount('бот №1', { auth: 'token' });
@@ -589,12 +562,13 @@ describe('своё хранилище', () => {
     await accounts.account('бот №1').request({ method: 'GET', path: '/api/ping' });
     await accounts.removeAccount('бот №1', { forget: true });
 
-    expect(get).toHaveBeenCalledWith('бот №1');
+    const key = `accounts/${encodeURIComponent('бот №1')}`;
+    expect(get).toHaveBeenCalledWith(key);
     expect(set).toHaveBeenCalledWith(
-      'бот №1',
+      key,
       expect.objectContaining({ deviceId: expect.any(String) }),
     );
-    expect(clear).toHaveBeenCalledWith('бот №1');
+    expect(remove).toHaveBeenCalledWith(key);
   });
 });
 

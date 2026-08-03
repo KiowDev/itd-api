@@ -1,12 +1,12 @@
 /**
- * `itd-api/web` — хранилище сессии для браузера.
+ * `itd-api/web` — хранилища для браузера.
  *
  * Здесь лежит только то, что рассчитано на браузерное окружение. Клиент, аккаунты,
  * билдеры, типы и всё остальное берутся из `itd-api` — одинаково на всех платформах.
  *
- * Отдельная точка входа нужна не сборщику, а вам: {@link LocalStorageTokenStorage}
- * при недоступном `localStorage` молча работает как хранилище в памяти, и такое
- * поведение стоит выбирать осознанно, а не получать вместе с общим импортом.
+ * Отдельная точка входа нужна не сборщику, а вам: браузерные хранилища при
+ * недоступном Web Storage молча работают в памяти, и такое поведение стоит выбирать
+ * осознанно, а не получать вместе с общим импортом.
  *
  * @example
  * ```ts
@@ -19,8 +19,124 @@
  * @packageDocumentation
  */
 
-import { hasLocalStorage } from './core/runtime.js';
-import { type ItdSession, MemoryTokenStorage, type TokenStorage } from './core/storage.js';
+import { MemoryKeyValueStore } from './core/key-value-store.js';
+import { createTokenStorage, type ItdSession, type TokenStorage } from './core/storage.js';
+
+type WebStorageProperty = 'localStorage' | 'sessionStorage';
+
+function getWebStorage(property: WebStorageProperty): Storage | undefined {
+  try {
+    return globalThis[property] ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Общая реализация Web Storage; публичные классы ниже фиксируют его вид. */
+class WebStorageKeyValueStore<T> {
+  #fallback = new MemoryKeyValueStore<T>();
+  #storage: Storage | undefined;
+
+  constructor(property: WebStorageProperty) {
+    this.#storage = getWebStorage(property);
+  }
+
+  get(key: string): T | undefined {
+    if (!this.#storage) return this.#fallback.get(key);
+    try {
+      const raw = this.#storage.getItem(key);
+      return raw === null ? undefined : (JSON.parse(raw) as T);
+    } catch {
+      return undefined;
+    }
+  }
+
+  set(key: string, value: T): void {
+    if (this.#storage) {
+      try {
+        this.#storage.setItem(key, JSON.stringify(value));
+        return;
+      } catch {
+        this.#degrade();
+      }
+    }
+    this.#fallback.set(key, value);
+  }
+
+  delete(key: string): void {
+    if (this.#storage) {
+      try {
+        this.#storage.removeItem(key);
+        return;
+      } catch {
+        this.#degrade();
+      }
+    }
+    this.#fallback.delete(key);
+  }
+
+  keys(prefix = ''): Iterable<string> | AsyncIterable<string> {
+    if (!this.#storage) return this.#fallback.keys(prefix);
+    try {
+      const keys: string[] = [];
+      for (let index = 0; index < this.#storage.length; index += 1) {
+        const key = this.#storage.key(index);
+        if (key?.startsWith(prefix)) keys.push(key);
+      }
+      return keys;
+    } catch {
+      this.#degrade();
+      return this.#fallback.keys(prefix);
+    }
+  }
+
+  #degrade(): void {
+    this.#storage = undefined;
+    this.#fallback = new MemoryKeyValueStore<T>();
+  }
+}
+
+/** JSON key-value backend поверх браузерного `localStorage` с откатом в память. */
+export class LocalStorageKeyValueStore<T> {
+  readonly #inner = new WebStorageKeyValueStore<T>('localStorage');
+
+  get(key: string): T | undefined {
+    return this.#inner.get(key);
+  }
+
+  set(key: string, value: T): void {
+    this.#inner.set(key, value);
+  }
+
+  delete(key: string): void {
+    this.#inner.delete(key);
+  }
+
+  keys(prefix = ''): Iterable<string> | AsyncIterable<string> {
+    return this.#inner.keys(prefix);
+  }
+}
+
+/** JSON key-value backend поверх браузерного `sessionStorage` с откатом в память. */
+export class SessionStorageKeyValueStore<T> {
+  readonly #inner = new WebStorageKeyValueStore<T>('sessionStorage');
+
+  get(key: string): T | undefined {
+    return this.#inner.get(key);
+  }
+
+  set(key: string, value: T): void {
+    this.#inner.set(key, value);
+  }
+
+  delete(key: string): void {
+    this.#inner.delete(key);
+  }
+
+  keys(prefix = ''): Iterable<string> | AsyncIterable<string> {
+    return this.#inner.keys(prefix);
+  }
+}
 
 /**
  * Хранилище поверх `localStorage` браузера.
@@ -37,60 +153,54 @@ import { type ItdSession, MemoryTokenStorage, type TokenStorage } from './core/s
  * своего жизненного цикла.
  */
 export class LocalStorageTokenStorage implements TokenStorage {
-  readonly #key: string;
-  readonly #fallback = new MemoryTokenStorage();
-  /** Доступен ли `localStorage` для дальнейших операций. */
-  #available: boolean;
+  readonly #inner: TokenStorage;
 
   /** @param key ключ в `localStorage`. По умолчанию `itd-api:session`. */
   constructor(key = 'itd-api:session') {
-    this.#key = key;
-    this.#available = hasLocalStorage();
+    this.#inner = createTokenStorage(new LocalStorageKeyValueStore<ItdSession>(), { key });
   }
 
   get(): ItdSession | null {
-    if (!this.#available) return this.#fallback.get();
-
-    try {
-      const raw = globalThis.localStorage.getItem(this.#key);
-      if (!raw) return null;
-      const parsed: unknown = JSON.parse(raw);
-      return typeof parsed === 'object' && parsed !== null ? (parsed as ItdSession) : null;
-    } catch {
-      // Повреждённое значение — ведём себя так, будто сессии нет.
-      return null;
-    }
+    return this.#inner.get() as ItdSession | null;
   }
 
   set(session: ItdSession): void {
-    if (this.#available) {
-      try {
-        globalThis.localStorage.setItem(this.#key, JSON.stringify(session));
-        return;
-      } catch {
-        this.#degrade();
-      }
-    }
-
-    this.#fallback.set(session);
+    void this.#inner.set(session);
   }
 
   clear(): void {
-    if (this.#available) {
-      try {
-        globalThis.localStorage.removeItem(this.#key);
-        return;
-      } catch {
-        this.#degrade();
-      }
-    }
+    void this.#inner.clear();
+  }
+}
 
-    this.#fallback.clear();
+/**
+ * Хранилище сессии поверх браузерного `sessionStorage`.
+ *
+ * Данные переживают перезагрузку страницы, но существуют только в пределах текущей
+ * browser page session. Если `sessionStorage` недоступен, экземпляр молча работает
+ * в памяти; после ошибки записи или удаления он также остаётся в памяти до конца
+ * своего жизненного цикла.
+ *
+ * Как и `localStorage`, это хранилище доступно скриптам страницы и не защищает сессию
+ * от XSS. Выбирайте его ради более короткого срока жизни, а не ради изоляции секрета.
+ */
+export class SessionStorageTokenStorage implements TokenStorage {
+  readonly #inner: TokenStorage;
+
+  /** @param key ключ в `sessionStorage`. По умолчанию `itd-api:session`. */
+  constructor(key = 'itd-api:session') {
+    this.#inner = createTokenStorage(new SessionStorageKeyValueStore<ItdSession>(), { key });
   }
 
-  /** Переводит хранилище в память без переноса прежнего значения. */
-  #degrade(): void {
-    this.#available = false;
-    this.#fallback.clear();
+  get(): ItdSession | null {
+    return this.#inner.get() as ItdSession | null;
+  }
+
+  set(session: ItdSession): void {
+    void this.#inner.set(session);
+  }
+
+  clear(): void {
+    void this.#inner.clear();
   }
 }

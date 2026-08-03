@@ -145,12 +145,3 @@ export function createDeviceId(): string {
     hex.slice(20, 32),
   ].join('-');
 }
-
-/** Есть ли в среде `localStorage`. Проверка безопасна: доступ к нему может бросать. */
-export function hasLocalStorage(): boolean {
-  try {
-    return typeof globalThis.localStorage !== 'undefined' && globalThis.localStorage !== null;
-  } catch {
-    return false;
-  }
-}

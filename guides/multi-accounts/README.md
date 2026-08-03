@@ -81,31 +81,30 @@ const accounts = new ItdAccounts({
 
 ## Собственное хранилище
 
-Методы `MultiTokenStorage` получают имя аккаунта:
+Для нескольких аккаунтов нужен key-value backend с перечислением ключей:
 
 ```ts
-import { createMultiTokenStorage } from 'itd-api';
+import {
+  createKeyValueStore,
+  createMultiTokenStorage,
+  type ItdSession,
+  withCodec,
+  withNamespace,
+} from 'itd-api';
 
-const storage = createMultiTokenStorage({
-  get: async (account) =>
-    JSON.parse((await redis.get(`itd:session:${account}`)) ?? 'null'),
-
-  set: async (account, session) => {
-    await redis.set(`itd:session:${account}`, JSON.stringify(session));
-    await redis.sadd('itd:accounts', account);
-  },
-
-  clear: async (account) => {
-    await redis.del(`itd:session:${account}`);
-    await redis.srem('itd:accounts', account);
-  },
-
-  accounts: () => redis.smembers('itd:accounts'),
+const raw = createKeyValueStore<string>({
+  get: async (key) => (await redis.get(key)) ?? undefined,
+  set: (key, value) => redis.set(key, value).then(() => undefined),
+  delete: (key) => redis.del(key).then(() => undefined),
+  keys: (prefix = '') => redis.scanIterator({ MATCH: `${prefix}*` }),
 });
-```
 
-Список `accounts()` ведёт сам адаптер. По нему `restore()` узнаёт, какие аккаунты нужно
-поднять после перезапуска.
+const backend = withCodec<ItdSession, string>(withNamespace(raw, 'itd'), {
+  encode: JSON.stringify,
+  decode: JSON.parse,
+});
+const storage = createMultiTokenStorage(backend);
+```
 
 ## События
 

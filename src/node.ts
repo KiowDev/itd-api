@@ -28,8 +28,9 @@ import {
 } from './core/attachments/contracts.js';
 import { resolveFileStreamOptions } from './core/attachments/options.js';
 import { ItdConfigError, ItdFileError, ItdFileErrorReason } from './core/errors.js';
-import { createRecordMultiStorage, type MultiTokenStorage } from './core/multi-storage.js';
-import { copySession, type ItdSession, type TokenStorage } from './core/storage.js';
+import { createRecordKeyValueStore, type EnumerableKeyValueStore } from './core/key-value-store.js';
+import { createMultiTokenStorage, type MultiTokenStorage } from './core/multi-storage.js';
+import { createTokenStorage, type ItdSession, type TokenStorage } from './core/storage.js';
 
 /** Проверяет код системной ошибки без привязки к типам конкретного рантайма. */
 function hasErrorCode(error: unknown, code: string): boolean {
@@ -165,27 +166,24 @@ export function fromPath(path: string, options: PathFileOptions = {}): LazyFile 
 /**
  * Читает и разбирает JSON-файл.
  *
- * Отсутствующий файл означает `null`. Остальные ошибки файловой системы не скрываются.
- * Одиночное хранилище ради обратной совместимости считает повреждённый JSON пустым,
- * а мультихранилище требует строгого разбора: молча затереть файл с несколькими токенами
- * особенно опасно.
+ * Отсутствующий файл означает `undefined`. Повреждённый JSON не считается пустым хранилищем:
+ * иначе следующая запись могла бы незаметно затереть данные.
  */
-async function readJsonFile(path: string, strict = false): Promise<unknown> {
+async function readJsonFile(path: string): Promise<unknown> {
   let raw: string;
   try {
     const { readFile } = await import('node:fs/promises');
     raw = await readFile(path, 'utf8');
   } catch (error) {
-    if (hasErrorCode(error, 'ENOENT')) return null;
+    if (hasErrorCode(error, 'ENOENT')) return undefined;
     throw error;
   }
 
   try {
     return JSON.parse(raw) as unknown;
   } catch {
-    if (!strict) return null;
     throw new ItdConfigError(
-      `Файл ${path} повреждён: ожидался JSON с сессиями аккаунтов. ` +
+      `Файл ${path} повреждён: ожидался JSON key-value хранилища. ` +
         'Исправьте файл или перенесите его перед следующим сохранением.',
     );
   }
@@ -220,6 +218,68 @@ async function removeFile(path: string): Promise<void> {
   await rm(path, { force: true });
 }
 
+/** Версия общего формата файлового key-value backend. */
+const FILE_STORE_VERSION = 1;
+
+/**
+ * Key-value backend в одном JSON-файле.
+ *
+ * Изменения сериализуются внутри экземпляра и записываются атомарным переименованием. Несколько
+ * экземпляров или процессов, направленных на один путь, требуют внешней синхронизации.
+ */
+export class FileKeyValueStore<T> {
+  readonly #path: string;
+  readonly #inner: EnumerableKeyValueStore<T>;
+
+  /** @param path путь к JSON-файлу. Для секретов добавьте его в `.gitignore`. */
+  constructor(path: string) {
+    this.#path = path;
+    this.#inner = createRecordKeyValueStore<T>({
+      read: () => this.#read(),
+      write: (values) => writeJsonAtomic(path, { version: FILE_STORE_VERSION, values }),
+      delete: () => removeFile(path),
+    });
+  }
+
+  get(key: string): Promise<T | undefined> {
+    return Promise.resolve(this.#inner.get(key));
+  }
+
+  set(key: string, value: T): Promise<void> {
+    return Promise.resolve(this.#inner.set(key, value));
+  }
+
+  delete(key: string): Promise<void> {
+    return Promise.resolve(this.#inner.delete(key));
+  }
+
+  keys(prefix?: string): Promise<Iterable<string> | AsyncIterable<string>> {
+    return Promise.resolve(this.#inner.keys(prefix));
+  }
+
+  async #read(): Promise<Readonly<Record<string, T>> | undefined> {
+    const parsed = await readJsonFile(this.#path);
+    if (parsed === undefined) return undefined;
+    const envelope =
+      typeof parsed === 'object' && parsed !== null
+        ? (parsed as { version?: unknown; values?: unknown })
+        : undefined;
+    if (
+      envelope?.version !== FILE_STORE_VERSION ||
+      typeof envelope.values !== 'object' ||
+      envelope.values === null ||
+      Array.isArray(envelope.values)
+    ) {
+      throw new ItdConfigError(
+        `Файл ${this.#path} имеет неподдерживаемый формат: ожидается ` +
+          `{ version: ${FILE_STORE_VERSION}, values }. Возьмите другой путь, чтобы не ` +
+          'перезаписать посторонние данные.',
+      );
+    }
+    return envelope.values as Readonly<Record<string, T>>;
+  }
+}
+
 /**
  * Хранит сессию в файле.
  *
@@ -237,49 +297,25 @@ async function removeFile(path: string): Promise<void> {
  * ```
  */
 export class FileTokenStorage implements TokenStorage {
-  readonly #path: string;
-  /**
-   * Цепочка операций с файлом. Запись и удаление выполняются последовательно
-   * в порядке вызова; ошибка одной операции не останавливает следующие.
-   */
-  #writing: Promise<void> = Promise.resolve();
+  readonly #inner: TokenStorage;
 
   /** @param path путь к файлу сессии. Добавьте его в `.gitignore`. */
   constructor(path: string) {
-    this.#path = path;
+    this.#inner = createTokenStorage(new FileKeyValueStore<ItdSession>(path));
   }
 
-  async get(): Promise<ItdSession | null> {
-    // Чтение, начатое сразу после `set()`/`clear()`, должно видеть результат более ранней
-    // операции, даже если вызывающий код не сохранил и не дождался её промиса.
-    await this.#writing.then(
-      () => undefined,
-      () => undefined,
-    );
-    const parsed = await readJsonFile(this.#path);
-    return typeof parsed === 'object' && parsed !== null ? copySession(parsed as ItdSession) : null;
+  get(): Promise<ItdSession | null> {
+    return Promise.resolve(this.#inner.get());
   }
 
   set(session: ItdSession): Promise<void> {
-    // Пользователь может изменить переданный объект сразу после вызова `set()`.
-    // В очередь должен попасть снимок на момент вызова, а не живая ссылка.
-    const snapshot = copySession(session);
-    return this.#enqueue(() => writeJsonAtomic(this.#path, snapshot));
+    return Promise.resolve(this.#inner.set(session));
   }
 
   clear(): Promise<void> {
-    return this.#enqueue(() => removeFile(this.#path));
-  }
-
-  /** Добавляет файловую операцию в очередь. */
-  #enqueue(operation: () => Promise<void>): Promise<void> {
-    this.#writing = this.#writing.then(operation, operation);
-    return this.#writing;
+    return Promise.resolve(this.#inner.clear());
   }
 }
-
-/** Версия формата файла с сессиями нескольких аккаунтов. */
-const SESSIONS_FILE_VERSION = 1;
 
 /**
  * Хранит сессии нескольких аккаунтов в одном файле.
@@ -288,8 +324,7 @@ const SESSIONS_FILE_VERSION = 1;
  * и без общего слепка с очередью записей они теряли бы сессии друг друга. Как и
  * {@link FileTokenStorage}, пишет через временный файл с правами `0600`.
  *
- * Формат — конверт `{ version, accounts }`, а не голая карта: так файл нескольких аккаунтов
- * не спутать с однопользовательским, и чужой не будет молча перезаписан.
+ * Использует тот же версионированный {@link FileKeyValueStore}, что и одиночное хранилище.
  *
  * @example
  * ```ts
@@ -300,18 +335,11 @@ const SESSIONS_FILE_VERSION = 1;
  * ```
  */
 export class FileMultiTokenStorage implements MultiTokenStorage {
-  readonly #path: string;
   readonly #inner: MultiTokenStorage;
 
   /** @param path путь к файлу сессий. Добавьте его в `.gitignore`. */
   constructor(path: string) {
-    this.#path = path;
-    this.#inner = createRecordMultiStorage({
-      read: () => this.#read(),
-      write: (accounts) => writeJsonAtomic(path, { version: SESSIONS_FILE_VERSION, accounts }),
-      // Последний аккаунт ушёл — файл с пустой картой выглядел бы мусором.
-      remove: () => removeFile(path),
-    });
+    this.#inner = createMultiTokenStorage(new FileKeyValueStore<ItdSession>(path));
   }
 
   get(account: string): Promise<ItdSession | null> {
@@ -328,32 +356,5 @@ export class FileMultiTokenStorage implements MultiTokenStorage {
 
   accounts(): Promise<readonly string[]> {
     return Promise.resolve(this.#inner.accounts());
-  }
-
-  async #read(): Promise<Record<string, ItdSession> | null> {
-    const parsed = await readJsonFile(this.#path, true);
-    if (parsed === null) return null;
-
-    const envelope =
-      typeof parsed === 'object' && parsed !== null
-        ? (parsed as { version?: unknown; accounts?: unknown })
-        : undefined;
-    const accounts = envelope?.accounts;
-
-    if (
-      envelope?.version !== SESSIONS_FILE_VERSION ||
-      typeof accounts !== 'object' ||
-      accounts === null ||
-      Array.isArray(accounts)
-    ) {
-      throw new ItdConfigError(
-        `Файл ${this.#path} имеет неподдерживаемый формат: ожидается ` +
-          `{ version: ${SESSIONS_FILE_VERSION}, accounts }. ` +
-          'Возможно, это файл одиночной сессии или файл другой версии — ' +
-          'возьмите отдельный путь, чтобы не перезаписать его.',
-      );
-    }
-
-    return accounts as Record<string, ItdSession>;
   }
 }

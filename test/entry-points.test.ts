@@ -7,6 +7,7 @@ import * as web from '../src/web.js';
 describe('состав точек входа', () => {
   it('itd-api/node — только работа с файловой системой', () => {
     expect(Object.keys(node).sort()).toEqual([
+      'FileKeyValueStore',
       'FileMultiTokenStorage',
       'FileTokenStorage',
       'fromPath',
@@ -14,7 +15,12 @@ describe('состав точек входа', () => {
   });
 
   it('itd-api/web — только хранилище браузера', () => {
-    expect(Object.keys(web).sort()).toEqual(['LocalStorageTokenStorage']);
+    expect(Object.keys(web).sort()).toEqual([
+      'LocalStorageKeyValueStore',
+      'LocalStorageTokenStorage',
+      'SessionStorageKeyValueStore',
+      'SessionStorageTokenStorage',
+    ]);
   });
 
   it('платформенные точки входа не пересекаются с основной', () => {

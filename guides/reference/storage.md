@@ -8,6 +8,47 @@
 > Сессия содержит токены и cookie. Не коммитьте файлы сессий, не печатайте их в логах и
 > выбирайте хранилище с подходящей вашему приложению моделью доступа.
 
+## Общий key-value backend
+
+Интеграция с Redis, БД, `localStorage` или другой системой начинается с минимального
+контракта, не зависящего от сессий:
+
+```ts
+interface KeyValueStore<T> {
+  get(key: string): T | undefined | Promise<T | undefined>;
+  set(key: string, value: T): void | Promise<void>;
+  delete(key: string): void | Promise<void>;
+  keys?(prefix?: string):
+    | Iterable<string>
+    | AsyncIterable<string>
+    | Promise<Iterable<string> | AsyncIterable<string>>;
+}
+```
+
+`MemoryKeyValueStore` хранит произвольные значения в памяти. `createKeyValueStore()` проверяет
+и типизирует набор функций конкретного backend. Два composable decorator позволяют не
+повторять инфраструктурную логику:
+
+- `withNamespace(store, 'my-app')` изолирует ключи префиксом `my-app:`;
+- `withCodec(store, codec)` преобразует тип значения, например объект в JSON-строку.
+
+```ts
+const raw = createKeyValueStore<string>({
+  get: async (key) => (await redis.get(key)) ?? undefined,
+  set: (key, value) => redis.set(key, value).then(() => undefined),
+  delete: (key) => redis.del(key).then(() => undefined),
+  keys: (prefix = '') => redis.scanIterator({ MATCH: `${prefix}*` }),
+});
+
+const sessions = withCodec<ItdSession, string>(withNamespace(raw, 'itd'), {
+  encode: JSON.stringify,
+  decode: JSON.parse,
+});
+```
+
+`keys()` опционален для одиночного клиента, но обязателен для `MultiTokenStorage`: список
+аккаунтов выводится из фактических ключей, поэтому отдельный индекс не может разойтись с данными.
+
 ## `ItdSession`
 
 ```ts
@@ -37,6 +78,7 @@ interface TokenStorage {
 |---|---|---|
 | `MemoryTokenStorage` | `itd-api` | вариант по умолчанию; сессия теряется при завершении процесса |
 | `LocalStorageTokenStorage` | `itd-api/web` | браузерный `localStorage`; при недоступности переключается на память |
+| `SessionStorageTokenStorage` | `itd-api/web` | браузерный `sessionStorage`; живёт в пределах текущей page session |
 | `FileTokenStorage` | `itd-api/node` | JSON-файл для Node.js, Bun и Deno |
 
 ```ts
@@ -50,14 +92,16 @@ const itd = new ItdClient({ storage });
 `localStorage` доступен любому скрипту на странице. Не используйте его, если риск XSS
 или совместный доступ к origin делает такое хранение неприемлемым.
 
-Собственный адаптер можно передать напрямую или собрать фабрикой:
+`SessionStorageTokenStorage` имеет тот же контракт и также переживает перезагрузку страницы,
+но браузер удаляет его данные после завершения page session. Это уменьшает срок жизни сессии,
+но не защищает её от скриптов страницы. Оба Web Storage backend при недоступности API или
+ошибке записи переключают конкретный экземпляр на память.
+
+`TokenStorage` можно реализовать напрямую, но для обычного key-value backend достаточно
+доменного адаптера:
 
 ```ts
-const storage = createTokenStorage({
-  get: () => database.readSession(),
-  set: (session) => database.writeSession(session),
-  clear: () => database.deleteSession(),
-});
+const storage = createTokenStorage(sessions); // использует ключ `session`
 ```
 
 Методы могут быть синхронными или асинхронными. `get()` должен вернуть `null`, если
@@ -78,8 +122,8 @@ const itd = new ItdClient({
 создаётся с правами `0600`, где это поддерживается. Операции записи и удаления
 выполняются последовательно.
 
-Добавьте путь в `.gitignore`. Отсутствующий или повреждённый файл одиночной сессии
-считается пустым; остальные ошибки файловой системы не скрываются.
+Добавьте путь в `.gitignore`. Отсутствующий файл считается пустым. Повреждённый JSON или
+неизвестная версия формата приводят к `ItdConfigError`, чтобы следующая запись не затёрла данные.
 
 ## Хранилище нескольких аккаунтов
 
@@ -111,30 +155,28 @@ const accounts = new ItdAccounts({
 await accounts.restore();
 ```
 
-Для Redis, БД или другого key-value-хранилища:
+Для Redis, БД или другого enumerable key-value backend:
 
 ```ts
-const storage = createMultiTokenStorage({
-  get: (account) => redis.read(`itd:${account}`),
-  set: (account, session) => redis.write(`itd:${account}`, session),
-  clear: (account) => redis.remove(`itd:${account}`),
-  accounts: () => redis.members('itd:accounts'),
-});
+const storage = createMultiTokenStorage(sessions);
 ```
 
-`accounts()` должен возвращать имена сохранённых записей: по ним `restore()` находит
-аккаунты после перезапуска.
+Сессии записываются под ключами `accounts/<encoded-name>`. `accounts()` перечисляет этот
+префикс и восстанавливает исходные имена, по которым `restore()` поднимает аккаунты.
 
 ## Хранилище одной общей записью
 
-`createRecordMultiStorage()` подходит, когда источник читает и пишет всю карту сессий:
+`createRecordKeyValueStore()` подходит, когда источник читает и пишет всю карту значений:
 
 ```ts
-interface RecordStorageSource {
-  read(): Promise<Record<string, ItdSession> | null>;
-  write(record: Record<string, ItdSession>): Promise<void>;
-  remove?(): Promise<void>;
+interface RecordKeyValueStoreSource<T> {
+  read(): Record<string, T> | undefined | Promise<Record<string, T> | undefined>;
+  write(record: Readonly<Record<string, T>>): void | Promise<void>;
+  delete?(): void | Promise<void>;
 }
+
+const backend = createRecordKeyValueStore<ItdSession>(source);
+const storage = createMultiTokenStorage(backend);
 ```
 
 Адаптер один раз загружает слепок и выстраивает изменения в последовательную очередь,
@@ -151,14 +193,19 @@ interface RecordStorageSource {
 
 | Точка входа | Что в ней | Почему отдельно |
 |---|---|---|
-| `itd-api` | весь API | — |
-| `itd-api/node` | `FileTokenStorage`, `FileMultiTokenStorage`, `fromPath` | требует `node:fs`, который браузерные сборщики не разрешают |
-| `itd-api/web` | `LocalStorageTokenStorage` | молчаливый откат в память стоит выбирать осознанно |
+| `itd-api` | `KeyValueStore`, memory backend, decorators, доменные storage | — |
+| `itd-api/node` | `FileKeyValueStore`, файловые domain storage, `fromPath` | требует `node:fs`, который браузерные сборщики не разрешают |
+| `itd-api/web` | generic и token storage для `localStorage` и `sessionStorage` | молчаливый откат в память стоит выбирать осознанно |
 
 ```ts
 import { ItdAccounts, ItdClient } from 'itd-api';
-import { FileMultiTokenStorage, FileTokenStorage, fromPath } from 'itd-api/node';
-import { LocalStorageTokenStorage } from 'itd-api/web';
+import { FileKeyValueStore, FileMultiTokenStorage, FileTokenStorage, fromPath } from 'itd-api/node';
+import {
+  LocalStorageKeyValueStore,
+  LocalStorageTokenStorage,
+  SessionStorageKeyValueStore,
+  SessionStorageTokenStorage,
+} from 'itd-api/web';
 ```
 
 Платформенные точки входа не переэкспортируют основной API. `ItdClient` импортируется

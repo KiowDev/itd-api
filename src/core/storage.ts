@@ -1,3 +1,6 @@
+import { ItdConfigError } from './errors.js';
+import { createKeyValueStore, type KeyValueStore, MemoryKeyValueStore } from './key-value-store.js';
+
 /**
  * Сохранённая сессия.
  *
@@ -52,11 +55,12 @@ export function copySession(session: ItdSession): ItdSession {
  *
  * @example Своё хранилище поверх AsyncStorage в React Native
  * ```ts
- * const storage = createTokenStorage({
- *   get: async () => JSON.parse((await AsyncStorage.getItem('itd')) ?? 'null'),
- *   set: (session) => AsyncStorage.setItem('itd', JSON.stringify(session)),
- *   clear: () => AsyncStorage.removeItem('itd'),
- * });
+ * const backend = withCodec(createKeyValueStore({
+ *   get: (key) => AsyncStorage.getItem(key).then((value) => value ?? undefined),
+ *   set: (key, value) => AsyncStorage.setItem(key, value),
+ *   delete: (key) => AsyncStorage.removeItem(key),
+ * }), { encode: JSON.stringify, decode: JSON.parse });
+ * const storage = createTokenStorage(withNamespace(backend, 'my-app'));
  * ```
  */
 export interface TokenStorage {
@@ -72,40 +76,68 @@ export interface TokenStorage {
  * Хранилище в памяти процесса — вариант по умолчанию.
  *
  * Сессия теряется при перезапуске. Для долгоживущих ботов возьмите `FileTokenStorage`
- * из `itd-api/node`, для браузера — `LocalStorageTokenStorage` из `itd-api/web`.
+ * из `itd-api/node`, для браузера — `LocalStorageTokenStorage` или
+ * `SessionStorageTokenStorage` из `itd-api/web`.
  */
 export class MemoryTokenStorage implements TokenStorage {
-  #session: ItdSession | null = null;
+  readonly #store = new MemoryKeyValueStore<ItdSession>();
 
   constructor(initial?: ItdSession | null) {
-    this.#session = initial ? copySession(initial) : null;
+    if (initial) this.#store.set(TOKEN_STORAGE_KEY, copySession(initial));
   }
 
   get(): ItdSession | null {
-    return this.#session ? copySession(this.#session) : null;
+    const session = this.#store.get(TOKEN_STORAGE_KEY);
+    return session ? copySession(session) : null;
   }
 
   set(session: ItdSession): void {
-    this.#session = copySession(session);
+    this.#store.set(TOKEN_STORAGE_KEY, copySession(session));
   }
 
   clear(): void {
-    this.#session = null;
+    this.#store.delete(TOKEN_STORAGE_KEY);
   }
 }
 
+const TOKEN_STORAGE_KEY = 'session';
+
+/** Настройки доменного адаптера одной сессии. */
+export interface TokenStorageAdapterOptions {
+  /** Ключ сессии в backend. По умолчанию `session`. */
+  key?: string | undefined;
+}
+
+function isPromise<T>(value: T | Promise<T>): value is Promise<T> {
+  return (
+    typeof value === 'object' && value !== null && typeof (value as Promise<T>).then === 'function'
+  );
+}
+
 /**
- * Собирает {@link TokenStorage} из трёх функций — когда заводить класс избыточно.
+ * Создаёт доменное хранилище сессии поверх общего {@link KeyValueStore}.
  *
  * @example
  * ```ts
- * const storage = createTokenStorage({
- *   get: () => db.getSession(userId),
- *   set: (session) => db.saveSession(userId, session),
- *   clear: () => db.deleteSession(userId),
- * });
+ * const storage = createTokenStorage(withNamespace(redisStore, 'itd'));
  * ```
  */
-export function createTokenStorage(handlers: TokenStorage): TokenStorage {
-  return handlers;
+export function createTokenStorage(
+  store: KeyValueStore<ItdSession>,
+  options: TokenStorageAdapterOptions = {},
+): TokenStorage {
+  const key = options.key ?? TOKEN_STORAGE_KEY;
+  if (typeof key !== 'string') throw new ItdConfigError('key TokenStorage должен быть строкой');
+  const backend = createKeyValueStore(store);
+  return {
+    get() {
+      const value = backend.get(key);
+      if (isPromise(value)) {
+        return value.then((session) => (session ? copySession(session) : null));
+      }
+      return value ? copySession(value) : null;
+    },
+    set: (session) => backend.set(key, copySession(session)),
+    clear: () => backend.delete(key),
+  };
 }

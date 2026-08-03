@@ -111,6 +111,20 @@ export {
   isItdValidationError,
 } from './core/errors.js';
 export {
+  createKeyValueStore,
+  createRecordKeyValueStore,
+  type EnumerableKeyValueStore,
+  isEnumerableKeyValueStore,
+  type KeyValueCodec,
+  type KeyValueStore,
+  type KeyValueStoreKeys,
+  type KeyValueStoreResult,
+  MemoryKeyValueStore,
+  type RecordKeyValueStoreSource,
+  withCodec,
+  withNamespace,
+} from './core/key-value-store.js';
+export {
   ALLOWED_MIME_TYPES,
   type AllowedMimeType,
   AUDIO_MIME_TYPES,
@@ -124,10 +138,9 @@ export {
 // Подробности — в core/multi-storage.ts.
 export {
   createMultiTokenStorage,
-  createRecordMultiStorage,
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
-  type RecordStorageSource,
+  type MultiTokenStorageAdapterOptions,
   scopedTokenStorage,
 } from './core/multi-storage.js';
 export {
@@ -161,13 +174,14 @@ export { DetectedRuntime, RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export { type ServiceDefinition, ServiceRegistry } from './core/services.js';
 // Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
-// и потому не может попасть в нейтральный бандл, а `LocalStorageTokenStorage` вынесен
-// в `itd-api/web`, чтобы его молчаливый откат в память выбирали осознанно.
+// и потому не может попасть в нейтральный бандл, а Web Storage backend вынесены
+// в `itd-api/web`, чтобы их молчаливый откат в память выбирали осознанно.
 export {
   createTokenStorage,
   type ItdSession,
   MemoryTokenStorage,
   type TokenStorage,
+  type TokenStorageAdapterOptions,
 } from './core/storage.js';
 export { toDate, utcStampToIso } from './core/time.js';
 export type { QueryParams, QueryValue } from './core/url.js';

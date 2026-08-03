@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ItdConfigError } from '../../src/core/errors.js';
-import { FileMultiTokenStorage, FileTokenStorage } from '../../src/node.js';
+import { FileKeyValueStore, FileMultiTokenStorage, FileTokenStorage } from '../../src/node.js';
 
 let dir: string;
 
@@ -15,6 +15,21 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+describe('FileKeyValueStore', () => {
+  it('хранит произвольные значения и восстанавливает ключи новым экземпляром', async () => {
+    const path = join(dir, 'values.json');
+    const storage = new FileKeyValueStore<number>(path);
+    await storage.set('app:first', 1);
+    await storage.set('other', 2);
+
+    const restored = new FileKeyValueStore<number>(path);
+    expect(await restored.get('app:first')).toBe(1);
+    expect(await restored.keys('app:')).toEqual(['app:first']);
+    await restored.delete('app:first');
+    expect(await restored.get('app:first')).toBeUndefined();
+  });
+});
+
 describe('FileTokenStorage', () => {
   it('сохраняет и читает сессию', async () => {
     const storage = new FileTokenStorage(join(dir, 'session.json'));
@@ -24,13 +39,13 @@ describe('FileTokenStorage', () => {
     expect(await storage.get()).toMatchObject({ accessToken: 'a', deviceId: 'd' });
   });
 
-  it('повреждённый файл читается как отсутствие сессии', async () => {
+  it('повреждённый файл не считается пустой сессией', async () => {
     const path = join(dir, 'session.json');
     const storage = new FileTokenStorage(path);
     await storage.set({ accessToken: 'a' });
     await (await import('node:fs/promises')).writeFile(path, 'это не json', 'utf8');
 
-    expect(await storage.get()).toBeNull();
+    await expect(new FileTokenStorage(path).get()).rejects.toThrow(ItdConfigError);
   });
 
   it('конкурентные записи не оставляют повреждённого файла и временных хвостов', async () => {
@@ -44,7 +59,7 @@ describe('FileTokenStorage', () => {
     );
 
     const parsed = JSON.parse(await readFile(path, 'utf8'));
-    expect(parsed.accessToken).toMatch(/^token-\d+$/);
+    expect(parsed.values.session.accessToken).toMatch(/^token-\d+$/);
 
     // Временные файлы не должны оставаться после завершения всех записей.
     const leftovers = (await readdir(dir)).filter((name) => name.endsWith('.tmp'));
@@ -114,7 +129,7 @@ describe('FileMultiTokenStorage', () => {
 
     const parsed = JSON.parse(await readFile(path, 'utf8'));
     expect(parsed.version).toBe(1);
-    expect(Object.keys(parsed.accounts)).toEqual(['kiow', 'bot']);
+    expect(Object.keys(parsed.values)).toEqual(['accounts/kiow', 'accounts/bot']);
   });
 
   it('читает сохранённое новым экземпляром', async () => {
@@ -157,8 +172,8 @@ describe('FileMultiTokenStorage', () => {
     );
 
     const parsed = JSON.parse(await readFile(path, 'utf8'));
-    expect(Object.keys(parsed.accounts)).toHaveLength(20);
-    expect(parsed.accounts['account-19']).toMatchObject({ accessToken: 't-19' });
+    expect(Object.keys(parsed.values)).toHaveLength(20);
+    expect(parsed.values['accounts/account-19']).toMatchObject({ accessToken: 't-19' });
 
     const leftovers = (await readdir(dir)).filter((name) => name.endsWith('.tmp'));
     expect(leftovers).toEqual([]);
@@ -171,8 +186,8 @@ describe('FileMultiTokenStorage', () => {
     await storage.set('bot', { accessToken: 'b' });
 
     await storage.clear('kiow');
-    expect(JSON.parse(await readFile(path, 'utf8')).accounts).toEqual({
-      bot: { accessToken: 'b' },
+    expect(JSON.parse(await readFile(path, 'utf8')).values).toEqual({
+      'accounts/bot': { accessToken: 'b' },
     });
 
     await storage.clear('bot');
@@ -189,22 +204,25 @@ describe('FileMultiTokenStorage', () => {
     expect(await storage.accounts()).toEqual(['kiow']);
   });
 
-  it('файл одиночной сессии не перезаписывается молча', async () => {
+  it('первое добавление аккаунта не затирает одиночное значение общей карты', async () => {
     const path = join(dir, 'session.json');
-    await new FileTokenStorage(path).set({ accessToken: 'единственная' });
+    const single = new FileTokenStorage(path);
+    await single.set({ accessToken: 'единственная' });
 
     const storage = new FileMultiTokenStorage(path);
+    await storage.set('kiow', { accessToken: 'несколько' });
 
-    await expect(storage.get('kiow')).rejects.toThrow(ItdConfigError);
-    // Файл на месте: чужие токены не пострадали.
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({
-      accessToken: 'единственная',
-    });
+    expect(await single.get()).toEqual({ accessToken: 'единственная' });
+    expect(await storage.get('kiow')).toEqual({ accessToken: 'несколько' });
+    expect(Object.keys(JSON.parse(await readFile(path, 'utf8')).values)).toEqual([
+      'session',
+      'accounts/kiow',
+    ]);
   });
 
   it('повреждённый JSON не считается пустым хранилищем и не перезаписывается', async () => {
     const path = join(dir, 'sessions.json');
-    const damaged = '{"version":1,"accounts":{"kiow":';
+    const damaged = '{"version":1,"values":{"accounts/kiow":';
     await writeFile(path, damaged, 'utf8');
     const storage = new FileMultiTokenStorage(path);
 
@@ -216,7 +234,7 @@ describe('FileMultiTokenStorage', () => {
     const path = join(dir, 'sessions.json');
     const future = JSON.stringify({
       version: 2,
-      accounts: { kiow: { accessToken: 'future-token' } },
+      values: { 'accounts/kiow': { accessToken: 'future-token' } },
     });
     await writeFile(path, future, 'utf8');
     const storage = new FileMultiTokenStorage(path);

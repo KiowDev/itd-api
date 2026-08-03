@@ -1,4 +1,12 @@
 import { AUTH_FLAG_COOKIE, CookieJar } from './cookies.js';
+import { ItdConfigError } from './errors.js';
+import {
+  collectKeyValueStoreKeys,
+  createKeyValueStore,
+  type EnumerableKeyValueStore,
+  isEnumerableKeyValueStore,
+  MemoryKeyValueStore,
+} from './key-value-store.js';
 import { copySession, type ItdSession, type TokenStorage } from './storage.js';
 
 /**
@@ -12,20 +20,9 @@ import { copySession, type ItdSession, type TokenStorage } from './storage.js';
  *
  * Все методы могут быть как синхронными, так и асинхронными.
  *
- * @example Своё хранилище поверх Redis
+ * @example Хранилище поверх enumerable Redis backend
  * ```ts
- * const storage = createMultiTokenStorage({
- *   get: async (account) => JSON.parse((await redis.get(`itd:session:${account}`)) ?? 'null'),
- *   set: async (account, session) => {
- *     await redis.set(`itd:session:${account}`, JSON.stringify(session));
- *     await redis.sadd('itd:accounts', account);
- *   },
- *   clear: async (account) => {
- *     await redis.del(`itd:session:${account}`);
- *     await redis.srem('itd:accounts', account);
- *   },
- *   accounts: () => redis.smembers('itd:accounts'),
- * });
+ * const storage = createMultiTokenStorage(withNamespace(redisStore, 'itd'));
  * ```
  */
 export interface MultiTokenStorage {
@@ -135,142 +132,77 @@ export function controlledTokenStorage(
  * из `itd-api/node` либо соберите своё через {@link createMultiTokenStorage}.
  */
 export class MemoryMultiTokenStorage implements MultiTokenStorage {
-  readonly #sessions = new Map<string, ItdSession>();
+  readonly #store = new MemoryKeyValueStore<ItdSession>();
 
   constructor(initial?: Readonly<Record<string, ItdSession>> | null) {
     for (const [account, session] of Object.entries(initial ?? {})) {
-      this.#sessions.set(account, copySession(session));
+      this.#store.set(accountKey(account), copySession(session));
     }
   }
 
   get(account: string): ItdSession | null {
-    const session = this.#sessions.get(account);
+    const session = this.#store.get(accountKey(account));
     return session ? copySession(session) : null;
   }
 
   set(account: string, session: ItdSession): void {
-    this.#sessions.set(account, copySession(session));
+    this.#store.set(accountKey(account), copySession(session));
   }
 
   clear(account: string): void {
-    this.#sessions.delete(account);
+    this.#store.delete(accountKey(account));
   }
 
   accounts(): string[] {
-    return [...this.#sessions.keys()];
+    return this.#store.keys(ACCOUNT_KEY_PREFIX).map(accountFromKey);
   }
 }
 
+const ACCOUNT_KEY_PREFIX = 'accounts/';
+
+function accountKey(account: string): string {
+  return `${ACCOUNT_KEY_PREFIX}${encodeURIComponent(account)}`;
+}
+
+function accountFromKey(key: string): string {
+  return decodeURIComponent(key.slice(ACCOUNT_KEY_PREFIX.length));
+}
+
+/** Настройки доменного адаптера нескольких сессий. */
+export interface MultiTokenStorageAdapterOptions {
+  /** Префикс ключей аккаунтов. По умолчанию `accounts/`. */
+  prefix?: string | undefined;
+}
+
 /**
- * Собирает {@link MultiTokenStorage} из четырёх функций — когда заводить класс избыточно.
- * Аналог `createTokenStorage` для нескольких аккаунтов.
+ * Создаёт доменное хранилище нескольких сессий поверх enumerable key-value backend.
+ *
+ * Отдельный индекс аккаунтов не используется: `accounts()` перечисляет ключи backend. Поэтому
+ * запись сессии не может разойтись с индексом, но backend обязан эффективно поддерживать `keys`.
  */
-export function createMultiTokenStorage(handlers: MultiTokenStorage): MultiTokenStorage {
-  return handlers;
-}
-
-/** Источник, который читается и пишется целиком: файл, ключ в `localStorage`, строка в БД. */
-export interface RecordStorageSource {
-  /** Прочитать все сессии разом. `null` — записи ещё нет. */
-  read(): Promise<Record<string, ItdSession> | null>;
-  /** Записать все сессии разом. */
-  write(record: Record<string, ItdSession>): Promise<void>;
-  /** Вызывается вместо {@link RecordStorageSource.write}, когда не осталось ни одной сессии. */
-  remove?(): Promise<void>;
-}
-
-/** Создаёт запись без прототипа: имена `__proto__` и `constructor` остаются обычными ключами. */
-function emptySessionRecord(): Record<string, ItdSession> {
-  return Object.create(null) as Record<string, ItdSession>;
-}
-
-/** Копирует внешний снимок в запись без унаследованных свойств. */
-function normalizeSessionRecord(
-  record: Record<string, ItdSession> | null,
-): Record<string, ItdSession> {
-  const normalized = emptySessionRecord();
-  for (const [account, session] of Object.entries(record ?? {})) {
-    normalized[account] = copySession(session);
+export function createMultiTokenStorage(
+  store: EnumerableKeyValueStore<ItdSession>,
+  options: MultiTokenStorageAdapterOptions = {},
+): MultiTokenStorage {
+  const prefix = options.prefix ?? ACCOUNT_KEY_PREFIX;
+  if (typeof prefix !== 'string') {
+    throw new ItdConfigError('prefix MultiTokenStorage должен быть строкой');
   }
-  return normalized;
-}
-
-/**
- * Мультихранилище поверх источника, который читается и пишется целиком.
- *
- * Решает главную проблему такого способа хранения — **гонку «прочитать, изменить,
- * записать»**: десять аккаунтов пишут в одну запись, и наивная реализация теряла бы
- * чужие сессии. Источник читается один раз, дальше слепок живёт в памяти, а записи
- * выстраиваются в цепочку и идут по очереди.
- *
- * Внутри процесса этого достаточно. Несколько процессов, пишущих в одну запись,
- * по-прежнему затирают друг друга — как и несколько экземпляров этого адаптера,
- * направленных на один источник в одном процессе.
- */
-export function createRecordMultiStorage(source: RecordStorageSource): MultiTokenStorage {
-  /** Слепок записи. `undefined` — источник ещё не читался. */
-  let snapshot: Record<string, ItdSession> | undefined;
-  /** Общий промис чтения: параллельные вызовы на холодном старте читают источник один раз. */
-  let loading: Promise<Record<string, ItdSession>> | null = null;
-  /** Цепочка записей. Ошибка одной не останавливает следующие. */
-  let writing: Promise<void> = Promise.resolve();
-
-  const load = async (): Promise<Record<string, ItdSession>> => {
-    if (snapshot !== undefined) return snapshot;
-
-    loading ??= source
-      .read()
-      .then((value) => {
-        snapshot = normalizeSessionRecord(value);
-        return snapshot;
-      })
-      // Сбрасываем и после отказа: иначе одна неудача чтения отравила бы хранилище навсегда.
-      .finally(() => {
-        loading = null;
-      });
-
-    return loading;
-  };
-
-  const flush = (): Promise<void> => {
-    // Снимок делается в момент постановки записи в очередь. Иначе следующая мутация
-    // общего объекта могла изменить данные операции, которая уже выполняется.
-    const current = normalizeSessionRecord(snapshot ?? null);
-
-    const operation = async () => {
-      // Пустую запись убираем целиком, если источник это умеет: файл с `{}` после выхода
-      // из последнего аккаунта выглядел бы мусором.
-      if (source.remove && Object.keys(current).length === 0) await source.remove();
-      else await source.write(current);
-    };
-
-    writing = writing.then(operation, operation);
-    return writing;
-  };
-
+  const backend = createKeyValueStore(store);
+  if (!isEnumerableKeyValueStore(backend)) {
+    throw new ItdConfigError('MultiTokenStorage требует KeyValueStore с методом keys()');
+  }
+  const key = (account: string) => `${prefix}${encodeURIComponent(account)}`;
   return {
     async get(account) {
-      const current = await load();
-      const session = Object.hasOwn(current, account) ? current[account] : undefined;
+      const session = await backend.get(key(account));
       return session ? copySession(session) : null;
     },
-
-    async set(account, session) {
-      const current = await load();
-      current[account] = copySession(session);
-      await flush();
-    },
-
-    async clear(account) {
-      const current = await load();
-      if (!Object.hasOwn(current, account)) return;
-
-      delete current[account];
-      await flush();
-    },
-
+    set: (account, session) => backend.set(key(account), copySession(session)),
+    clear: (account) => backend.delete(key(account)),
     async accounts() {
-      return Object.keys(await load());
+      const keys = await collectKeyValueStoreKeys(backend, prefix);
+      return keys.map((value) => decodeURIComponent(value.slice(prefix.length)));
     },
   };
 }

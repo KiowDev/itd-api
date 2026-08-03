@@ -72,8 +72,9 @@ else redirectToLogin();
 |---|---|---|
 | `MemoryTokenStorage` | `itd-api` | везде |
 | `LocalStorageTokenStorage` | `itd-api/web` | браузер |
+| `SessionStorageTokenStorage` | `itd-api/web` | браузер, текущая page session |
 | `FileTokenStorage` | `itd-api/node` | Node, Bun, Deno |
-| `createTokenStorage()` | `itd-api` | Redis, БД, AsyncStorage и другие |
+| `createTokenStorage(KeyValueStore)` | `itd-api` | Redis, БД, AsyncStorage и другие |
 
 ## Turnstile
 

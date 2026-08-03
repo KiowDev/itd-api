@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT, resolveConfig } from '../../src/core/config.js';
 import { ItdConfigError } from '../../src/core/errors.js';
+import { createKeyValueStore } from '../../src/core/key-value-store.js';
 import { createTokenStorage, MemoryTokenStorage } from '../../src/core/storage.js';
-import { LocalStorageTokenStorage } from '../../src/web.js';
+import {
+  LocalStorageKeyValueStore,
+  LocalStorageTokenStorage,
+  SessionStorageKeyValueStore,
+  SessionStorageTokenStorage,
+} from '../../src/web.js';
 
 describe('resolveConfig — значения по умолчанию', () => {
   it('подставляет базовый URL, таймаут и очередь', () => {
@@ -200,20 +206,90 @@ describe('LocalStorageTokenStorage', () => {
   });
 });
 
+describe('LocalStorageKeyValueStore', () => {
+  it('хранит произвольные значения и перечисляет ключи по префиксу', () => {
+    const values = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      get length() {
+        return values.size;
+      },
+      key: (index: number) => [...values.keys()][index] ?? null,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    };
+
+    try {
+      const storage = new LocalStorageKeyValueStore<{ value: number }>();
+      storage.set('app:first', { value: 1 });
+      storage.set('other', { value: 2 });
+
+      expect(storage.get('app:first')).toEqual({ value: 1 });
+      expect(storage.keys('app:')).toEqual(['app:first']);
+      storage.delete('app:first');
+      expect(storage.get('app:first')).toBeUndefined();
+    } finally {
+      delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
+  });
+});
+
+describe('SessionStorageTokenStorage', () => {
+  it('сохраняет сессию в sessionStorage под настраиваемым ключом', () => {
+    const values = new Map<string, string>();
+    (globalThis as { sessionStorage?: unknown }).sessionStorage = {
+      get length() {
+        return values.size;
+      },
+      key: (index: number) => [...values.keys()][index] ?? null,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    };
+
+    try {
+      const storage = new SessionStorageTokenStorage('app:session');
+      storage.set({ accessToken: 'session-token' });
+
+      expect(values.get('app:session')).toBe('{"accessToken":"session-token"}');
+      expect(storage.get()).toEqual({ accessToken: 'session-token' });
+
+      storage.clear();
+      expect(values.has('app:session')).toBe(false);
+    } finally {
+      delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
+    }
+  });
+});
+
+describe('SessionStorageKeyValueStore', () => {
+  it('использует память, когда sessionStorage недоступен', () => {
+    const storage = new SessionStorageKeyValueStore<{ value: number }>();
+
+    storage.set('app:key', { value: 1 });
+
+    expect(storage.get('app:key')).toEqual({ value: 1 });
+    expect(storage.keys('app:')).toEqual(['app:key']);
+  });
+});
+
 describe('createTokenStorage', () => {
-  it('оборачивает три функции', async () => {
-    let saved: unknown = null;
-    const storage = createTokenStorage({
+  it('адаптирует key-value backend и изолирует сессию от мутации', async () => {
+    let saved: unknown;
+    const backend = createKeyValueStore({
       get: () => saved as never,
-      set: (session) => {
+      set: (_key, session) => {
         saved = session;
       },
-      clear: () => {
-        saved = null;
+      delete: () => {
+        saved = undefined;
       },
     });
+    const storage = createTokenStorage(backend);
 
-    await storage.set({ accessToken: 'a' });
+    const session = { accessToken: 'a' };
+    await storage.set(session);
+    session.accessToken = 'changed';
     expect(await storage.get()).toEqual({ accessToken: 'a' });
   });
 });
