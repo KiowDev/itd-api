@@ -362,7 +362,7 @@ export class ItdClient {
    * ```
    */
   request<T = unknown>(options: RawRequestOptions): Promise<T> {
-    return this.#http.request<T>(options);
+    return this.#http.request<T>({ ...options, operationId: options.operationId ?? 'raw' });
   }
 
   /**

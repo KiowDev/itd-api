@@ -130,6 +130,16 @@ export {
   type RecordStorageSource,
   scopedTokenStorage,
 } from './core/multi-storage.js';
+export {
+  type BuiltInOperationId,
+  type CustomOperationId,
+  isBuiltInOperationId,
+  OPERATIONS,
+  type OperationDefinition,
+  type OperationId,
+  type OperationMethod,
+  operationMethod,
+} from './core/operations.js';
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
 // Плагины работают на уровне транспорта: обёртка вокруг запроса видит и тело запроса,
@@ -366,6 +376,7 @@ export type {
   ErrorContextHook,
   ItdClientOptions,
   Logger,
+  OperationRequestOptions,
   RateLimitOptions,
   RawRequestOptions,
   RequestContext,

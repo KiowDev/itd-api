@@ -9,7 +9,12 @@ import {
   ItdNetworkError,
   ItdTimeoutError,
 } from './errors.js';
-import type { PipelineRequest, PreparedRequestBody } from './pipeline.js';
+import {
+  identifyRequest,
+  type PipelineRequest,
+  type PipelineRequestInput,
+  type PreparedRequestBody,
+} from './pipeline.js';
 import { dispatchRequestHook, hasRequestHook } from './plugins/hooks.js';
 import { redactBody, redactHeaders } from './redact.js';
 import { isBlob } from './runtime.js';
@@ -219,7 +224,8 @@ export class Transport {
    * @throws {ItdAbortError} если запрос отменён через `signal`
    * @throws {ItdNetworkError} если запрос не дошёл до сервера
    */
-  send = async (request: PipelineRequest): Promise<unknown> => {
+  send = async (input: PipelineRequestInput): Promise<unknown> => {
+    const request = identifyRequest(input);
     const method = request.method.toUpperCase();
     const url = this.buildUrl(request);
     const headers = await this.#buildHeaders(request, url);
@@ -238,7 +244,14 @@ export class Transport {
         cleanupBody = prepared.cleanup;
       } catch (error) {
         const failure = this.#toTransportError(error, abort, request, method, timeout);
-        const context = { method, path: request.path, url, headers, attempt };
+        const context = {
+          operationId: request.operationId,
+          method,
+          path: request.path,
+          url,
+          headers,
+          attempt,
+        };
         await dispatchRequestHook(
           this.#config.hooks,
           'onError',
@@ -248,7 +261,14 @@ export class Transport {
         throw failure;
       }
 
-      const context = { method, path: request.path, url, headers, attempt };
+      const context = {
+        operationId: request.operationId,
+        method,
+        path: request.path,
+        url,
+        headers,
+        attempt,
+      };
       await dispatchRequestHook(this.#config.hooks, 'onRequest', context, request);
 
       this.#config.logger?.debug(`→ ${method} ${request.path}`, {
@@ -411,7 +431,14 @@ export class Transport {
   /** Читает тело и преобразует ошибку чтения в транспортную ошибку библиотеки. */
   async #readBodyOrFail(
     response: Response,
-    context: { method: string; path: string; url: string; headers: Headers; attempt: number },
+    context: {
+      operationId: PipelineRequest['operationId'];
+      method: string;
+      path: string;
+      url: string;
+      headers: Headers;
+      attempt: number;
+    },
     request: PipelineRequest,
     method: string,
     abort: AbortBundle,

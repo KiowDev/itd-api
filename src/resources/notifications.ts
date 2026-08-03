@@ -56,6 +56,7 @@ function readSettings(body: unknown): NotificationSettings {
 export class NotificationsResource extends BaseResource {
   /** Уведомления: `/api/notifications/`, пагинация по смещению. */
   readonly #list = this.paginated<Notification, NotificationListParams>({
+    operationId: 'notifications.list',
     // Завершающий слэш обязателен: без него сервер отвечает ошибкой.
     path: () => '/api/notifications/',
     query: (p) => ({ limit: p.limit }),
@@ -100,8 +101,7 @@ export class NotificationsResource extends BaseResource {
 
   /** Загружает число непрочитанных уведомлений. */
   async count(options: RequestOptions = {}): Promise<number> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('notifications.count', {
       path: '/api/notifications/count',
       ...this.requestOptions(options),
     });
@@ -115,8 +115,7 @@ export class NotificationsResource extends BaseResource {
    * @returns сколько записей отметил сервер
    */
   async markRead(notificationId: string, options: RequestOptions = {}): Promise<number> {
-    const body = await this.http.request({
-      method: 'POST',
+    const body = await this.http.operation('notifications.markRead', {
       path: `/api/notifications/${encodePathSegment(notificationId, 'notificationId')}/read`,
       ...this.requestOptions(options),
     });
@@ -139,8 +138,7 @@ export class NotificationsResource extends BaseResource {
     for (let index = 0; index < ids.length; index += READ_BATCH_SIZE) {
       const chunk = ids.slice(index, index + READ_BATCH_SIZE);
 
-      const body = await this.http.request({
-        method: 'POST',
+      const body = await this.http.operation('notifications.markReadBatch', {
         path: '/api/notifications/read-batch',
         body: { ids: chunk },
         ...this.requestOptions(options),
@@ -154,8 +152,7 @@ export class NotificationsResource extends BaseResource {
 
   /** Отмечает прочитанными все уведомления. */
   async markAllRead(options: RequestOptions = {}): Promise<number> {
-    const body = await this.http.request({
-      method: 'POST',
+    const body = await this.http.operation('notifications.markAllRead', {
       path: '/api/notifications/read-all',
       ...this.requestOptions(options),
     });
@@ -165,8 +162,7 @@ export class NotificationsResource extends BaseResource {
 
   /** Загружает настройки уведомлений. */
   async getSettings(options: RequestOptions = {}): Promise<NotificationSettings> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('notifications.getSettings', {
       path: '/api/notifications/settings',
       ...this.requestOptions(options),
     });
@@ -190,8 +186,7 @@ export class NotificationsResource extends BaseResource {
       if (value !== undefined) payload[key] = value;
     }
 
-    const body = await this.http.request({
-      method: 'PUT',
+    const body = await this.http.operation('notifications.updateSettings', {
       path: '/api/notifications/settings',
       body: payload,
       ...this.requestOptions(options),

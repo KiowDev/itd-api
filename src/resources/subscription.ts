@@ -11,8 +11,7 @@ import { BaseResource } from './base.js';
 export class SubscriptionResource extends BaseResource {
   /** Загружает состояние подписки и её цену. */
   status(options: RequestOptions = {}): Promise<Subscription> {
-    return this.http.request<Subscription>({
-      method: 'GET',
+    return this.http.operation<Subscription>('subscription.status', {
       // Завершающий слэш обязателен.
       path: '/api/v1/subscription/',
       ...this.requestOptions(options),
@@ -25,8 +24,7 @@ export class SubscriptionResource extends BaseResource {
    * Форма ответа в документации API не описана, поэтому тип результата не уточняется.
    */
   pay(options: RequestOptions = {}): Promise<unknown> {
-    return this.http.request({
-      method: 'POST',
+    return this.http.operation('subscription.pay', {
       path: '/api/v1/subscription/pay',
       ...this.requestOptions(options),
     });
@@ -34,8 +32,7 @@ export class SubscriptionResource extends BaseResource {
 
   /** Включает или отключает автопродление. */
   setAutoRenewal(enabled: boolean, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.request({
-      method: 'POST',
+    return this.http.operation('subscription.setAutoRenewal', {
       path: '/api/v1/subscription/auto-renewal',
       body: { enabled },
       ...this.requestOptions(options),
@@ -44,8 +41,7 @@ export class SubscriptionResource extends BaseResource {
 
   /** Запускает привязку карты. */
   bindCard(options: RequestOptions = {}): Promise<unknown> {
-    return this.http.request({
-      method: 'POST',
+    return this.http.operation('subscription.bindCard', {
       path: '/api/v1/subscription/bind-card',
       ...this.requestOptions(options),
     });
@@ -53,8 +49,7 @@ export class SubscriptionResource extends BaseResource {
 
   /** Загружает список способов оплаты. Пустой массив, если карт нет. */
   async methods(options: RequestOptions = {}): Promise<PaymentMethod[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('subscription.methods', {
       path: '/api/v1/subscription/methods',
       ...this.requestOptions(options),
     });
@@ -64,8 +59,7 @@ export class SubscriptionResource extends BaseResource {
 
   /** Делает способ оплаты основным. */
   setDefaultMethod(methodId: string, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.request({
-      method: 'POST',
+    return this.http.operation('subscription.setDefaultMethod', {
       path: `/api/v1/subscription/methods/${encodePathSegment(methodId, 'methodId')}/default`,
       ...this.requestOptions(options),
     });
@@ -73,8 +67,7 @@ export class SubscriptionResource extends BaseResource {
 
   /** Удаляет способ оплаты. */
   removeMethod(methodId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('subscription.removeMethod', {
       path: `/api/v1/subscription/methods/${encodePathSegment(methodId, 'methodId')}`,
       ...this.requestOptions(options),
     });

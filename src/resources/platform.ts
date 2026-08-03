@@ -55,8 +55,7 @@ export class PlatformResource extends BaseResource {
    * ```
    */
   version(options: RequestOptions = {}): Promise<PlatformVersions> {
-    return this.http.request<PlatformVersions>({
-      method: 'GET',
+    return this.http.operation<PlatformVersions>('platform.version', {
       path: '/api/platform/version',
       skipAuth: true,
       ...this.requestOptions(options),
@@ -65,8 +64,7 @@ export class PlatformResource extends BaseResource {
 
   /** Загружает журнал изменений. */
   async changelog(options: RequestOptions = {}): Promise<ChangelogEntry[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('platform.changelog', {
       path: '/api/platform/changelog',
       ...this.requestOptions(options),
     });
@@ -76,8 +74,7 @@ export class PlatformResource extends BaseResource {
 
   /** Загружает анонсы платформы. */
   async announcements(options: RequestOptions = {}): Promise<Announcement[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('platform.announcements', {
       path: '/api/platform/announcements',
       ...this.requestOptions(options),
     });
@@ -87,8 +84,7 @@ export class PlatformResource extends BaseResource {
 
   /** Загружает баннер текущего события — виджет «портал». */
   portal(options: RequestOptions = {}): Promise<Portal> {
-    return this.http.request<Portal>({
-      method: 'GET',
+    return this.http.operation<Portal>('platform.portal', {
       path: '/api/v1/portal',
       ...this.requestOptions(options),
     });
@@ -111,8 +107,7 @@ export class PlatformResource extends BaseResource {
    * ```
    */
   async status(options: RequestOptions = {}): Promise<PlatformStatus> {
-    const body = await this.http.request<PlatformStatus>({
-      method: 'GET',
+    const body = await this.http.operation<PlatformStatus>('platform.status', {
       service: STATUS_SERVICE,
       path: '/api/status',
       ...this.requestOptions(options),

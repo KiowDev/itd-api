@@ -1,4 +1,10 @@
-import type { PipelineRequest, RequestHandler } from './pipeline.js';
+import { type BuiltInOperationId, operationMethod } from './operations.js';
+import {
+  identifyRequest,
+  type PipelineRequest,
+  type PipelineRequestInput,
+  type RequestHandler,
+} from './pipeline.js';
 import type { PluginRegistry } from './plugins/registry.js';
 
 /** Что нужно фасаду для работы. */
@@ -52,7 +58,15 @@ export class HttpClient {
    * @throws {ItdAbortError} если запрос отменён через `signal`
    * @throws {ItdNetworkError} если запрос не дошёл до сервера
    */
-  request<T = unknown>(options: PipelineRequest): Promise<T> {
-    return this.#handler(options) as Promise<T>;
+  request<T = unknown>(options: PipelineRequestInput): Promise<T> {
+    return this.#handler(identifyRequest(options)) as Promise<T>;
+  }
+
+  /** Выполняет встроенную семантическую операцию, подставляя её HTTP-метод из каталога. */
+  operation<T = unknown>(
+    operationId: BuiltInOperationId,
+    options: Omit<PipelineRequest, 'operationId' | 'method'>,
+  ): Promise<T> {
+    return this.request<T>({ ...options, operationId, method: operationMethod(operationId) });
   }
 }

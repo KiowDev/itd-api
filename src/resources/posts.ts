@@ -85,6 +85,7 @@ export class PostsResource extends BaseResource {
 
   /** Лента: `/api/posts`, курсорная пагинация. */
   readonly #feed = this.paginated<Post, FeedParams>({
+    operationId: 'posts.list',
     path: () => '/api/posts',
     query: (p) => ({ tab: p.tab, limit: p.limit }),
     start: cursorStart,
@@ -94,6 +95,7 @@ export class PostsResource extends BaseResource {
 
   /** Стена пользователя: `/api/posts/user/{user}`. */
   readonly #wall = this.paginated<Post, UserPostsParams & { user: UserRef }>({
+    operationId: 'posts.byUser',
     path: (p) => `/api/posts/user/${encodePathSegment(p.user, 'user')}`,
     query: (p) => ({ limit: p.limit, sort: p.sort, pinnedPostId: p.pinnedPostId }),
     start: cursorStart,
@@ -103,6 +105,7 @@ export class PostsResource extends BaseResource {
 
   /** Понравившиеся посты пользователя: `/api/posts/user/{user}/liked`. */
   readonly #liked = this.paginated<Post, UserPostsParams & { user: UserRef }>({
+    operationId: 'posts.likedByUser',
     path: (p) => `/api/posts/user/${encodePathSegment(p.user, 'user')}/liked`,
     query: (p) => ({ limit: p.limit }),
     start: cursorStart,
@@ -112,6 +115,7 @@ export class PostsResource extends BaseResource {
 
   /** Комментарии к посту: курсор лежит рядом со списком, поэтому свой reader. */
   readonly #comments = this.paginated<Comment, CommentsParams & { postId: string }>({
+    operationId: 'posts.comments',
     path: (p) => `/api/posts/${encodePathSegment(p.postId, 'postId')}/comments`,
     query: (p) => ({ limit: p.limit, sort: p.sort }),
     start: cursorStart,
@@ -170,8 +174,7 @@ export class PostsResource extends BaseResource {
     const data = resolvePost(input);
     const attachmentIds = await this.#collectAttachments(data, options);
 
-    return this.http.request<Post>({
-      method: 'POST',
+    return this.http.operation<Post>('posts.create', {
       path: '/api/posts',
       body: {
         content: data.content ?? '',
@@ -190,8 +193,7 @@ export class PostsResource extends BaseResource {
    * В отличие от списков, здесь у поста заполнено поле `comments`.
    */
   get(postId: string, options: RequestOptions = {}): Promise<Post> {
-    return this.http.request<Post>({
-      method: 'GET',
+    return this.http.operation<Post>('posts.get', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}`,
       ...this.requestOptions(options),
     });
@@ -206,8 +208,7 @@ export class PostsResource extends BaseResource {
    */
   update(postId: string, input: PostUpdateInput, options: RequestOptions = {}): Promise<Post> {
     const data = resolvePostUpdate(input);
-    return this.http.request<Post>({
-      method: 'PUT',
+    return this.http.operation<Post>('posts.update', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}`,
       body: { content: data.content, ...(data.spans ? { spans: data.spans } : {}) },
       ...this.requestOptions(options),
@@ -216,8 +217,7 @@ export class PostsResource extends BaseResource {
 
   /** Удаляет пост. Восстановить его можно через {@link restore}. */
   remove(postId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('posts.remove', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}`,
       ...this.requestOptions(options),
     });
@@ -225,8 +225,7 @@ export class PostsResource extends BaseResource {
 
   /** Восстанавливает удалённый пост. */
   restore(postId: string, options: RequestOptions = {}): Promise<Post> {
-    return this.http.request<Post>({
-      method: 'POST',
+    return this.http.operation<Post>('posts.restore', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/restore`,
       ...this.requestOptions(options),
     });
@@ -234,8 +233,7 @@ export class PostsResource extends BaseResource {
 
   /** Ставит реакцию на пост. */
   like(postId: string, options: RequestOptions = {}): Promise<LikeResult> {
-    return this.http.request<LikeResult>({
-      method: 'POST',
+    return this.http.operation<LikeResult>('posts.like', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/like`,
       ...this.requestOptions(options),
     });
@@ -243,8 +241,7 @@ export class PostsResource extends BaseResource {
 
   /** Убирает реакцию с поста. */
   unlike(postId: string, options: RequestOptions = {}): Promise<LikeResult> {
-    return this.http.request<LikeResult>({
-      method: 'DELETE',
+    return this.http.operation<LikeResult>('posts.unlike', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/like`,
       ...this.requestOptions(options),
     });
@@ -257,8 +254,7 @@ export class PostsResource extends BaseResource {
    * для файлов здесь нет.
    */
   repost(postId: string, content = '', options: RequestOptions = {}): Promise<Post> {
-    return this.http.request<Post>({
-      method: 'POST',
+    return this.http.operation<Post>('posts.repost', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/repost`,
       body: { content },
       ...this.requestOptions(options),
@@ -267,8 +263,7 @@ export class PostsResource extends BaseResource {
 
   /** Отменяет репост. */
   unrepost(postId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('posts.unrepost', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/repost`,
       ...this.requestOptions(options),
     });
@@ -276,8 +271,7 @@ export class PostsResource extends BaseResource {
 
   /** Закрепляет пост в профиле. */
   pin(postId: string, options: RequestOptions = {}): Promise<PinPostResult> {
-    return this.http.request<PinPostResult>({
-      method: 'POST',
+    return this.http.operation<PinPostResult>('posts.pin', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/pin`,
       ...this.requestOptions(options),
     });
@@ -285,8 +279,7 @@ export class PostsResource extends BaseResource {
 
   /** Открепляет пост. */
   unpin(postId: string, options: RequestOptions = {}): Promise<PinPostResult> {
-    return this.http.request<PinPostResult>({
-      method: 'DELETE',
+    return this.http.operation<PinPostResult>('posts.unpin', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/pin`,
       ...this.requestOptions(options),
     });
@@ -298,8 +291,7 @@ export class PostsResource extends BaseResource {
    * @param optionIds выбранные варианты; несколько допустимы только при `multipleChoice`
    */
   vote(postId: string, optionIds: string[], options: RequestOptions = {}): Promise<Poll> {
-    return this.http.request<Poll>({
-      method: 'POST',
+    return this.http.operation<Poll>('posts.vote', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/poll/vote`,
       body: { optionIds },
       ...this.requestOptions(options),
@@ -308,8 +300,7 @@ export class PostsResource extends BaseResource {
 
   /** Запрашивает счётчики сразу для нескольких постов. */
   async stats(ids: string[], options: RequestOptions = {}): Promise<PostStats[]> {
-    const body = await this.http.request({
-      method: 'POST',
+    const body = await this.http.operation('posts.stats', {
       path: '/api/posts/stats',
       body: { ids },
       ...this.requestOptions(options),
@@ -379,8 +370,7 @@ export class PostsResource extends BaseResource {
     const data = resolveComment(typeof input === 'string' ? { content: input } : input);
     const attachmentIds = await this.#collectAttachments(data, options);
 
-    return this.http.request<Comment>({
-      method: 'POST',
+    return this.http.operation<Comment>('posts.comment', {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/comments`,
       body: { content: data.content ?? '', attachmentIds },
       ...this.requestOptions(options),

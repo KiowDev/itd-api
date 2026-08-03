@@ -1,4 +1,4 @@
-import type { ClientHooks, RawRequestOptions } from '../../types/options.js';
+import type { ClientHooks, OperationRequestOptions } from '../../types/options.js';
 import { ItdConfigError } from '../errors.js';
 import type { ItdPlugin, PluginContext, PluginTeardown, Transformer } from './contracts.js';
 import {
@@ -218,17 +218,17 @@ export class PluginRegistry {
    * @param execute настоящий запрос, вызывается самой внутренней обёрткой
    */
   async run(
-    request: RawRequestOptions,
-    execute: (request: RawRequestOptions) => Promise<unknown>,
+    request: OperationRequestOptions,
+    execute: (request: OperationRequestOptions) => Promise<unknown>,
   ): Promise<unknown> {
     const entries = [...this.#ordered];
     for (const entry of entries) entry.activeRequests += 1;
     const hookScope = entries.flatMap((entry) => entry.hooks);
-    const scoped = (current: RawRequestOptions): RawRequestOptions =>
+    const scoped = (current: OperationRequestOptions): OperationRequestOptions =>
       withRequestHookScope(current, hookScope);
     const chain = entries
       .flatMap((entry) => entry.transformers)
-      .reduceRight<(request: RawRequestOptions) => Promise<unknown>>(
+      .reduceRight<(request: OperationRequestOptions) => Promise<unknown>>(
         (next, transformer) => (current) =>
           transformer(scoped(current), (prepared) => next(scoped(prepared))),
         (current) => execute(scoped(current)),
@@ -275,7 +275,7 @@ export class PluginRegistry {
   async #runHook<K extends HookName>(
     field: K,
     context: HookContext<K>,
-    request: RawRequestOptions,
+    request: OperationRequestOptions,
     base: ClientHooks,
   ): Promise<void> {
     const baseHook = base[field] as ((value: HookContext<K>) => void | Promise<void>) | undefined;

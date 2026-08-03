@@ -24,8 +24,7 @@ export class ReportsResource extends BaseResource {
   create(input: ReportInput, options: RequestOptions = {}): Promise<Report> {
     const data = resolveReport(input);
 
-    return this.http.request<Report>({
-      method: 'POST',
+    return this.http.operation<Report>('reports.create', {
       path: '/api/reports',
       body: data,
       ...this.requestOptions(options),

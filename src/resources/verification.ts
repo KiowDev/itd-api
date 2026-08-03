@@ -10,8 +10,7 @@ import { BaseResource } from './base.js';
 export class VerificationResource extends BaseResource {
   /** Загружает статус заявки. Значение `none` означает, что заявка не подавалась. */
   status(options: RequestOptions = {}): Promise<VerificationStatus> {
-    return this.http.request<VerificationStatus>({
-      method: 'GET',
+    return this.http.operation<VerificationStatus>('verification.status', {
       path: '/api/verification/status',
       ...this.requestOptions(options),
     });
@@ -19,8 +18,7 @@ export class VerificationResource extends BaseResource {
 
   /** Подаёт заявку на верификацию с видео. */
   submit(videoUrl: string, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.request({
-      method: 'POST',
+    return this.http.operation('verification.submit', {
       path: '/api/verification/submit',
       body: { videoUrl },
       ...this.requestOptions(options),

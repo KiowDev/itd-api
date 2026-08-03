@@ -25,6 +25,7 @@ export class CommentsResource extends BaseResource {
 
   /** Ответы на комментарий: `/api/comments/{id}/replies`, постраничная пагинация. */
   readonly #replies = this.paginated<Comment, RepliesParams & { commentId: string }>({
+    operationId: 'comments.replies',
     path: (p) => `/api/comments/${encodePathSegment(p.commentId, 'commentId')}/replies`,
     query: (p) => ({ limit: p.limit }),
     start: (p) => (p.page !== undefined ? { page: p.page } : {}),
@@ -75,8 +76,7 @@ export class CommentsResource extends BaseResource {
     const attachmentIds =
       files.length > 0 ? [...existing, ...(await this.#uploadFiles(files, options))] : existing;
 
-    return this.http.request<Comment>({
-      method: 'POST',
+    return this.http.operation<Comment>('comments.reply', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/replies`,
       body: {
         content: data.content ?? '',
@@ -89,8 +89,7 @@ export class CommentsResource extends BaseResource {
 
   /** Редактирует текст комментария. */
   update(commentId: string, content: string, options: RequestOptions = {}): Promise<Comment> {
-    return this.http.request<Comment>({
-      method: 'PATCH',
+    return this.http.operation<Comment>('comments.update', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}`,
       body: { content },
       ...this.requestOptions(options),
@@ -99,8 +98,7 @@ export class CommentsResource extends BaseResource {
 
   /** Удаляет комментарий. Восстановить его можно через {@link restore}. */
   remove(commentId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('comments.remove', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}`,
       ...this.requestOptions(options),
     });
@@ -108,8 +106,7 @@ export class CommentsResource extends BaseResource {
 
   /** Восстанавливает удалённый комментарий. */
   restore(commentId: string, options: RequestOptions = {}): Promise<Comment> {
-    return this.http.request<Comment>({
-      method: 'POST',
+    return this.http.operation<Comment>('comments.restore', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/restore`,
       ...this.requestOptions(options),
     });
@@ -117,8 +114,7 @@ export class CommentsResource extends BaseResource {
 
   /** Ставит реакцию на комментарий. */
   like(commentId: string, options: RequestOptions = {}): Promise<LikeResult> {
-    return this.http.request<LikeResult>({
-      method: 'POST',
+    return this.http.operation<LikeResult>('comments.like', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/like`,
       ...this.requestOptions(options),
     });
@@ -126,8 +122,7 @@ export class CommentsResource extends BaseResource {
 
   /** Убирает реакцию с комментария. */
   unlike(commentId: string, options: RequestOptions = {}): Promise<LikeResult> {
-    return this.http.request<LikeResult>({
-      method: 'DELETE',
+    return this.http.operation<LikeResult>('comments.unlike', {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/like`,
       ...this.requestOptions(options),
     });

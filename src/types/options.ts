@@ -1,4 +1,5 @@
 import type { ItdClock } from '../core/clock.js';
+import type { OperationId } from '../core/operations.js';
 import type { RuntimeMode } from '../core/runtime.js';
 import type { ServiceDefinition } from '../core/services.js';
 import type { TokenStorage } from '../core/storage.js';
@@ -104,6 +105,8 @@ export interface RateLimitOptions {
 
 /** Данные о запросе, доступные хукам. */
 export interface RequestContext {
+  /** Стабильная семантическая операция; `raw` у низкоуровневого вызова без явного ID. */
+  operationId: OperationId;
   method: string;
   /** Путь без базового URL, например `/api/posts`. */
   path: string;
@@ -282,6 +285,11 @@ export type RequestOptionKeysComplete =
 
 /** Полное описание запроса для низкоуровневого `itd.request()`. */
 export interface RawRequestOptions extends RequestOptions {
+  /**
+   * Семантическое имя низкоуровневого запроса. Встроенные resources выставляют его сами.
+   * Пользовательские значения следует помещать в namespace `custom:`.
+   */
+  operationId?: OperationId | undefined;
   method: string;
   /** Путь с ведущим слэшем, например `/api/posts`. Завершающий слэш значим. */
   path: string;
@@ -318,4 +326,9 @@ export interface RawRequestOptions extends RequestOptions {
   skipQueue?: boolean | undefined;
   /** Вернуть тело ответа без снятия обёртки `{ data: … }`. */
   raw?: boolean | undefined;
+}
+
+/** Запрос внутри pipeline: в отличие от raw input всегда имеет семантический ID. */
+export interface OperationRequestOptions extends RawRequestOptions {
+  operationId: OperationId;
 }

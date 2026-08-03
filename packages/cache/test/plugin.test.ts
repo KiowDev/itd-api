@@ -359,7 +359,12 @@ describe('управление и инвалидация', () => {
     itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
 
     await itd.posts.get('1');
-    await itd.request({ method: 'POST', path: '/api/v1/i', body: {} });
+    await itd.request({
+      operationId: 'telemetry.interaction',
+      method: 'POST',
+      path: '/api/v1/i',
+      body: {},
+    });
     await itd.posts.get('1');
 
     expect(calls).toHaveLength(2);

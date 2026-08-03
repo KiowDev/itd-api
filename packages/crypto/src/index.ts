@@ -48,7 +48,7 @@ export {
   stripInvisible,
 } from './ciphers/index.js';
 export { CryptError } from './errors.js';
-export { SECRET_FIELDS, TEXT_ROUTES, type TextRoute, textFields } from './fields.js';
+export { SECRET_FIELDS, TEXT_FIELDS, type TextOperationId, textFields } from './fields.js';
 export { type CryptOptions, crypt } from './plugin.js';
 export { decodeTree } from './walk.js';
 

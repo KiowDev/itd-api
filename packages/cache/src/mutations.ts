@@ -1,10 +1,10 @@
+import type { BuiltInOperationId, OperationId } from 'itd-api';
 import type { CacheRouteId } from './routes.js';
 
 export type MutationInvalidation = readonly CacheRouteId[] | 'all';
 
 export interface CacheMutation {
-  method: string;
-  path: RegExp;
+  operationId: BuiltInOperationId;
   invalidates: MutationInvalidation;
   /** По умолчанию зависимые маршруты удаляются у всех аккаунтов общего экземпляра. */
   scope?: 'account' | undefined;
@@ -125,126 +125,132 @@ const NOTHING = [] as const satisfies readonly CacheRouteId[];
  */
 const CACHE_MUTATIONS = Object.freeze([
   // Авторизация и сессии.
-  { method: 'POST', path: /^\/api\/v1\/auth\/refresh$/, invalidates: NOTHING },
-  { method: 'POST', path: /^\/api\/v1\/auth\/resend-otp$/, invalidates: NOTHING },
-  { method: 'POST', path: /^\/api\/v1\/auth\/forgot-password$/, invalidates: NOTHING },
-  { method: 'POST', path: /^\/api\/v1\/auth\/sign-up$/, invalidates: 'all' },
-  { method: 'POST', path: /^\/api\/v1\/auth\/sign-in$/, invalidates: 'all' },
-  { method: 'POST', path: /^\/api\/v1\/auth\/verify-otp$/, invalidates: 'all' },
-  { method: 'POST', path: /^\/api\/v1\/auth\/logout$/, invalidates: 'all' },
-  { method: 'POST', path: /^\/api\/v1\/auth\/reset-password$/, invalidates: 'all' },
-  { method: 'POST', path: /^\/api\/v1\/auth\/change-password$/, invalidates: 'all' },
+  { operationId: 'auth.refresh', invalidates: NOTHING },
+  { operationId: 'auth.resendOtp', invalidates: NOTHING },
+  { operationId: 'auth.forgotPassword', invalidates: NOTHING },
+  { operationId: 'auth.signUp', invalidates: 'all' },
+  { operationId: 'auth.signIn', invalidates: 'all' },
+  { operationId: 'auth.verifyOtp', invalidates: 'all' },
+  { operationId: 'auth.logout', invalidates: 'all' },
+  { operationId: 'auth.resetPassword', invalidates: 'all' },
+  { operationId: 'auth.changePassword', invalidates: 'all' },
   {
-    method: 'DELETE',
-    path: /^\/api\/v1\/auth\/sessions(?:\/[^/]+)?$/,
+    operationId: 'auth.revokeSession',
+    invalidates: ['auth.sessions'],
+    scope: 'account',
+  },
+  {
+    operationId: 'auth.revokeOtherSessions',
     invalidates: ['auth.sessions'],
     scope: 'account',
   },
 
   // Посты и комментарии.
-  { method: 'POST', path: /^\/api\/posts$/, invalidates: POST_CONTENT },
-  { method: 'PUT', path: /^\/api\/posts\/[^/]+$/, invalidates: POST_CONTENT },
-  { method: 'DELETE', path: /^\/api\/posts\/[^/]+$/, invalidates: POST_CONTENT },
-  { method: 'POST', path: /^\/api\/posts\/[^/]+\/restore$/, invalidates: POST_CONTENT },
-  { method: 'POST', path: /^\/api\/posts\/[^/]+\/like$/, invalidates: POST_REACTIONS },
-  { method: 'DELETE', path: /^\/api\/posts\/[^/]+\/like$/, invalidates: POST_REACTIONS },
-  { method: 'POST', path: /^\/api\/posts\/[^/]+\/repost$/, invalidates: POST_CONTENT },
-  { method: 'DELETE', path: /^\/api\/posts\/[^/]+\/repost$/, invalidates: POST_CONTENT },
-  { method: 'POST', path: /^\/api\/posts\/[^/]+\/pin$/, invalidates: PINS },
-  { method: 'DELETE', path: /^\/api\/posts\/[^/]+\/pin$/, invalidates: PINS },
-  { method: 'POST', path: /^\/api\/posts\/[^/]+\/poll\/vote$/, invalidates: POST_REACTIONS },
-  { method: 'POST', path: /^\/api\/posts\/[^/]+\/comments$/, invalidates: COMMENTS },
-  { method: 'POST', path: /^\/api\/comments\/[^/]+\/replies$/, invalidates: COMMENTS },
-  { method: 'PATCH', path: /^\/api\/comments\/[^/]+$/, invalidates: COMMENTS },
-  { method: 'DELETE', path: /^\/api\/comments\/[^/]+$/, invalidates: COMMENTS },
-  { method: 'POST', path: /^\/api\/comments\/[^/]+\/restore$/, invalidates: COMMENTS },
-  { method: 'POST', path: /^\/api\/comments\/[^/]+\/like$/, invalidates: COMMENTS },
-  { method: 'DELETE', path: /^\/api\/comments\/[^/]+\/like$/, invalidates: COMMENTS },
+  { operationId: 'posts.create', invalidates: POST_CONTENT },
+  { operationId: 'posts.update', invalidates: POST_CONTENT },
+  { operationId: 'posts.remove', invalidates: POST_CONTENT },
+  { operationId: 'posts.restore', invalidates: POST_CONTENT },
+  { operationId: 'posts.like', invalidates: POST_REACTIONS },
+  { operationId: 'posts.unlike', invalidates: POST_REACTIONS },
+  { operationId: 'posts.repost', invalidates: POST_CONTENT },
+  { operationId: 'posts.unrepost', invalidates: POST_CONTENT },
+  { operationId: 'posts.pin', invalidates: PINS },
+  { operationId: 'posts.unpin', invalidates: PINS },
+  { operationId: 'posts.vote', invalidates: POST_REACTIONS },
+  { operationId: 'posts.comment', invalidates: COMMENTS },
+  { operationId: 'comments.reply', invalidates: COMMENTS },
+  { operationId: 'comments.update', invalidates: COMMENTS },
+  { operationId: 'comments.remove', invalidates: COMMENTS },
+  { operationId: 'comments.restore', invalidates: COMMENTS },
+  { operationId: 'comments.like', invalidates: COMMENTS },
+  { operationId: 'comments.unlike', invalidates: COMMENTS },
 
   // Профиль и связи между пользователями.
-  { method: 'PUT', path: /^\/api\/users\/me$/, invalidates: PROFILE },
-  { method: 'DELETE', path: /^\/api\/users\/me$/, invalidates: PROFILE },
-  { method: 'POST', path: /^\/api\/users\/me\/restore$/, invalidates: PROFILE },
-  { method: 'POST', path: /^\/api\/users\/profile$/, invalidates: PROFILE },
-  { method: 'POST', path: /^\/api\/users\/[^/]+\/follow$/, invalidates: FOLLOWING },
-  { method: 'DELETE', path: /^\/api\/users\/[^/]+\/follow$/, invalidates: FOLLOWING },
-  { method: 'POST', path: /^\/api\/users\/[^/]+\/block$/, invalidates: BLOCKS },
-  { method: 'DELETE', path: /^\/api\/users\/[^/]+\/block$/, invalidates: BLOCKS },
+  { operationId: 'users.updateMe', invalidates: PROFILE },
+  { operationId: 'users.deactivate', invalidates: PROFILE },
+  { operationId: 'users.restore', invalidates: PROFILE },
+  { operationId: 'users.createProfile', invalidates: PROFILE },
+  { operationId: 'users.follow', invalidates: FOLLOWING },
+  { operationId: 'users.unfollow', invalidates: FOLLOWING },
+  { operationId: 'users.block', invalidates: BLOCKS },
+  { operationId: 'users.unblock', invalidates: BLOCKS },
   {
-    method: 'PUT',
-    path: /^\/api\/users\/me\/privacy$/,
+    operationId: 'users.updatePrivacy',
     invalidates: ['users.me', 'users.get', 'users.getPrivacy'],
   },
-  { method: 'PUT', path: /^\/api\/users\/me\/pin$/, invalidates: PINS },
-  { method: 'DELETE', path: /^\/api\/users\/me\/pin$/, invalidates: PINS },
+  { operationId: 'users.setPin', invalidates: PINS },
+  { operationId: 'users.removePin', invalidates: PINS },
 
   // Уведомления.
   {
-    method: 'POST',
-    path: /^\/api\/notifications\/(?:[^/]+\/read|read-batch|read-all)$/,
+    operationId: 'notifications.markRead',
     invalidates: NOTIFICATIONS,
     scope: 'account',
   },
   {
-    method: 'PUT',
-    path: /^\/api\/notifications\/settings$/,
+    operationId: 'notifications.markReadBatch',
+    invalidates: NOTIFICATIONS,
+    scope: 'account',
+  },
+  {
+    operationId: 'notifications.markAllRead',
+    invalidates: NOTIFICATIONS,
+    scope: 'account',
+  },
+  {
+    operationId: 'notifications.updateSettings',
     invalidates: ['notifications.getSettings'],
     scope: 'account',
   },
 
   // Файлы и настройки аккаунта.
-  { method: 'POST', path: /^\/api\/files\/upload$/, invalidates: NOTHING },
+  { operationId: 'files.upload', invalidates: NOTHING },
   {
-    method: 'DELETE',
-    path: /^\/api\/files\/[^/]+$/,
+    operationId: 'files.remove',
     invalidates: ['files.get', ...POST_CONTENT],
   },
   {
-    method: 'POST',
-    path: /^\/api\/verification\/submit$/,
+    operationId: 'verification.submit',
     invalidates: ['verification.status'],
     scope: 'account',
   },
   {
-    method: 'POST',
-    path: /^\/api\/v1\/subscription\/pay$/,
+    operationId: 'subscription.pay',
     invalidates: SUBSCRIPTION,
     scope: 'account',
   },
   {
-    method: 'POST',
-    path: /^\/api\/v1\/subscription\/auto-renewal$/,
+    operationId: 'subscription.setAutoRenewal',
     invalidates: SUBSCRIPTION,
     scope: 'account',
   },
   {
-    method: 'POST',
-    path: /^\/api\/v1\/subscription\/bind-card$/,
+    operationId: 'subscription.bindCard',
     invalidates: SUBSCRIPTION,
     scope: 'account',
   },
   {
-    method: 'POST',
-    path: /^\/api\/v1\/subscription\/methods\/[^/]+\/default$/,
+    operationId: 'subscription.setDefaultMethod',
     invalidates: SUBSCRIPTION,
     scope: 'account',
   },
   {
-    method: 'DELETE',
-    path: /^\/api\/v1\/subscription\/methods\/[^/]+$/,
+    operationId: 'subscription.removeMethod',
     invalidates: SUBSCRIPTION,
     scope: 'account',
   },
 
   // Эти запросы не меняют ни один доступный для кэширования ответ.
-  { method: 'POST', path: /^\/api\/reports$/, invalidates: NOTHING },
-  { method: 'POST', path: /^\/api\/v1\/[ix]$/, invalidates: NOTHING },
+  { operationId: 'reports.create', invalidates: NOTHING },
+  { operationId: 'telemetry.dwell', invalidates: NOTHING },
+  { operationId: 'telemetry.interaction', invalidates: NOTHING },
 ] as const satisfies readonly CacheMutation[]);
 
-/** Находит известную мутацию по HTTP-методу и пути. */
-export function cacheMutation(method: string, path: string): CacheMutation | undefined {
-  const normalized = method.toUpperCase();
-  return CACHE_MUTATIONS.find(
-    (mutation) => mutation.method === normalized && mutation.path.test(path),
-  );
+const MUTATIONS = new Map<OperationId, CacheMutation>(
+  CACHE_MUTATIONS.map((mutation) => [mutation.operationId, mutation]),
+);
+
+/** Находит известную мутацию по стабильному семантическому ID. */
+export function cacheMutation(operationId: OperationId): CacheMutation | undefined {
+  return MUTATIONS.get(operationId);
 }

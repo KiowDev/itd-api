@@ -1,18 +1,18 @@
-import type { ClientHooks, RawRequestOptions } from '../../types/options.js';
+import type { ClientHooks, OperationRequestOptions } from '../../types/options.js';
 
 export type HookName = keyof ClientHooks;
 export type HookContext<K extends HookName> = Parameters<NonNullable<ClientHooks[K]>>[0];
 export type HookDispatcher = <K extends HookName>(
   field: K,
   context: HookContext<K>,
-  request: RawRequestOptions,
+  request: OperationRequestOptions,
 ) => Promise<void>;
-type HookTester = (field: HookName, request: RawRequestOptions) => boolean;
+type HookTester = (field: HookName, request: OperationRequestOptions) => boolean;
 
 const REQUEST_HOOK_DISPATCHERS = new WeakMap<ClientHooks, HookDispatcher>();
 const REQUEST_HOOK_TESTERS = new WeakMap<ClientHooks, HookTester>();
 const PLUGIN_HOOK_SCOPE: unique symbol = Symbol('itd-api.plugin-hooks');
-type ScopedRequest = RawRequestOptions & {
+type ScopedRequest = OperationRequestOptions & {
   [PLUGIN_HOOK_SCOPE]?: readonly ClientHooks[];
 };
 
@@ -28,7 +28,7 @@ export function createRequestHooks(dispatcher: HookDispatcher, tester: HookTeste
 export function hasRequestHook(
   hooks: ClientHooks,
   field: HookName,
-  request: RawRequestOptions,
+  request: OperationRequestOptions,
 ): boolean {
   const tester = REQUEST_HOOK_TESTERS.get(hooks);
   return tester ? tester(field, request) : hooks[field] !== undefined;
@@ -36,9 +36,9 @@ export function hasRequestHook(
 
 /** Привязывает к запросу неизменяемый снимок plugin hooks. @internal */
 export function withRequestHookScope(
-  request: RawRequestOptions,
+  request: OperationRequestOptions,
   hooks: readonly ClientHooks[],
-): RawRequestOptions {
+): OperationRequestOptions {
   const scoped = request as ScopedRequest;
   return scoped[PLUGIN_HOOK_SCOPE] === hooks
     ? scoped
@@ -46,7 +46,7 @@ export function withRequestHookScope(
 }
 
 /** Читает снимок plugin hooks, привязанный к логическому запросу. @internal */
-export function requestHookScope(request: RawRequestOptions): readonly ClientHooks[] {
+export function requestHookScope(request: OperationRequestOptions): readonly ClientHooks[] {
   return (request as ScopedRequest)[PLUGIN_HOOK_SCOPE] ?? [];
 }
 
@@ -62,7 +62,7 @@ export async function dispatchRequestHook<K extends HookName>(
   hooks: ClientHooks,
   field: K,
   context: HookContext<K>,
-  request: RawRequestOptions,
+  request: OperationRequestOptions,
 ): Promise<void> {
   const dispatcher = REQUEST_HOOK_DISPATCHERS.get(hooks);
   if (dispatcher) {

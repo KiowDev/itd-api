@@ -91,7 +91,7 @@ const timing: ItdPlugin = {
       try {
         return await next(request);
       } finally {
-        logger?.info(`${request.method} ${request.path}: ${Date.now() - started} мс`);
+        logger?.info(`${request.operationId}: ${Date.now() - started} мс`);
       }
     });
   },
@@ -111,8 +111,8 @@ itd.use(timing);
 
 ```ts
 type Transformer = (
-  request: RawRequestOptions,
-  next: (request: RawRequestOptions) => Promise<unknown>,
+  request: OperationRequestOptions,
+  next: (request: OperationRequestOptions) => Promise<unknown>,
 ) => Promise<unknown>;
 
 type PluginTeardown = () => void | Promise<void>;

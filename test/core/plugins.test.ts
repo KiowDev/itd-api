@@ -69,6 +69,36 @@ describe('подключение плагинов', () => {
 });
 
 describe('обёртки запроса', () => {
+  it('передаёт стабильный operationId независимо от HTTP-пути', async () => {
+    const { itd } = makeClient([
+      json({ data: { id: '1' } }),
+      json({ data: { ok: true } }),
+      json({ data: { ok: true } }),
+    ]);
+    const seen: Array<[string, string, string]> = [];
+
+    itd.use(
+      plugin('operations', (request, next) => {
+        seen.push([request.operationId, request.method, request.path]);
+        return next(request);
+      }),
+    );
+
+    await itd.posts.get('1');
+    await itd.request({ method: 'GET', path: '/api/posts/1' });
+    await itd.request({
+      operationId: 'custom:probe',
+      method: 'POST',
+      path: '/integration/probe',
+    });
+
+    expect(seen).toEqual([
+      ['posts.get', 'GET', '/api/posts/1'],
+      ['raw', 'GET', '/api/posts/1'],
+      ['custom:probe', 'POST', '/integration/probe'],
+    ]);
+  });
+
   it('правит тело запроса до отправки', async () => {
     const { itd, mock } = makeClient([json({ data: { id: '1' } })]);
 
@@ -360,17 +390,17 @@ describe('Plugin API 2.0: lifecycle hooks', () => {
       name: 'observe',
       install({ useHooks }) {
         useHooks({
-          onRequest: ({ attempt }) => {
-            events.push(`request:${attempt}`);
+          onRequest: ({ operationId, attempt }) => {
+            events.push(`request:${operationId}:${attempt}`);
           },
-          onResponse: ({ attempt, status }) => {
-            events.push(`response:${attempt}:${status}`);
+          onResponse: ({ operationId, attempt, status }) => {
+            events.push(`response:${operationId}:${attempt}:${status}`);
           },
-          onError: ({ attempt }) => {
-            events.push(`error:${attempt}`);
+          onError: ({ operationId, attempt }) => {
+            events.push(`error:${operationId}:${attempt}`);
           },
-          onRetry: ({ attempt }) => {
-            events.push(`retry:${attempt}`);
+          onRetry: ({ operationId, attempt }) => {
+            events.push(`retry:${operationId}:${attempt}`);
           },
         });
       },
@@ -378,7 +408,13 @@ describe('Plugin API 2.0: lifecycle hooks', () => {
 
     await itd.posts.get('1');
 
-    expect(events).toEqual(['request:1', 'error:1', 'retry:1', 'request:2', 'response:2:200']);
+    expect(events).toEqual([
+      'request:posts.get:1',
+      'error:posts.get:1',
+      'retry:posts.get:1',
+      'request:posts.get:2',
+      'response:posts.get:2:200',
+    ]);
   });
 
   it('вызывает конструкторский hook раньше plugin hook', async () => {

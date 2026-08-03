@@ -1,5 +1,6 @@
 import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/http.js';
+import type { BuiltInOperationId } from '../core/operations.js';
 import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { pickArray, pickBoolean, pickString } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
@@ -71,7 +72,11 @@ export class UsersResource extends BaseResource {
    * не стоит и спасает, если эндпоинт назовёт список по-своему. `page` уходит в запрос, хотя
    * сервер его сейчас не читает (см. {@link followers}): когда починят — заработает само.
    */
-  readonly #userList = this.paginated<UserSummary, UserListParams & { path: string }>({
+  readonly #userList = this.paginated<
+    UserSummary,
+    UserListParams & { path: string; operationId: BuiltInOperationId }
+  >({
+    operationId: (p) => p.operationId,
     path: (p) => p.path,
     query: (p) => ({ limit: p.limit }),
     start: (p) => (p.page !== undefined ? { page: p.page } : {}),
@@ -81,8 +86,7 @@ export class UsersResource extends BaseResource {
 
   /** Загружает свой профиль — с подпиской и признаком подтверждённого телефона. */
   me(options: RequestOptions = {}): Promise<MyProfile> {
-    return this.http.request<MyProfile>({
-      method: 'GET',
+    return this.http.operation<MyProfile>('users.me', {
       path: '/api/users/me',
       ...this.requestOptions(options),
     });
@@ -90,8 +94,7 @@ export class UsersResource extends BaseResource {
 
   /** Обновляет свой профиль. Передавайте только изменяемые поля. */
   updateMe(input: UpdateProfileInput, options: RequestOptions = {}): Promise<MyProfile> {
-    return this.http.request<MyProfile>({
-      method: 'PUT',
+    return this.http.operation<MyProfile>('users.updateMe', {
       path: '/api/users/me',
       body: input,
       ...this.requestOptions(options),
@@ -121,8 +124,7 @@ export class UsersResource extends BaseResource {
 
   /** Деактивирует аккаунт. Вернуть его можно через {@link restore}. */
   deactivate(options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('users.deactivate', {
       path: '/api/users/me',
       ...this.requestOptions(options),
     });
@@ -130,8 +132,7 @@ export class UsersResource extends BaseResource {
 
   /** Восстанавливает деактивированный аккаунт. */
   restore(options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'POST',
+    return this.http.operation<void>('users.restore', {
       path: '/api/users/me/restore',
       ...this.requestOptions(options),
     });
@@ -142,8 +143,7 @@ export class UsersResource extends BaseResource {
     input: { username: string; displayName: string; avatar?: string },
     options: RequestOptions = {},
   ): Promise<MyProfile> {
-    return this.http.request<MyProfile>({
-      method: 'POST',
+    return this.http.operation<MyProfile>('users.createProfile', {
       path: '/api/users/profile',
       body: input,
       ...this.requestOptions(options),
@@ -162,8 +162,7 @@ export class UsersResource extends BaseResource {
    * ```
    */
   get(user: UserRef, options: RequestOptions = {}): Promise<PublicProfile> {
-    return this.http.request<PublicProfile>({
-      method: 'GET',
+    return this.http.operation<PublicProfile>('users.get', {
       path: `/api/users/${encodePathSegment(user, 'user')}`,
       ...this.requestOptions(options),
     });
@@ -171,8 +170,7 @@ export class UsersResource extends BaseResource {
 
   /** Проверяет, свободно ли имя пользователя. */
   async checkUsername(username: string, options: RequestOptions = {}): Promise<boolean> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('users.checkUsername', {
       path: '/api/users/check-username',
       query: { username },
       ...this.requestOptions(options),
@@ -186,8 +184,7 @@ export class UsersResource extends BaseResource {
     query: string,
     params: { limit?: number } & RequestOptions = {},
   ): Promise<UserSummary[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('users.search', {
       path: '/api/users/search',
       query: { q: query, limit: params.limit },
       ...this.requestOptions(params),
@@ -198,8 +195,7 @@ export class UsersResource extends BaseResource {
 
   /** Загружает рекомендации, на кого подписаться. */
   async whoToFollow(options: RequestOptions = {}): Promise<UserSummary[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('users.whoToFollow', {
       path: '/api/users/suggestions/who-to-follow',
       ...this.requestOptions(options),
     });
@@ -209,8 +205,7 @@ export class UsersResource extends BaseResource {
 
   /** Загружает рейтинг кланов. */
   async topClans(options: RequestOptions = {}): Promise<Clan[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('users.topClans', {
       path: '/api/users/stats/top-clans',
       ...this.requestOptions(options),
     });
@@ -224,8 +219,7 @@ export class UsersResource extends BaseResource {
    * У закрытого профиля вместо подписки отправляется заявка — это видно по полю `status`.
    */
   follow(user: UserRef, options: RequestOptions = {}): Promise<FollowResult> {
-    return this.http.request<FollowResult>({
-      method: 'POST',
+    return this.http.operation<FollowResult>('users.follow', {
       path: `/api/users/${encodePathSegment(user, 'user')}/follow`,
       body: {},
       ...this.requestOptions(options),
@@ -234,8 +228,7 @@ export class UsersResource extends BaseResource {
 
   /** Отписывается от пользователя. */
   unfollow(user: UserRef, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('users.unfollow', {
       path: `/api/users/${encodePathSegment(user, 'user')}/follow`,
       ...this.requestOptions(options),
     });
@@ -253,7 +246,11 @@ export class UsersResource extends BaseResource {
    * на проверенных аккаунтах занижено примерно на 1–4%.
    */
   followers(user: UserRef, params: UserListParams = {}): Promise<Page<UserSummary>> {
-    return this.#userPage(`/api/users/${encodePathSegment(user, 'user')}/followers`, params);
+    return this.#userPage(
+      'users.followers',
+      `/api/users/${encodePathSegment(user, 'user')}/followers`,
+      params,
+    );
   }
 
   /**
@@ -263,17 +260,29 @@ export class UsersResource extends BaseResource {
    * см. {@link followers}. Метод оставлен на случай, если пагинацию починят.
    */
   iterateFollowers(user: UserRef, params: UserListParams = {}): Paginator<UserSummary> {
-    return this.#userPaginator(`/api/users/${encodePathSegment(user, 'user')}/followers`, params);
+    return this.#userPaginator(
+      'users.followers',
+      `/api/users/${encodePathSegment(user, 'user')}/followers`,
+      params,
+    );
   }
 
   /** Загружает подписки пользователя. Ограничения те же, что у {@link followers}. */
   following(user: UserRef, params: UserListParams = {}): Promise<Page<UserSummary>> {
-    return this.#userPage(`/api/users/${encodePathSegment(user, 'user')}/following`, params);
+    return this.#userPage(
+      'users.following',
+      `/api/users/${encodePathSegment(user, 'user')}/following`,
+      params,
+    );
   }
 
   /** Перебирает подписки. Закончится после первых 20 записей — см. {@link followers}. */
   iterateFollowing(user: UserRef, params: UserListParams = {}): Paginator<UserSummary> {
-    return this.#userPaginator(`/api/users/${encodePathSegment(user, 'user')}/following`, params);
+    return this.#userPaginator(
+      'users.following',
+      `/api/users/${encodePathSegment(user, 'user')}/following`,
+      params,
+    );
   }
 
   /**
@@ -288,8 +297,7 @@ export class UsersResource extends BaseResource {
    * ```
    */
   followStatus(userIds: UserId[], options: RequestOptions = {}): Promise<Record<string, boolean>> {
-    return this.http.request<Record<string, boolean>>({
-      method: 'POST',
+    return this.http.operation<Record<string, boolean>>('users.followStatus', {
       path: '/api/users/follow-status',
       body: { userIds },
       ...this.requestOptions(options),
@@ -298,8 +306,7 @@ export class UsersResource extends BaseResource {
 
   /** Блокирует пользователя. */
   block(user: UserRef, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'POST',
+    return this.http.operation<void>('users.block', {
       path: `/api/users/${encodePathSegment(user, 'user')}/block`,
       body: {},
       ...this.requestOptions(options),
@@ -308,8 +315,7 @@ export class UsersResource extends BaseResource {
 
   /** Снимает блокировку. */
   unblock(user: UserRef, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('users.unblock', {
       path: `/api/users/${encodePathSegment(user, 'user')}/block`,
       ...this.requestOptions(options),
     });
@@ -317,18 +323,17 @@ export class UsersResource extends BaseResource {
 
   /** Загружает заблокированных пользователей. Ограничения те же, что у {@link followers}. */
   blocked(params: UserListParams = {}): Promise<Page<UserSummary>> {
-    return this.#userPage('/api/users/me/blocked', params);
+    return this.#userPage('users.blocked', '/api/users/me/blocked', params);
   }
 
   /** Перебирает заблокированных. Закончится после первых 20 записей — см. {@link followers}. */
   iterateBlocked(params: UserListParams = {}): Paginator<UserSummary> {
-    return this.#userPaginator('/api/users/me/blocked', params);
+    return this.#userPaginator('users.blocked', '/api/users/me/blocked', params);
   }
 
   /** Загружает настройки приватности. */
   getPrivacy(options: RequestOptions = {}): Promise<PrivacySettings> {
-    return this.http.request<PrivacySettings>({
-      method: 'GET',
+    return this.http.operation<PrivacySettings>('users.getPrivacy', {
       path: '/api/users/me/privacy',
       ...this.requestOptions(options),
     });
@@ -336,8 +341,7 @@ export class UsersResource extends BaseResource {
 
   /** Обновляет настройки приватности. Передавайте только изменяемые поля. */
   updatePrivacy(input: UpdatePrivacyInput, options: RequestOptions = {}): Promise<PrivacySettings> {
-    return this.http.request<PrivacySettings>({
-      method: 'PUT',
+    return this.http.operation<PrivacySettings>('users.updatePrivacy', {
       path: '/api/users/me/privacy',
       body: input,
       ...this.requestOptions(options),
@@ -350,8 +354,7 @@ export class UsersResource extends BaseResource {
    * `activePin` — строка-идентификатор, а не объект.
    */
   async pins(options: RequestOptions = {}): Promise<PinsResult> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('users.pins', {
       path: '/api/users/me/pins',
       ...this.requestOptions(options),
     });
@@ -365,8 +368,7 @@ export class UsersResource extends BaseResource {
 
   /** Выбирает активный значок профиля. */
   setPin(slug: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'PUT',
+    return this.http.operation<void>('users.setPin', {
       path: '/api/users/me/pin',
       body: { slug },
       ...this.requestOptions(options),
@@ -375,18 +377,25 @@ export class UsersResource extends BaseResource {
 
   /** Снимает активный значок. */
   removePin(options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('users.removePin', {
       path: '/api/users/me/pin',
       ...this.requestOptions(options),
     });
   }
 
-  #userPage(path: string, params: UserListParams): Promise<Page<UserSummary>> {
-    return this.#userList.list({ ...params, path });
+  #userPage(
+    operationId: BuiltInOperationId,
+    path: string,
+    params: UserListParams,
+  ): Promise<Page<UserSummary>> {
+    return this.#userList.list({ ...params, operationId, path });
   }
 
-  #userPaginator(path: string, params: UserListParams): Paginator<UserSummary> {
-    return this.#userList.iterate({ ...params, path });
+  #userPaginator(
+    operationId: BuiltInOperationId,
+    path: string,
+    params: UserListParams,
+  ): Paginator<UserSummary> {
+    return this.#userList.iterate({ ...params, operationId, path });
   }
 }

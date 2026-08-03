@@ -397,8 +397,7 @@ export class TelemetryResource extends BaseResource {
   /** Отправляет события просмотра постов (`POST /api/v1/i`). */
   dwell(entries: readonly DwellEntry[], options: TelemetryOptions = {}): Promise<unknown> {
     const validated = entries.map(validateDwell);
-    return this.http.request({
-      method: 'POST',
+    return this.http.operation('telemetry.dwell', {
       path: '/api/v1/i',
       body: {
         sid: options.sid ?? this.sessionId,
@@ -423,8 +422,7 @@ export class TelemetryResource extends BaseResource {
     options: TelemetryOptions = {},
   ): Promise<unknown> {
     const validated = entries.map(validateInteraction);
-    return this.http.request({
-      method: 'POST',
+    return this.http.operation('telemetry.interaction', {
       path: '/api/v1/x',
       body: {
         sid: options.sid ?? this.sessionId,

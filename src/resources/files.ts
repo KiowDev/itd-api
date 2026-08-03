@@ -80,8 +80,7 @@ export class FilesResource extends BaseResource {
   upload(input: FileInput, options: UploadOptions = {}): Promise<UploadedFile> {
     const bodyFactory = this.#createBodyFactory(input, options);
 
-    return this.http.request<UploadedFile>({
-      method: 'POST',
+    return this.http.operation<UploadedFile>('files.upload', {
       path: '/api/files/upload',
       bodyFactory,
       retryNetworkWrite: true,
@@ -103,8 +102,7 @@ export class FilesResource extends BaseResource {
    * Для ещё не прикреплённого файла сервер может ответить `404`.
    */
   get(fileId: string, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.request({
-      method: 'GET',
+    return this.http.operation('files.get', {
       path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
       ...this.requestOptions(options),
     });
@@ -112,8 +110,7 @@ export class FilesResource extends BaseResource {
 
   /** Удаляет загруженный файл. */
   remove(fileId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('files.remove', {
       path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
       ...this.requestOptions(options),
     });

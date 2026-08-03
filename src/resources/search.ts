@@ -25,8 +25,7 @@ export class SearchResource extends BaseResource {
    * ```
    */
   async all(query: string, options: RequestOptions = {}): Promise<SearchResult> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('search.all', {
       path: '/api/search',
       query: { q: query },
       ...this.requestOptions(options),

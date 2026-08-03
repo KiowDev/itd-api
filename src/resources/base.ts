@@ -1,4 +1,5 @@
 import type { HttpClient } from '../core/http.js';
+import type { BuiltInOperationId } from '../core/operations.js';
 import type { Page, PageState, PaginationMode } from '../core/pagination.js';
 import { Paginator } from '../core/pagination.js';
 import type { QueryParams } from '../core/url.js';
@@ -20,6 +21,8 @@ export interface ListParams extends RequestOptions {
  * @typeParam P тип параметров метода
  */
 export interface ListingSpec<T, P extends ListParams> {
+  /** Стабильная семантическая операция списка. */
+  operationId: BuiltInOperationId | ((params: P) => BuiltInOperationId);
   /** Путь эндпоинта. */
   path: (params: P) => string;
   /** Параметры запроса без полей пагинации — их добавит перебор. */
@@ -107,6 +110,7 @@ export class BaseResource {
    * @example
    * ```ts
    * #feed = this.paginated<Post, FeedParams>({
+   *   operationId: 'posts.list',
    *   path: () => '/api/posts',
    *   query: (p) => ({ tab: p.tab, limit: p.limit }),
    *   start: (p) => (p.cursor ? { cursor: p.cursor } : {}),
@@ -117,8 +121,9 @@ export class BaseResource {
    */
   protected paginated<T, P extends ListParams>(spec: ListingSpec<T, P>): Listing<T, P> {
     const load = async (params: P, state: PageState): Promise<Page<T>> => {
-      const body = await this.http.request({
-        method: 'GET',
+      const operationId =
+        typeof spec.operationId === 'function' ? spec.operationId(params) : spec.operationId;
+      const body = await this.http.operation(operationId, {
         path: spec.path(params),
         query: withPageState(spec.query(params), state),
         ...this.requestOptions(params),

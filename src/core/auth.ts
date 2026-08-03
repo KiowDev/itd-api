@@ -599,6 +599,7 @@ export class AuthManager {
       // не отправлять устаревший Bearer и не запускать рекурсивный refresh. Очередь безопасна:
       // исходная неудачная транспортная попытка освободила свой слот до вызова этого метода.
       const payload = await this.#send({
+        operationId: 'auth.refresh',
         method: 'POST',
         path: AUTH_PATHS.refresh,
         skipAuth: true,
@@ -727,6 +728,7 @@ export class AuthManager {
     // Через общий pipeline: плагины, повторы и очередь сохраняются, а слой авторизации
     // пропускается, потому что токена ещё нет.
     const payload = await this.#send({
+      operationId: 'auth.signIn',
       method: 'POST',
       path: AUTH_PATHS.signIn,
       body: { email: credentials.email, password: credentials.password, turnstileToken },

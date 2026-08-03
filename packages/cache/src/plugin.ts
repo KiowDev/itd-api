@@ -2,7 +2,7 @@ import type {
   AuthIdentity,
   ItdPlugin,
   ItdRealtime,
-  RawRequestOptions,
+  OperationRequestOptions,
   RealtimeContext,
   Transformer,
   Unsubscribe,
@@ -81,7 +81,7 @@ interface KeyState {
   generation: number;
 }
 
-type CacheRequest = RawRequestOptions & { cache?: CacheMode | undefined };
+type CacheRequest = OperationRequestOptions & { cache?: CacheMode | undefined };
 
 const DEFAULT_MAX_ENTRIES = 500;
 const CACHE_MODES: ReadonlySet<string> = new Set(Object.values(CacheModes));
@@ -258,12 +258,12 @@ export function cache(options: CacheOptions): CachePlugin {
 
     return async (rawRequest, next) => {
       const request = rawRequest as CacheRequest;
-      const route = cacheRoute(request.method, request.path);
+      const route = cacheRoute(request.operationId);
       const method = request.method.toUpperCase();
       const isRead = route !== undefined || method === 'GET' || method === 'HEAD';
 
       if (!isRead) {
-        const mutation = cacheMutation(method, request.path);
+        const mutation = cacheMutation(request.operationId);
         const startedIdentity = mutation ? await resolveIdentity() : undefined;
         const result = await next(request);
         if (mutation && startedIdentity) {

@@ -1,4 +1,4 @@
-import type { ClientHooks, Logger, RawRequestOptions } from '../../types/options.js';
+import type { ClientHooks, Logger, OperationRequestOptions } from '../../types/options.js';
 import type { AuthIdentity } from '../auth.js';
 
 /**
@@ -18,8 +18,8 @@ import type { AuthIdentity } from '../auth.js';
  * ```
  */
 export type Transformer = (
-  request: RawRequestOptions,
-  next: (request: RawRequestOptions) => Promise<unknown>,
+  request: OperationRequestOptions,
+  next: (request: OperationRequestOptions) => Promise<unknown>,
 ) => Promise<unknown>;
 
 /** Освобождение ресурсов, заведённых плагином при установке. */
@@ -89,7 +89,7 @@ export interface ItdPlugin {
    * чтобы случайная опечатка в параметрах не уезжала на сервер.
    *
    * Имена полей самого запроса (`path`, `body`, `headers`, `signal` и прочие из
-   * `RawRequestOptions`) заявить нельзя: подключение такого плагина завершится ошибкой.
+   * `OperationRequestOptions`) заявить нельзя: подключение такого плагина завершится ошибкой.
    *
    * Типы для них плагин объявляет сам, дополняя `RequestOptions`:
    * ```ts

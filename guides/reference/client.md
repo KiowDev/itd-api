@@ -232,6 +232,7 @@ interface ClientHooks {
 
 ```ts
 interface RawRequestOptions extends RequestOptions {
+  operationId?: OperationId;             // `raw` по умолчанию; свои ID — `custom:*`
   method: string;
   path: string;                          // с ведущим слэшем; завершающий слэш значим
   service?: string;                      // хост зарегистрированного сервиса
@@ -244,6 +245,12 @@ interface RawRequestOptions extends RequestOptions {
   raw?: boolean;                         // вернуть тело без снятия обёртки { data }
 }
 ```
+
+Встроенные resources передают стабильный `operationId` автоматически; transformers и hooks
+могут опираться на него вместо разбора URL. Произвольный `itd.request()` без ID получает `raw`,
+поэтому built-in плагины не принимают совпавший путь за известную операцию. Для интеграций
+используйте namespace `custom:*`; явный built-in ID означает, что вызывающий гарантирует
+соответствие запроса этой операции.
 
 `service` выбирает зарегистрированный хост. `baseUrl` имеет более высокий приоритет и
 задаёт хост только этому запросу. Для внешнего `baseUrl` авторизация выключена

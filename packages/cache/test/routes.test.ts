@@ -3,21 +3,21 @@ import { CACHE_ROUTES, cacheRoute, isCacheRouteId } from '../src/index.js';
 
 describe('каталог маршрутов', () => {
   it('различает точные и динамические пути', () => {
-    expect(cacheRoute('get', '/api/users/search')?.id).toBe('users.search');
-    expect(cacheRoute('GET', '/api/users/nowkie')?.id).toBe('users.get');
-    expect(cacheRoute('GET', '/api/posts/user/nowkie')?.id).toBe('posts.byUser');
-    expect(cacheRoute('GET', '/api/posts/p1')?.id).toBe('posts.get');
+    expect(cacheRoute('users.search')?.id).toBe('users.search');
+    expect(cacheRoute('users.get')?.id).toBe('users.get');
+    expect(cacheRoute('posts.byUser')?.id).toBe('posts.byUser');
+    expect(cacheRoute('posts.get')?.id).toBe('posts.get');
   });
 
   it('содержит читающие POST-маршруты', () => {
-    expect(cacheRoute('POST', '/api/posts/stats')?.id).toBe('posts.stats');
-    expect(cacheRoute('POST', '/api/users/follow-status')?.id).toBe('users.followStatus');
+    expect(cacheRoute('posts.stats')?.id).toBe('posts.stats');
+    expect(cacheRoute('users.followStatus')?.id).toBe('users.followStatus');
   });
 
   it('не принимает мутации и неизвестные пути', () => {
-    expect(cacheRoute('PUT', '/api/posts/p1')).toBeUndefined();
-    expect(cacheRoute('POST', '/api/posts')).toBeUndefined();
-    expect(cacheRoute('GET', '/api/unknown')).toBeUndefined();
+    expect(cacheRoute('posts.update')).toBeUndefined();
+    expect(cacheRoute('posts.create')).toBeUndefined();
+    expect(cacheRoute('raw')).toBeUndefined();
   });
 
   it('не содержит повторяющихся имён', () => {

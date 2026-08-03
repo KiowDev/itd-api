@@ -20,6 +20,7 @@ export interface HashtagPostsParams extends RequestOptions {
 export class HashtagsResource extends BaseResource {
   /** Посты по хэштегу: `/api/hashtags/{tag}/posts`, курсорная пагинация. */
   readonly #posts = this.paginated<Post, HashtagPostsParams & { tag: string }>({
+    operationId: 'hashtags.posts',
     path: (p) => `/api/hashtags/${encodePathSegment(p.tag, 'tag')}/posts`,
     query: (p) => ({ limit: p.limit }),
     start: (p) => (p.cursor ? { cursor: p.cursor } : {}),
@@ -36,8 +37,7 @@ export class HashtagsResource extends BaseResource {
     query?: string,
     params: { limit?: number } & RequestOptions = {},
   ): Promise<Hashtag[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('hashtags.search', {
       path: '/api/hashtags',
       query: { q: query, limit: params.limit },
       ...this.requestOptions(params),
@@ -48,8 +48,7 @@ export class HashtagsResource extends BaseResource {
 
   /** Загружает трендовые хэштеги. */
   async trending(params: { limit?: number } & RequestOptions = {}): Promise<Hashtag[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('hashtags.trending', {
       path: '/api/hashtags/trending',
       query: { limit: params.limit },
       ...this.requestOptions(params),

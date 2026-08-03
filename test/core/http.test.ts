@@ -120,6 +120,7 @@ describe('Transport: сборка запроса', () => {
     const { transport, mock } = makeTransport([json({})], { headers: { 'X-App': 'from-client' } });
 
     const request: PipelineRequest = {
+      operationId: 'raw',
       method: 'GET',
       path: '/api/posts',
       layerHeaders: { 'X-App': 'from-layer', Authorization: 'Bearer t' },
@@ -595,7 +596,7 @@ describe('слой авторизации', () => {
       },
     );
 
-    await request({ method: 'GET', path: '/api/users/me' });
+    await request({ operationId: 'raw', method: 'GET', path: '/api/users/me' });
 
     expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer test-token');
   });
@@ -604,7 +605,12 @@ describe('слой авторизации', () => {
     const getAuthHeaders = vi.fn(() => ({ Authorization: 'Bearer test-token' }));
     const { request, mock } = withAuth([json({})], {}, { getAuthHeaders });
 
-    await request({ method: 'POST', path: '/api/v1/auth/sign-in', skipAuth: true });
+    await request({
+      operationId: 'raw',
+      method: 'POST',
+      path: '/api/v1/auth/sign-in',
+      skipAuth: true,
+    });
 
     expect(getAuthHeaders).not.toHaveBeenCalled();
     expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
@@ -618,7 +624,9 @@ describe('слой авторизации', () => {
       { onUnauthorized },
     );
 
-    await expect(request({ method: 'GET', path: '/api/users/me' })).resolves.toEqual({ id: '1' });
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/users/me' }),
+    ).resolves.toEqual({ id: '1' });
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(mock.callCount).toBe(2);
   });
@@ -631,7 +639,9 @@ describe('слой авторизации', () => {
       { onUnauthorized },
     );
 
-    await expect(request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/users/me' }),
+    ).rejects.toThrow();
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(mock.callCount).toBe(2);
   });
@@ -644,7 +654,9 @@ describe('слой авторизации', () => {
       { onUnauthorized },
     );
 
-    await expect(request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/users/me' }),
+    ).rejects.toThrow();
     expect(mock.callCount).toBe(1);
   });
 
@@ -657,7 +669,12 @@ describe('слой авторизации', () => {
     );
 
     await expect(
-      request({ method: 'POST', path: '/api/v1/auth/refresh', skipAuthRefresh: true }),
+      request({
+        operationId: 'raw',
+        method: 'POST',
+        path: '/api/v1/auth/refresh',
+        skipAuthRefresh: true,
+      }),
     ).rejects.toThrow();
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
@@ -670,7 +687,9 @@ describe('слой авторизации', () => {
       { onUnauthorized },
     );
 
-    await expect(request({ method: 'GET', path: '/api/users/me' })).rejects.toThrow();
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/users/me' }),
+    ).rejects.toThrow();
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });
@@ -685,8 +704,8 @@ describe('слой очереди', () => {
     const { transport } = makeTransport([json({}), json({})]);
     const handler = composePipeline([createQueueMiddleware(schedule)], transport.send);
 
-    await handler({ method: 'GET', path: '/api/posts' });
-    await handler({ method: 'GET', service: 'status', path: '/api/status' });
+    await handler({ operationId: 'raw', method: 'GET', path: '/api/posts' });
+    await handler({ operationId: 'raw', method: 'GET', service: 'status', path: '/api/status' });
 
     // Scheduler получает подготовленный запрос и сам выбирает подходящую очередь.
     expect(scheduled).toEqual([undefined, 'status']);
@@ -701,7 +720,12 @@ describe('слой очереди', () => {
     const { transport } = makeTransport([json({})]);
     const handler = composePipeline([createQueueMiddleware(schedule)], transport.send);
 
-    await handler({ method: 'POST', path: '/api/v1/auth/refresh', skipQueue: true });
+    await handler({
+      operationId: 'raw',
+      method: 'POST',
+      path: '/api/v1/auth/refresh',
+      skipQueue: true,
+    });
 
     expect(scheduled).toBe(0);
   });
@@ -732,7 +756,9 @@ describe('слой повторов', () => {
       { retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
     );
 
-    await expect(request({ method: 'GET', path: '/api/posts' })).resolves.toEqual({ ok: true });
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/posts' }),
+    ).resolves.toEqual({ ok: true });
     expect(mock.callCount).toBe(2);
   });
 
@@ -741,7 +767,9 @@ describe('слой повторов', () => {
       retry: false,
     });
 
-    await expect(request({ method: 'GET', path: '/api/posts' })).rejects.toThrow();
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/posts' }),
+    ).rejects.toThrow();
     expect(mock.callCount).toBe(1);
   });
 
@@ -751,7 +779,9 @@ describe('слой повторов', () => {
     });
 
     // Глобально до 5 попыток, но у запроса повторы выключены — уходит одна.
-    await expect(request({ method: 'GET', path: '/api/posts', retry: false })).rejects.toThrow();
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/posts', retry: false }),
+    ).rejects.toThrow();
     expect(mock.callCount).toBe(1);
   });
 
@@ -765,6 +795,7 @@ describe('слой повторов', () => {
     });
 
     await request({
+      operationId: 'raw',
       method: 'GET',
       path: '/api/posts',
       headers: { 'X-Trace': 'abc' },
@@ -781,7 +812,12 @@ describe('слой повторов', () => {
     });
 
     await expect(
-      request({ method: 'GET', path: '/api/posts', signal: controller.signal }),
+      request({
+        operationId: 'raw',
+        method: 'GET',
+        path: '/api/posts',
+        signal: controller.signal,
+      }),
     ).rejects.toThrow(ItdAbortError);
     expect(mock.callCount).toBe(1);
   });

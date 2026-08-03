@@ -1,4 +1,4 @@
-import type { ItdPlugin, RawRequestOptions, Transformer } from 'itd-api';
+import type { ItdPlugin, OperationRequestOptions, Transformer } from 'itd-api';
 import type { Cipher, EncryptOption, EncryptSpec } from './cipher.js';
 import { BUILT_IN_CIPHERS } from './ciphers/index.js';
 import { CryptError } from './errors.js';
@@ -23,7 +23,7 @@ export interface CryptOptions {
 }
 
 /** Опции запроса, которые читает плагин. Их имена он заявляет клиенту через `optionKeys`. */
-type CryptRequest = RawRequestOptions & {
+type CryptRequest = OperationRequestOptions & {
   encrypt?: EncryptOption | undefined;
   decrypt?: boolean | undefined;
 };
@@ -92,15 +92,15 @@ export function crypt(options: CryptOptions = {}): ItdPlugin {
  * @throws {CryptError} если шифр неизвестен, эндпоинт не принимает текста или текста нет
  */
 function encryptRequest(
-  request: RawRequestOptions,
+  request: OperationRequestOptions,
   encrypt: EncryptOption,
   ciphers: readonly Cipher[],
-): RawRequestOptions {
+): OperationRequestOptions {
   const spec: EncryptSpec = typeof encrypt === 'string' ? { cipher: encrypt } : encrypt;
   const cipher = pickCipher(spec.cipher, ciphers);
-  const where = `${request.method.toUpperCase()} ${request.path}`;
+  const where = `${request.operationId} (${request.method.toUpperCase()} ${request.path})`;
 
-  const available = textFields(request.method, request.path);
+  const available = textFields(request.operationId);
   if (!available) {
     throw new CryptError(`Запрос ${where} не принимает текста — шифровать нечего`);
   }

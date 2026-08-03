@@ -1,8 +1,9 @@
-import type { RawRequestOptions } from 'itd-api';
+import type { OperationRequestOptions } from 'itd-api';
 import type { CacheRouteId } from './routes.js';
 
 const OMITTED_FIELDS = new Set([
   'method',
+  'operationId',
   'path',
   'service',
   'baseUrl',
@@ -20,7 +21,7 @@ const OMITTED_FIELDS = new Set([
 ]);
 
 /** Строка query в том же порядке и с теми же правилами, что использует itd-api. */
-function queryKey(query: RawRequestOptions['query']): string {
+function queryKey(query: OperationRequestOptions['query']): string {
   if (!query) return '';
 
   const search = new URLSearchParams();
@@ -43,7 +44,10 @@ function queryKey(query: RawRequestOptions['query']): string {
  * Заголовки и транспортные опции намеренно не входят. Если тело либо опция другого
  * плагина не сериализуются как JSON, запрос выполняется без кэша.
  */
-export function buildCacheKey(route: CacheRouteId, request: RawRequestOptions): string | undefined {
+export function buildCacheKey(
+  route: CacheRouteId,
+  request: OperationRequestOptions,
+): string | undefined {
   const extras: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(request)) {
     if (!OMITTED_FIELDS.has(key) && value !== undefined) extras[key] = value;

@@ -1,4 +1,4 @@
-import type { ClientHooks, Logger, RawRequestOptions, RequestOptions } from '../types/options.js';
+import type { ClientHooks, Logger, RequestOptions } from '../types/options.js';
 import { type ItdClock, systemClock } from './clock.js';
 import { type ResolvedRetryOptions, resolveRetry } from './config.js';
 import { ItdAbortError, isItdApiError, isItdRateLimitError } from './errors.js';
@@ -57,8 +57,7 @@ export function createQueueMiddleware(
  * который вернул локальный результат, вообще не должен занимать сетевую очередь.
  */
 export function createPluginsMiddleware(plugins: PluginRegistry): RequestMiddleware {
-  return (request, next) =>
-    plugins.run(request, next as (request: RawRequestOptions) => Promise<unknown>);
+  return (request, next) => plugins.run(request, next);
 }
 
 /**
@@ -278,6 +277,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
           deps.hooks,
           'onRetry',
           {
+            operationId: request.operationId,
             method,
             path: request.path,
             url: deps.buildUrl(request),

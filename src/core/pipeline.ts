@@ -1,4 +1,5 @@
-import type { RawRequestOptions } from '../types/options.js';
+import type { OperationRequestOptions } from '../types/options.js';
+import type { OperationId } from './operations.js';
 
 /** Тело, заново подготовленное для одной транспортной попытки. */
 export interface PreparedRequestBody {
@@ -28,7 +29,7 @@ export type RequestBodyFactory = (
  * важнее. Смешивать их в одном объекте нельзя — тогда слой авторизации перебивал бы
  * `Authorization`, заданный вызывающим кодом вручную.
  */
-export interface PipelineRequest extends RawRequestOptions {
+export interface PipelineRequest extends OperationRequestOptions {
   /** Повторяемое тело. Используется внутренними ресурсами вместо `body`. @internal */
   bodyFactory?: RequestBodyFactory | undefined;
   /**
@@ -51,6 +52,18 @@ export interface PipelineRequest extends RawRequestOptions {
    * @internal
    */
   attempt?: number | undefined;
+}
+
+/** Запрос на внешней границе pipeline. Низкоуровневый вызов без ID считается `raw`. */
+export type PipelineRequestInput = Omit<PipelineRequest, 'operationId'> & {
+  operationId?: OperationId | undefined;
+};
+
+/** Один раз присваивает низкоуровневому запросу семантический ID до входа в middleware. */
+export function identifyRequest(request: PipelineRequestInput): PipelineRequest {
+  return request.operationId === undefined
+    ? { ...request, operationId: 'raw' }
+    : (request as PipelineRequest);
 }
 
 /** Обработчик запроса. Самый внутренний в цепочке — транспорт. */

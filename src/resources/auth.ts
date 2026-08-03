@@ -79,8 +79,7 @@ export class AuthResource extends BaseResource {
    * Без авторизации возвращает `authenticated: false` и `user: null`.
    */
   check(options: RequestOptions = {}): Promise<AuthState> {
-    return this.http.request<AuthState>({
-      method: 'GET',
+    return this.http.operation<AuthState>('auth.check', {
       path: '/api/profile',
       ...this.requestOptions(options),
     });
@@ -92,8 +91,7 @@ export class AuthResource extends BaseResource {
    * @returns `flowToken`, который нужно передать в {@link verifyOtp}
    */
   async signUp(credentials: CaptchaCredentials, options: RequestOptions = {}): Promise<string> {
-    const body = await this.http.request({
-      method: 'POST',
+    const body = await this.http.operation('auth.signUp', {
       path: AUTH_PATHS.signUp,
       body: credentials,
       skipAuth: true,
@@ -123,8 +121,7 @@ export class AuthResource extends BaseResource {
     credentials: CaptchaCredentials,
     options: RequestOptions = {},
   ): Promise<SignInResult> {
-    const body = await this.http.request({
-      method: 'POST',
+    const body = await this.http.operation('auth.signIn', {
       path: AUTH_PATHS.signIn,
       body: credentials,
       skipAuth: true,
@@ -151,8 +148,7 @@ export class AuthResource extends BaseResource {
     input: Credentials & { otp: string; flowToken: string },
     options: RequestOptions = {},
   ): Promise<string> {
-    const body = await this.http.request({
-      method: 'POST',
+    const body = await this.http.operation('auth.verifyOtp', {
       path: AUTH_PATHS.verifyOtp,
       body: input,
       skipAuth: true,
@@ -174,8 +170,7 @@ export class AuthResource extends BaseResource {
     input: { email: string; flowToken: string },
     options: RequestOptions = {},
   ): Promise<void> {
-    return this.http.request<void>({
-      method: 'POST',
+    return this.http.operation<void>('auth.resendOtp', {
       path: AUTH_PATHS.resendOtp,
       body: input,
       skipAuth: true,
@@ -264,8 +259,7 @@ export class AuthResource extends BaseResource {
 
   /** Завершает текущую сессию на сервере и очищает локальную. */
   async logout(options: RequestOptions = {}): Promise<void> {
-    await this.http.request<void>({
-      method: 'POST',
+    await this.http.operation<void>('auth.logout', {
       path: AUTH_PATHS.logout,
       skipAuthRefresh: true,
       ...this.requestOptions(options),
@@ -298,8 +292,7 @@ export class AuthResource extends BaseResource {
    * @returns `flowToken`, который нужно передать в {@link resetPassword}
    */
   async forgotPassword(input: ForgotPasswordInput, options: RequestOptions = {}): Promise<string> {
-    const body = await this.http.request({
-      method: 'POST',
+    const body = await this.http.operation('auth.forgotPassword', {
       path: AUTH_PATHS.forgotPassword,
       body: input,
       skipAuth: true,
@@ -322,8 +315,7 @@ export class AuthResource extends BaseResource {
    * при нехватке любого отвечает `422`.
    */
   resetPassword(input: ResetPasswordInput, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'POST',
+    return this.http.operation<void>('auth.resetPassword', {
       path: AUTH_PATHS.resetPassword,
       body: input,
       skipAuth: true,
@@ -382,8 +374,7 @@ export class AuthResource extends BaseResource {
     input: { currentPassword: string; newPassword: string },
     options: RequestOptions = {},
   ): Promise<void> {
-    return this.http.request<void>({
-      method: 'POST',
+    return this.http.operation<void>('auth.changePassword', {
       path: AUTH_PATHS.changePassword,
       body: { currentPassword: input.currentPassword, newPassword: input.newPassword },
       ...this.requestOptions(options),
@@ -392,8 +383,7 @@ export class AuthResource extends BaseResource {
 
   /** Загружает список активных сессий. У текущей поле `isCurrent` равно `true`. */
   async sessions(options: RequestOptions = {}): Promise<Session[]> {
-    const body = await this.http.request({
-      method: 'GET',
+    const body = await this.http.operation('auth.sessions', {
       path: AUTH_PATHS.sessions,
       ...this.requestOptions(options),
     });
@@ -403,8 +393,7 @@ export class AuthResource extends BaseResource {
 
   /** Завершает указанную сессию. */
   revokeSession(sessionId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('auth.revokeSession', {
       path: `${AUTH_PATHS.sessions}/${encodeURIComponent(sessionId)}`,
       ...this.requestOptions(options),
     });
@@ -412,8 +401,7 @@ export class AuthResource extends BaseResource {
 
   /** Завершает все сессии, кроме текущей. */
   revokeOtherSessions(options: RequestOptions = {}): Promise<void> {
-    return this.http.request<void>({
-      method: 'DELETE',
+    return this.http.operation<void>('auth.revokeOtherSessions', {
       path: AUTH_PATHS.sessions,
       ...this.requestOptions(options),
     });
