@@ -3,6 +3,7 @@ import { post } from '../src/builders/post.js';
 import { createClient, ItdClient } from '../src/client.js';
 import { ItdAbortError, ItdConfigError, ItdNotFoundError } from '../src/core/errors.js';
 import type { FileInput } from '../src/index.js';
+import { TelemetryResource } from '../src/resources/telemetry.js';
 import type { ItdClientOptions } from '../src/types/options.js';
 import { makeJwt } from './helpers/jwt.js';
 import { createMockFetch, json, type MockHandler, noContent } from './helpers/mock-fetch.js';
@@ -803,6 +804,81 @@ describe('общее поведение клиента', () => {
     // Глобально до 5 попыток, но у конкретного запроса повторы выключены.
     await expect(itd.posts.list({ retry: false })).rejects.toMatchObject({ status: 500 });
     expect(calls).toBe(1);
+  });
+});
+
+describe('ленивые ресурсы', () => {
+  const RESOURCE_NAMES = [
+    'auth',
+    'users',
+    'posts',
+    'comments',
+    'files',
+    'notifications',
+    'hashtags',
+    'search',
+    'reports',
+    'verification',
+    'subscription',
+    'platform',
+    'telemetry',
+  ] as const;
+
+  it('конструктор не создаёт ни одного ресурса', () => {
+    const { itd } = makeClient([]);
+
+    // Геттеры живут на прототипе: собственных свойств с такими именами быть не должно,
+    // иначе ресурс был бы создан заранее.
+    const own = new Set(Object.getOwnPropertyNames(itd));
+    expect(RESOURCE_NAMES.filter((name) => own.has(name))).toEqual([]);
+  });
+
+  it('отдаёт каждый ресурс и создаёт его один раз', () => {
+    const { itd } = makeClient([]);
+
+    for (const name of RESOURCE_NAMES) {
+      const resource = itd[name];
+      expect(resource).toBeTypeOf('object');
+      expect(itd[name]).toBe(resource);
+    }
+  });
+
+  it('читается через Reflect.get — так его берёт @itd-api/hydrate', () => {
+    const { itd } = makeClient([]);
+
+    expect(Reflect.get(itd, 'posts', itd)).toBe(itd.posts);
+  });
+
+  it('замыкание загрузки видит ленивый files', async () => {
+    const { itd, mock } = makeClient((request) =>
+      request.url.includes('/files/upload')
+        ? json({ id: 'banner-1', url: 'https://cdn/banner.webp' })
+        : json({ id: 'u1' }),
+    );
+
+    // users поднят раньше files: замыкание обращается к геттеру в момент вызова,
+    // а не к значению, снятому в конструкторе.
+    const users = itd.users;
+    await users.setBanner(new Blob(['image'], { type: 'image/webp' }), {
+      filename: 'banner.webp',
+    });
+
+    expect(new URL(mock.calls[0]?.url ?? '').pathname).toBe('/api/files/upload');
+  });
+
+  it('close() не поднимает телеметрию', async () => {
+    const close = vi.spyOn(TelemetryResource.prototype, 'close');
+    const { itd } = makeClient([]);
+
+    await itd.close();
+    expect(close).not.toHaveBeenCalled();
+
+    // А если к накопителю обращались — закрыть его обязаны.
+    void itd.telemetry;
+    await itd.close();
+    expect(close).toHaveBeenCalledOnce();
+
+    close.mockRestore();
   });
 });
 

@@ -119,32 +119,110 @@ export class ItdClient {
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
   readonly #streams = new Set<ItdRealtime>();
 
+  // Ресурсы создаются при первом обращении: клиенту редко нужны все тринадцать разом,
+  // а `close()` не должен поднимать накопитель телеметрии только ради его закрытия.
+  #auth: AuthResource | undefined;
+  #users: UsersResource | undefined;
+  #posts: PostsResource | undefined;
+  #comments: CommentsResource | undefined;
+  #files: FilesResource | undefined;
+  #notifications: NotificationsResource | undefined;
+  #hashtags: HashtagsResource | undefined;
+  #search: SearchResource | undefined;
+  #reports: ReportsResource | undefined;
+  #verification: VerificationResource | undefined;
+  #subscription: SubscriptionResource | undefined;
+  #platform: PlatformResource | undefined;
+  #telemetry: TelemetryResource | undefined;
+
+  /**
+   * Загрузка вложений для ресурсов, которые принимают файлы.
+   *
+   * Обращается к {@link files} в момент вызова, поэтому ресурс поднимается только тогда,
+   * когда файл действительно отправляют.
+   */
+  readonly #uploadFile = (file: FileInput, requestOptions?: RequestOptions) =>
+    this.files.upload(file, requestOptions ?? {});
+  readonly #uploadFiles = (files: FileInput[], requestOptions?: RequestOptions) =>
+    this.files.uploadMany(files, requestOptions ?? {});
+
   /** Авторизация, сессии и пароли. */
-  readonly auth: AuthResource;
+  get auth(): AuthResource {
+    this.#auth ??= new AuthResource(this.#http, { auth: this.#authManager });
+    return this.#auth;
+  }
+
   /** Профили, подписки, блокировки, приватность. */
-  readonly users: UsersResource;
+  get users(): UsersResource {
+    this.#users ??= new UsersResource(this.#http, { uploadFile: this.#uploadFile });
+    return this.#users;
+  }
+
   /** Лента, публикация, реакции, репосты, комментарии к постам. */
-  readonly posts: PostsResource;
+  get posts(): PostsResource {
+    this.#posts ??= new PostsResource(this.#http, { uploadFiles: this.#uploadFiles });
+    return this.#posts;
+  }
+
   /** Ответы на комментарии и действия над ними. */
-  readonly comments: CommentsResource;
+  get comments(): CommentsResource {
+    this.#comments ??= new CommentsResource(this.#http, { uploadFiles: this.#uploadFiles });
+    return this.#comments;
+  }
+
   /** Загрузка файлов и медиа. */
-  readonly files: FilesResource;
+  get files(): FilesResource {
+    this.#files ??= new FilesResource(this.#http, { fetch: this.#config.fetch });
+    return this.#files;
+  }
+
   /** Уведомления: список, счётчик, отметки о прочтении, настройки. */
-  readonly notifications: NotificationsResource;
+  get notifications(): NotificationsResource {
+    this.#notifications ??= new NotificationsResource(this.#http);
+    return this.#notifications;
+  }
+
   /** Хэштеги и посты по ним. */
-  readonly hashtags: HashtagsResource;
+  get hashtags(): HashtagsResource {
+    this.#hashtags ??= new HashtagsResource(this.#http);
+    return this.#hashtags;
+  }
+
   /** Глобальный поиск по пользователям и хэштегам. */
-  readonly search: SearchResource;
+  get search(): SearchResource {
+    this.#search ??= new SearchResource(this.#http);
+    return this.#search;
+  }
+
   /** Жалобы на контент и пользователей. */
-  readonly reports: ReportsResource;
+  get reports(): ReportsResource {
+    this.#reports ??= new ReportsResource(this.#http);
+    return this.#reports;
+  }
+
   /** Верификация профиля. */
-  readonly verification: VerificationResource;
+  get verification(): VerificationResource {
+    this.#verification ??= new VerificationResource(this.#http);
+    return this.#verification;
+  }
+
   /** Подписка и способы оплаты. */
-  readonly subscription: SubscriptionResource;
+  get subscription(): SubscriptionResource {
+    this.#subscription ??= new SubscriptionResource(this.#http);
+    return this.#subscription;
+  }
+
   /** Сведения о платформе: версии приложений, изменения, анонсы, баннер события. */
-  readonly platform: PlatformResource;
+  get platform(): PlatformResource {
+    this.#platform ??= new PlatformResource(this.#http);
+    return this.#platform;
+  }
+
   /** Телеметрия просмотров. */
-  readonly telemetry: TelemetryResource;
+  get telemetry(): TelemetryResource {
+    this.#telemetry ??= new TelemetryResource(this.#http);
+    return this.#telemetry;
+  }
 
   constructor(options: ItdClientOptions = {}, internals: ItdClientInternals = {}) {
     CLIENT_PLUGIN_REGISTRIES.set(this, this.#plugins);
@@ -246,26 +324,6 @@ export class ItdClient {
 
     const handler = composePipeline(middlewares, transport.send);
     this.#http = new HttpClient({ handler, plugins: this.#plugins, baseUrl: config.baseUrl });
-
-    this.files = new FilesResource(this.#http, { fetch: config.fetch });
-
-    const uploadFiles = (files: FileInput[], requestOptions?: RequestOptions) =>
-      this.files.uploadMany(files, requestOptions ?? {});
-    const uploadFile = (file: FileInput, requestOptions?: RequestOptions) =>
-      this.files.upload(file, requestOptions ?? {});
-
-    this.auth = new AuthResource(this.#http, { auth: this.#authManager });
-    this.users = new UsersResource(this.#http, { uploadFile });
-    this.posts = new PostsResource(this.#http, { uploadFiles });
-    this.comments = new CommentsResource(this.#http, { uploadFiles });
-    this.notifications = new NotificationsResource(this.#http);
-    this.hashtags = new HashtagsResource(this.#http);
-    this.search = new SearchResource(this.#http);
-    this.reports = new ReportsResource(this.#http);
-    this.verification = new VerificationResource(this.#http);
-    this.subscription = new SubscriptionResource(this.#http);
-    this.platform = new PlatformResource(this.#http);
-    this.telemetry = new TelemetryResource(this.#http);
   }
 
   /** Базовый URL, к которому обращается клиент. */
@@ -460,7 +518,9 @@ export class ItdClient {
     const streams = this.#disconnectStreams();
     try {
       await Promise.all(streams.map((stream) => stream.drain()));
-      await this.telemetry.close();
+      // Через геттер закрытие клиента поднимало бы накопитель телеметрии только ради
+      // того, чтобы его тут же закрыть.
+      await this.#telemetry?.close();
     } finally {
       if (this.#ownsQueues) this.#queues?.stop();
     }
