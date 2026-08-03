@@ -136,6 +136,30 @@ type RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> =
 и асинхронных обработчиков. Эти же данные доступны через `context.raw`. У начального
 счётчика непрочитанных `origin` равен `RealtimeUpdateOrigin.Sync`, а `raw` — `undefined`.
 
+## Компоновщик `RealtimeComposer`
+
+```ts
+const composer = new RealtimeComposer<C>(...middleware);
+
+composer.use(...middleware): RealtimeComposer<C>
+composer.filter(predicate, ...middleware): RealtimeComposer<N>
+composer.route(selector, routes, fallback?): RealtimeComposer<C>
+composer.errorBoundary(handler, ...middleware): RealtimeComposer<C>
+composer.middleware(): RealtimeMiddleware<C>
+```
+
+Composer реализует `RealtimeMiddlewareObj` и подключается через `stream.use(composer)`. `filter()`
+возвращает дочернюю ветку и сохраняет сужение type guard. `route()` принимает синхронный или
+асинхронный selector, статическую таблицу строковых/symbol-веток и необязательный fallback.
+
+`errorBoundary()` защищает только переданные и затем добавленные в возвращённый дочерний composer
+middleware. Обработчик получает `{ error, context }` и `next`: без `next()` цепочка останавливается,
+с ним продолжается за пределами защищённой ветки. Ошибки внешнего downstream граница не ловит.
+Внешний downstream начинается после полного завершения защищённой onion-цепочки.
+
+Каждый update использует снимок composer на момент получения. Composer не создаёт соединение,
+очередь или собственную конкурентность; это остаётся обязанностью `ItdRealtime`.
+
 ## Маршрутизатор `RealtimeRouter`
 
 ```ts

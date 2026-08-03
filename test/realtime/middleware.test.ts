@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   ItdClient,
   ItdRealtime,
+  RealtimeComposer,
   type RealtimeContext,
   type RealtimeDeps,
   type RealtimeMiddlewareObj,
@@ -167,6 +168,32 @@ describe('realtime updates', () => {
 });
 
 describe('realtime middleware', () => {
+  it('подключает RealtimeComposer к stream как единый feature-модуль', async () => {
+    const transport = new TestTransport();
+    const stream = makeStream(transport);
+    const feature = new RealtimeComposer<RealtimeContext>();
+    const seen: string[] = [];
+    feature
+      .filter((context) => context.update.type === RealtimeUpdateType.Notification)
+      .use(async (context, next) => {
+        if (context.update.type === RealtimeUpdateType.Notification) {
+          seen.push(context.update.data.notification.id);
+        }
+        await next();
+      });
+
+    const removeFeature = stream.use(feature);
+    await stream.connect();
+    transport.emit(notification('n1'));
+    await stream.drain();
+    removeFeature();
+    transport.emit(notification('n2'));
+    await stream.drain();
+
+    expect(seen).toEqual(['n1']);
+    stream.disconnect();
+  });
+
   it('снимает объектный middleware при получении каждого update', async () => {
     const transport = new TestTransport();
     const stream = makeStream(transport);

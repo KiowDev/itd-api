@@ -232,6 +232,15 @@ export {
   NOTIFICATION_TYPE_ALIASES,
 } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
+export {
+  RealtimeComposer,
+  type RealtimeErrorBoundary,
+  type RealtimeErrorContext,
+  type RealtimeFilter,
+  type RealtimeMiddlewareGroup,
+  type RealtimeMiddlewareLike,
+  type RealtimeRouteTable,
+} from './realtime/composer.js';
 export type { RealtimeEngineEvents } from './realtime/engine.js';
 export {
   type RealtimeHandler,

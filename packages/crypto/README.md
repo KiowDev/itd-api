@@ -19,8 +19,8 @@
 npm i itd-api @itd-api/crypto
 ```
 
-Нужен `itd-api` версии 0.5.x: crypto использует namespace `RequestOptions.extensions` и
-стабильный `operationId` запроса.
+Поддерживается `itd-api >=0.5.0 <1.0.0`: crypto использует namespace
+`RequestOptions.extensions` и стабильный `operationId` запроса.
 
 ## Использование
 

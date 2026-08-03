@@ -12,8 +12,8 @@ TTL/LRU-кэш и дедупликация одновременных запро
 npm install itd-api @itd-api/cache
 ```
 
-Нужен `itd-api` версии 0.5.x: cache использует namespace `RequestOptions.extensions` и
-стабильный `operationId` запроса.
+Поддерживается `itd-api >=0.5.0 <1.0.0`: cache использует namespace
+`RequestOptions.extensions` и стабильный `operationId` запроса.
 
 ## Быстрый старт
 

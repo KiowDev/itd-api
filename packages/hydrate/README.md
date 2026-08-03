@@ -12,6 +12,8 @@
 npm install itd-api @itd-api/hydrate
 ```
 
+Поддерживается `itd-api >=0.5.0 <1.0.0`.
+
 ## Использование
 
 ```ts
