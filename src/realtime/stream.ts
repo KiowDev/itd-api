@@ -228,7 +228,7 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
     return this.#engine.status;
   }
 
-  /** Какой транспорт используется: `sse` или `poll`. */
+  /** Имя используемого транспорта. */
   get transport(): string {
     return this.#engine.transport;
   }

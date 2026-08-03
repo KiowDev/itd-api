@@ -17,6 +17,9 @@ const SECRET_FIELDS = new Set([
   'otp',
 ]);
 
+/** Query-параметры, содержащие секреты. */
+const SECRET_QUERY_PARAMS = new Set(['token', 'access_token']);
+
 /**
  * Прячет середину секрета, оставляя концы для сопоставления.
  *
@@ -28,6 +31,24 @@ const SECRET_FIELDS = new Set([
 export function maskSecret(value: string): string {
   if (value.length <= 8) return '…';
   return `${value.slice(0, 4)}…(${value.length})…${value.slice(-3)}`;
+}
+
+/** Маскирует секретные query-параметры URL перед записью в логи и ошибки. */
+export function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const entries = [...parsed.searchParams.entries()];
+    parsed.search = '';
+    for (const [name, value] of entries) {
+      parsed.searchParams.append(
+        name,
+        SECRET_QUERY_PARAMS.has(name.toLowerCase()) ? maskSecret(value) : value,
+      );
+    }
+    return parsed.toString();
+  } catch {
+    return url.replace(/([?&](?:token|access_token)=)[^&#]*/gi, '$1[скрыто]');
+  }
 }
 
 /**

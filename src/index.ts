@@ -262,6 +262,13 @@ export {
   RealtimeUpdateOrigin,
   RealtimeUpdateType,
 } from './realtime/updates.js';
+export {
+  WEBSOCKET_PATH,
+  type WebSocketImplementationOptions,
+  type WebSocketLike,
+  WebSocketTransport,
+  type WebSocketTransportOptions,
+} from './realtime/websocket.js';
 export type {
   AuthResource,
   CaptchaCredentials,
