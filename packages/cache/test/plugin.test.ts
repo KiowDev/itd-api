@@ -1,4 +1,10 @@
-import { ItdClient, type ItdClientOptions, type ItdPlugin, type ItdRealtime } from 'itd-api';
+import {
+  ItdClient,
+  type ItdClientOptions,
+  type ItdPlugin,
+  type ItdRealtime,
+  RetrySafety,
+} from 'itd-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CacheError, type CachePlugin, cache } from '../src/index.js';
 
@@ -124,6 +130,17 @@ describe('TTL/LRU-кэш', () => {
 
     const first = await itd.posts.get('1', { headers: { 'X-Variant': 'a' } });
     const second = await itd.posts.get('1', { headers: { 'X-Variant': 'b' } });
+
+    expect(first.content).toBe(second.content);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('не делит кэш по транспортной retry safety', async () => {
+    const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
+    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+
+    const first = await itd.posts.get('1', { retrySafety: RetrySafety.Safe });
+    const second = await itd.posts.get('1', { retrySafety: RetrySafety.Unsafe });
 
     expect(first.content).toBe(second.content);
     expect(calls).toHaveLength(1);

@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
 import { ItdConfigError, ItdFileError, ItdTimeoutError } from '../../src/core/errors.js';
-import { type FileInput, FileTransferMode, fromStream, fromUrl } from '../../src/index.js';
+import {
+  type FileInput,
+  FileTransferMode,
+  fromStream,
+  fromUrl,
+  RetrySafety,
+} from '../../src/index.js';
 import { fromPath } from '../../src/node.js';
 
 /** Ответ, как его вернул бы сервер. */
@@ -320,10 +326,29 @@ describe('fromUrl', () => {
 
     await itd.files.upload(
       fromUrl('https://example.com/retry.jpg', { mode: FileTransferMode.Stream }),
+      { retrySafety: RetrySafety.Idempotent },
     );
 
     expect(sourceCalls).toBe(2);
     expect(uploadCalls).toBe(2);
+  });
+
+  it('не считает повторяемое тело разрешением повторять unsafe upload', async () => {
+    let uploadCalls = 0;
+    const itd = new ItdClient({
+      auth: 'token',
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+      fetch: async () => {
+        uploadCalls += 1;
+        throw new TypeError('connection reset');
+      },
+    });
+
+    await expect(
+      itd.files.upload(new Blob(['данные'], { type: 'image/png' }), { filename: 'image.png' }),
+    ).rejects.toThrow();
+
+    expect(uploadCalls).toBe(1);
   });
 
   it('повторяет сетевой сбой при открытии URL-источника', async () => {
@@ -344,7 +369,9 @@ describe('fromUrl', () => {
       },
     });
 
-    await itd.files.upload(fromUrl('https://example.com/retry.jpg'));
+    await itd.files.upload(fromUrl('https://example.com/retry.jpg'), {
+      retrySafety: RetrySafety.Idempotent,
+    });
 
     expect(sourceCalls).toBe(2);
     expect(uploadCalls).toBe(1);
@@ -368,7 +395,9 @@ describe('fromUrl', () => {
       },
     });
 
-    await itd.files.upload(fromUrl('https://example.com/retry.jpg'));
+    await itd.files.upload(fromUrl('https://example.com/retry.jpg'), {
+      retrySafety: RetrySafety.Idempotent,
+    });
 
     expect(sourceCalls).toBe(1);
     expect(uploadCalls).toBe(2);
@@ -473,7 +502,7 @@ describe('повторяемые потоки', () => {
       },
     });
 
-    await itd.files.upload(source);
+    await itd.files.upload(source, { retrySafety: RetrySafety.Idempotent });
 
     expect(attempts).toEqual([1, 2]);
   });
@@ -494,7 +523,9 @@ describe('повторяемые потоки', () => {
       },
     });
 
-    await itd.files.upload(fromPath(path, { mode: FileTransferMode.Stream }));
+    await itd.files.upload(fromPath(path, { mode: FileTransferMode.Stream }), {
+      retrySafety: RetrySafety.Idempotent,
+    });
 
     expect(uploadCalls).toBe(2);
   });

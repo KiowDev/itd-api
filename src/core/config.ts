@@ -1,4 +1,10 @@
-import type { AuthInput, ClientHooks, ItdClientOptions, Logger } from '../types/options.js';
+import type {
+  AuthInput,
+  ClientHooks,
+  ItdClientOptions,
+  Logger,
+  RetryOptions,
+} from '../types/options.js';
 import { type ItdClock, systemClock } from './clock.js';
 import { ItdConfigError } from './errors.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
@@ -51,8 +57,7 @@ export interface ResolvedRetryOptions {
   baseDelay: number;
   maxDelay: number;
   jitter: number;
-  retryWrites: boolean;
-  shouldRetry: ((error: unknown, attempt: number) => boolean) | undefined;
+  shouldRetry: RetryOptions['shouldRetry'];
 }
 
 /**
@@ -210,7 +215,6 @@ export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOpt
   if (!Number.isFinite(jitter) || jitter < 0 || jitter > 1) {
     throw new ItdConfigError(`retry.jitter должен быть в диапазоне 0…1, получено: ${jitter}`);
   }
-  requireOptionalBoolean(options.retryWrites, 'retry.retryWrites');
   if (options.shouldRetry !== undefined && typeof options.shouldRetry !== 'function') {
     throw new ItdConfigError('retry.shouldRetry должен быть функцией');
   }
@@ -226,7 +230,6 @@ export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOpt
     baseDelay,
     maxDelay,
     jitter,
-    retryWrites: options.retryWrites ?? false,
     shouldRetry: options.shouldRetry,
   };
 }

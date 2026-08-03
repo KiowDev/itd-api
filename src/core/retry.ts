@@ -1,3 +1,4 @@
+import type { RetryDecisionContext } from '../types/options.js';
 import type { ResolvedRetryOptions } from './config.js';
 import {
   ItdAbortError,
@@ -6,6 +7,11 @@ import {
   ItdNetworkError,
   ItdTimeoutError,
 } from './errors.js';
+import { isBuiltInOperationId, operationRetrySafety, RetrySafety } from './operations.js';
+import type { PipelineRequest } from './pipeline.js';
+
+/** Политика конкретного логического запроса, передаваемая планировщику повторов. */
+export type RetryPolicy = RetryDecisionContext;
 
 /**
  * Решает, повторять ли запрос.
@@ -14,61 +20,81 @@ import {
  */
 export type RetryScheduler = (
   error: unknown,
-  attempt: number,
-  method: string,
-  retryNetworkWrite?: boolean,
+  retryAttempt: number,
+  policy: RetryPolicy,
 ) => number | undefined;
 
-/**
- * Методы, повтор которых безопасен по определению.
- *
- * `DELETE` формально тоже идемпотентен, но его повтор после успеха вернёт `404`
- * и собьёт с толку — в список он не входит.
- */
-const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+/** Методы raw-запроса, безопасность которых гарантирована самим HTTP-контрактом. */
+const SAFE_RAW_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/** Может ли транспорт заново получить эквивалентное тело запроса. */
+export function isRequestBodyReplayable(request: PipelineRequest): boolean {
+  if (request.bodyFactory !== undefined) return true;
+  return !(typeof ReadableStream !== 'undefined' && request.body instanceof ReadableStream);
+}
+
+/** Разрешает retrySafety запроса из явного override, каталога либо raw fallback. */
+export function resolveRetryPolicy(request: PipelineRequest): RetryPolicy {
+  let retrySafety: RetrySafety;
+
+  if (request.retrySafety !== undefined) {
+    retrySafety = request.retrySafety;
+  } else if (isBuiltInOperationId(request.operationId)) {
+    retrySafety = operationRetrySafety(request.operationId);
+  } else if (request.operationId === 'raw' && SAFE_RAW_METHODS.has(request.method.toUpperCase())) {
+    retrySafety = RetrySafety.Safe;
+  } else {
+    // Custom operation должна явно описать семантику; угадывать её по HTTP method нельзя.
+    retrySafety = RetrySafety.Unsafe;
+  }
+
+  return {
+    operationId: request.operationId,
+    retrySafety,
+    bodyReplayable: isRequestBodyReplayable(request),
+    method: request.method.toUpperCase(),
+    path: request.path,
+  };
+}
 
 /**
  * Стоит ли повторять запрос после этой ошибки.
  *
- * Отдельно разобран `429`: он повторяется даже для запросов на запись, потому что
- * гарантирует, что запрос **не был обработан**. Обрыв сети и `5xx` такой гарантии не дают —
- * сервер мог успеть создать пост, — поэтому запись по умолчанию не повторяется.
+ * `429` гарантирует, что операция не была обработана, поэтому допускает даже unsafe retry.
+ * Обрыв сети, timeout и `5xx` такой гарантии не дают и требуют safe/idempotent операции.
+ * Ошибка подготовки файла возникает до обращения к серверу и потому зависит только от
+ * собственного признака retryable и повторяемости тела.
  */
-function isRetryable(
-  error: unknown,
-  method: string,
-  retryWrites: boolean,
-  retryNetworkWrite: boolean,
-): boolean {
-  // Отмену повторять нельзя ни при каких условиях: её попросил пользователь.
-  if (error instanceof ItdAbortError) return false;
+function isRetryable(error: unknown, policy: RetryPolicy): boolean {
+  if (error instanceof ItdAbortError || !policy.bodyReplayable) return false;
 
-  const safeToRepeat = retryWrites || IDEMPOTENT_METHODS.has(method);
+  // Неизвестное runtime-значение (например, из JavaScript без типов) должно вести себя
+  // консервативно, а не случайно разрешать повтор unsafe-операции.
+  const repeatableOperation =
+    policy.retrySafety === RetrySafety.Safe || policy.retrySafety === RetrySafety.Idempotent;
 
   if (error instanceof ItdApiError) {
     if (error.status === 429) return true;
-    if (error.status >= 500) return safeToRepeat;
+    if (error.status >= 500) return repeatableOperation;
     return false;
   }
 
   if (error instanceof ItdNetworkError || error instanceof ItdTimeoutError) {
-    return safeToRepeat || retryNetworkWrite;
+    return repeatableOperation;
   }
 
-  if (error instanceof ItdFileError) {
-    return error.retryable && (safeToRepeat || retryNetworkWrite);
-  }
+  if (error instanceof ItdFileError) return error.retryable;
 
   return false;
 }
 
 /** Экспоненциальная пауза со случайным разбросом. */
 function backoffDelay(
-  attempt: number,
+  retryAttempt: number,
   options: ResolvedRetryOptions,
   random: () => number,
 ): number {
-  const exponential = options.baseDelay * 2 ** (attempt - 1);
+  const exponential = options.baseDelay * 2 ** (retryAttempt - 1);
   const capped = Math.min(exponential, options.maxDelay);
   const spread = capped * options.jitter * (random() * 2 - 1);
 
@@ -76,41 +102,32 @@ function backoffDelay(
 }
 
 /**
- * Собирает планировщик повторов для транспорта.
+ * Собирает планировщик обычных повторов для транспорта.
  *
- * Поведение при `Retry-After`: пауза, названная сервером, соблюдается точно — она
- * авторитетнее нашего расчёта. Но если сервер просит ждать дольше, чем `maxDelay`,
- * повтор **не выполняется вовсе**: молча спать десять минут внутри вызова библиотека
- * не должна, лучше отдать {@link ItdRateLimitError} и дать решить вызывающему коду.
- *
- * @param options настройки повторов после подстановки значений по умолчанию
- * @param random источник случайности; подменяется в тестах ради предсказуемости
- *
- * @example
- * ```ts
- * const scheduler = createRetryScheduler(config.retry);
- * const delay = scheduler(error, 1, 'GET'); // 500 мс ± 30%
- * ```
+ * Поведение при `Retry-After`: пауза, названная сервером, соблюдается точно. Если сервер
+ * просит ждать дольше `maxDelay`, повтор не выполняется — вызывающий код получает ошибку.
+ * Rate-limit ladder основного pipeline ведёт отдельный счётчик и обрабатывается middleware.
  */
 export function createRetryScheduler(
   options: ResolvedRetryOptions,
   random: () => number = Math.random,
 ): RetryScheduler {
-  return (error, attempt, method, retryNetworkWrite = false) => {
-    if (attempt >= options.attempts) return undefined;
+  return (error, retryAttempt, policy) => {
+    if (retryAttempt >= options.attempts) return undefined;
+    if (error instanceof ItdAbortError || !policy.bodyReplayable) return undefined;
 
     if (options.shouldRetry) {
-      return options.shouldRetry(error, attempt)
-        ? backoffDelay(attempt, options, random)
+      return options.shouldRetry(error, retryAttempt, policy)
+        ? backoffDelay(retryAttempt, options, random)
         : undefined;
     }
 
-    if (!isRetryable(error, method, options.retryWrites, retryNetworkWrite)) return undefined;
+    if (!isRetryable(error, policy)) return undefined;
 
     if (error instanceof ItdApiError && error.retryAfter !== undefined) {
       return error.retryAfter > options.maxDelay ? undefined : error.retryAfter;
     }
 
-    return backoffDelay(attempt, options, random);
+    return backoffDelay(retryAttempt, options, random);
   };
 }

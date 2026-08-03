@@ -1,5 +1,5 @@
 import type { ItdClock } from '../core/clock.js';
-import type { OperationId } from '../core/operations.js';
+import type { OperationId, RetrySafety } from '../core/operations.js';
 import type { RuntimeMode } from '../core/runtime.js';
 import type { ServiceDefinition } from '../core/services.js';
 import type { TokenStorage } from '../core/storage.js';
@@ -64,16 +64,19 @@ export interface RetryOptions {
   maxDelay?: number | undefined;
   /** Доля случайного разброса паузы, 0…1. По умолчанию 0.3. */
   jitter?: number | undefined;
-  /**
-   * Повторять ли запись (`POST`, `PUT`, `PATCH`, `DELETE`) при сетевых сбоях и `5xx`.
-   *
-   * По умолчанию `false`: сервер мог успеть выполнить операцию до обрыва, и повтор
-   * создаст дубль поста или лишнюю жалобу. Ответ `429` повторяется всегда — он гарантирует,
-   * что запрос не был обработан.
-   */
-  retryWrites?: boolean | undefined;
-  /** Своя логика: вернуть `true`, чтобы повторить. Заменяет правила по умолчанию. */
-  shouldRetry?: ((error: unknown, attempt: number) => boolean) | undefined;
+  /** Своя логика: вернуть `true`, чтобы повторить. Заменяет семантическое правило операции. */
+  shouldRetry?:
+    | ((error: unknown, attempt: number, context: RetryDecisionContext) => boolean)
+    | undefined;
+}
+
+/** Семантика запроса, доступная пользовательской функции `shouldRetry`. */
+export interface RetryDecisionContext {
+  operationId: OperationId;
+  retrySafety: RetrySafety;
+  bodyReplayable: boolean;
+  method: string;
+  path: string;
 }
 
 /** Настройки ограничения нагрузки на API. */
@@ -253,6 +256,13 @@ export interface RequestOptions {
   headers?: Record<string, string> | undefined;
   /** Повторы только для этого запроса. Переопределяют глобальную настройку `retry`. */
   retry?: RetryOptions | false | undefined;
+  /**
+   * Явно переопределяет безопасность повтора операции.
+   *
+   * Встроенные resources получают значение из каталога. Опция нужна прежде всего custom/raw
+   * интеграциям и осознанному переопределению серверного контракта.
+   */
+  retrySafety?: RetrySafety | undefined;
 }
 
 /**
@@ -273,6 +283,7 @@ export const REQUEST_OPTION_KEYS = [
   'timeout',
   'headers',
   'retry',
+  'retrySafety',
 ] as const satisfies readonly (keyof RequestOptions)[];
 
 /**

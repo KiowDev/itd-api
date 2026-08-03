@@ -139,6 +139,8 @@ export {
   type OperationId,
   type OperationMethod,
   operationMethod,
+  operationRetrySafety,
+  RetrySafety,
 } from './core/operations.js';
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
@@ -383,6 +385,7 @@ export type {
   RequestOptions,
   ResponseContext,
   RetryContext,
+  RetryDecisionContext,
   RetryOptions,
 } from './types/options.js';
 export { REQUEST_OPTION_KEYS } from './types/options.js';

@@ -13,6 +13,7 @@ describe('REQUEST_OPTION_KEYS', () => {
     const complete: RequestOptionKeysComplete = true;
     expect(complete).toBe(true);
     expect(REQUEST_OPTION_KEYS).toContain('retry');
+    expect(REQUEST_OPTION_KEYS).toContain('retrySafety');
   });
 });
 
@@ -32,11 +33,7 @@ describe('resolveConfig — значения по умолчанию', () => {
       retryDelays: [1000, 5000, 30_000, 60_000, 90_000],
       respectHeaders: true,
     });
-    expect(config.retry).toMatchObject({ attempts: 3, baseDelay: 500, retryWrites: false });
-  });
-
-  it('по умолчанию не повторяет запись — повтор мог бы создать дубль поста', () => {
-    expect(resolveConfig().retry?.retryWrites).toBe(false);
+    expect(config.retry).toMatchObject({ attempts: 3, baseDelay: 500 });
   });
 
   it('нормализует baseUrl прокси', () => {

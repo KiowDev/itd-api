@@ -52,6 +52,7 @@ interface RequestOptions {
   timeout?: number;                      // таймаут только этого запроса, мс
   headers?: Record<string, string>;      // дополнительные заголовки
   retry?: RetryOptions | false;          // повторы только этого запроса
+  retrySafety?: RetrySafety;             // точечная семантика повтора custom/raw operation
 }
 ```
 

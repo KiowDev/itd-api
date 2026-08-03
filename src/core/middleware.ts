@@ -10,7 +10,12 @@ import {
 } from './pipeline.js';
 import { dispatchRequestHook } from './plugins/hooks.js';
 import type { PluginRegistry } from './plugins/registry.js';
-import { createRetryScheduler, type RetryScheduler } from './retry.js';
+import {
+  createRetryScheduler,
+  type RetryPolicy,
+  type RetryScheduler,
+  resolveRetryPolicy,
+} from './retry.js';
 import type { ServiceRegistry } from './services.js';
 import { normalizeBaseUrl } from './url.js';
 
@@ -244,33 +249,44 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
 
   const nextDelay = (
     error: unknown,
-    attempt: number,
+    retryAttempt: number,
+    rateLimitAttempt: number,
     request: PipelineRequest,
-    method: string,
+    policy: RetryPolicy,
     backoff: RetryScheduler | undefined,
   ): number | undefined => {
     if (isItdRateLimitError(error)) {
+      if (!policy.bodyReplayable) return undefined;
       // Пауза, названную сервером, соблюдаем точно; иначе берём очередной шаг лестницы.
-      const wait = error.retryAfter ?? deps.rateLimitDelays[attempt - 1];
+      const wait = error.retryAfter ?? deps.rateLimitDelays[rateLimitAttempt - 1];
       if (wait === undefined) return undefined;
 
       deps.pauseQueue?.(wait, request);
-      deps.logger?.debug(`лимит частоты, попытка ${attempt + 1} через ${wait} мс`);
+      deps.logger?.debug(`лимит частоты, повтор ${rateLimitAttempt} через ${wait} мс`);
       return wait;
     }
 
-    return backoff?.(error, attempt, method, request.retryNetworkWrite ?? false);
+    return backoff?.(error, retryAttempt, policy);
   };
 
   return async (request, next) => {
     const method = request.method.toUpperCase();
+    const policy = resolveRetryPolicy(request);
     const backoff = resolveBackoff(request.retry, globalScheduler);
+    let transportAttempt = 0;
+    let retryAttempt = 0;
+    let rateLimitAttempt = 0;
 
-    for (let attempt = 1; ; attempt++) {
+    for (;;) {
+      transportAttempt += 1;
       try {
-        return await next({ ...request, attempt });
+        return await next({ ...request, attempt: transportAttempt });
       } catch (error) {
-        const delay = nextDelay(error, attempt, request, method, backoff);
+        const rateLimited = isItdRateLimitError(error);
+        if (rateLimited) rateLimitAttempt += 1;
+        else retryAttempt += 1;
+
+        const delay = nextDelay(error, retryAttempt, rateLimitAttempt, request, policy, backoff);
         if (delay === undefined) throw error;
 
         await dispatchRequestHook(
@@ -283,7 +299,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
             url: deps.buildUrl(request),
             // Умолчания транспорта добавляются после слоя повторов и сюда не входят.
             headers: new Headers({ ...request.layerHeaders, ...request.headers }),
-            attempt,
+            attempt: transportAttempt,
             error,
             delay,
           },
@@ -291,7 +307,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
         );
 
         deps.logger?.debug(
-          `повтор ${method} ${request.path}, попытка ${attempt + 1} через ${delay} мс`,
+          `повтор ${method} ${request.path}, попытка ${transportAttempt + 1} через ${delay} мс`,
         );
 
         await sleep(deps.clock ?? systemClock, delay, request.signal);

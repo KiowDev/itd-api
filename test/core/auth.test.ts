@@ -10,11 +10,10 @@ import {
   createPluginsMiddleware,
   createRetryMiddleware,
 } from '../../src/core/middleware.js';
-import type { RequestHandler } from '../../src/core/pipeline.js';
 import { PluginRegistry } from '../../src/core/plugins/registry.js';
 import { type ItdSession, MemoryTokenStorage } from '../../src/core/storage.js';
 import { Transport } from '../../src/core/transport.js';
-import type { ItdClientOptions, RetryOptions } from '../../src/types/options.js';
+import type { ItdClientOptions } from '../../src/types/options.js';
 import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
@@ -55,23 +54,8 @@ function makeAuth(
     buildUrl: (request) => transport.buildUrl(request),
   });
 
-  const authRetry: RetryOptions | undefined = config.retry
-    ? {
-        attempts: config.retry.attempts,
-        baseDelay: config.retry.baseDelay,
-        maxDelay: config.retry.maxDelay,
-        jitter: config.retry.jitter,
-        retryWrites: true,
-        ...(config.retry.shouldRetry ? { shouldRetry: config.retry.shouldRetry } : {}),
-      }
-    : undefined;
   const authPipeline = composePipeline([pluginsLayer, retriesLayer], transport.send);
-  const authHandler: RequestHandler = (request) =>
-    authRetry && request.retry === undefined
-      ? authPipeline({ ...request, retry: authRetry })
-      : authPipeline(request);
-
-  auth = new AuthManager(config, authHandler, jar, { onAccountChange });
+  auth = new AuthManager(config, authPipeline, jar, { onAccountChange });
 
   const handlerFn = composePipeline(
     [

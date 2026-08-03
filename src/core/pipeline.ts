@@ -33,12 +33,6 @@ export interface PipelineRequest extends OperationRequestOptions {
   /** Повторяемое тело. Используется внутренними ресурсами вместо `body`. @internal */
   bodyFactory?: RequestBodyFactory | undefined;
   /**
-   * Разрешает повтор записи после сетевого сбоя. Тело должно быть повторяемым.
-   *
-   * @internal
-   */
-  retryNetworkWrite?: boolean | undefined;
-  /**
    * Заголовки, добавленные слоями конвейера.
    *
    * Ставятся до пользовательских `headers` и потому могут быть ими переопределены.

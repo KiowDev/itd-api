@@ -16,6 +16,7 @@ import {
   createQueueMiddleware,
   createRetryMiddleware,
 } from '../../src/core/middleware.js';
+import { RetrySafety } from '../../src/core/operations.js';
 import type { PipelineRequest } from '../../src/core/pipeline.js';
 import { Transport, type TransportDeps } from '../../src/core/transport.js';
 import type { ItdClientOptions } from '../../src/types/options.js';
@@ -732,13 +733,17 @@ describe('слой очереди', () => {
 });
 
 describe('слой повторов', () => {
-  function withRetry(handler: MockHandler | Response[], options: ItdClientOptions = {}) {
+  function withRetry(
+    handler: MockHandler | Response[],
+    options: ItdClientOptions = {},
+    rateLimitDelays: readonly number[] = [],
+  ) {
     const { transport, mock, config } = makeTransport(handler, options);
     const handlerFn = composePipeline(
       [
         createRetryMiddleware({
           retry: config.retry,
-          rateLimitDelays: [],
+          rateLimitDelays,
           pauseQueue: undefined,
           hooks: config.hooks,
           logger: config.logger,
@@ -760,6 +765,92 @@ describe('слой повторов', () => {
       request({ operationId: 'raw', method: 'GET', path: '/api/posts' }),
     ).resolves.toEqual({ ok: true });
     expect(mock.callCount).toBe(2);
+  });
+
+  it('повторяет safe POST из каталога операций', async () => {
+    const { request, mock } = withRetry([json({}, { status: 503 }), json({ data: { ok: true } })], {
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+    });
+
+    await expect(
+      request({
+        operationId: 'posts.stats',
+        method: 'POST',
+        path: '/api/posts/stats',
+        body: { postIds: ['1'] },
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(mock.callCount).toBe(2);
+  });
+
+  it('не повторяет unsafe POST только потому, что его тело можно отправить заново', async () => {
+    const { request, mock } = withRetry([json({}, { status: 503 }), json({ data: { id: '2' } })], {
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+    });
+
+    await expect(
+      request({
+        operationId: 'posts.create',
+        method: 'POST',
+        path: '/api/posts',
+        body: { content: 'один пост' },
+      }),
+    ).rejects.toThrow();
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('custom operation требует явной retry safety независимо от HTTP-метода', async () => {
+    const withoutPolicy = withRetry([json({}, { status: 503 }), json({ data: { ok: true } })], {
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+    });
+
+    await expect(
+      withoutPolicy.request({
+        operationId: 'custom:lookup',
+        method: 'GET',
+        path: '/api/custom/lookup',
+      }),
+    ).rejects.toThrow();
+    expect(withoutPolicy.mock.callCount).toBe(1);
+
+    const explicitPolicy = withRetry([json({}, { status: 503 }), json({ data: { ok: true } })], {
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+    });
+    await expect(
+      explicitPolicy.request({
+        operationId: 'custom:lookup',
+        method: 'GET',
+        path: '/api/custom/lookup',
+        retrySafety: RetrySafety.Safe,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(explicitPolicy.mock.callCount).toBe(2);
+  });
+
+  it('считает обычные повторы и rate-limit независимо: 5xx, 429, success', async () => {
+    const { request, mock } = withRetry(
+      [json({}, { status: 503 }), json({}, { status: 429 }), json({ data: { ok: true } })],
+      { retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
+      [0],
+    );
+
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/posts' }),
+    ).resolves.toEqual({ ok: true });
+    expect(mock.callCount).toBe(3);
+  });
+
+  it('считает обычные повторы и rate-limit независимо: 429, 5xx, success', async () => {
+    const { request, mock } = withRetry(
+      [json({}, { status: 429 }), json({}, { status: 503 }), json({ data: { ok: true } })],
+      { retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
+      [0],
+    );
+
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/posts' }),
+    ).resolves.toEqual({ ok: true });
+    expect(mock.callCount).toBe(3);
   });
 
   it('без повторов отдаёт ошибку сразу', async () => {

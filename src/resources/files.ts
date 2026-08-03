@@ -83,7 +83,6 @@ export class FilesResource extends BaseResource {
     return this.http.operation<UploadedFile>('files.upload', {
       path: '/api/files/upload',
       bodyFactory,
-      retryNetworkWrite: true,
       timeout: options.timeout ?? DEFAULT_UPLOAD_TIMEOUT,
       ...this.requestOptions(options),
     });

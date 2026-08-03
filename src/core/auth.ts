@@ -10,6 +10,7 @@ import {
 import { Emitter, reportListenerError } from './emitter.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from './errors.js';
 import { readTokenIdentity, readTokenSubject } from './jwt.js';
+import { RetrySafety } from './operations.js';
 import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
 import { copySession, type ItdSession } from './storage.js';
@@ -600,6 +601,7 @@ export class AuthManager {
       // исходная неудачная транспортная попытка освободила свой слот до вызова этого метода.
       const payload = await this.#send({
         operationId: 'auth.refresh',
+        retrySafety: RetrySafety.Idempotent,
         method: 'POST',
         path: AUTH_PATHS.refresh,
         skipAuth: true,
@@ -729,6 +731,7 @@ export class AuthManager {
     // пропускается, потому что токена ещё нет.
     const payload = await this.#send({
       operationId: 'auth.signIn',
+      retrySafety: RetrySafety.Idempotent,
       method: 'POST',
       path: AUTH_PATHS.signIn,
       body: { email: credentials.email, password: credentials.password, turnstileToken },

@@ -15,7 +15,7 @@ import {
   createServicesMiddleware,
   type RequestMiddleware,
 } from './core/middleware.js';
-import type { PipelineRequest, RequestHandler } from './core/pipeline.js';
+import type { PipelineRequest } from './core/pipeline.js';
 import type { ItdPlugin } from './core/plugins/contracts.js';
 import { PluginRegistry } from './core/plugins/registry.js';
 import { RequestQueuePool } from './core/rate-limit.js';
@@ -38,12 +38,7 @@ import { SubscriptionResource } from './resources/subscription.js';
 import { TelemetryResource } from './resources/telemetry.js';
 import { UsersResource } from './resources/users.js';
 import { VerificationResource } from './resources/verification.js';
-import type {
-  ItdClientOptions,
-  RawRequestOptions,
-  RequestOptions,
-  RetryOptions,
-} from './types/options.js';
+import type { ItdClientOptions, RawRequestOptions, RequestOptions } from './types/options.js';
 
 declare global {
   interface SymbolConstructor {
@@ -287,16 +282,6 @@ export class ItdClient {
       buildUrl: (request) => transport.buildUrl(request),
     });
 
-    const authRetry: RetryOptions | undefined = config.retry
-      ? {
-          attempts: config.retry.attempts,
-          baseDelay: config.retry.baseDelay,
-          maxDelay: config.retry.maxDelay,
-          jitter: config.retry.jitter,
-          retryWrites: true,
-          ...(config.retry.shouldRetry ? { shouldRetry: config.retry.shouldRetry } : {}),
-        }
-      : undefined;
     // Логические слои выполняются один раз. Внутри retry auth recovery может породить
     // дополнительную попытку после 401. Каждая попытка готовит auth state до queue (ленивый
     // sign-in сам пользуется pipeline), отдельно занимает slot, после ожидания синхронно
@@ -330,14 +315,9 @@ export class ItdClient {
     );
 
     const handler = composePipeline(middlewares, transport.send);
-    // AuthManager использует тот же pipeline. Его POST-запросы получают разрешение на retry
-    // записи, но явно пропускают auth headers/recovery. Отдельная цепочка больше не нужна:
-    // исходная transport attempt освобождает queue slot до запуска refresh.
-    const authHandler: RequestHandler = (request) =>
-      authRetry && request.retry === undefined
-        ? handler({ ...request, retry: authRetry })
-        : handler(request);
-    authManager = new AuthManager(config, authHandler, this.#jar, {
+    // AuthManager использует тот же pipeline. Служебные sign-in/refresh сами объявляют
+    // точечную retrySafety и явно пропускают auth headers/recovery. Отдельная цепочка не нужна.
+    authManager = new AuthManager(config, handler, this.#jar, {
       onAccountChange: () => this.#disconnectStreams(),
     });
     this.#authManager = authManager;
