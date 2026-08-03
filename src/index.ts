@@ -266,6 +266,7 @@ export {
   WEBSOCKET_PATH,
   type WebSocketImplementationOptions,
   type WebSocketLike,
+  type WebSocketOpenFailureClassifier,
   WebSocketTransport,
   type WebSocketTransportOptions,
 } from './realtime/websocket.js';

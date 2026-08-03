@@ -45,6 +45,7 @@ async function runTransport(chunks: string[]): Promise<{
 
   await transport.connect({
     baseUrl: 'https://itd.test',
+    authorize: true,
     fetch: ((_url: string, init?: RequestInit) => {
       headers = new Headers(init?.headers);
       return Promise.resolve(streamingResponse(chunks));
@@ -78,6 +79,7 @@ describe('SSE-транспорт: подключение', () => {
     await expect(
       transport.connect({
         baseUrl: 'https://itd.test',
+        authorize: true,
         fetch: (() => Promise.resolve(response)) as unknown as typeof fetch,
         baseHeaders: () => Promise.resolve(new Headers()),
         getToken: () => Promise.resolve(token),
@@ -97,6 +99,7 @@ describe('SSE-транспорт: подключение', () => {
 
       const promise = transport.connect({
         baseUrl: 'https://itd.test',
+        authorize: true,
         // fetch «зависает» на установке соединения и реагирует только на отмену.
         fetch: ((_url: string, init?: RequestInit) =>
           new Promise<Response>((_resolve, reject) => {

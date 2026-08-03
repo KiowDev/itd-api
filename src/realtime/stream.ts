@@ -138,6 +138,8 @@ function validateRealtimeOptions<C extends RealtimeContext>(options: RealtimeOpt
 /** Что поток получает от клиента. */
 export interface RealtimeDeps {
   baseUrl: string;
+  /** Разрешено ли транспорту передавать токен этому сервису. */
+  authorize?: boolean | undefined;
   fetch: typeof fetch;
   clock?: ItdClock;
   /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
@@ -195,6 +197,7 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
     this.#engine = new RealtimeEngine<RealtimeUpdate, C, RealtimeEvents<C>>(
       {
         baseUrl: deps.baseUrl,
+        authorize: deps.authorize ?? true,
         fetch: deps.fetch,
         clock: deps.clock,
         baseHeaders: deps.baseHeaders,

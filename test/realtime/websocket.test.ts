@@ -88,7 +88,13 @@ interface TestConnection {
 }
 
 function makeContext(
-  options: { token?: string | null; baseUrl?: string; headers?: HeadersInit } = {},
+  options: {
+    token?: string | null;
+    baseUrl?: string;
+    headers?: HeadersInit;
+    authorize?: boolean;
+    getToken?: () => Promise<string | null>;
+  } = {},
 ): TestConnection {
   const controller = new AbortController();
   const events: TransportEvent[] = [];
@@ -104,13 +110,15 @@ function makeContext(
     baseHeaderUrls,
     context: {
       baseUrl: options.baseUrl ?? 'https://itd.test/base',
+      authorize: options.authorize ?? true,
       fetch: (() => Promise.reject(new Error('fetch не должен вызываться'))) as typeof fetch,
       baseHeaders: (url) => {
         baseHeaderUrls.push(url);
         return Promise.resolve(new Headers(options.headers));
       },
-      getToken: () =>
-        Promise.resolve(options.token === undefined ? 'very-secret-token' : options.token),
+      getToken:
+        options.getToken ??
+        (() => Promise.resolve(options.token === undefined ? 'very-secret-token' : options.token)),
       signal: controller.signal,
       onEvent: (event) => events.push(event),
       onParseError: (_error, raw) => parseErrors.push(raw),
@@ -225,6 +233,34 @@ describe('WebSocketTransport: выбор реализации и авториз�
     );
     expect(FakeWebSocket.instances).toHaveLength(0);
   });
+
+  it('не запрашивает и не передаёт токен, когда авторизация сервиса запрещена', async () => {
+    const getToken = vi.fn(() => Promise.resolve('must-not-leak'));
+    const connection = makeContext({
+      authorize: false,
+      getToken,
+      headers: { 'X-Proxy': 'enabled' },
+    });
+    const transport = new WebSocketTransport({
+      webSocketImpl: FakeWebSocket,
+      auth: 'query',
+      idleTimeout: 0,
+      keepAlive: 0,
+      handshakeTimeout: 0,
+    });
+
+    const connected = transport.connect(connection.context);
+    await flush();
+    const socket = FakeWebSocket.instances[0];
+
+    expect(getToken).not.toHaveBeenCalled();
+    expect(new URL(socket?.url ?? '').searchParams.has('token')).toBe(false);
+    expect(socket?.options?.headers).toEqual({ 'x-proxy': 'enabled' });
+
+    socket?.open();
+    socket?.serverClose();
+    await connected;
+  });
 });
 
 describe('WebSocketTransport: события и завершение', () => {
@@ -245,16 +281,14 @@ describe('WebSocketTransport: события и завершение', () => {
     socket?.message(new TextEncoder().encode('{"id":"2"}'));
     socket?.message('{broken');
     socket?.message('pong');
-    await flush();
+    socket?.serverClose();
+    await connected;
 
     expect(connection.events).toEqual([
       { name: 'created', data: { type: 'created', id: '1' } },
       { name: 'message', data: { id: '2' } },
     ]);
     expect(connection.parseErrors).toEqual(['{broken']);
-
-    socket?.serverClose();
-    await connected;
   });
 
   it('доставляет последний текстовый кадр до закрытия соединения', async () => {
@@ -275,6 +309,67 @@ describe('WebSocketTransport: события и завершение', () => {
 
     await connected;
     expect(connection.events).toEqual([{ name: 'last', data: { type: 'last', id: 'final' } }]);
+  });
+
+  it('сохраняет порядок Blob-кадров и дочитывает их после закрытия сокета', async () => {
+    let release!: () => void;
+    class DelayedBlob extends Blob {
+      override text(): Promise<string> {
+        return new Promise((resolve) => {
+          release = () => resolve('{"type":"first","id":"blob"}');
+        });
+      }
+    }
+
+    const connection = makeContext();
+    const transport = new WebSocketTransport({
+      webSocketImpl: FakeWebSocket,
+      idleTimeout: 0,
+      keepAlive: 0,
+      handshakeTimeout: 0,
+    });
+    const connected = transport.connect(connection.context);
+    await flush();
+    const socket = FakeWebSocket.instances[0];
+    socket?.open();
+
+    socket?.message(new DelayedBlob());
+    socket?.message('{"type":"second","id":"text"}');
+    socket?.serverClose();
+    await flush();
+
+    expect(connection.events).toEqual([]);
+    release();
+    await connected;
+    expect(connection.events).toEqual([
+      { name: 'first', data: { type: 'first', id: 'blob' } },
+      { name: 'second', data: { type: 'second', id: 'text' } },
+    ]);
+  });
+
+  it('классифицирует скрытый HTTP-отказ до открытия соединения', async () => {
+    const classifyOpenFailure = vi.fn((_error: unknown, _signal: AbortSignal) =>
+      Promise.resolve(true),
+    );
+    const connection = makeContext();
+    const transport = new WebSocketTransport({
+      webSocketImpl: FakeWebSocket,
+      classifyOpenFailure,
+      idleTimeout: 0,
+      keepAlive: 0,
+      handshakeTimeout: 0,
+    });
+    const connected = transport.connect(connection.context);
+    await flush();
+    const socket = FakeWebSocket.instances[0];
+
+    socket?.error(new Error('upgrade rejected'));
+    socket?.serverClose(1006, false);
+
+    await expect(connected).rejects.toThrow(UnauthorizedStreamError);
+    expect(classifyOpenFailure).toHaveBeenCalledOnce();
+    expect(classifyOpenFailure.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(classifyOpenFailure.mock.calls[0]?.[1]).toBe(connection.controller.signal);
   });
 
   it.each([1008, 4401])('считает код закрытия %s отказом авторизации', async (code) => {
@@ -421,6 +516,9 @@ describe('WebSocketTransport: конфигурация и маскировани
     expect(() => new WebSocketTransport({ path: '/ws?token=x' })).toThrow(/без query/);
     expect(() => new WebSocketTransport({ idleTimeout: -1 })).toThrow(/idleTimeout/);
     expect(() => new WebSocketTransport({ keepAlive: Number.NaN })).toThrow(/keepAlive/);
+    expect(() => new WebSocketTransport({ classifyOpenFailure: true as never })).toThrow(
+      /classifyOpenFailure/,
+    );
   });
 
   it('проверяет результат пользовательского конструктора', async () => {

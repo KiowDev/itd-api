@@ -64,6 +64,7 @@ function makeEngine(
   return new RealtimeEngine<TestUpdate, TestContext, TestEvents>(
     {
       baseUrl: 'https://itd.test',
+      authorize: true,
       fetch: globalThis.fetch,
       baseHeaders: () => Promise.resolve(new Headers()),
       getToken: () => Promise.resolve('token'),

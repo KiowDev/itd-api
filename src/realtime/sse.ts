@@ -59,14 +59,14 @@ export class SseTransport implements RealtimeTransport {
   }
 
   async connect(context: TransportContext): Promise<void> {
-    const token = await context.getToken();
-    if (!token) throw new UnauthorizedStreamError();
+    const token = context.authorize ? await context.getToken() : null;
+    if (context.authorize && !token) throw new UnauthorizedStreamError();
 
     const url = joinUrl(context.baseUrl, STREAM_PATH);
 
     const headers = await context.baseHeaders(url);
     headers.set('Accept', 'text/event-stream');
-    headers.set('Authorization', `Bearer ${token}`);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
     headers.set('Cache-Control', 'no-cache');
 
     // Сервер пока не присылает id, но поддержка не мешает и пригодится, если начнёт.
@@ -82,7 +82,7 @@ export class SseTransport implements RealtimeTransport {
     try {
       const response = await this.#handshake(url, headers, context, controller);
 
-      if (response.status === 401) throw new UnauthorizedStreamError();
+      if (context.authorize && response.status === 401) throw new UnauthorizedStreamError();
       if (!response.ok) throw new Error(`Поток уведомлений вернул статус ${response.status}`);
       if (!response.body) throw new Error('Ответ потока уведомлений пуст');
 

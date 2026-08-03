@@ -10,6 +10,8 @@ export interface TransportEvent {
 export interface TransportContext {
   /** Базовый URL API. */
   baseUrl: string;
+  /** Разрешено ли передавать токен этому сервису. */
+  authorize: boolean;
   /** Реализация `fetch`. */
   fetch: typeof fetch;
   /**
@@ -46,7 +48,7 @@ export interface RealtimeTransport {
 /** Ошибка, по которой видно, что сервер отверг авторизацию потока. */
 export class UnauthorizedStreamError extends Error {
   constructor() {
-    super('Поток уведомлений отверг токен доступа');
+    super('Поток событий отверг токен доступа');
     this.name = 'UnauthorizedStreamError';
   }
 }

@@ -61,6 +61,8 @@ export interface RealtimeEngineEvents<C extends RealtimeContextBase = RealtimeCo
  */
 export interface RealtimeEngineDeps<U, C extends RealtimeContextBase<U, unknown>> {
   baseUrl: string;
+  /** Разрешено ли транспорту передавать токен этому сервису. */
+  authorize: boolean;
   fetch: typeof fetch;
   clock?: ItdClock | undefined;
   /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
@@ -352,6 +354,7 @@ export class RealtimeEngine<
     void this.#deps.transport
       .connect({
         baseUrl: this.#deps.baseUrl,
+        authorize: this.#deps.authorize,
         fetch: this.#deps.fetch,
         baseHeaders: this.#deps.baseHeaders,
         getToken: this.#deps.getToken,

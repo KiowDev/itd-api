@@ -43,14 +43,14 @@ export class PollTransport implements RealtimeTransport {
     let lastUnreadCount: number | undefined;
 
     while (!context.signal.aborted) {
-      const token = await context.getToken();
-      if (!token) throw new UnauthorizedStreamError();
+      const token = context.authorize ? await context.getToken() : null;
+      if (context.authorize && !token) throw new UnauthorizedStreamError();
 
       const url = `${joinUrl(context.baseUrl, '/api/notifications/')}?limit=${this.#limit}&offset=0`;
 
       const headers = await context.baseHeaders(url);
       headers.set('Accept', 'application/json');
-      headers.set('Authorization', `Bearer ${token}`);
+      if (token) headers.set('Authorization', `Bearer ${token}`);
 
       const response = await context.fetch(url, {
         method: 'GET',
@@ -58,7 +58,7 @@ export class PollTransport implements RealtimeTransport {
         signal: context.signal,
       });
 
-      if (response.status === 401) throw new UnauthorizedStreamError();
+      if (context.authorize && response.status === 401) throw new UnauthorizedStreamError();
       if (!response.ok) throw new Error(`Опрос уведомлений вернул статус ${response.status}`);
 
       // Соединение считается установленным только после первого успешного ответа: иначе

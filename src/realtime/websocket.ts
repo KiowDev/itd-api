@@ -26,6 +26,12 @@ export interface WebSocketLike {
   ): unknown;
 }
 
+/** Определяет, был ли отказ до открытия сокета вызван недействительным токеном. */
+export type WebSocketOpenFailureClassifier = (
+  error: unknown,
+  signal: AbortSignal,
+) => boolean | Promise<boolean>;
+
 /** Настройки WebSocket-транспорта. */
 export interface WebSocketTransportOptions {
   /** Путь апгрейда. По умолчанию `/api/ws`. */
@@ -40,6 +46,11 @@ export interface WebSocketTransportOptions {
   keepAlive?: number | undefined;
   /** Максимальное время установки соединения, мс. По умолчанию 20 000. */
   handshakeTimeout?: number | undefined;
+  /**
+   * Проверяет отказ до `open`, когда среда скрыла HTTP-статус WebSocket-upgrade.
+   * `true` преобразует отказ в {@link UnauthorizedStreamError}.
+   */
+  classifyOpenFailure?: WebSocketOpenFailureClassifier | undefined;
   /** Часы транспорта. Обычно подменяются только в тестах. */
   clock?: ItdClock | undefined;
 }
@@ -104,10 +115,11 @@ function errorMessage(error: unknown): string | undefined {
   return undefined;
 }
 
-function safeDetail(error: unknown, url: string, token: string): string | undefined {
+function safeDetail(error: unknown, url: string, token: string | null): string | undefined {
   const message = errorMessage(error);
   if (!message) return undefined;
-  return message.replaceAll(url, redactUrl(url)).replaceAll(token, maskSecret(token));
+  const safe = message.replaceAll(url, redactUrl(url));
+  return token ? safe.replaceAll(token, maskSecret(token)) : safe;
 }
 
 function readCloseEvent(event: unknown): { code: number; reason: string; wasClean: boolean } {
@@ -151,6 +163,7 @@ export class WebSocketTransport implements RealtimeTransport {
   readonly #idleTimeout: number;
   readonly #keepAlive: number;
   readonly #handshakeTimeout: number;
+  readonly #classifyOpenFailure: WebSocketOpenFailureClassifier | undefined;
   readonly #clock: ItdClock;
 
   constructor(options: WebSocketTransportOptions = {}) {
@@ -166,6 +179,12 @@ export class WebSocketTransport implements RealtimeTransport {
     }
     if (options.webSocketImpl !== undefined && typeof options.webSocketImpl !== 'function') {
       throw new ItdConfigError('WebSocketTransport.webSocketImpl должен быть конструктором');
+    }
+    if (
+      options.classifyOpenFailure !== undefined &&
+      typeof options.classifyOpenFailure !== 'function'
+    ) {
+      throw new ItdConfigError('WebSocketTransport.classifyOpenFailure должен быть функцией');
     }
 
     const auth = options.auth ?? 'auto';
@@ -188,27 +207,28 @@ export class WebSocketTransport implements RealtimeTransport {
     this.#idleTimeout = options.idleTimeout ?? 90_000;
     this.#keepAlive = options.keepAlive ?? 30_000;
     this.#handshakeTimeout = options.handshakeTimeout ?? 20_000;
+    this.#classifyOpenFailure = options.classifyOpenFailure;
     this.#clock = options.clock ?? systemClock;
   }
 
   async connect(context: TransportContext): Promise<void> {
     if (context.signal.aborted) throw abortError(context.signal);
 
-    const token = await context.getToken();
+    const token = context.authorize ? await context.getToken() : null;
     if (context.signal.aborted) throw abortError(context.signal);
-    if (!token) throw new UnauthorizedStreamError();
+    if (context.authorize && !token) throw new UnauthorizedStreamError();
 
     const injected = this.#webSocketImpl !== undefined;
     const implementation = this.#webSocketImpl ?? this.#globalImplementation();
     const auth = this.#auth === 'auto' ? (injected ? 'header' : 'query') : this.#auth;
     const { requestUrl, socketUrl } = this.#urls(context.baseUrl);
-    const url = auth === 'query' ? `${socketUrl}${buildQuery({ token })}` : socketUrl;
+    const url = auth === 'query' && token ? `${socketUrl}${buildQuery({ token })}` : socketUrl;
 
     let headers: Record<string, string> | undefined;
     if (injected) {
       const resolved = await context.baseHeaders(requestUrl);
       if (context.signal.aborted) throw abortError(context.signal);
-      if (auth === 'header') resolved.set('Authorization', `Bearer ${token}`);
+      if (auth === 'header' && token) resolved.set('Authorization', `Bearer ${token}`);
       headers = Object.fromEntries(resolved.entries());
     }
 
@@ -268,22 +288,27 @@ export class WebSocketTransport implements RealtimeTransport {
   #listen(
     socket: WebSocketConnection,
     url: string,
-    token: string,
+    token: string | null,
     context: TransportContext,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       let settled = false;
+      let finishing = false;
       let opened = false;
+      let discardMessages = false;
       let socketError: unknown;
+      let messageQueue = Promise.resolve();
       let cancelHandshake: (() => void) | undefined;
       let cancelIdle: (() => void) | undefined;
       let cancelKeepAlive: (() => void) | undefined;
 
-      const cleanup = () => {
+      const stopSocketListeners = () => {
         cancelHandshake?.();
         cancelIdle?.();
         cancelKeepAlive?.();
-        context.signal.removeEventListener('abort', onAbort);
+        cancelHandshake = undefined;
+        cancelIdle = undefined;
+        cancelKeepAlive = undefined;
         socket.removeEventListener('open', onOpen);
         socket.removeEventListener('message', onMessage);
         socket.removeEventListener('error', onError);
@@ -293,13 +318,17 @@ export class WebSocketTransport implements RealtimeTransport {
       const finish = (error?: unknown) => {
         if (settled) return;
         settled = true;
-        cleanup();
+        stopSocketListeners();
+        context.signal.removeEventListener('abort', onAbort);
         if (error !== undefined) reject(error);
         else resolve();
       };
 
       const closeWithError = (error: unknown, code = 4000, reason = 'transport error') => {
+        if (settled || finishing) return;
         socketError = error;
+        finishing = true;
+        stopSocketListeners();
         try {
           if (socket.readyState === CONNECTING || socket.readyState === OPEN) {
             socket.close(code, reason);
@@ -307,7 +336,10 @@ export class WebSocketTransport implements RealtimeTransport {
         } catch {
           // Ошибка уже сохранена и будет возвращена вызывающему коду.
         }
-        finish(error);
+        void messageQueue.then(
+          () => finish(error),
+          (queueError: unknown) => finish(queueError),
+        );
       };
 
       const armIdleTimer = () => {
@@ -323,9 +355,9 @@ export class WebSocketTransport implements RealtimeTransport {
       };
 
       const scheduleKeepAlive = () => {
-        if (this.#keepAlive <= 0 || settled) return;
+        if (this.#keepAlive <= 0 || settled || finishing) return;
         cancelKeepAlive = this.#clock.schedule(() => {
-          if (settled || socket.readyState !== OPEN) return;
+          if (settled || finishing || socket.readyState !== OPEN) return;
           try {
             socket.send('ping');
           } catch (error) {
@@ -343,7 +375,7 @@ export class WebSocketTransport implements RealtimeTransport {
       };
 
       const onOpen = () => {
-        if (settled || opened) return;
+        if (settled || finishing || opened) return;
         opened = true;
         cancelHandshake?.();
         cancelHandshake = undefined;
@@ -357,71 +389,125 @@ export class WebSocketTransport implements RealtimeTransport {
       };
 
       const onMessage = (event: unknown) => {
-        if (settled) return;
+        if (settled || finishing) return;
         armIdleTimer();
-        const handle = (raw: string) => {
-          if (settled || raw === 'pong') return;
-          let data: unknown;
-          try {
-            data = JSON.parse(raw) as unknown;
-          } catch (error) {
-            context.onParseError(error, raw);
-            return;
+        let pending: Promise<{ readonly raw: string } | { readonly error: unknown }> | undefined;
+        try {
+          const raw = readMessage(event);
+          if (raw !== undefined) {
+            pending = Promise.resolve(raw).then(
+              (value) => ({ raw: value }),
+              (error: unknown) => ({ error }),
+            );
           }
-          context.onEvent({ name: eventName(data), data });
-        };
-        const raw = readMessage(event);
-        if (typeof raw === 'string') handle(raw);
-        else if (raw) {
-          void raw.then(handle, (error: unknown) =>
-            context.onParseError(error, '[binary WebSocket frame]'),
-          );
+        } catch (error) {
+          pending = Promise.resolve({ error });
         }
+        if (pending === undefined) return;
+
+        messageQueue = messageQueue
+          .then(async () => {
+            if (settled || discardMessages) return;
+
+            const decoded = await pending;
+            if ('error' in decoded) {
+              context.onParseError(decoded.error, '[binary WebSocket frame]');
+              return;
+            }
+            const { raw } = decoded;
+            if (settled || discardMessages || raw === 'pong') return;
+
+            let data: unknown;
+            try {
+              data = JSON.parse(raw) as unknown;
+            } catch (error) {
+              context.onParseError(error, raw);
+              return;
+            }
+            context.onEvent({ name: eventName(data), data });
+          })
+          .catch((error: unknown) => {
+            if (finishing) throw error;
+            closeWithError(error);
+          });
       };
 
       const onError = (event: unknown) => {
+        if (settled || finishing) return;
         socketError =
           typeof event === 'object' && event !== null && 'error' in event
             ? (event as { error?: unknown }).error
             : event;
       };
 
-      const onClose = (event: unknown) => {
+      const finishClose = async (event: unknown): Promise<void> => {
+        const { code, reason, wasClean } = readCloseEvent(event);
+        let outcome: unknown;
+
+        if (context.authorize && UNAUTHORIZED_CLOSE_CODES.has(code)) {
+          outcome = new UnauthorizedStreamError();
+        } else if (socketError !== undefined) {
+          const detail = safeDetail(socketError, url, token);
+          outcome = new Error(
+            `WebSocket ${redactUrl(url)} завершился ошибкой${detail ? `: ${detail}` : ''}`,
+          );
+        } else if (opened && code === NORMAL_CLOSURE && wasClean) {
+          outcome = undefined;
+        } else {
+          const safeReason = token ? reason.replaceAll(token, maskSecret(token)) : reason;
+          outcome = new Error(
+            `WebSocket ${redactUrl(url)} закрыт с кодом ${code}` +
+              (safeReason ? `: ${safeReason}` : ''),
+          );
+        }
+
+        if (
+          !opened &&
+          context.authorize &&
+          !(outcome instanceof UnauthorizedStreamError) &&
+          this.#classifyOpenFailure
+        ) {
+          try {
+            if (await this.#classifyOpenFailure(outcome, context.signal)) {
+              outcome = new UnauthorizedStreamError();
+            }
+          } catch {
+            // Ошибка проверки не должна скрывать исходную ошибку соединения.
+          }
+        }
+
         if (context.signal.aborted) {
+          discardMessages = true;
           finish(abortError(context.signal));
           return;
         }
 
-        const { code, reason, wasClean } = readCloseEvent(event);
-        if (UNAUTHORIZED_CLOSE_CODES.has(code)) {
-          finish(new UnauthorizedStreamError());
-          return;
+        try {
+          await messageQueue;
+          finish(outcome);
+        } catch (error) {
+          finish(error);
         }
-        if (socketError !== undefined) {
-          const detail = safeDetail(socketError, url, token);
-          finish(
-            new Error(
-              `WebSocket ${redactUrl(url)} завершился ошибкой${detail ? `: ${detail}` : ''}`,
-            ),
-          );
-          return;
-        }
-        if (opened && code === NORMAL_CLOSURE && wasClean) {
-          finish();
-          return;
-        }
+      };
 
-        const safeReason = reason.replaceAll(token, maskSecret(token));
-        finish(
-          new Error(
-            `WebSocket ${redactUrl(url)} закрыт с кодом ${code}` +
-              (safeReason ? `: ${safeReason}` : ''),
-          ),
-        );
+      const onClose = (event: unknown) => {
+        if (settled || finishing) return;
+        if (context.signal.aborted) {
+          discardMessages = true;
+          finish(abortError(context.signal));
+          return;
+        }
+        finishing = true;
+        stopSocketListeners();
+        void finishClose(event);
       };
 
       const onAbort = () => {
+        if (settled) return;
         const error = abortError(context.signal);
+        discardMessages = true;
+        finishing = true;
+        stopSocketListeners();
         try {
           if (socket.readyState === CONNECTING || socket.readyState === OPEN) {
             socket.close(NORMAL_CLOSURE, 'aborted');
