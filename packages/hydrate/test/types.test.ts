@@ -4,6 +4,7 @@ import {
   NotificationType,
   type Post,
   type PublicProfile,
+  type RealtimeContextBase,
   RealtimeUpdateType,
 } from 'itd-api';
 import { describe, expectTypeOf, it } from 'vitest';
@@ -13,6 +14,7 @@ import type {
   HydratedPost,
   HydratedProfile,
   HydratedRealtime,
+  HydratedRealtimeContext,
   HydratedUserReference,
   HydrateFlavor,
   HydrateValue,
@@ -25,6 +27,19 @@ interface ExtendedPost extends Post {
 }
 
 describe('расширяемые типы', () => {
+  it('сохраняет поля и владельца произвольного realtime-контекста', () => {
+    interface CustomContext
+      extends RealtimeContextBase<{ payload: Post }, { readonly kind: 'custom' }> {
+      session: { id: string };
+    }
+
+    type Result = HydratedRealtimeContext<CustomContext>;
+
+    expectTypeOf<Result['update']['payload']>().toEqualTypeOf<HydratedPost>();
+    expectTypeOf<Result['stream']>().toEqualTypeOf<{ readonly kind: 'custom' }>();
+    expectTypeOf<Result['session']>().toEqualTypeOf<{ id: string }>();
+  });
+
   it('рекурсивно преобразует дополнительные поля моделей', () => {
     type Result = HydrateValue<ExtendedPost>;
 

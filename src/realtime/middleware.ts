@@ -1,41 +1,43 @@
 import type { Unsubscribe } from '../core/emitter.js';
-import type { RealtimeContext } from './updates.js';
+import type { RealtimeContext, RealtimeContextBase } from './updates.js';
 
 /** Продолжает цепочку промежуточных обработчиков потока. */
 export type RealtimeNext = () => Promise<void>;
 
 /** Обрабатывает обновление потока до его передачи подписчикам. */
-export type RealtimeMiddleware<C extends RealtimeContext = RealtimeContext> = (
+export type RealtimeMiddleware<C extends RealtimeContextBase = RealtimeContext> = (
   context: C,
   next: RealtimeNext,
 ) => void | Promise<void>;
 
 /** Асинхронный обработчик нормализованного обновления потока. */
-export type RealtimeHandler<C extends RealtimeContext = RealtimeContext> = (
+export type RealtimeHandler<C extends RealtimeContextBase = RealtimeContext> = (
   context: C,
 ) => unknown | Promise<unknown>;
 
 /** Условие отбора контекста потока. */
-export type RealtimePredicate = (context: RealtimeContext) => boolean;
+export type RealtimePredicate<C extends RealtimeContextBase = RealtimeContext> = (
+  context: C,
+) => boolean;
 
 /** Проверка, сужающая тип контекста потока. */
-export type RealtimeTypeGuard<C extends RealtimeContext> = (
-  context: RealtimeContext,
+export type RealtimeTypeGuard<C extends B, B extends RealtimeContextBase = RealtimeContext> = (
+  context: B,
 ) => context is C;
 
 /** Ключи, по которым обновления нельзя обрабатывать одновременно. */
-export type RealtimeSequentializer = (
-  context: RealtimeContext,
+export type RealtimeSequentializer<C extends RealtimeContextBase = RealtimeContext> = (
+  context: C,
 ) => PropertyKey | readonly PropertyKey[] | undefined;
 
 const REALTIME_MIDDLEWARE_SNAPSHOT = Symbol('itd-api.realtime.middlewareSnapshot');
 
-type SnapshottingRealtimeMiddleware<C extends RealtimeContext> = RealtimeMiddleware<C> & {
+type SnapshottingRealtimeMiddleware<C extends RealtimeContextBase> = RealtimeMiddleware<C> & {
   [REALTIME_MIDDLEWARE_SNAPSHOT]?: () => RealtimeMiddleware<C>;
 };
 
 /** @internal */
-export function captureRealtimeMiddleware<C extends RealtimeContext>(
+export function captureRealtimeMiddleware<C extends RealtimeContextBase>(
   middleware: RealtimeMiddleware<C>,
 ): RealtimeMiddleware<C> {
   const capture = (middleware as SnapshottingRealtimeMiddleware<C>)[REALTIME_MIDDLEWARE_SNAPSHOT];
@@ -49,7 +51,7 @@ export function captureRealtimeMiddleware<C extends RealtimeContext>(
 }
 
 /** @internal */
-export function withRealtimeMiddlewareSnapshot<C extends RealtimeContext>(
+export function withRealtimeMiddlewareSnapshot<C extends RealtimeContextBase>(
   middleware: RealtimeMiddleware<C>,
   capture: () => RealtimeMiddleware<C>,
 ): RealtimeMiddleware<C> {
@@ -57,31 +59,31 @@ export function withRealtimeMiddlewareSnapshot<C extends RealtimeContext>(
   return middleware;
 }
 
-interface HandlerRegistration {
-  readonly predicate: RealtimePredicate;
-  readonly handler: RealtimeHandler;
+interface HandlerRegistration<C extends RealtimeContextBase> {
+  readonly predicate: RealtimePredicate<C>;
+  readonly handler: RealtimeHandler<C>;
 }
 
-interface DispatchWork {
-  readonly context: RealtimeContext;
-  readonly middleware: readonly RealtimeMiddleware[];
-  readonly handlers: readonly HandlerRegistration[];
+interface DispatchWork<C extends RealtimeContextBase> {
+  readonly context: C;
+  readonly middleware: readonly RealtimeMiddleware<C>[];
+  readonly handlers: readonly HandlerRegistration<C>[];
   readonly keys: readonly PropertyKey[];
 }
 
-export interface RealtimeDispatcherOptions {
+export interface RealtimeDispatcherOptions<C extends RealtimeContextBase = RealtimeContext> {
   concurrency: number;
-  sequentialize?: RealtimeSequentializer | undefined;
+  sequentialize?: RealtimeSequentializer<C> | undefined;
 }
 
-export interface RealtimeDispatcherHooks {
-  deliver: (context: RealtimeContext) => void;
-  middlewareError: (error: unknown, context: RealtimeContext) => void;
-  handlerError: (error: unknown, context: RealtimeContext) => void;
+export interface RealtimeDispatcherHooks<C extends RealtimeContextBase = RealtimeContext> {
+  deliver: (context: C) => void;
+  middlewareError: (error: unknown, context: C) => void;
+  handlerError: (error: unknown, context: C) => void;
 }
 
 /** Выполняет промежуточные обработчики по порядку и запрещает повторный вызов `next()`. */
-export async function runRealtimeMiddleware<C extends RealtimeContext>(
+export async function runRealtimeMiddleware<C extends RealtimeContextBase>(
   middleware: readonly RealtimeMiddleware<C>[],
   context: C,
   terminal: RealtimeNext,
@@ -137,23 +139,23 @@ export async function runRealtimeMiddleware<C extends RealtimeContext>(
 }
 
 /** Планирует нормализованные обновления и отслеживает незавершённые обработчики. */
-export class RealtimeDispatcher {
-  readonly #options: RealtimeDispatcherOptions;
-  readonly #hooks: RealtimeDispatcherHooks;
-  readonly #middleware: RealtimeMiddleware[] = [];
-  readonly #handlers: HandlerRegistration[] = [];
-  readonly #queue: DispatchWork[] = [];
+export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext> {
+  readonly #options: RealtimeDispatcherOptions<C>;
+  readonly #hooks: RealtimeDispatcherHooks<C>;
+  readonly #middleware: RealtimeMiddleware<C>[] = [];
+  readonly #handlers: HandlerRegistration<C>[] = [];
+  readonly #queue: DispatchWork<C>[] = [];
   readonly #activeKeys = new Set<PropertyKey>();
   readonly #drainWaiters = new Set<() => void>();
 
   #active = 0;
 
-  constructor(options: RealtimeDispatcherOptions, hooks: RealtimeDispatcherHooks) {
+  constructor(options: RealtimeDispatcherOptions<C>, hooks: RealtimeDispatcherHooks<C>) {
     this.#options = options;
     this.#hooks = hooks;
   }
 
-  use(middleware: RealtimeMiddleware): Unsubscribe {
+  use(middleware: RealtimeMiddleware<C>): Unsubscribe {
     this.#middleware.push(middleware);
     return () => {
       const index = this.#middleware.indexOf(middleware);
@@ -161,7 +163,7 @@ export class RealtimeDispatcher {
     };
   }
 
-  on(predicate: RealtimePredicate, handler: RealtimeHandler): Unsubscribe {
+  on(predicate: RealtimePredicate<C>, handler: RealtimeHandler<C>): Unsubscribe {
     const registration = { predicate, handler };
     this.#handlers.push(registration);
 
@@ -171,9 +173,9 @@ export class RealtimeDispatcher {
     };
   }
 
-  dispatch(context: RealtimeContext): void {
+  dispatch(context: C): void {
     let keys: readonly PropertyKey[];
-    let middleware: readonly RealtimeMiddleware[];
+    let middleware: readonly RealtimeMiddleware<C>[];
     try {
       keys = this.#keysFor(context);
       middleware = this.#middleware.map(captureRealtimeMiddleware);
@@ -203,7 +205,7 @@ export class RealtimeDispatcher {
     return new Promise<void>((resolve) => this.#drainWaiters.add(resolve));
   }
 
-  #keysFor(context: RealtimeContext): readonly PropertyKey[] {
+  #keysFor(context: C): readonly PropertyKey[] {
     const value = this.#options.sequentialize?.(context);
     if (value === undefined) return [];
 
@@ -239,7 +241,7 @@ export class RealtimeDispatcher {
     this.#resolveDrain();
   }
 
-  async #run(work: DispatchWork): Promise<void> {
+  async #run(work: DispatchWork<C>): Promise<void> {
     try {
       await runRealtimeMiddleware(work.middleware, work.context, async () => {
         for (const { predicate, handler } of work.handlers) {

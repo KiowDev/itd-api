@@ -32,7 +32,10 @@ class TestTransport implements RealtimeTransport {
   }
 }
 
-function makeStream(transport: TestTransport, options: RealtimeOptions = {}): ItdRealtime {
+function makeStream<C extends RealtimeContext = RealtimeContext>(
+  transport: TestTransport,
+  options: RealtimeOptions<C> = {},
+): ItdRealtime<C> {
   const deps: RealtimeDeps = {
     baseUrl: 'https://itd.test',
     fetch: (() => Promise.reject(new Error('не должно вызываться'))) as unknown as typeof fetch,
@@ -42,7 +45,7 @@ function makeStream(transport: TestTransport, options: RealtimeOptions = {}): It
     fetchUnreadCount: () => Promise.resolve(0),
   };
 
-  return new ItdRealtime(deps, {
+  return new ItdRealtime<C>(deps, {
     transport,
     syncCount: false,
     reconnectOnVisible: false,
@@ -332,6 +335,35 @@ describe('realtime middleware', () => {
 });
 
 describe('realtime handlers и filters', () => {
+  it('сохраняет флейвор контекста после сужения update', async () => {
+    type SessionContext = RealtimeContext & { session: { id: string } };
+
+    const transport = new TestTransport();
+    const stream = makeStream<SessionContext>(transport);
+    const sessions: string[] = [];
+
+    stream.use(async (context, next) => {
+      context.session = { id: 'session-1' };
+      await next();
+    });
+    stream.onUpdate(RealtimeUpdateType.Notification, (context) => {
+      expectTypeOf(context.session.id).toEqualTypeOf<string>();
+      expectTypeOf(context.update.type).toEqualTypeOf<'notification'>();
+      sessions.push(context.session.id);
+    });
+    stream.onNotification('post_comment', (context) => {
+      expectTypeOf(context.session.id).toEqualTypeOf<string>();
+      expectTypeOf(context.update.data.notification.type).toEqualTypeOf<'post_comment'>();
+    });
+
+    await stream.connect();
+    transport.emit(notification('n1'));
+    await stream.drain();
+
+    expect(sessions).toEqual(['session-1']);
+    stream.disconnect();
+  });
+
   it('сужает тип update и тип уведомления', () => {
     const stream = makeStream(new TestTransport());
 

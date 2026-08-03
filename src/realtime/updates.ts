@@ -67,17 +67,32 @@ export type RealtimeUpdateOfType<T extends RealtimeUpdateType> = Extract<
   { type: T }
 >;
 
-/** Контекст обработки одного обновления потока. */
-export interface RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> {
+/**
+ * Общая форма контекста обработки: то, что есть у любого потока независимо от домена.
+ *
+ * Контекст — обычный объектный литерал, а не класс с геттерами и не `Object.freeze`:
+ * плагины-флейворы присваивают в него свои поля (`ctx.session = …`), а `@itd-api/hydrate`
+ * подменяет `update` и `stream` через `Object.defineProperty`.
+ *
+ * @typeParam U нормализованное обновление домена
+ * @typeParam S поток, который его получил
+ */
+export interface RealtimeContextBase<U = unknown, S = unknown> {
   /** Нормализованные данные обновления. */
   readonly update: U;
   /** Поток, который получил обновление. */
-  readonly stream: ItdRealtime;
+  readonly stream: S;
   /** Исходный кадр транспорта. Для начальной REST-синхронизации равен `undefined`. */
   readonly raw: TransportEvent | undefined;
   /** Откуда получены данные. */
   readonly origin: RealtimeUpdateOrigin;
 }
+
+/** Контекст обработки одного обновления потока уведомлений. */
+export type RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> = RealtimeContextBase<
+  U,
+  ItdRealtime
+>;
 
 /** Контекст уведомления с типом, суженным фильтром. */
 export type RealtimeNotificationContext<T extends NotificationType = NotificationType> =

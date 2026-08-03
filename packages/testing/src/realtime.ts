@@ -1,8 +1,8 @@
 import type {
   Notification,
   RealtimeContext,
+  RealtimeContextBase,
   RealtimeTransport,
-  RealtimeUpdate,
   TransportContext,
 } from 'itd-api';
 
@@ -100,16 +100,16 @@ export class MockRealtimeTransport implements RealtimeTransport {
   }
 }
 
-export interface WaitForUpdateOptions {
+export interface WaitForUpdateOptions<C extends RealtimeContextBase = RealtimeContext> {
   signal?: AbortSignal;
-  predicate?: (context: RealtimeContext) => boolean;
+  predicate?: (context: C) => boolean;
 }
 
 /** Дожидается одного подходящего обновления без привязки к средству запуска тестов. */
-export function waitForUpdate(
-  stream: { onUpdate(handler: (context: RealtimeContext) => void | Promise<void>): () => void },
-  options: WaitForUpdateOptions = {},
-): Promise<RealtimeContext<RealtimeUpdate>> {
+export function waitForUpdate<C extends RealtimeContextBase = RealtimeContext>(
+  stream: { onUpdate(handler: (context: C) => void | Promise<void>): () => void },
+  options: WaitForUpdateOptions<C> = {},
+): Promise<C> {
   return new Promise((resolve, reject) => {
     if (options.signal?.aborted) {
       reject(options.signal.reason);

@@ -3,6 +3,7 @@ import type {
   ItdPlugin,
   ItdRealtime,
   RawRequestOptions,
+  RealtimeContext,
   Transformer,
   Unsubscribe,
 } from 'itd-api';
@@ -50,7 +51,7 @@ export interface CachePlugin extends ItdPlugin {
    *
    * Сразу удаляет прежние значения и возвращает функцию отписки.
    */
-  attachRealtime(stream: ItdRealtime): Unsubscribe;
+  attachRealtime<C extends RealtimeContext>(stream: ItdRealtime<C>): Unsubscribe;
 }
 
 interface CacheEntry {

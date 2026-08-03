@@ -19,6 +19,7 @@ import type {
   Profile,
   PublicProfile,
   RealtimeContext,
+  RealtimeContextBase,
   RealtimeEvents,
   RealtimeHandler,
   RealtimeMiddleware,
@@ -308,26 +309,27 @@ export type HydrateValue<T> = T extends
 export type HydratedNotificationEvent = HydratedModel<NotificationEvent>;
 
 /** Контекст realtime с гидратированным обновлением и потоком. */
-export type HydratedRealtimeContext<C extends RealtimeContext = RealtimeContext> = HydratedModel<
-  C,
-  {
-    readonly update: HydrateValue<C['update']>;
-    readonly stream: HydratedRealtime;
-    readonly raw: C['raw'];
-  }
->;
+export type HydratedRealtimeContext<C extends RealtimeContextBase = RealtimeContext> =
+  HydratedModel<
+    C,
+    {
+      readonly update: HydrateValue<C['update']>;
+      readonly stream: C extends RealtimeContext ? HydratedRealtime : C['stream'];
+      readonly raw: C['raw'];
+    }
+  >;
 
 /** Контекст уведомления с типом, суженным селектором. */
 export type HydratedRealtimeNotificationContext<T extends NotificationType = NotificationType> =
   HydratedRealtimeContext<RealtimeNotificationContext<T>>;
 
 /** Асинхронный обработчик гидратированного обновления. */
-export type HydratedRealtimeHandler<C extends RealtimeContext = RealtimeContext> = (
+export type HydratedRealtimeHandler<C extends RealtimeContextBase = RealtimeContext> = (
   context: HydratedRealtimeContext<C>,
 ) => ReturnType<RealtimeHandler<C>>;
 
 /** Промежуточный обработчик гидратированных обновлений. */
-export type HydratedRealtimeMiddleware<C extends RealtimeContext = RealtimeContext> = (
+export type HydratedRealtimeMiddleware<C extends RealtimeContextBase = RealtimeContext> = (
   context: HydratedRealtimeContext<C>,
   next: RealtimeNext,
 ) => ReturnType<RealtimeMiddleware<C>>;

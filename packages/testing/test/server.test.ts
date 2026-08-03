@@ -1,5 +1,11 @@
-import { ItdClient, type ItdPlugin, RealtimeUpdateType } from 'itd-api';
-import { describe, expect, it } from 'vitest';
+import {
+  ItdClient,
+  type ItdPlugin,
+  type ItdRealtime,
+  type RealtimeContext,
+  RealtimeUpdateType,
+} from 'itd-api';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   apiErrorResponse,
   createMockFetch,
@@ -32,6 +38,14 @@ function makeServer() {
 }
 
 describe('createMockServer', () => {
+  it('сохраняет флейвор контекста в waitForUpdate()', () => {
+    const check = <C extends RealtimeContext>(stream: ItdRealtime<C>) => {
+      expectTypeOf(waitForUpdate(stream)).toEqualTypeOf<Promise<C>>();
+    };
+
+    expectTypeOf(check).returns.toEqualTypeOf<void>();
+  });
+
   it('сохраняет mock-домен по умолчанию и нормализует пользовательский baseUrl', async () => {
     const defaultServer = createMockServer();
     const defaultClient = new ItdClient(defaultServer.clientOptions({ as: 'test-user-1' }));

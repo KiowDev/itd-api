@@ -215,6 +215,7 @@ export {
   NOTIFICATION_TYPE_ALIASES,
 } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
+export type { RealtimeEngineEvents } from './realtime/engine.js';
 export type {
   RealtimeHandler,
   RealtimeMiddleware,
@@ -247,6 +248,7 @@ export {
   type NotificationEventOfType,
   type NotificationOfType,
   type RealtimeContext,
+  type RealtimeContextBase,
   type RealtimeNotificationContext,
   type RealtimeNotificationFilter,
   type RealtimeNotificationSelector,

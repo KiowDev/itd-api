@@ -6,15 +6,15 @@ import {
   runRealtimeMiddleware,
   withRealtimeMiddlewareSnapshot,
 } from './middleware.js';
-import type { RealtimeContext } from './updates.js';
+import type { RealtimeContext, RealtimeContextBase } from './updates.js';
 
 /** Выбирает маршрут обновления. `undefined` и `null` означают отсутствие маршрута. */
 export type RealtimeRouteSelector<
   K extends PropertyKey,
-  C extends RealtimeContext = RealtimeContext,
+  C extends RealtimeContextBase = RealtimeContext,
 > = (context: C) => K | null | undefined | Promise<K | null | undefined>;
 
-interface RouteRegistration<C extends RealtimeContext> {
+interface RouteRegistration<C extends RealtimeContextBase> {
   readonly middleware: readonly RealtimeMiddleware<C>[];
 }
 
@@ -37,7 +37,7 @@ interface RouteRegistration<C extends RealtimeContext> {
  */
 export class RealtimeRouter<
   K extends PropertyKey = PropertyKey,
-  C extends RealtimeContext = RealtimeContext,
+  C extends RealtimeContextBase = RealtimeContext,
 > {
   readonly #selector: RealtimeRouteSelector<K, C>;
   readonly #routes = new Map<K, RouteRegistration<C>[]>();

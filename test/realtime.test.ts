@@ -681,6 +681,8 @@ describe('поток: защита от двойного подключения'
       },
       { syncCount: true },
     );
+    const counts: number[] = [];
+    stream.on('unreadCount', (count) => counts.push(count));
 
     const connecting = stream.connect();
     stream.disconnect();
@@ -688,6 +690,7 @@ describe('поток: защита от двойного подключения'
     await connecting;
 
     expect(transport.connects).toBe(0);
+    expect(counts).toEqual([]);
   });
 
   it('ready отдаёт userId только строкой', async () => {
