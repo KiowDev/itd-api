@@ -161,7 +161,7 @@ router.route(RealtimeUpdateType.Notification, async (context, next) => {
   await next();
 });
 
-stream.use(router.middleware());
+stream.use(router);
 ```
 
 ## Плагины и кэш

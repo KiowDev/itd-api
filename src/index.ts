@@ -216,13 +216,15 @@ export {
 } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
 export type { RealtimeEngineEvents } from './realtime/engine.js';
-export type {
-  RealtimeHandler,
-  RealtimeMiddleware,
-  RealtimeNext,
-  RealtimePredicate,
-  RealtimeSequentializer,
-  RealtimeTypeGuard,
+export {
+  type RealtimeHandler,
+  type RealtimeMiddleware,
+  type RealtimeMiddlewareObj,
+  type RealtimeNext,
+  type RealtimePredicate,
+  type RealtimeSequentializer,
+  type RealtimeTypeGuard,
+  runRealtimeMiddleware,
 } from './realtime/middleware.js';
 export type { PollTransportOptions } from './realtime/poll.js';
 export {

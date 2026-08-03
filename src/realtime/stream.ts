@@ -11,6 +11,7 @@ import { RealtimeEngine, type RealtimeEngineEvents, type RealtimeSyncReason } fr
 import type {
   RealtimeHandler,
   RealtimeMiddleware,
+  RealtimeMiddlewareObj,
   RealtimePredicate,
   RealtimeSequentializer,
   RealtimeTypeGuard,
@@ -264,17 +265,14 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
   }
 
   /**
-   * Добавляет промежуточный обработчик нормализованных обновлений.
+   * Добавляет промежуточный обработчик или объект, предоставляющий его через `middleware()`.
    *
    * Обработчики выполняются в порядке регистрации. Если `next()` не вызван, обновление не
    * передаётся дальше по цепочке, асинхронным обработчикам и слушателям событий.
    *
    * @returns функция удаления обработчика
    */
-  use(middleware: RealtimeMiddleware<C>): Unsubscribe {
-    if (typeof middleware !== 'function') {
-      throw new ItdConfigError('realtime.use() принимает функцию обработки');
-    }
+  use(middleware: RealtimeMiddleware<C> | RealtimeMiddlewareObj<C>): Unsubscribe {
     return this.#engine.use(middleware);
   }
 

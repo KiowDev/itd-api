@@ -120,12 +120,15 @@ type RealtimeUpdateType = RealtimeUpdate['type'];
 type RealtimeUpdateOrigin =
   (typeof RealtimeUpdateOrigin)[keyof typeof RealtimeUpdateOrigin];
 
-interface RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> {
+interface RealtimeContextBase<U = unknown, S = unknown> {
   readonly update: U;
-  readonly stream: ItdRealtime;
+  readonly stream: S;
   readonly raw: TransportEvent | undefined;
   readonly origin: RealtimeUpdateOrigin;
 }
+
+type RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> =
+  RealtimeContextBase<U, ItdRealtime>;
 ```
 
 Один транспортный кадр создаёт не более одного нормализованного обновления. Событие
@@ -138,6 +141,7 @@ interface RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> {
 ```ts
 const router = new RealtimeRouter(selector);
 
+stream.use(router): Unsubscribe
 router.route(key, ...middleware): Unsubscribe
 router.otherwise(...middleware): Unsubscribe
 router.middleware(): RealtimeMiddleware
@@ -147,7 +151,8 @@ router.middleware(): RealtimeMiddleware
 Для зарегистрированного ключа выполняется его цепочка, иначе — `otherwise`. При отсутствии
 подходящей цепочки вызывается следующий внешний промежуточный обработчик. Таблица маршрутов
 фиксируется при получении обновления; последующие `route()`, `otherwise()` и функции
-удаления действуют только на следующие обновления.
+удаления действуют только на следующие обновления. `middleware()` нужен для ручной композиции;
+потоку маршрутизатор передаётся напрямую.
 
 ## Опции (`RealtimeOptions`)
 

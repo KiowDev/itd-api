@@ -1,4 +1,5 @@
 import type { Unsubscribe } from '../core/emitter.js';
+import { ItdConfigError } from '../core/errors.js';
 import type { RealtimeContext, RealtimeContextBase } from './updates.js';
 
 /** Продолжает цепочку промежуточных обработчиков потока. */
@@ -9,6 +10,11 @@ export type RealtimeMiddleware<C extends RealtimeContextBase = RealtimeContext> 
   context: C,
   next: RealtimeNext,
 ) => void | Promise<void>;
+
+/** Объект, предоставляющий снимок промежуточного обработчика потока. */
+export interface RealtimeMiddlewareObj<C extends RealtimeContextBase = RealtimeContext> {
+  middleware(): RealtimeMiddleware<C>;
+}
 
 /** Асинхронный обработчик нормализованного обновления потока. */
 export type RealtimeHandler<C extends RealtimeContextBase = RealtimeContext> = (
@@ -57,6 +63,22 @@ export function withRealtimeMiddlewareSnapshot<C extends RealtimeContextBase>(
 ): RealtimeMiddleware<C> {
   Object.defineProperty(middleware, REALTIME_MIDDLEWARE_SNAPSHOT, { value: capture });
   return middleware;
+}
+
+/** Создаёт отложенный промежуточный обработчик для объекта. @internal */
+export function deferRealtimeMiddleware<C extends RealtimeContextBase>(
+  source: RealtimeMiddlewareObj<C>,
+): RealtimeMiddleware<C> {
+  const capture = (): RealtimeMiddleware<C> => {
+    const middleware = source.middleware();
+    if (typeof middleware !== 'function') {
+      throw new ItdConfigError('realtime middleware() должен возвращать функцию обработки');
+    }
+    return captureRealtimeMiddleware(middleware);
+  };
+
+  const deferred: RealtimeMiddleware<C> = (context, next) => capture()(context, next);
+  return withRealtimeMiddlewareSnapshot(deferred, capture);
 }
 
 interface HandlerRegistration<C extends RealtimeContextBase> {

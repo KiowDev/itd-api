@@ -23,6 +23,7 @@ import type {
   RealtimeEvents,
   RealtimeHandler,
   RealtimeMiddleware,
+  RealtimeMiddlewareObj,
   RealtimeNext,
   RealtimeNotificationContext,
   RealtimeNotificationFilter,
@@ -370,7 +371,9 @@ export type HydratedRealtime = {
     event: K,
     listener: Listener<HydratedRealtimeEvent<K>>,
   ): Unsubscribe;
-  use(middleware: HydratedRealtimeMiddleware): Unsubscribe;
+  use(
+    middleware: HydratedRealtimeMiddleware | RealtimeMiddlewareObj<HydratedRealtimeContext>,
+  ): Unsubscribe;
   onUpdate(handler: HydratedRealtimeHandler): Unsubscribe;
   onUpdate<T extends RealtimeUpdateType>(
     type: T,

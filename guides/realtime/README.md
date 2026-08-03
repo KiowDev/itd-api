@@ -70,6 +70,7 @@ stream.use(async (context, next) => {
 });
 ```
 
+`use()` принимает функцию либо объект с методом `middleware()`, например `RealtimeRouter`.
 Функция, возвращённая `use()`, снимает обработчик. Для каждого обновления используется
 снимок цепочки и маршрутов на момент получения, поэтому изменение подписок через `use()`,
 `route()` или `otherwise()` влияет только на следующие обновления.
@@ -153,7 +154,7 @@ router.otherwise(async (_context, next) => {
   await next();
 });
 
-const removeRouter = stream.use(router.middleware());
+const removeRouter = stream.use(router);
 ```
 
 Функция выбора маршрута может быть асинхронной. Если ключ не зарегистрирован, используется

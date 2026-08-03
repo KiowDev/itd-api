@@ -4,6 +4,7 @@ import {
   ItdRealtime,
   type RealtimeContext,
   type RealtimeDeps,
+  type RealtimeMiddlewareObj,
   type RealtimeOptions,
   RealtimeRouter,
   type RealtimeTransport,
@@ -84,6 +85,7 @@ describe('realtime updates', () => {
     expect(() =>
       stream.onNotification([] as unknown as readonly ['post_comment'], () => {}),
     ).toThrow(/Список типов уведомлений/);
+    expect(() => stream.use({} as never)).toThrow(/объект с middleware/);
   });
 
   it('создаёт один логический update на известный транспортный кадр', async () => {
@@ -165,6 +167,37 @@ describe('realtime updates', () => {
 });
 
 describe('realtime middleware', () => {
+  it('снимает объектный middleware при получении каждого update', async () => {
+    const transport = new TestTransport();
+    const stream = makeStream(transport);
+    const captured: string[] = [];
+    const seen: string[] = [];
+    let version = 'first';
+    const feature: RealtimeMiddlewareObj = {
+      middleware() {
+        const snapshot = version;
+        captured.push(snapshot);
+        return async (_context, next) => {
+          seen.push(snapshot);
+          await next();
+        };
+      },
+    };
+
+    stream.use(feature);
+    expect(captured).toEqual([]);
+
+    await stream.connect();
+    transport.emit(notification('n1'));
+    version = 'second';
+    transport.emit(notification('n2'));
+    await stream.drain();
+
+    expect(captured).toEqual(['first', 'second']);
+    expect(seen).toEqual(['first', 'second']);
+    stream.disconnect();
+  });
+
   it('выполняет onion-цепочку в порядке регистрации', async () => {
     const transport = new TestTransport();
     const stream = makeStream(transport);
@@ -585,6 +618,7 @@ describe('RealtimeRouter', () => {
     });
     const seen: string[] = [];
 
+    const removeRouter = stream.use(router);
     const offComment = router.route('post_comment', async (_context, next) => {
       seen.push('comment:before');
       await next();
@@ -594,7 +628,6 @@ describe('RealtimeRouter', () => {
       seen.push('other');
       await next();
     });
-    stream.use(router.middleware());
     stream.onUpdate('notification', ({ update }) =>
       seen.push(`handler:${update.data.notification.id}`),
     );
@@ -617,6 +650,7 @@ describe('RealtimeRouter', () => {
       'other',
       'handler:n3',
     ]);
+    removeRouter();
     stream.disconnect();
   });
 
@@ -647,7 +681,7 @@ describe('RealtimeRouter', () => {
 
     const removeOldRoute = recordRoute('old');
     const removeOldFallback = recordFallback('old-fallback');
-    stream.use(router.middleware());
+    stream.use(router);
     stream.onUpdate(RealtimeUpdateType.Notification, async ({ update }) => {
       if (update.data.notification.id === 'n1') {
         await new Promise<void>((resolve) => {

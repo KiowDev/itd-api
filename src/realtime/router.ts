@@ -3,6 +3,7 @@ import { ItdConfigError } from '../core/errors.js';
 import {
   captureRealtimeMiddleware,
   type RealtimeMiddleware,
+  type RealtimeMiddlewareObj,
   runRealtimeMiddleware,
   withRealtimeMiddlewareSnapshot,
 } from './middleware.js';
@@ -32,13 +33,14 @@ interface RouteRegistration<C extends RealtimeContextBase> {
  *   }
  *   await next();
  * });
- * stream.use(router.middleware());
+ * stream.use(router);
  * ```
  */
 export class RealtimeRouter<
   K extends PropertyKey = PropertyKey,
   C extends RealtimeContextBase = RealtimeContext,
-> {
+> implements RealtimeMiddlewareObj<C>
+{
   readonly #selector: RealtimeRouteSelector<K, C>;
   readonly #routes = new Map<K, RouteRegistration<C>[]>();
   readonly #fallback: RouteRegistration<C>[] = [];
@@ -79,7 +81,7 @@ export class RealtimeRouter<
     };
   }
 
-  /** Возвращает промежуточный обработчик для `stream.use()`. */
+  /** Возвращает снимок маршрутов для `stream.use(router)` или ручной композиции. */
   middleware(): RealtimeMiddleware<C> {
     const middleware: RealtimeMiddleware<C> = (context, next) =>
       this.#captureMiddleware()(context, next);

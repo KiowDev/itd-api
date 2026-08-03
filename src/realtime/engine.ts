@@ -4,9 +4,11 @@ import { ItdConfigError } from '../core/errors.js';
 import { RealtimeStatus } from '../types/enums.js';
 import type { Logger } from '../types/options.js';
 import {
+  deferRealtimeMiddleware,
   RealtimeDispatcher,
   type RealtimeHandler,
   type RealtimeMiddleware,
+  type RealtimeMiddlewareObj,
   type RealtimePredicate,
   type RealtimeSequentializer,
 } from './middleware.js';
@@ -245,8 +247,18 @@ export class RealtimeEngine<
   }
 
   /** Добавляет промежуточный обработчик. @returns функция его удаления */
-  use(middleware: RealtimeMiddleware<C>): Unsubscribe {
-    return this.#dispatcher.use(middleware);
+  use(middleware: RealtimeMiddleware<C> | RealtimeMiddlewareObj<C>): Unsubscribe {
+    if (typeof middleware === 'function') return this.#dispatcher.use(middleware);
+    if (
+      typeof middleware !== 'object' ||
+      middleware === null ||
+      typeof middleware.middleware !== 'function'
+    ) {
+      throw new ItdConfigError(
+        'realtime.use() принимает функцию обработки или объект с middleware()',
+      );
+    }
+    return this.#dispatcher.use(deferRealtimeMiddleware(middleware));
   }
 
   /** Подписывает обработчик обновлений, подходящих под условие. */

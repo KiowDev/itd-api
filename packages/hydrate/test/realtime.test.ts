@@ -103,7 +103,7 @@ describe('гидратация realtime', () => {
       }
       await next();
     });
-    stream.use(router.middleware());
+    stream.use(router);
 
     await stream.connect();
     await transport.waitForConnection();

@@ -115,7 +115,7 @@ describe('realtime engine', () => {
       expectTypeOf(context.update).toEqualTypeOf<TestUpdate>();
       await next();
     });
-    engine.use(router.middleware());
+    engine.use(router);
     engine.onUpdate(
       () => true,
       (context) => {
