@@ -31,11 +31,15 @@ ItdError
 ├─ ItdFileError           не удалось получить или прочитать источник вложения
 ├─ ItdTimeoutError        истёк таймаут
 ├─ ItdAbortError          отменён через AbortSignal
+├─ ItdStateError          операция невозможна в текущем состоянии объекта
 └─ ItdConfigError         неверная конфигурация или аргументы (до обращения к сети; бросают билдеры)
 ```
 
 Категория ошибки — в поле `kind` (`ItdErrorKind`): `'api'` | `'file'` | `'network'` |
-`'timeout'` | `'abort'` | `'config'`.
+`'timeout'` | `'abort'` | `'state'` | `'config'`.
+
+`ItdStateError` означает, что вызов сам по себе корректен, но объект уже терминально
+освобождён через `dispose()`. Для продолжения работы нужен новый клиент или контейнер.
 
 ## `ItdApiError`
 
@@ -94,6 +98,7 @@ class ItdFileError extends ItdError {
 isItdError(v)              // любая ошибка библиотеки
 isItdApiError(v)           // ответ сервера ≥ 400
 isItdFileError(v)          // получение или чтение источника вложения
+isItdStateError(v)         // операция невозможна в текущем состоянии объекта
 isItdValidationError(v)
 isItdAuthError(v)
 isItdForbiddenError(v)

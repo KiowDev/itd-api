@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAccounts, ItdAccounts, type ItdAccountsOptions } from '../../src/accounts.js';
-import { ItdConfigError } from '../../src/core/errors.js';
+import { ItdConfigError, ItdStateError } from '../../src/core/errors.js';
 import { createKeyValueStore } from '../../src/core/key-value-store.js';
 import {
   createMultiTokenStorage,
@@ -76,6 +76,84 @@ describe('состав контейнера', () => {
 
     expect(accounts).toBeInstanceOf(ItdAccounts);
     expect(accounts.size).toBe(0);
+  });
+});
+
+describe('жизненный цикл контейнера', () => {
+  it('close() временно останавливает клиентов, но сохраняет контейнер рабочим', async () => {
+    const { accounts } = makeAccounts([json({ data: { id: '1' } })]);
+    const client = accounts.addAccount('a', { auth: 'token-a' });
+
+    await accounts.close();
+    accounts.use({ name: 'after-close', install() {} });
+
+    await expect(client.posts.get('1')).resolves.toMatchObject({ id: '1' });
+    expect(accounts.account('a')).toBe(client);
+
+    await accounts.dispose();
+  });
+
+  it('dispose() сразу завершает контейнер, его клиенты, storage-срезы и подписки', async () => {
+    const storage = new MemoryMultiTokenStorage();
+    const { accounts, mock } = makeAccounts([], { storage });
+    const client = accounts.addAccount('a', { auth: 'token-a' });
+    accounts.on('tokens', () => {});
+
+    const disposing = accounts.dispose();
+
+    expect(() => accounts.addAccount('b')).toThrow(ItdStateError);
+    expect(() => accounts.account('a')).toThrow(ItdStateError);
+    expect(() => accounts.use({ name: 'late', install() {} })).toThrow(ItdStateError);
+    expect(() => accounts.on('tokens', () => {})).toThrow(ItdStateError);
+    await expect(accounts.restore()).rejects.toBeInstanceOf(ItdStateError);
+    await expect(client.request({ method: 'GET', path: '/api/ping' })).rejects.toBeInstanceOf(
+      ItdStateError,
+    );
+    await expect(client.setSession({ accessToken: 'late' })).rejects.toBeInstanceOf(ItdStateError);
+
+    expect(accounts.dispose()).toBe(disposing);
+    await disposing;
+    await expect(accounts.dispose()).resolves.toBeUndefined();
+    expect(accounts.size).toBe(0);
+    expect(await storage.get('a')).toBeNull();
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('dispose() дожидается удаления аккаунта, уже исключённого из видимого состава', async () => {
+    const memory = new MemoryMultiTokenStorage();
+    let releaseClear: (() => void) | undefined;
+    let clearStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      clearStarted = resolve;
+    });
+    const storage: MultiTokenStorage = {
+      get: (name) => memory.get(name),
+      set: (name, session) => memory.set(name, session),
+      clear: async (name) => {
+        clearStarted();
+        await new Promise<void>((resolve) => {
+          releaseClear = resolve;
+        });
+        memory.clear(name);
+      },
+      accounts: () => memory.accounts(),
+    };
+    const { accounts } = makeAccounts(ok, { storage });
+    accounts.addAccount('a', { auth: 'token-a' });
+
+    const removing = accounts.removeAccount('a', { forget: true });
+    await started;
+    let disposed = false;
+    const disposing = accounts.dispose().then(() => {
+      disposed = true;
+    });
+
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+
+    releaseClear?.();
+    await Promise.all([removing, disposing]);
+    expect(disposed).toBe(true);
   });
 });
 
@@ -440,14 +518,16 @@ describe('восстановление и удаление', () => {
     expect(storage.accounts()).toEqual([]);
   });
 
-  it('удалённый клиент не может записать сессию обратно после forget', async () => {
+  it('удалённый клиент отклоняет изменение сессии и не пишет её после forget', async () => {
     const storage = new MemoryMultiTokenStorage();
     const { accounts } = makeAccounts(ok, { storage });
     const client = accounts.addAccount('kiow', { auth: 'token' });
     await client.request({ method: 'GET', path: '/api/ping' });
 
     await accounts.removeAccount('kiow', { forget: true });
-    await client.setSession({ accessToken: 'опоздавший-токен' });
+    await expect(client.setSession({ accessToken: 'опоздавший-токен' })).rejects.toBeInstanceOf(
+      ItdStateError,
+    );
 
     expect(storage.accounts()).toEqual([]);
     expect(await storage.get('kiow')).toBeNull();

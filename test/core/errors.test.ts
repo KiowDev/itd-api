@@ -16,11 +16,13 @@ import {
   ItdPhoneVerificationError,
   ItdRateLimitError,
   ItdServerError,
+  ItdStateError,
   ItdValidationError,
   isItdApiError,
   isItdAuthError,
   isItdError,
   isItdFileError,
+  isItdStateError,
   isItdValidationError,
 } from '../../src/core/errors.js';
 
@@ -35,6 +37,18 @@ describe('isItdFileError', () => {
 
     expect(isItdFileError(error)).toBe(true);
     expect(isItdFileError(new Error('источник недоступен'))).toBe(false);
+  });
+});
+
+describe('ItdStateError', () => {
+  it('имеет отдельную категорию и распознаётся без instanceof', () => {
+    const error = new ItdStateError('клиент уже освобождён');
+    const copy = Object.assign(Object.create(Object.getPrototypeOf({})), error);
+
+    expect(error.kind).toBe('state');
+    expect(isItdStateError(error)).toBe(true);
+    expect(isItdStateError(copy)).toBe(true);
+    expect(isItdApiError(error)).toBe(false);
   });
 });
 

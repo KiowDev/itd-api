@@ -174,6 +174,12 @@ export class AuthManager {
     return this.#emitter.once.bind(this.#emitter);
   }
 
+  /** Снимает lifecycle-подписки при терминальном освобождении владельца. @internal */
+  dispose(): void {
+    this.#invalidateInFlight();
+    this.#emitter.removeAllListeners();
+  }
+
   /**
    * Непрозрачная fallback-область авторизации.
    *

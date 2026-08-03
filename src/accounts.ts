@@ -2,7 +2,7 @@ import { assertClientCanUnusePlugin, assertClientCanUsePlugin, ItdClient } from 
 import { systemClock } from './core/clock.js';
 import { resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
-import { ItdConfigError } from './core/errors.js';
+import { ItdConfigError, ItdStateError } from './core/errors.js';
 import {
   type ControlledTokenStorage,
   controlledTokenStorage,
@@ -92,6 +92,15 @@ function validateAccountName(name: string): void {
   }
 }
 
+const DISPOSED_ACCOUNTS = new WeakSet<ItdAccounts>();
+
+function assertAccountsActive(accounts: ItdAccounts, action: string): void {
+  if (!DISPOSED_ACCOUNTS.has(accounts)) return;
+  throw new ItdStateError(
+    `ItdAccounts уже окончательно освобождён через dispose(); нельзя ${action}. Создайте новый контейнер`,
+  );
+}
+
 /**
  * Несколько аккаунтов итд.com в одном месте.
  *
@@ -130,6 +139,8 @@ export class ItdAccounts {
   readonly #clients = new Map<string, ItdClient>();
   /** Имена, чьё удаление ещё не завершилось: повторно занять их пока нельзя. */
   readonly #removing = new Set<string>();
+  /** Уже начатые удаления, которых должен дождаться терминальный dispose(). */
+  readonly #accountRemovals = new Set<Promise<void>>();
   /** Управляемые срезы хранилища: после удаления аккаунт больше не может писать через свой. */
   readonly #storageControls = new Map<string, ControlledTokenStorage>();
   /** Подписки на события клиентов — снимаются вместе с аккаунтом. */
@@ -143,6 +154,8 @@ export class ItdAccounts {
   readonly #rateLimitScope: RateLimitScope;
   readonly #emitter: Emitter<AccountEvents>;
   readonly #logger: Logger | undefined;
+  /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
+  #disposePromise: Promise<void> | undefined;
 
   constructor(options: ItdAccountsOptions = {}) {
     const { storage, plugins, rateLimitScope, ...base } = options;
@@ -214,6 +227,7 @@ export class ItdAccounts {
    * ```
    */
   addAccount(name: string, options: AddAccountOptions = {}): ItdClient {
+    assertAccountsActive(this, 'добавить аккаунт');
     validateAccountName(name);
     if (this.#clients.has(name)) {
       throw new ItdConfigError(
@@ -274,6 +288,7 @@ export class ItdAccounts {
    * ```
    */
   account(name: string): ItdClient {
+    assertAccountsActive(this, 'получить клиент аккаунта');
     const client = this.#clients.get(name);
     if (!client) {
       const known = this.names();
@@ -305,6 +320,7 @@ export class ItdAccounts {
    * ```
    */
   async restore(): Promise<string[]> {
+    assertAccountsActive(this, 'восстановить аккаунты');
     const saved = await this.#storage.accounts();
     for (const name of saved) validateAccountName(name);
 
@@ -334,6 +350,7 @@ export class ItdAccounts {
    * @returns `false`, если такого аккаунта и не было
    */
   async removeAccount(name: string, options: RemoveAccountOptions = {}): Promise<boolean> {
+    assertAccountsActive(this, 'удалить аккаунт');
     const client = this.#clients.get(name);
     if (!client) return false;
 
@@ -346,7 +363,7 @@ export class ItdAccounts {
     for (const unsubscribe of this.#eventUnsubscribers.get(name) ?? []) unsubscribe();
     this.#eventUnsubscribers.delete(name);
 
-    try {
+    const removal = (async () => {
       const errors: unknown[] = [];
       const closing = await Promise.allSettled([
         client.dispose(),
@@ -363,9 +380,14 @@ export class ItdAccounts {
       }
 
       if (errors.length > 0) throw errors[0];
+    })();
+    this.#accountRemovals.add(removal);
 
+    try {
+      await removal;
       return true;
     } finally {
+      this.#accountRemovals.delete(removal);
       this.#removing.delete(name);
     }
   }
@@ -381,6 +403,7 @@ export class ItdAccounts {
    * ```
    */
   use(plugin: ClientPlugin): this {
+    assertAccountsActive(this, 'подключить плагин');
     if (this.#removingPlugins.has(plugin?.name)) {
       throw new ItdConfigError(
         `плагин «${plugin.name}» ещё отключается; дождитесь завершения accounts.unuse()`,
@@ -461,6 +484,7 @@ export class ItdAccounts {
    * ```
    */
   on<K extends keyof AccountEvents>(event: K, listener: Listener<AccountEvents[K]>): Unsubscribe {
+    assertAccountsActive(this, 'подписаться на события');
     return this.#emitter.on(event, listener);
   }
 
@@ -493,19 +517,46 @@ export class ItdAccounts {
    * ```
    */
   async close(): Promise<void> {
-    await Promise.all([...this.#clients.values()].map((client) => client.close()));
-    this.#queues?.stop();
+    try {
+      await Promise.all([...this.#clients.values()].map((client) => client.close()));
+    } finally {
+      this.#queues?.stop();
+    }
   }
 
   /**
    * Окончательно освобождает контейнер и отключает общие плагины у всех аккаунтов.
    *
    * Для временной остановки потоков и очереди без отключения плагинов используйте
-   * {@link close}.
+   * {@link close}. Терминальное состояние устанавливается сразу: контейнер отзывает
+   * storage-срезы и подписки, а новые аккаунты, запросы его клиентов и плагины после
+   * первого `dispose()` больше не допускаются.
    */
-  async dispose(): Promise<void> {
+  dispose(): Promise<void> {
+    if (this.#disposePromise) return this.#disposePromise;
+    DISPOSED_ACCOUNTS.add(this);
+    this.#disposePromise = this.#dispose();
+    return this.#disposePromise;
+  }
+
+  async #dispose(): Promise<void> {
+    const clients = [...this.#clients.values()];
+    const controls = [...this.#storageControls.values()];
+    const accountRemovals = [...this.#accountRemovals];
+
+    for (const control of controls) control.revoke();
+    for (const unsubscribers of this.#eventUnsubscribers.values()) {
+      for (const unsubscribe of unsubscribers) unsubscribe();
+    }
+    this.#eventUnsubscribers.clear();
+    this.#storageControls.clear();
+    this.#clients.clear();
+    this.#emitter.removeAllListeners();
+
     const results = await Promise.allSettled([
-      ...[...this.#clients.values()].map((client) => client.dispose()),
+      ...clients.map((client) => client.dispose()),
+      ...controls.map((control) => control.drain()),
+      ...accountRemovals,
       Promise.resolve().then(() => this.#queues?.stop()),
     ]);
     this.#plugins.splice(0);

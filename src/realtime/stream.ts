@@ -160,6 +160,13 @@ export interface RealtimeDeps {
   logger?: Logger | undefined;
 }
 
+const REALTIME_CONNECT_GUARDS = new WeakMap<object, () => void>();
+
+/** Связывает поток с lifecycle создавшего его клиента. @internal */
+export function setRealtimeConnectGuard(stream: ItdRealtime, guard: () => void): void {
+  REALTIME_CONNECT_GUARDS.set(stream, guard);
+}
+
 /**
  * Поток уведомлений в реальном времени.
  *
@@ -362,8 +369,11 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
    * подключения при перерисовке интерфейса.
    *
    * Возвращает управление сразу после запуска: соединение живёт в фоне.
+   *
+   * @throws если создавший поток клиент уже освобождён
    */
-  connect(): Promise<void> {
+  async connect(): Promise<void> {
+    REALTIME_CONNECT_GUARDS.get(this)?.();
     return this.#engine.connect();
   }
 

@@ -61,8 +61,9 @@ close(): Promise<void>
 dispose(): Promise<void>
 ```
 `close()` временно закрывает все аккаунты и останавливает общую очередь, не отключая
-плагины. `dispose()` дополнительно вызывает teardown плагинов. `await using` вызывает
-`dispose()`.
+плагины. `dispose()` дополнительно вызывает teardown плагинов, отзывает storage-срезы и
+подписки и терминально закрывает контейнер вместе с клиентами. Новые аккаунты, запросы и
+плагины после него завершаются с `ItdStateError`. `await using` вызывает `dispose()`.
 
 ```ts
 [Symbol.iterator](): IterableIterator<[string, ItdClient]>

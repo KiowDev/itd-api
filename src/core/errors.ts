@@ -17,6 +17,8 @@ export const ItdErrorKind = Object.freeze({
   Timeout: 'timeout',
   /** Запрос отменён через `AbortSignal`. */
   Abort: 'abort',
+  /** Операция невозможна в текущем состоянии объекта. */
+  State: 'state',
   /** Не удалось получить или подготовить содержимое вложения. */
   File: 'file',
   /** Некорректная конфигурация или аргументы — обнаружено до обращения к сети. */
@@ -382,6 +384,19 @@ export class ItdAbortError extends ItdError {
 }
 
 /**
+ * Операция невозможна в текущем состоянии объекта.
+ *
+ * Например, клиент уже окончательно освобождён через `dispose()` и не может выполнять
+ * новые запросы или создавать realtime-потоки.
+ */
+export class ItdStateError extends ItdError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(ItdErrorKind.State, message, options);
+    this.name = 'ItdStateError';
+  }
+}
+
+/**
  * Некорректная конфигурация или аргументы — обнаружено до обращения к сети.
  *
  * Этим же классом сообщают о нарушенных инвариантах билдеры: например, опрос
@@ -407,6 +422,11 @@ export function isItdApiError(value: unknown): value is ItdApiError {
 /** Ошибка получения или чтения вложения. */
 export function isItdFileError(value: unknown): value is ItdFileError {
   return isItdError(value) && value.kind === ItdErrorKind.File;
+}
+
+/** Операция невозможна в текущем состоянии объекта. */
+export function isItdStateError(value: unknown): value is ItdStateError {
+  return isItdError(value) && value.kind === ItdErrorKind.State;
 }
 
 /**

@@ -96,6 +96,7 @@ export {
   ItdPhoneVerificationError,
   ItdRateLimitError,
   ItdServerError,
+  ItdStateError,
   ItdTimeoutError,
   ItdValidationError,
   isItdApiError,
@@ -108,6 +109,7 @@ export {
   isItdPhoneVerificationError,
   isItdRateLimitError,
   isItdServerError,
+  isItdStateError,
   isItdValidationError,
 } from './core/errors.js';
 export {

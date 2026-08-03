@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { post } from '../../src/builders/post.js';
 import { createClient, ItdClient } from '../../src/client.js';
-import { ItdAbortError, ItdConfigError, ItdNotFoundError } from '../../src/core/errors.js';
+import {
+  ItdAbortError,
+  ItdConfigError,
+  ItdNotFoundError,
+  ItdStateError,
+} from '../../src/core/errors.js';
 import type { FileInput } from '../../src/index.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
 import type { ItdClientOptions } from '../../src/types/options.js';
@@ -1020,6 +1025,41 @@ describe('ленивые ресурсы', () => {
 });
 
 describe('жизненный цикл', () => {
+  it('close() остаётся временной остановкой и не запрещает дальнейшую работу', async () => {
+    const { itd } = makeClient([json({ data: { id: '1' } })]);
+
+    await itd.close();
+    itd.use({ name: 'after-close', install() {} });
+    const stream = itd.realtime({ syncCount: false });
+
+    await expect(itd.posts.get('1')).resolves.toMatchObject({ id: '1' });
+    expect(stream.status).toBe('disconnected');
+
+    await itd.dispose();
+  });
+
+  it('dispose() сразу переводит клиент и ранее полученные фасады в терминальное состояние', async () => {
+    const { itd, mock } = makeClient([]);
+    const posts = itd.posts;
+    const stream = itd.realtime({ syncCount: false });
+
+    const disposing = itd.dispose();
+
+    expect(() => itd.use({ name: 'late', install() {} })).toThrow(ItdStateError);
+    expect(() => itd.realtime()).toThrow(ItdStateError);
+    expect(() => itd.on('tokens', () => {})).toThrow(ItdStateError);
+    expect(() => itd.defineService({ name: 'late', baseUrl: 'https://late.itd.test' })).toThrow(
+      ItdStateError,
+    );
+    await expect(posts.get('1')).rejects.toBeInstanceOf(ItdStateError);
+    await expect(stream.connect()).rejects.toBeInstanceOf(ItdStateError);
+    await expect(itd.setSession({ accessToken: 'late' })).rejects.toBeInstanceOf(ItdStateError);
+
+    await disposing;
+    await expect(itd.dispose()).resolves.toBeUndefined();
+    expect(mock.callCount).toBe(0);
+  });
+
   it('сохраняет realtime при смене sid и завершает при смене sub', async () => {
     const { itd } = makeClient([], {
       auth: makeJwt({ sub: 'user-a', sid: 'session-a' }),

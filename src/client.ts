@@ -3,6 +3,7 @@ import { type AuthEvents, AuthManager } from './core/auth.js';
 import { BUILT_IN_SERVICES, type ResolvedConfig, resolveConfig } from './core/config.js';
 import { CookieJar } from './core/cookies.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
+import { ItdStateError } from './core/errors.js';
 import { HttpClient } from './core/http.js';
 import {
   composePipeline,
@@ -15,7 +16,7 @@ import {
   createServicesMiddleware,
   type RequestMiddleware,
 } from './core/middleware.js';
-import type { PipelineRequest } from './core/pipeline.js';
+import type { PipelineRequest, RequestHandler } from './core/pipeline.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import { PluginRegistry } from './core/plugins/registry.js';
 import { RequestQueuePool } from './core/rate-limit.js';
@@ -24,7 +25,7 @@ import type { ItdSession } from './core/storage.js';
 import { Transport } from './core/transport.js';
 import { originOf } from './core/url.js';
 import type { UserId } from './models/common.js';
-import { ItdRealtime, type RealtimeOptions } from './realtime/stream.js';
+import { ItdRealtime, type RealtimeOptions, setRealtimeConnectGuard } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
 import { CommentsResource } from './resources/comments.js';
 import { FilesResource, type UploadOptions } from './resources/files.js';
@@ -47,9 +48,18 @@ declare global {
 }
 
 const CLIENT_PLUGIN_REGISTRIES = new WeakMap<ItdClient, PluginRegistry>();
+const DISPOSED_CLIENTS = new WeakSet<ItdClient>();
+
+function assertClientActive(client: ItdClient, action: string): void {
+  if (!DISPOSED_CLIENTS.has(client)) return;
+  throw new ItdStateError(
+    `ItdClient уже окончательно освобождён через dispose(); нельзя ${action}. Создайте новый клиент`,
+  );
+}
 
 /** Проверяет возможность подключить плагин к клиенту без вызова `install()`. @internal */
 export function assertClientCanUsePlugin(client: ItdClient, plugin: ClientPlugin): void {
+  assertClientActive(client, 'подключить плагин');
   CLIENT_PLUGIN_REGISTRIES.get(client)?.assertCanAdd(plugin);
 }
 
@@ -116,6 +126,8 @@ export class ItdClient {
   readonly #services: ServiceRegistry;
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
   readonly #streams = new Set<ItdRealtime>();
+  /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
+  #disposePromise: Promise<void> | undefined;
 
   // Ресурсы создаются при первом обращении: клиенту редко нужны все тринадцать разом,
   // а `close()` не должен поднимать накопитель телеметрии только ради его закрытия.
@@ -317,14 +329,24 @@ export class ItdClient {
     );
 
     const handler = composePipeline(middlewares, transport.send);
+    // Проверка стоит перед общим handler, а не в публичном request(): так она действует
+    // для сохранённого до dispose() ресурса и для прямого вызова auth.refresh().
+    const clientHandler: RequestHandler = (request) => {
+      try {
+        assertClientActive(this, 'выполнить новый запрос');
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return handler(request);
+    };
     // AuthManager использует тот же pipeline. Служебные sign-in/refresh сами объявляют
     // точечную retrySafety и явно пропускают auth headers/recovery. Отдельная цепочка не нужна.
-    authManager = new AuthManager(config, handler, this.#jar, {
+    authManager = new AuthManager(config, clientHandler, this.#jar, {
       onAccountChange: () => this.#disconnectStreams(),
     });
     this.#authManager = authManager;
 
-    this.#http = new HttpClient({ handler, baseUrl: config.baseUrl });
+    this.#http = new HttpClient({ handler: clientHandler, baseUrl: config.baseUrl });
   }
 
   /** Базовый URL, к которому обращается клиент. */
@@ -342,6 +364,8 @@ export class ItdClient {
    * ```ts
    * const raw = await itd.request({ method: 'GET', path: '/api/posts', raw: true });
    * ```
+   *
+   * @throws {ItdStateError} если клиент уже освобождён через {@link dispose}
    */
   request<T = unknown>(options: RawRequestOptions): Promise<T> {
     return this.#http.request<T>({ ...options, operationId: options.operationId ?? 'raw' });
@@ -355,6 +379,7 @@ export class ItdClient {
    * можно в любой момент, но обычно это делают сразу после создания клиента.
    *
    * @throws {ItdConfigError} если плагин задан неверно или уже подключён
+   * @throws {ItdStateError} если клиент уже освобождён через {@link dispose}
    *
    * @example
    * ```ts
@@ -369,6 +394,7 @@ export class ItdClient {
    * ```
    */
   use(plugin: ClientPlugin): this {
+    assertClientActive(this, 'подключить плагин');
     this.#plugins.add(plugin, {
       baseUrl: this.#config.baseUrl,
       logger: this.#config.logger,
@@ -412,6 +438,7 @@ export class ItdClient {
    * поддоменам. Стороннему хосту токен нужно разрешить явно: `auth: true`.
    *
    * @throws {ItdConfigError} если определение неверно или имя уже занято
+   * @throws {ItdStateError} если клиент уже освобождён через {@link dispose}
    *
    * @example Сервис платформы на поддомене — токен уходит сам
    * ```ts
@@ -425,6 +452,7 @@ export class ItdClient {
    * ```
    */
   defineService(definition: ServiceDefinition): this {
+    assertClientActive(this, 'зарегистрировать сервис');
     this.#services.define(definition);
     return this;
   }
@@ -453,6 +481,7 @@ export class ItdClient {
    * ```
    */
   on<K extends keyof AuthEvents>(event: K, listener: Listener<AuthEvents[K]>): Unsubscribe {
+    assertClientActive(this, 'подписаться на события');
     return this.#authManager.on(event, listener);
   }
 
@@ -476,8 +505,11 @@ export class ItdClient {
    *
    * await stream.connect();
    * ```
+   *
+   * @throws {ItdStateError} если клиент уже освобождён через {@link dispose}
    */
   realtime(options: RealtimeOptions = {}): ItdRealtime {
+    assertClientActive(this, 'создать realtime-поток');
     let stream!: ItdRealtime;
     stream = new ItdRealtime(
       {
@@ -496,6 +528,7 @@ export class ItdClient {
       },
       options,
     );
+    setRealtimeConnectGuard(stream, () => assertClientActive(this, 'подключить realtime-поток'));
 
     // Регистрируем для `close()`: поток держит открытое соединение и таймер переподключения.
     this.#streams.add(stream);
@@ -534,11 +567,20 @@ export class ItdClient {
   /**
    * Окончательно освобождает клиент: выполняет {@link close} и отключает все плагины.
    *
-   * В отличие от `close()`, после `dispose()` плагины не восстанавливаются автоматически.
-   * Сам клиент остаётся пригоден для обычных запросов; при необходимости плагины можно
-   * подключить заново через {@link use}.
+   * Терминальное состояние устанавливается сразу при первом вызове. После этого новые
+   * запросы, подключение плагинов, регистрация сервисов и создание или повторный запуск
+   * realtime-потоков завершаются с {@link ItdStateError}. Повторные вызовы возвращают
+   * тот же результат очистки.
    */
-  async dispose(): Promise<void> {
+  dispose(): Promise<void> {
+    if (this.#disposePromise) return this.#disposePromise;
+    DISPOSED_CLIENTS.add(this);
+    this.#disposePromise = this.#dispose();
+    return this.#disposePromise;
+  }
+
+  async #dispose(): Promise<void> {
+    this.#authManager.dispose();
     const results = await Promise.allSettled([this.close(), this.#plugins.dispose()]);
     const errors = results
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -597,8 +639,17 @@ export class ItdClient {
     return this.#authManager.getUserId();
   }
 
-  /** Восстанавливает сохранённую сессию, включая cookie. */
+  /**
+   * Восстанавливает сохранённую сессию, включая cookie.
+   *
+   * @throws {ItdStateError} если клиент уже освобождён через {@link dispose}
+   */
   setSession(session: ItdSession): Promise<void> {
+    try {
+      assertClientActive(this, 'изменить сессию');
+    } catch (error) {
+      return Promise.reject(error);
+    }
     return this.#authManager.setSession(session);
   }
 

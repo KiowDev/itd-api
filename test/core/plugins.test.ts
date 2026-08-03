@@ -653,6 +653,24 @@ describe('отключение плагинов и очистка ресурсо
     expect(itd.pluginNames()).toEqual([]);
   });
 
+  it('повторный dispose возвращает тот же результат, включая ошибку teardown', async () => {
+    const { itd } = makeClient([]);
+    const failure = new Error('teardown failed');
+    itd.use({
+      name: 'broken-cleanup',
+      install: () => () => {
+        throw failure;
+      },
+    });
+
+    const first = itd.dispose();
+    const second = itd.dispose();
+
+    expect(second).toBe(first);
+    await expect(first).rejects.toThrow('Не удалось освободить клиент');
+    await expect(itd.dispose()).rejects.toThrow('Не удалось освободить клиент');
+  });
+
   it('await using вызывает teardown плагина', async () => {
     const { itd } = makeClient([]);
     const teardown = vi.fn();
