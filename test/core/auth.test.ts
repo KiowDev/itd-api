@@ -1,78 +1,39 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AuthManager } from '../../src/core/auth.js';
-import { resolveConfig } from '../../src/core/config.js';
-import { CookieJar } from '../../src/core/cookies.js';
+import { createClientRuntime } from '../../src/core/client-runtime.js';
 import { ItdAuthError, ItdConfigError } from '../../src/core/errors.js';
-import { HttpClient } from '../../src/core/http.js';
-import {
-  composePipeline,
-  createAuthMiddleware,
-  createPluginsMiddleware,
-  createRetryMiddleware,
-} from '../../src/core/middleware.js';
-import { PluginRegistry } from '../../src/core/plugins/registry.js';
 import { type ItdSession, MemoryTokenStorage } from '../../src/core/storage.js';
-import { Transport } from '../../src/core/transport.js';
 import type { ItdClientOptions } from '../../src/types/options.js';
 import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
-/** Собирает связку транспорт + авторизация так же, как это делает ItdClient. */
+/** Собирает тот же runtime, который использует ItdClient. */
 function makeAuth(
   handler: MockHandler | Response[],
   options: ItdClientOptions = {},
   onAccountChange?: () => void,
 ) {
   const mock = createMockFetch(handler);
-  const config = resolveConfig({
-    baseUrl: 'https://itd.test',
-    fetch: mock.fetch,
-    retry: false,
-    rateLimit: false,
-    mode: 'server',
-    storage: new MemoryTokenStorage(),
-    ...options,
-  });
-
-  const jar = new CookieJar();
-  let auth!: AuthManager;
-
-  const transport = new Transport(config, {
-    cookies: config.useCookieJar ? jar : undefined,
-    getDeviceId: () => auth.getDeviceId(),
-    onRateLimit: undefined,
-  });
-
-  const plugins = new PluginRegistry();
-  const pluginsLayer = createPluginsMiddleware(plugins);
-  const retriesLayer = createRetryMiddleware({
-    retry: config.retry,
-    rateLimitDelays: [],
-    pauseQueue: undefined,
-    hooks: config.hooks,
-    logger: config.logger,
-    buildUrl: (request) => transport.buildUrl(request),
-  });
-
-  const authPipeline = composePipeline([pluginsLayer, retriesLayer], transport.send);
-  auth = new AuthManager(config, authPipeline, jar, { onAccountChange });
-
-  const handlerFn = composePipeline(
-    [
-      pluginsLayer,
-      retriesLayer,
-      createAuthMiddleware({
-        getAuthHeaders: () => auth.getAuthHeaders(),
-        onUnauthorized: () => auth.onUnauthorized(),
-        autoRefresh: config.autoRefresh,
-      }),
-    ],
-    transport.send,
+  const runtime = createClientRuntime(
+    {
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      retry: false,
+      rateLimit: false,
+      mode: 'server',
+      storage: new MemoryTokenStorage(),
+      ...options,
+    },
+    { onAccountChange },
   );
 
-  const http = new HttpClient({ handler: handlerFn, baseUrl: config.baseUrl });
-
-  return { auth, http, jar, mock, config, plugins };
+  return {
+    auth: runtime.auth,
+    http: runtime.http,
+    jar: runtime.cookies,
+    mock,
+    config: runtime.config,
+    plugins: runtime.plugins,
+  };
 }
 
 describe('получение токена', () => {

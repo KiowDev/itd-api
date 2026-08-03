@@ -39,5 +39,8 @@ describe('состав точек входа', () => {
     ]) {
       expect(core).toHaveProperty(name);
     }
+
+    expect(core).not.toHaveProperty('createClientRuntime');
+    expect(core).not.toHaveProperty('ClientRuntimeStage');
   });
 });

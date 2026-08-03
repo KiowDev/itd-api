@@ -77,11 +77,14 @@ export type RequestMiddleware = (
 /**
  * Собирает слои в один обработчик.
  *
- * Первый слой оказывается самым внешним. Порядок задаётся в {@link ItdClient}.
+ * Первый слой оказывается самым внешним. Порядок задаётся внутренним client runtime.
  *
  * @example
  * ```ts
- * const handler = composePipeline([queue, plugins, retries, auth], transport.send);
+ * const handler = composePipeline(
+ *   [plugins, services, retry, authRecovery, authPreparation, queue, authHeaders],
+ *   transport.send,
+ * );
  * ```
  */
 export function composePipeline(

@@ -1,29 +1,13 @@
 import type { FileInput } from './core/attachments/contracts.js';
-import { type AuthEvents, AuthManager } from './core/auth.js';
-import { BUILT_IN_SERVICES, type ResolvedConfig, resolveConfig } from './core/config.js';
-import { CookieJar } from './core/cookies.js';
+import type { AuthEvents } from './core/auth.js';
+import { type ClientRuntime, createClientRuntime } from './core/client-runtime.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdStateError } from './core/errors.js';
-import { HttpClient } from './core/http.js';
-import {
-  composePipeline,
-  createAuthHeadersMiddleware,
-  createAuthPreparationMiddleware,
-  createAuthRecoveryMiddleware,
-  createPluginsMiddleware,
-  createQueueMiddleware,
-  createRetryMiddleware,
-  createServicesMiddleware,
-  type RequestMiddleware,
-} from './core/middleware.js';
-import type { PipelineRequest, RequestHandler } from './core/pipeline.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
-import { PluginRegistry } from './core/plugins/registry.js';
-import { RequestQueuePool } from './core/rate-limit.js';
-import { mergeService, type ServiceDefinition, ServiceRegistry } from './core/services.js';
+import type { PluginRegistry } from './core/plugins/registry.js';
+import type { RequestQueuePool } from './core/rate-limit.js';
+import type { ServiceDefinition } from './core/services.js';
 import type { ItdSession } from './core/storage.js';
-import { Transport } from './core/transport.js';
-import { originOf } from './core/url.js';
 import type { UserId } from './models/common.js';
 import { ItdRealtime, type RealtimeOptions, setRealtimeConnectGuard } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
@@ -114,16 +98,7 @@ export interface ItdClientInternals {
  * ```
  */
 export class ItdClient {
-  readonly #config: ResolvedConfig;
-  readonly #http: HttpClient;
-  readonly #transport: Transport;
-  readonly #authManager: AuthManager;
-  readonly #jar: CookieJar;
-  readonly #queues: RequestQueuePool | undefined;
-  /** Заведена ли очередь этим клиентом. Чужую он останавливать не вправе. */
-  readonly #ownsQueues: boolean;
-  readonly #plugins = new PluginRegistry();
-  readonly #services: ServiceRegistry;
+  readonly #runtime: ClientRuntime;
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
   readonly #streams = new Set<ItdRealtime>();
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
@@ -161,197 +136,94 @@ export class ItdClient {
 
   /** Авторизация, сессии и пароли. */
   get auth(): AuthResource {
-    this.#auth ??= new AuthResource(this.#http, { auth: this.#authManager });
+    this.#auth ??= new AuthResource(this.#runtime.http, { auth: this.#runtime.auth });
     return this.#auth;
   }
 
   /** Профили, подписки, блокировки, приватность. */
   get users(): UsersResource {
-    this.#users ??= new UsersResource(this.#http, { uploadFile: this.#uploadFile });
+    this.#users ??= new UsersResource(this.#runtime.http, { uploadFile: this.#uploadFile });
     return this.#users;
   }
 
   /** Лента, публикация, реакции, репосты, комментарии к постам. */
   get posts(): PostsResource {
-    this.#posts ??= new PostsResource(this.#http, { uploadFiles: this.#uploadFiles });
+    this.#posts ??= new PostsResource(this.#runtime.http, { uploadFiles: this.#uploadFiles });
     return this.#posts;
   }
 
   /** Ответы на комментарии и действия над ними. */
   get comments(): CommentsResource {
-    this.#comments ??= new CommentsResource(this.#http, { uploadFiles: this.#uploadFiles });
+    this.#comments ??= new CommentsResource(this.#runtime.http, { uploadFiles: this.#uploadFiles });
     return this.#comments;
   }
 
   /** Загрузка файлов и медиа. */
   get files(): FilesResource {
-    this.#files ??= new FilesResource(this.#http, { fetch: this.#config.fetch });
+    this.#files ??= new FilesResource(this.#runtime.http, { fetch: this.#runtime.config.fetch });
     return this.#files;
   }
 
   /** Уведомления: список, счётчик, отметки о прочтении, настройки. */
   get notifications(): NotificationsResource {
-    this.#notifications ??= new NotificationsResource(this.#http);
+    this.#notifications ??= new NotificationsResource(this.#runtime.http);
     return this.#notifications;
   }
 
   /** Хэштеги и посты по ним. */
   get hashtags(): HashtagsResource {
-    this.#hashtags ??= new HashtagsResource(this.#http);
+    this.#hashtags ??= new HashtagsResource(this.#runtime.http);
     return this.#hashtags;
   }
 
   /** Глобальный поиск по пользователям и хэштегам. */
   get search(): SearchResource {
-    this.#search ??= new SearchResource(this.#http);
+    this.#search ??= new SearchResource(this.#runtime.http);
     return this.#search;
   }
 
   /** Жалобы на контент и пользователей. */
   get reports(): ReportsResource {
-    this.#reports ??= new ReportsResource(this.#http);
+    this.#reports ??= new ReportsResource(this.#runtime.http);
     return this.#reports;
   }
 
   /** Верификация профиля. */
   get verification(): VerificationResource {
-    this.#verification ??= new VerificationResource(this.#http);
+    this.#verification ??= new VerificationResource(this.#runtime.http);
     return this.#verification;
   }
 
   /** Подписка и способы оплаты. */
   get subscription(): SubscriptionResource {
-    this.#subscription ??= new SubscriptionResource(this.#http);
+    this.#subscription ??= new SubscriptionResource(this.#runtime.http);
     return this.#subscription;
   }
 
   /** Сведения о платформе: версии приложений, изменения, анонсы, баннер события. */
   get platform(): PlatformResource {
-    this.#platform ??= new PlatformResource(this.#http);
+    this.#platform ??= new PlatformResource(this.#runtime.http);
     return this.#platform;
   }
 
   /** Телеметрия просмотров. */
   get telemetry(): TelemetryResource {
-    this.#telemetry ??= new TelemetryResource(this.#http);
+    this.#telemetry ??= new TelemetryResource(this.#runtime.http);
     return this.#telemetry;
   }
 
   constructor(options: ItdClientOptions = {}, internals: ItdClientInternals = {}) {
-    CLIENT_PLUGIN_REGISTRIES.set(this, this.#plugins);
-    const config = resolveConfig(options);
-    this.#config = config;
-    this.#jar = new CookieJar();
-    this.#services = new ServiceRegistry(config.baseUrl);
-
-    // Встроенные сервисы регистрируются первыми; пользовательское определение с тем же
-    // именем не заменяет их, а накладывается — см. mergeService.
-    const overrides = new Map(config.services.map((service) => [service.name.trim(), service]));
-    for (const builtIn of BUILT_IN_SERVICES) {
-      const override = overrides.get(builtIn.name);
-      overrides.delete(builtIn.name);
-      this.#services.define(override ? mergeService(builtIn, override) : builtIn);
-    }
-    for (const service of overrides.values()) this.#services.define(service);
-
-    // Очередь может прийти извне — общая на несколько аккаунтов. `rateLimit: false` отключает
-    // её и в этом случае: отдельный аккаунт вправе не вставать в общую очередь.
-    const shared = config.rateLimit ? internals.queues : undefined;
-    const queues =
-      shared ??
-      (config.rateLimit ? new RequestQueuePool(config.rateLimit, config.clock) : undefined);
-    this.#queues = queues;
-    // Гасить в `close()` можно только свою: остановка чужой отменила бы ожидающие запросы
-    // соседних аккаунтов.
-    this.#ownsQueues = shared === undefined;
-
-    // Заполняется ниже. Транспорту нужен `getDeviceId` авторизации, а авторизации —
-    // транспорт; взаимная ссылка замыкается через отложенный вызов.
-    let authManager!: AuthManager;
-
-    // Hooks конструктора наблюдают lifecycle клиента. Плагины используют отдельные
-    // operation transformers и attempt interceptors, поэтому эти контракты не смешиваются.
-    const hooks = config.hooks;
-    const transport = new Transport(
-      { ...config, hooks },
-      {
-        cookies: config.useCookieJar ? this.#jar : undefined,
-        getDeviceId: () => authManager.getDeviceId(),
-        onRateLimit:
-          queues && config.rateLimit?.respectHeaders
-            ? (limit, remaining, request) => this.#throttleByHeaders(limit, remaining, request)
-            : undefined,
-      },
-    );
-    this.#transport = transport;
-
-    const pluginsLayer = createPluginsMiddleware(this.#plugins);
-    const retriesLayer = createRetryMiddleware({
-      clock: config.clock,
-      retry: config.retry,
-      rateLimitDelays: config.rateLimit?.retryDelays ?? [],
-      pauseQueue: queues ? (ms, request) => this.#queueFor(request)?.pause(ms) : undefined,
-      hooks,
-      logger: config.logger,
-      buildUrl: (request) => transport.buildUrl(request),
-    });
-
-    // Логические слои выполняются один раз. Внутри retry auth recovery может породить
-    // дополнительную попытку после 401. Каждая попытка готовит auth state до queue (ленивый
-    // sign-in сам пользуется pipeline), отдельно занимает slot, после ожидания синхронно
-    // читает самый свежий token и только затем вызывает transport.
-    const middlewares: RequestMiddleware[] = [pluginsLayer];
-    middlewares.push(createServicesMiddleware(this.#services));
-    middlewares.push(retriesLayer);
-    middlewares.push(
-      createAuthRecoveryMiddleware({
-        onUnauthorized: () => authManager.onUnauthorized(),
-        autoRefresh: config.autoRefresh,
-      }),
-    );
-    middlewares.push(
-      createAuthPreparationMiddleware({
-        prepareAuth: () => authManager.getAccessToken().then(() => undefined),
-      }),
-    );
-    if (queues) {
-      middlewares.push(
-        createQueueMiddleware((request, task) => {
-          const queue = this.#queueFor(request);
-          return queue ? queue.schedule(task, request.signal) : task();
-        }),
-      );
-    }
-    middlewares.push(
-      createAuthHeadersMiddleware({
-        getAuthHeaders: () => authManager.getCurrentAuthHeaders(),
-      }),
-    );
-
-    const handler = composePipeline(middlewares, transport.send);
-    // Проверка стоит перед общим handler, а не в публичном request(): так она действует
-    // для сохранённого до dispose() ресурса и для прямого вызова auth.refresh().
-    const clientHandler: RequestHandler = (request) => {
-      try {
-        assertClientActive(this, 'выполнить новый запрос');
-      } catch (error) {
-        return Promise.reject(error);
-      }
-      return handler(request);
-    };
-    // AuthManager использует тот же pipeline. Служебные sign-in/refresh сами объявляют
-    // точечную retrySafety и явно пропускают auth headers/recovery. Отдельная цепочка не нужна.
-    authManager = new AuthManager(config, clientHandler, this.#jar, {
+    this.#runtime = createClientRuntime(options, {
+      queues: internals.queues,
+      assertActive: (action) => assertClientActive(this, action),
       onAccountChange: () => this.#disconnectStreams(),
     });
-    this.#authManager = authManager;
-
-    this.#http = new HttpClient({ handler: clientHandler, baseUrl: config.baseUrl });
+    CLIENT_PLUGIN_REGISTRIES.set(this, this.#runtime.plugins);
   }
 
   /** Базовый URL, к которому обращается клиент. */
   get baseUrl(): string {
-    return this.#config.baseUrl;
+    return this.#runtime.config.baseUrl;
   }
 
   /**
@@ -368,7 +240,10 @@ export class ItdClient {
    * @throws {ItdStateError} если клиент уже освобождён через {@link dispose}
    */
   request<T = unknown>(options: RawRequestOptions): Promise<T> {
-    return this.#http.request<T>({ ...options, operationId: options.operationId ?? 'raw' });
+    return this.#runtime.http.request<T>({
+      ...options,
+      operationId: options.operationId ?? 'raw',
+    });
   }
 
   /**
@@ -395,23 +270,23 @@ export class ItdClient {
    */
   use(plugin: ClientPlugin): this {
     assertClientActive(this, 'подключить плагин');
-    this.#plugins.add(plugin, {
-      baseUrl: this.#config.baseUrl,
-      logger: this.#config.logger,
-      getAuthScope: () => this.#authManager.getAuthScope(),
-      getAuthIdentity: () => this.#authManager.getAuthIdentity(),
+    this.#runtime.plugins.add(plugin, {
+      baseUrl: this.#runtime.config.baseUrl,
+      logger: this.#runtime.config.logger,
+      getAuthScope: () => this.#runtime.auth.getAuthScope(),
+      getAuthIdentity: () => this.#runtime.auth.getAuthIdentity(),
     });
     return this;
   }
 
   /** Имена подключённых плагинов в фактическом порядке выполнения обёрток. */
   pluginNames(): string[] {
-    return this.#plugins.names();
+    return this.#runtime.plugins.names();
   }
 
   /** Подключён ли плагин с таким именем. */
   hasPlugin(name: string): boolean {
-    return this.#plugins.has(name);
+    return this.#runtime.plugins.has(name);
   }
 
   /**
@@ -424,7 +299,7 @@ export class ItdClient {
    * @throws {ItdConfigError} если от плагина зависит другой подключённый плагин
    */
   unuse(name: string): Promise<boolean> {
-    return this.#plugins.remove(name);
+    return this.#runtime.plugins.remove(name);
   }
 
   /**
@@ -453,7 +328,7 @@ export class ItdClient {
    */
   defineService(definition: ServiceDefinition): this {
     assertClientActive(this, 'зарегистрировать сервис');
-    this.#services.define(definition);
+    this.#runtime.services.define(definition);
     return this;
   }
 
@@ -463,7 +338,7 @@ export class ItdClient {
    * @throws {ItdConfigError} если сервис не зарегистрирован
    */
   serviceBaseUrl(name: string): string {
-    return this.#services.resolveBaseUrl(name);
+    return this.#runtime.services.resolveBaseUrl(name);
   }
 
   /**
@@ -482,7 +357,7 @@ export class ItdClient {
    */
   on<K extends keyof AuthEvents>(event: K, listener: Listener<AuthEvents[K]>): Unsubscribe {
     assertClientActive(this, 'подписаться на события');
-    return this.#authManager.on(event, listener);
+    return this.#runtime.auth.on(event, listener);
   }
 
   /**
@@ -513,18 +388,18 @@ export class ItdClient {
     let stream!: ItdRealtime;
     stream = new ItdRealtime(
       {
-        baseUrl: this.#config.baseUrl,
-        fetch: this.#config.fetch,
-        baseHeaders: (url) => this.#transport.platformHeaders(url),
-        getAuthIdentity: () => this.#authManager.getCurrentAuthIdentity(),
-        getAuthScope: () => this.#authManager.getAuthScope(),
-        getToken: () => this.#authManager.getAccessToken(),
-        refresh: () => this.#authManager.onUnauthorized(),
+        baseUrl: this.#runtime.config.baseUrl,
+        fetch: this.#runtime.config.fetch,
+        baseHeaders: (url) => this.#runtime.platformHeaders(url),
+        getAuthIdentity: () => this.#runtime.auth.getCurrentAuthIdentity(),
+        getAuthScope: () => this.#runtime.auth.getAuthScope(),
+        getToken: () => this.#runtime.auth.getAccessToken(),
+        refresh: () => this.#runtime.auth.onUnauthorized(),
         fetchUnreadCount: () => this.notifications.count(),
         onConnect: () => this.#streams.add(stream),
         onClose: () => this.#streams.delete(stream),
-        logger: this.#config.logger,
-        clock: this.#config.clock,
+        logger: this.#runtime.config.logger,
+        clock: this.#runtime.config.clock,
       },
       options,
     );
@@ -560,7 +435,7 @@ export class ItdClient {
       // того, чтобы его тут же закрыть.
       await this.#telemetry?.close();
     } finally {
-      if (this.#ownsQueues) this.#queues?.stop();
+      this.#runtime.close();
     }
   }
 
@@ -580,8 +455,7 @@ export class ItdClient {
   }
 
   async #dispose(): Promise<void> {
-    this.#authManager.dispose();
-    const results = await Promise.allSettled([this.close(), this.#plugins.dispose()]);
+    const results = await Promise.allSettled([this.close(), this.#runtime.dispose()]);
     const errors = results
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       .map((result) => result.reason);
@@ -614,7 +488,7 @@ export class ItdClient {
 
   /** Текущая сессия целиком — чтобы сохранить её самостоятельно. */
   getSession(): Promise<ItdSession | null> {
-    return this.#authManager.getSession();
+    return this.#runtime.auth.getSession();
   }
 
   /**
@@ -636,7 +510,7 @@ export class ItdClient {
    * ```
    */
   getUserId(): Promise<UserId | undefined> {
-    return this.#authManager.getUserId();
+    return this.#runtime.auth.getUserId();
   }
 
   /**
@@ -650,40 +524,7 @@ export class ItdClient {
     } catch (error) {
       return Promise.reject(error);
     }
-    return this.#authManager.setSession(session);
-  }
-
-  /**
-   * Придерживает очередь, когда лимит сервера исчерпан.
-   *
-   * Сервер сообщает остаток в заголовке `x-ratelimit-remaining`. Как только тот доходит
-   * до нуля, очередь встаёт на первую паузу лестницы — короткую, потому что окно могло
-   * почти истечь. Если оно ещё действует, следующий запрос получит `429`, и дальше
-   * лестницу отработает планировщик повторов.
-   *
-   * Смысл этой паузы прежде всего в том, чтобы при работе в несколько потоков остальные
-   * запросы не улетели в стену все разом.
-   */
-  #throttleByHeaders(
-    limit: number | undefined,
-    remaining: number | undefined,
-    request: PipelineRequest,
-  ): void {
-    if (remaining === undefined || remaining > 0) return;
-
-    const first = this.#config.rateLimit?.retryDelays[0];
-    if (first === undefined) return;
-
-    this.#queueFor(request)?.pause(first);
-    this.#config.logger?.debug(
-      `лимит сервера исчерпан (${remaining} из ${limit ?? '?'}), очередь ждёт ${first} мс`,
-    );
-  }
-
-  /** Очередь конечного origin уже разрешённого запроса. */
-  #queueFor(request: PipelineRequest) {
-    const destination = originOf(this.#transport.buildUrl(request));
-    return this.#queues?.for(destination || undefined);
+    return this.#runtime.auth.setSession(session);
   }
 }
 
