@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/hydrate",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Методы действий на моделях и уведомлениях itd-api",
   "repository": {
     "type": "git",
@@ -58,7 +58,7 @@
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
   "peerDependencies": {
-    "itd-api": ">=0.4.0 <1.0.0"
+    "itd-api": ">=0.5.0 <1.0.0"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
