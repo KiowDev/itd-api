@@ -10,7 +10,6 @@ const builds = [
     entryPoint: 'src/index.ts',
     tsconfig: 'tsconfig.json',
     out: 'guides/web/api/generated/core',
-    intentionallyNotExported: ['ItdClientInternals'],
   },
   // Платформенные точки входа реализуют интерфейсы ядра и ссылаются на его типы.
   // Дублировать их описание здесь незачем: оно целиком лежит в наборе `itd-api`.

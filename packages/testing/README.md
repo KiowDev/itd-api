@@ -66,6 +66,24 @@ query-параметры, заголовки, JSON, `FormData`, текст и д
 `mock.requests` скрывает токены, cookie, пароли, OTP и Turnstile-токены.
 `sseResponse()` создаёт настоящий поток Server-Sent Events для проверки SSE-разбора.
 
+## Моки логических операций
+
+Когда HTTP-детали не являются предметом теста, подменяйте стабильный `operationId`:
+
+```ts
+import { ItdClient } from 'itd-api';
+import { createMockOperations, userFixture } from '@itd-api/testing';
+
+const mock = createMockOperations().operation('users.me', userFixture({ username: 'alice' }));
+const itd = new ItdClient({ auth: 'test-token' }).use(mock);
+
+await itd.users.me();
+mock.assertDone();
+```
+
+Такой mock завершает логическую операцию до retry, auth и transport. Для проверки `401`,
+повторов, заголовков и сериализации по-прежнему используйте `createMockFetch()`.
+
 ## Управляемое время и realtime
 
 ```ts

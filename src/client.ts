@@ -20,7 +20,11 @@ import { PostsResource } from './resources/posts.js';
 import { ReportsResource } from './resources/reports.js';
 import { SearchResource } from './resources/search.js';
 import { SubscriptionResource } from './resources/subscription.js';
-import { TelemetryResource } from './resources/telemetry.js';
+import {
+  closeTelemetryForDispose,
+  prepareTelemetryForDispose,
+  TelemetryResource,
+} from './resources/telemetry.js';
 import { UsersResource } from './resources/users.js';
 import { VerificationResource } from './resources/verification.js';
 import type { ItdClientOptions, RawRequestOptions, RequestOptions } from './types/options.js';
@@ -57,13 +61,25 @@ export function assertClientCanUnusePlugin(client: ItdClient, name: string): voi
  *
  * @internal
  */
-export interface ItdClientInternals {
+interface ItdClientInternals {
   /**
    * Готовая очередь запросов — так {@link ItdAccounts} с `rateLimitScope: 'shared'` даёт
    * нескольким клиентам одну на всех. Свою клиент в этом случае не заводит и, что важнее,
    * не гасит при `close()`: чужие ожидающие запросы это отменило бы.
    */
   queues?: RequestQueuePool | undefined;
+}
+
+const CLIENT_INTERNALS = new WeakMap<ItdClientOptions, ItdClientInternals>();
+
+/** Создаёт клиент с зависимостями внешнего контейнера, не расширяя публичный конструктор. @internal */
+export function createManagedClient(
+  options: ItdClientOptions,
+  internals: ItdClientInternals,
+): ItdClient {
+  const managedOptions = { ...options };
+  CLIENT_INTERNALS.set(managedOptions, internals);
+  return new ItdClient(managedOptions);
 }
 
 /**
@@ -212,7 +228,8 @@ export class ItdClient {
     return this.#telemetry;
   }
 
-  constructor(options: ItdClientOptions = {}, internals: ItdClientInternals = {}) {
+  constructor(options: ItdClientOptions = {}) {
+    const internals = CLIENT_INTERNALS.get(options) ?? {};
     this.#runtime = createClientRuntime(options, {
       queues: internals.queues,
       assertActive: (action) => assertClientActive(this, action),
@@ -420,20 +437,23 @@ export class ItdClient {
    * Общая очередь, полученная от {@link ItdAccounts}, не останавливается: её гасит сам
    * контейнер, когда закрывает все аккаунты разом.
    *
-   * @example
-   * ```ts
-   * await using itd = new ItdClient({ auth: token });
-   * // …работа…
-   * // dispose() вызовется сам на выходе из блока
-   * ```
+   * Терминальное освобождение — это {@link dispose}.
    */
   async close(): Promise<void> {
+    return this.#close(false);
+  }
+
+  async #close(disposeCleanup: boolean): Promise<void> {
     const streams = this.#disconnectStreams();
+    // Terminal cleanup должен пометить batch до первого await: параллельный обычный close()
+    // мог уже начать drain потоков, но ещё не дойти до отправки телеметрии.
+    if (disposeCleanup) prepareTelemetryForDispose(this.#telemetry);
     try {
       await Promise.all(streams.map((stream) => stream.drain()));
       // Через геттер закрытие клиента поднимало бы накопитель телеметрии только ради
       // того, чтобы его тут же закрыть.
-      await this.#telemetry?.close();
+      if (disposeCleanup) await closeTelemetryForDispose(this.#telemetry);
+      else await this.#telemetry?.close();
     } finally {
       this.#runtime.close();
     }
@@ -446,6 +466,13 @@ export class ItdClient {
    * запросы, подключение плагинов, регистрация сервисов и создание или повторный запуск
    * realtime-потоков завершаются с {@link ItdStateError}. Повторные вызовы возвращают
    * тот же результат очистки.
+   *
+   * @example
+   * ```ts
+   * await using itd = new ItdClient({ auth: token });
+   * // …работа…
+   * // dispose() вызовется сам на выходе из блока
+   * ```
    */
   dispose(): Promise<void> {
     if (this.#disposePromise) return this.#disposePromise;
@@ -455,10 +482,18 @@ export class ItdClient {
   }
 
   async #dispose(): Promise<void> {
-    const results = await Promise.allSettled([this.close(), this.#runtime.dispose()]);
-    const errors = results
-      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-      .map((result) => result.reason);
+    const errors: unknown[] = [];
+    try {
+      // Сначала завершаем потоки и телеметрию через ещё установленный plugin pipeline.
+      await this.#close(true);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await this.#runtime.dispose();
+    } catch (error) {
+      errors.push(error);
+    }
     if (errors.length > 0) throw new AggregateError(errors, 'Не удалось освободить клиент');
   }
 

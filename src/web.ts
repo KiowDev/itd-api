@@ -19,6 +19,7 @@
  * @packageDocumentation
  */
 
+import { ItdConfigError } from './core/errors.js';
 import { MemoryKeyValueStore } from './core/key-value-store.js';
 import { createTokenStorage, type ItdSession, type TokenStorage } from './core/storage.js';
 
@@ -36,18 +37,29 @@ function getWebStorage(property: WebStorageProperty): Storage | undefined {
 class WebStorageKeyValueStore<T> {
   #fallback = new MemoryKeyValueStore<T>();
   #storage: Storage | undefined;
+  readonly #property: WebStorageProperty;
 
   constructor(property: WebStorageProperty) {
+    this.#property = property;
     this.#storage = getWebStorage(property);
   }
 
   get(key: string): T | undefined {
     if (!this.#storage) return this.#fallback.get(key);
+    let raw: string | null;
     try {
-      const raw = this.#storage.getItem(key);
-      return raw === null ? undefined : (JSON.parse(raw) as T);
+      raw = this.#storage.getItem(key);
     } catch {
-      return undefined;
+      this.#degrade();
+      return this.#fallback.get(key);
+    }
+    if (raw === null) return undefined;
+    try {
+      return JSON.parse(raw) as T;
+    } catch (error) {
+      throw new ItdConfigError(`Повреждён JSON в ${this.#property} по ключу «${key}»`, {
+        cause: error,
+      });
     }
   }
 
@@ -149,7 +161,8 @@ export class SessionStorageKeyValueStore<T> {
  * Помните, что `localStorage` доступен любому скрипту на странице: не используйте его,
  * если для вашего приложения это неприемлемый риск.
  *
- * После ошибки записи или удаления хранилище переключается на память до конца
+ * Повреждённый JSON считается ошибкой, а не отсутствующей сессией. После ошибки доступа,
+ * записи или удаления хранилище переключается на память до конца
  * своего жизненного цикла.
  */
 export class LocalStorageTokenStorage implements TokenStorage {
@@ -178,8 +191,9 @@ export class LocalStorageTokenStorage implements TokenStorage {
  *
  * Данные переживают перезагрузку страницы, но существуют только в пределах текущей
  * browser page session. Если `sessionStorage` недоступен, экземпляр молча работает
- * в памяти; после ошибки записи или удаления он также остаётся в памяти до конца
+ * в памяти; после ошибки доступа, записи или удаления он также остаётся в памяти до конца
  * своего жизненного цикла.
+ * Повреждённый JSON считается ошибкой, а не отсутствующей сессией.
  *
  * Как и `localStorage`, это хранилище доступно скриптам страницы и не защищает сессию
  * от XSS. Выбирайте его ради более короткого срока жизни, а не ради изоляции секрета.

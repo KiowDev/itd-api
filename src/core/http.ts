@@ -1,6 +1,7 @@
 import { type BuiltInOperationId, operationMethod } from './operations.js';
 import {
   identifyRequest,
+  markDisposeCleanupRequest,
   type PipelineRequest,
   type PipelineRequestInput,
   type RequestHandler,
@@ -17,7 +18,7 @@ export interface HttpClientDeps {
  * Точка входа ресурсов в конвейер запросов.
  *
  * Принимает готовый обработчик — цепочку слоёв поверх транспорта, собранную
- * в {@link ItdClient}, — и отдаёт ресурсам методы `request`/`operation`.
+ * во внутреннем runtime клиента, — и отдаёт ресурсам методы `request`/`operation`.
  * О слоях и их порядке ресурсы не знают.
  */
 export class HttpClient {
@@ -53,5 +54,19 @@ export class HttpClient {
     options: Omit<PipelineRequest, 'operationId' | 'method'>,
   ): Promise<T> {
     return this.request<T>({ ...options, operationId, method: operationMethod(operationId) });
+  }
+
+  /** Выполняет внутреннюю операцию финализации после начала `ItdClient.dispose()`. @internal */
+  cleanupOperation<T = unknown>(
+    operationId: BuiltInOperationId,
+    options: Omit<PipelineRequest, 'operationId' | 'method'>,
+  ): Promise<T> {
+    return this.request<T>(
+      markDisposeCleanupRequest({
+        ...options,
+        operationId,
+        method: operationMethod(operationId),
+      }),
+    );
   }
 }

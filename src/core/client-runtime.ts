@@ -5,6 +5,7 @@ import { CookieJar } from './cookies.js';
 import { HttpClient } from './http.js';
 import {
   composePipeline,
+  createAttemptMiddleware,
   createAuthHeadersMiddleware,
   createAuthPreparationMiddleware,
   createAuthRecoveryMiddleware,
@@ -14,7 +15,7 @@ import {
   createServicesMiddleware,
   type RequestMiddleware,
 } from './middleware.js';
-import type { PipelineRequest, RequestHandler } from './pipeline.js';
+import { isDisposeCleanupRequest, type PipelineRequest, type RequestHandler } from './pipeline.js';
 import { PluginRegistry } from './plugins/registry.js';
 import { RequestQueuePool } from './rate-limit.js';
 import { mergeService, ServiceRegistry } from './services.js';
@@ -29,6 +30,7 @@ export const ClientRuntimeStage = Object.freeze({
   AuthRecovery: 'auth_recovery',
   AuthPreparation: 'auth_preparation',
   Queue: 'queue',
+  Attempt: 'attempt',
   AuthHeaders: 'auth_headers',
   Transport: 'transport',
 } as const);
@@ -117,6 +119,13 @@ export function createClientRuntime(
     return queues?.for(destination || undefined);
   };
 
+  /**
+   * Сервер сообщает остаток окна в `x-ratelimit-remaining`, но не сообщает момент сброса.
+   * При нуле заранее ставим очередь конечного origin на первую, самую короткую паузу из
+   * `retryDelays`: окно могло почти истечь, поэтому длинный backoff здесь преждевременен.
+   * Если окно всё ещё закрыто, следующий `429` применит самостоятельную лестницу повторов.
+   * Общая пауза очереди не даёт параллельным запросам одновременно ударить в тот же лимит.
+   */
   const throttleByHeaders = (
     limit: number | undefined,
     remaining: number | undefined,
@@ -189,6 +198,11 @@ export function createClientRuntime(
   }
 
   stages.push({
+    name: ClientRuntimeStage.Attempt,
+    middleware: createAttemptMiddleware(),
+  });
+
+  stages.push({
     name: ClientRuntimeStage.AuthHeaders,
     middleware: createAuthHeadersMiddleware({
       getAuthHeaders: () => auth.getCurrentAuthHeaders(),
@@ -201,7 +215,9 @@ export function createClientRuntime(
   );
   const clientHandler: RequestHandler = (request) => {
     try {
-      internals.assertActive?.('выполнить новый запрос');
+      if (!isDisposeCleanupRequest(request)) {
+        internals.assertActive?.('выполнить новый запрос');
+      }
     } catch (error) {
       return Promise.reject(error);
     }

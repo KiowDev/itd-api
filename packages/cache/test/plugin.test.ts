@@ -64,20 +64,22 @@ afterEach(() => {
 
 describe('настройки', () => {
   it('проверяет обязательные поля', () => {
-    expect(() => cache({ ttl: 0, routes: ['posts.get'] })).toThrow(CacheError);
-    expect(() => cache({ ttl: 1, routes: [] })).toThrow(CacheError);
-    expect(() => cache({ ttl: 1, routes: ['posts.create' as 'posts.get'] })).toThrow(
-      /Неизвестный маршрут/,
+    expect(() => cache({ ttl: 0, operations: ['posts.get'] })).toThrow(CacheError);
+    expect(() => cache({ ttl: 1, operations: [] })).toThrow(CacheError);
+    expect(() => cache({ ttl: 1, operations: ['posts.create' as 'posts.get'] })).toThrow(
+      /Неизвестная операция/,
     );
-    expect(() => cache({ ttl: 1, routes: ['posts.get'], maxEntries: 1.5 })).toThrow(/maxEntries/);
+    expect(() => cache({ ttl: 1, operations: ['posts.get'], maxEntries: 1.5 })).toThrow(
+      /maxEntries/,
+    );
     expect(() =>
-      cache({ ttl: 1, routes: ['posts.get'], deduplicate: 'да' as unknown as boolean }),
+      cache({ ttl: 1, operations: ['posts.get'], deduplicate: 'да' as unknown as boolean }),
     ).toThrow(/deduplicate/);
   });
 
   it('проверяет режим отдельного запроса', async () => {
     const { itd } = makeClient((url, _init, call) => postFromUrl(url, call));
-    itd.use(cache({ ttl: 1_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 1_000, operations: ['posts.get'] }));
 
     await expect(
       itd.posts.get('1', { extensions: { cache: 'неизвестно' as 'default' } }),
@@ -86,9 +88,9 @@ describe('настройки', () => {
 });
 
 describe('TTL/LRU-кэш', () => {
-  it('кэширует только выбранные маршруты', async () => {
+  it('кэширует только выбранные операции', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     const first = await itd.posts.get('1');
     const second = await itd.posts.get('1');
@@ -111,7 +113,7 @@ describe('TTL/LRU-кэш', () => {
     itd.use(
       cache({
         ttl: 60_000,
-        routes: ['posts.get', 'posts.list', 'posts.stats'],
+        operations: ['posts.get', 'posts.list', 'posts.stats'],
       }),
     );
 
@@ -131,7 +133,7 @@ describe('TTL/LRU-кэш', () => {
 
   it('не делит кэш по заголовкам', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     const first = await itd.posts.get('1', { headers: { 'X-Variant': 'a' } });
     const second = await itd.posts.get('1', { headers: { 'X-Variant': 'b' } });
@@ -142,7 +144,7 @@ describe('TTL/LRU-кэш', () => {
 
   it('не делит кэш по транспортной retry safety', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     const first = await itd.posts.get('1', { retrySafety: RetrySafety.Safe });
     const second = await itd.posts.get('1', { retrySafety: RetrySafety.Unsafe });
@@ -164,7 +166,7 @@ describe('TTL/LRU-кэш', () => {
     };
 
     itd.use(optionCarrier);
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     const full = await itd.posts.get('1', { extensions: { view: 'full' } });
     const compact = await itd.posts.get('1', { extensions: { view: 'compact' } });
@@ -178,7 +180,7 @@ describe('TTL/LRU-кэш', () => {
 
   it('возвращает независимые копии ответа', async () => {
     const { itd } = makeClient(() => json({ id: '1', content: 'исходный' }));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     const first = await itd.posts.get('1');
     first.content = 'изменён вызывающим кодом';
@@ -190,7 +192,7 @@ describe('TTL/LRU-кэш', () => {
 
   it('пропускает несериализуемый ответ без поломки запроса', async () => {
     const { itd, calls } = makeClient(() => json({ id: '1', content: 'ответ' }));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
     itd.use({
       name: 'function-in-response',
       install: ({ operations }) =>
@@ -209,7 +211,7 @@ describe('TTL/LRU-кэш', () => {
 
   it('удаляет ответ после TTL', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
-    itd.use(cache({ ttl: 10, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 10, operations: ['posts.get'] }));
 
     await itd.posts.get('1');
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -220,7 +222,7 @@ describe('TTL/LRU-кэш', () => {
 
   it('вытесняет давно не использованный ответ', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'], maxEntries: 2 }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'], maxEntries: 2 }));
 
     await itd.posts.get('1');
     await itd.posts.get('2');
@@ -239,7 +241,7 @@ describe('дедупликация', () => {
       release = resolve;
     });
     const { itd, calls } = makeClient(() => response);
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     const first = itd.posts.get('1');
     const second = itd.posts.get('1');
@@ -254,7 +256,7 @@ describe('дедупликация', () => {
 
   it('не объединяет запросы с signal или отдельным timeout', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     await Promise.all([
       itd.posts.get('1', { signal: new AbortController().signal }),
@@ -270,7 +272,7 @@ describe('дедупликация', () => {
 
   it('не сохраняет ошибку', async () => {
     const { itd, calls } = makeClient(() => json({ message: 'ошибка' }, 500));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     await expect(itd.posts.get('1')).rejects.toThrow();
     await expect(itd.posts.get('1')).rejects.toThrow();
@@ -287,7 +289,7 @@ describe('дедупликация', () => {
       await gate;
       return json({ id: '1' });
     });
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'], deduplicate: false }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'], deduplicate: false }));
 
     const first = itd.posts.get('1');
     const second = itd.posts.get('1');
@@ -301,7 +303,7 @@ describe('дедупликация', () => {
 describe('управление и инвалидация', () => {
   it('поддерживает reload и no-store', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     expect((await itd.posts.get('1')).content).toBe('ответ-1');
     expect((await itd.posts.get('1', { extensions: { cache: 'reload' } })).content).toBe('ответ-2');
@@ -314,12 +316,12 @@ describe('управление и инвалидация', () => {
     expect(calls).toHaveLength(3);
   });
 
-  it('очищает один маршрут или всё хранилище', async () => {
+  it('очищает одну операцию или всё хранилище', async () => {
     const { itd, calls } = makeClient((url, _init, call) => {
       if (url.includes('/api/users/')) return json({ id: 'u1', username: 'nowkie', call });
       return postFromUrl(url, call);
     });
-    const cached = cache({ ttl: 60_000, routes: ['posts.get', 'users.get'] });
+    const cached = cache({ ttl: 60_000, operations: ['posts.get', 'users.get'] });
     itd.use(cached);
 
     await itd.posts.get('1');
@@ -343,7 +345,7 @@ describe('управление и инвалидация', () => {
     const { itd, calls } = makeClient((url, init, call) =>
       init.method === 'POST' ? json({ liked: true }) : postFromUrl(url, call),
     );
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     await itd.posts.get('1');
     await itd.posts.like('1');
@@ -352,13 +354,13 @@ describe('управление и инвалидация', () => {
     expect(calls).toHaveLength(3);
   });
 
-  it('инвалидирует только связанные с мутацией маршруты', async () => {
+  it('инвалидирует только связанные с мутацией операции', async () => {
     const { itd, calls } = makeClient((url, init, call) => {
       if (init.method === 'POST') return json({ liked: true });
       if (url.includes('/api/users/')) return json({ id: 'u1', username: 'nowkie', call });
       return postFromUrl(url, call);
     });
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get', 'users.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get', 'users.get'] }));
 
     await itd.posts.get('1');
     await itd.users.get('nowkie');
@@ -373,7 +375,7 @@ describe('управление и инвалидация', () => {
     const { itd, calls } = makeClient((url, _init, call) =>
       url.endsWith('/api/v1/i') ? json({ ok: true }) : postFromUrl(url, call),
     );
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     await itd.posts.get('1');
     await itd.request({
@@ -389,7 +391,7 @@ describe('управление и инвалидация', () => {
 
   it('не проверяет режим cache у некэшируемой мутации', async () => {
     const { itd, calls } = makeClient(() => json({ ok: true }));
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     await itd.request({
       method: 'POST',
@@ -407,7 +409,7 @@ describe('управление и инвалидация', () => {
       if (init.method === 'POST') return json({ message: 'ошибка' }, 500);
       return postFromUrl(url, call);
     });
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get', 'posts.stats'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get', 'posts.stats'] }));
 
     await itd.posts.get('1');
     await itd.posts.stats(['1']);
@@ -428,7 +430,7 @@ describe('управление и инвалидация', () => {
       if (init.method === 'POST') return json({ liked: true });
       return postFromUrl(url, call);
     });
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     const stale = itd.posts.get('1');
     await Promise.resolve();
@@ -449,7 +451,7 @@ describe('управление и инвалидация', () => {
     const { itd, calls } = makeClient((url, _init, call) =>
       call === 1 ? oldResponse : postFromUrl(url, call),
     );
-    const cached = cache({ ttl: 60_000, routes: ['posts.get'] });
+    const cached = cache({ ttl: 60_000, operations: ['posts.get'] });
     itd.use(cached);
 
     const stale = itd.posts.get('1');
@@ -468,8 +470,8 @@ describe('область экземпляра', () => {
   it('два вызова cache() создают независимые хранилища', async () => {
     const a = makeClient((url, _init, call) => postFromUrl(url, call));
     const b = makeClient((url, _init, call) => postFromUrl(url, call));
-    a.itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
-    b.itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    a.itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
+    b.itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     await a.itd.posts.get('1');
     await b.itd.posts.get('1');
@@ -487,7 +489,7 @@ describe('область экземпляра', () => {
     await a.itd.setSession({
       accessToken: makeJwt({ sub: 'user-1', sid: 'session-a' }),
     });
-    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    const shared = cache({ ttl: 60_000, operations: ['posts.get'] });
     a.itd.use(shared);
     b.itd.use(shared);
 
@@ -510,7 +512,7 @@ describe('область экземпляра', () => {
     const tokenB = makeJwt({ sub: 'user-1', sid: 'session-b' });
     const a = makeClient(() => response, tokenA);
     const b = makeClient(() => json({ id: '1', content: 'лишний запрос' }), tokenB);
-    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    const shared = cache({ ttl: 60_000, operations: ['posts.get'] });
     a.itd.use(shared);
     b.itd.use(shared);
 
@@ -533,7 +535,7 @@ describe('область экземпляра', () => {
       () => json({ id: '1', content: 'из аккаунта B' }),
       makeJwt({ sub: 'user-b', sid: 'session-b' }),
     );
-    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    const shared = cache({ ttl: 60_000, operations: ['posts.get'] });
     a.itd.use(shared);
     b.itd.use(shared);
 
@@ -546,7 +548,7 @@ describe('область экземпляра', () => {
     const token = makeJwt({ sub: 'user-1', sid: 'session-a' });
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
     await itd.setSession({ accessToken: token });
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     await itd.posts.get('1');
     await itd.setSession({
@@ -563,7 +565,7 @@ describe('область экземпляра', () => {
       (url, _init, call) => postFromUrl(url, call),
       makeJwt({ sub: 'user-a', sid: 'session-a' }),
     );
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     await itd.posts.get('1');
     await itd.setSession({
@@ -580,7 +582,7 @@ describe('область экземпляра', () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call), {
       getToken: () => token,
     });
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     expect((await itd.posts.get('1')).content).toBe('ответ-1');
     expect((await itd.posts.get('1')).content).toBe('ответ-1');
@@ -599,7 +601,7 @@ describe('область экземпляра', () => {
       (url, _init, call) => (call === 1 ? oldResponse : postFromUrl(url, call)),
       makeJwt({ sub: 'user-a', sid: 'session-a' }),
     );
-    itd.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
     const stale = itd.posts.get('1');
     await vi.waitFor(() => expect(calls).toHaveLength(1));
@@ -623,7 +625,7 @@ describe('область экземпляра', () => {
       (_url, _init, call) => json({ sessions: [{ id: `b-${call}` }] }),
       makeJwt({ sub: 'user-1', sid: 'session-b' }),
     );
-    const shared = cache({ ttl: 60_000, routes: ['auth.sessions'] });
+    const shared = cache({ ttl: 60_000, operations: ['auth.sessions'] });
     a.itd.use(shared);
     b.itd.use(shared);
 
@@ -641,7 +643,7 @@ describe('область экземпляра', () => {
         : json({ sessions: [{ id: `${url.endsWith('/sessions') ? 'list' : 'other'}-${call}` }] });
     const a = makeClient(handler, makeJwt({ sub: 'user-1', sid: 'session-a' }));
     const b = makeClient(handler, makeJwt({ sub: 'user-1', sid: 'session-b' }));
-    const shared = cache({ ttl: 60_000, routes: ['auth.sessions'] });
+    const shared = cache({ ttl: 60_000, operations: ['auth.sessions'] });
     a.itd.use(shared);
     b.itd.use(shared);
 
@@ -655,12 +657,12 @@ describe('область экземпляра', () => {
     expect(b.calls).toHaveLength(2);
   });
 
-  it('общая мутация инвалидирует связанный маршрут у других клиентов', async () => {
+  it('общая мутация инвалидирует связанную операцию у других клиентов', async () => {
     const a = makeClient((url, init, call) =>
       init.method === 'POST' ? json({ ok: true }) : postFromUrl(url, call),
     );
     const b = makeClient((url, _init, call) => postFromUrl(url, call));
-    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    const shared = cache({ ttl: 60_000, operations: ['posts.get'] });
     a.itd.use(shared);
     b.itd.use(shared);
 
@@ -684,7 +686,7 @@ describe('область экземпляра', () => {
     const b = makeClient(handler, makeJwt({ sub: 'user-b', sid: 'session-b' }));
     const shared = cache({
       ttl: 60_000,
-      routes: ['notifications.list', 'notifications.count'],
+      operations: ['notifications.list', 'notifications.count'],
     });
     a.itd.use(shared);
     copy.itd.use(shared);
@@ -705,7 +707,7 @@ describe('область экземпляра', () => {
   it('неизвестная мутация использует глобальный безопасный fallback', async () => {
     const a = makeClient((url, _init, call) => postFromUrl(url, call));
     const b = makeClient((url, _init, call) => postFromUrl(url, call));
-    const shared = cache({ ttl: 60_000, routes: ['posts.get'] });
+    const shared = cache({ ttl: 60_000, operations: ['posts.get'] });
     a.itd.use(shared);
     b.itd.use(shared);
 
@@ -771,7 +773,7 @@ describe('realtime', () => {
     );
     const cached = cache({
       ttl: 60_000,
-      routes: ['notifications.list', 'notifications.count'],
+      operations: ['notifications.list', 'notifications.count'],
     });
     itd.use(cached);
     await fillNotifications(itd);
@@ -805,7 +807,7 @@ describe('realtime', () => {
     const b = makeClient(handler, makeJwt({ sub: 'user-b', sid: 'session-b' }));
     const cached = cache({
       ttl: 60_000,
-      routes: ['notifications.list', 'notifications.count'],
+      operations: ['notifications.list', 'notifications.count'],
     });
     a.itd.use(cached);
     b.itd.use(cached);
@@ -843,7 +845,7 @@ describe('realtime', () => {
     const b = makeClient(handler);
     const cached = cache({
       ttl: 60_000,
-      routes: ['notifications.list', 'notifications.count'],
+      operations: ['notifications.list', 'notifications.count'],
     });
     a.itd.use(cached);
     b.itd.use(cached);
@@ -867,7 +869,7 @@ describe('realtime', () => {
         ? oldResponse
         : json({ notifications: [], pagination: { total: 0, hasMore: false } }),
     );
-    const cached = cache({ ttl: 60_000, routes: ['notifications.list'] });
+    const cached = cache({ ttl: 60_000, operations: ['notifications.list'] });
     itd.use(cached);
 
     const stale = itd.notifications.list();
@@ -893,7 +895,7 @@ describe('realtime', () => {
   });
 
   it('проверяет переданный поток', () => {
-    const cached: CachePlugin = cache({ ttl: 1_000, routes: ['notifications.list'] });
+    const cached: CachePlugin = cache({ ttl: 1_000, operations: ['notifications.list'] });
     expect(() => cached.attachRealtime({} as ItdRealtime)).toThrow(CacheError);
   });
 });

@@ -1,3 +1,5 @@
+import type { OperationRequestOptions } from 'itd-api';
+
 /** Базовая ошибка средств тестирования. */
 export class ItdTestingError extends Error {
   constructor(message: string) {
@@ -23,6 +25,26 @@ export class UnusedMockHandlersError extends ItdTestingError {
   constructor(handlers: readonly string[]) {
     super(`Не использованы обработчики:\n${handlers.map((item) => `- ${item}`).join('\n')}`);
     this.handlers = handlers;
+  }
+}
+
+/** Логическая операция не подошла ни к одному operation-level обработчику. */
+export class UnhandledOperationError extends ItdTestingError {
+  readonly request: Readonly<OperationRequestOptions>;
+
+  constructor(request: Readonly<OperationRequestOptions>) {
+    super(`Нет обработчика для операции ${request.operationId}`);
+    this.request = request;
+  }
+}
+
+/** После проверки остались неиспользованные operation-level ответы. */
+export class UnusedMockOperationsError extends ItdTestingError {
+  readonly operations: readonly string[];
+
+  constructor(operations: readonly string[]) {
+    super(`Не использованы операции:\n${operations.map((item) => `- ${item}`).join('\n')}`);
+    this.operations = operations;
   }
 }
 

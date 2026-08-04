@@ -86,6 +86,24 @@ describe('посты', () => {
     expect(mock.calls[0]?.url).not.toContain('maxPages');
   });
 
+  it('не передаёт maxPages operation transformers как опцию запроса endpoint', async () => {
+    const { itd } = makeClient([feedPage(['1'], 'next'), feedPage(['2'], 'still-more')]);
+    const seen: Array<boolean> = [];
+    itd.use({
+      name: 'pagination-options-observer',
+      install({ operations }) {
+        operations.use((request, next) => {
+          if (request.operationId === 'posts.list') seen.push('maxPages' in request);
+          return next(request);
+        });
+      },
+    });
+
+    await itd.posts.iterate({}, { maxPages: 2 }).collect();
+
+    expect(seen).toEqual([false, false]);
+  });
+
   it('публикует пост', async () => {
     const { itd, mock } = makeClient([json({ id: 'p1', content: 'привет' })]);
 
@@ -571,6 +589,24 @@ describe('очередь и авторизация', () => {
     await expect(itd.users.me()).resolves.toEqual({ ok: true });
     expect(refreshes()).toBe(1);
     expect(refreshQueueFlags).toEqual([undefined]);
+  });
+
+  it('нумерует фактические попытки исходной операции вокруг отдельного refresh', async () => {
+    const { itd } = makeExpiring(false);
+    const attempts: string[] = [];
+    itd.use({
+      name: 'attempt-observer',
+      install({ attempts: pipeline }) {
+        pipeline.use(async ({ operationId, attempt }, next) => {
+          attempts.push(`${operationId}:${attempt}`);
+          return next();
+        });
+      },
+    });
+
+    await itd.users.me();
+
+    expect(attempts).toEqual(['users.me:1', 'auth.refresh:1', 'users.me:2']);
   });
 
   it('одновременные 401 освобождают слоты и используют один refresh', async () => {

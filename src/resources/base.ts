@@ -51,7 +51,7 @@ export class BaseResource {
    *
    * @param mode схема пагинации эндпоинта
    * @param load загружает одну страницу для указанной позиции
-   * @param options `maxPages` и `signal`, а также `start` — позиция, с которой продолжить
+   * @param options только управление самим перебором: предел, отмена и начальная позиция
    */
   protected paginate<T>(
     mode: PaginationMode,
@@ -103,11 +103,14 @@ export class BaseResource {
 
     return {
       list: (params, options) => load(params, spec.start(params), options),
-      iterate: (params, options) =>
-        this.paginate<T>(spec.mode, (state) => load(params, state, options), {
-          ...options,
+      iterate: (params, options = {}) => {
+        const { maxPages, ...requestOptions } = options;
+        return this.paginate<T>(spec.mode, (state) => load(params, state, requestOptions), {
+          ...(maxPages !== undefined ? { maxPages } : {}),
+          ...(requestOptions.signal !== undefined ? { signal: requestOptions.signal } : {}),
           start: spec.start(params),
-        }),
+        });
+      },
     };
   }
 }

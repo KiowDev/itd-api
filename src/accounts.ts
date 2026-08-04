@@ -1,4 +1,9 @@
-import { assertClientCanUnusePlugin, assertClientCanUsePlugin, ItdClient } from './client.js';
+import {
+  assertClientCanUnusePlugin,
+  assertClientCanUsePlugin,
+  createManagedClient,
+  type ItdClient,
+} from './client.js';
 import { systemClock } from './core/clock.js';
 import { resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
@@ -253,7 +258,7 @@ export class ItdAccounts {
     const storageControl = controlledTokenStorage(this.#storage, name);
     let client: ItdClient | undefined;
     try {
-      client = new ItdClient(
+      client = createManagedClient(
         this.#mergeOptions(options, storageControl.storage),
         this.#queues ? { queues: this.#queues } : {},
       );

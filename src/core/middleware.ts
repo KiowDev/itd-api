@@ -3,9 +3,12 @@ import { type ItdClock, systemClock } from './clock.js';
 import { type ResolvedRetryOptions, resolveRetry } from './config.js';
 import { ItdAbortError, isItdApiError, isItdRateLimitError } from './errors.js';
 import {
+  beginTransportAttempt,
+  currentTransportAttempt,
   type PipelineRequest,
   type RequestHandler,
   type RequestMiddleware,
+  trackRequestAttempts,
   withLayerHeaders,
 } from './pipeline.js';
 import { dispatchRequestHook } from './plugins/hooks.js';
@@ -154,6 +157,16 @@ export function createAuthHeadersMiddleware(
 }
 
 /**
+ * Нумерует фактические входы в transport для одной логической операции.
+ *
+ * Слой находится внутри auth recovery: повтор исходного запроса после успешного refresh
+ * получает следующий номер, а сам `auth.refresh` ведёт собственный счётчик.
+ */
+export function createAttemptMiddleware(): RequestMiddleware {
+  return (request, next) => next(beginTransportAttempt(request));
+}
+
+/**
  * Обрабатывает `401`: обновляет токен и повторяет транспортную попытку ровно один раз.
  *
  * Стоит снаружи подготовки auth и очереди, поэтому не удерживает её slot во время refresh.
@@ -270,18 +283,18 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
   };
 
   return async (request, next) => {
+    const trackedRequest = trackRequestAttempts(request);
     const method = request.method.toUpperCase();
     const policy = resolveRetryPolicy(request);
     const backoff = resolveBackoff(request.retry, globalScheduler);
-    let transportAttempt = 0;
     let retryAttempt = 0;
     let rateLimitAttempt = 0;
 
     for (;;) {
-      transportAttempt += 1;
       try {
-        return await next({ ...request, attempt: transportAttempt });
+        return await next(trackedRequest);
       } catch (error) {
+        const transportAttempt = currentTransportAttempt(trackedRequest);
         const rateLimited = isItdRateLimitError(error);
         if (rateLimited) rateLimitAttempt += 1;
         else retryAttempt += 1;

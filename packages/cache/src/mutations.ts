@@ -1,12 +1,12 @@
 import type { BuiltInOperationId, OperationId } from 'itd-api';
-import type { CacheRouteId } from './routes.js';
+import type { CacheOperationId } from './operations.js';
 
-export type MutationInvalidation = readonly CacheRouteId[] | 'all';
+export type MutationInvalidation = readonly CacheOperationId[] | 'all';
 
 export interface CacheMutation {
   operationId: BuiltInOperationId;
   invalidates: MutationInvalidation;
-  /** По умолчанию зависимые маршруты удаляются у всех аккаунтов общего экземпляра. */
+  /** По умолчанию зависимые операции удаляются у всех аккаунтов общего экземпляра. */
   scope?: 'account' | undefined;
 }
 
@@ -25,7 +25,7 @@ const POST_CONTENT = [
   'users.me',
   'users.get',
   'users.pins',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
 const POST_REACTIONS = [
   'posts.list',
@@ -35,7 +35,7 @@ const POST_REACTIONS = [
   'posts.stats',
   'hashtags.posts',
   'search.all',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
 const COMMENTS = [
   'posts.list',
@@ -45,7 +45,7 @@ const COMMENTS = [
   'comments.replies',
   'hashtags.posts',
   'search.all',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
 const PROFILE = [
   'users.me',
@@ -68,7 +68,7 @@ const PROFILE = [
   'comments.replies',
   'hashtags.posts',
   'search.all',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
 const FOLLOWING = [
   'users.me',
@@ -81,7 +81,7 @@ const FOLLOWING = [
   'posts.list',
   'posts.byUser',
   'search.all',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
 const BLOCKS = [
   'users.me',
@@ -94,7 +94,7 @@ const BLOCKS = [
   'users.followStatus',
   'posts.list',
   'search.all',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
 const PINS = [
   'users.me',
@@ -103,22 +103,22 @@ const PINS = [
   'posts.list',
   'posts.get',
   'posts.byUser',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
 const NOTIFICATIONS = [
   'notifications.list',
   'notifications.count',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
 const SUBSCRIPTION = [
   'subscription.status',
   'subscription.methods',
-] as const satisfies readonly CacheRouteId[];
+] as const satisfies readonly CacheOperationId[];
 
-const NOTHING = [] as const satisfies readonly CacheRouteId[];
+const NOTHING = [] as const satisfies readonly CacheOperationId[];
 
 /**
- * Известные изменяющие запросы и читающие маршруты, чьи ответы они могут изменить.
+ * Известные изменяющие запросы и читающие операции, чьи ответы они могут изменить.
  *
  * Каталог намеренно консервативен: лучше удалить несколько связанных списков, чем оставить
  * персонализированное поле или вложенный объект устаревшим.
@@ -245,6 +245,14 @@ const CACHE_MUTATIONS = Object.freeze([
   { operationId: 'telemetry.dwell', invalidates: NOTHING },
   { operationId: 'telemetry.interaction', invalidates: NOTHING },
 ] as const satisfies readonly CacheMutation[]);
+
+// Списки инвалидации разделяются несколькими мутациями, а `cacheMutation()` отдаёт
+// дескриптор наружу. Замораживаем и его, и список, чтобы случайное изменение одного
+// результата не переписало каталог для всех остальных операций.
+for (const mutation of CACHE_MUTATIONS) {
+  Object.freeze(mutation.invalidates);
+  Object.freeze(mutation);
+}
 
 const MUTATIONS = new Map<OperationId, CacheMutation>(
   CACHE_MUTATIONS.map((mutation) => [mutation.operationId, mutation]),

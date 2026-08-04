@@ -232,6 +232,20 @@ describe('LocalStorageKeyValueStore', () => {
       delete (globalThis as { localStorage?: unknown }).localStorage;
     }
   });
+
+  it('не маскирует повреждённый JSON под отсутствие значения', () => {
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: () => '{broken',
+    };
+
+    try {
+      const storage = new LocalStorageKeyValueStore<{ value: number }>();
+      expect(() => storage.get('app:broken')).toThrow(ItdConfigError);
+      expect(() => storage.get('app:broken')).toThrow(/localStorage.*app:broken/);
+    } finally {
+      delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
+  });
 });
 
 describe('SessionStorageTokenStorage', () => {

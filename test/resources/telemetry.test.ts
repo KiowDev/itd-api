@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
 import { ItdAbortError, ItdConfigError } from '../../src/core/errors.js';
 import { InteractionType, ViewReason, ViewSource } from '../../src/types/enums.js';
@@ -214,6 +214,57 @@ describe('telemetry helpers', () => {
 
     expect(mock.callCount).toBe(1);
     expect(new URL(mock.calls[0]?.url ?? '').pathname).toBe('/api/v1/x');
+  });
+
+  it('dispose клиента отправляет открытые накопители после перехода в terminal state', async () => {
+    const { itd, mock } = makeClient();
+    itd.telemetry
+      .batch()
+      .interaction({ type: InteractionType.PhotoOpen, vs: 'view', postId: 'post' });
+
+    await itd.dispose();
+
+    expect(mock.callCount).toBe(1);
+    expect(new URL(mock.calls[0]?.url ?? '').pathname).toBe('/api/v1/x');
+  });
+
+  it('dispose отправляет телеметрию до teardown плагинов', async () => {
+    const { itd } = makeClient();
+    const order: string[] = [];
+    const teardown = vi.fn(() => {
+      order.push('teardown');
+    });
+    itd.use({
+      name: 'telemetry-observer',
+      install({ operations }) {
+        operations.use((request, next) => {
+          if (request.operationId === 'telemetry.interaction') order.push('telemetry');
+          return next(request);
+        });
+        return teardown;
+      },
+    });
+    itd.telemetry
+      .batch()
+      .interaction({ type: InteractionType.PhotoOpen, vs: 'view', postId: 'post' });
+
+    await itd.dispose();
+
+    expect(order).toEqual(['telemetry', 'teardown']);
+    expect(teardown).toHaveBeenCalledOnce();
+  });
+
+  it('параллельный close не лишает dispose права завершить отправку', async () => {
+    const { itd, mock } = makeClient();
+    itd.telemetry
+      .batch()
+      .interaction({ type: InteractionType.PhotoOpen, vs: 'view', postId: 'post' });
+
+    const closing = itd.close();
+    const disposing = itd.dispose();
+    await Promise.all([closing, disposing]);
+
+    expect(mock.callCount).toBe(1);
   });
 
   it('создание клиента и накопителя само по себе не отправляет телеметрию', async () => {

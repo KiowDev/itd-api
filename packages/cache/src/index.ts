@@ -7,7 +7,7 @@
  *
  * itd.use(cache({
  *   ttl: 60_000,
- *   routes: ['users.get', 'posts.get', 'posts.list'],
+ *   operations: ['users.get', 'posts.get', 'posts.list'],
  * }));
  * ```
  *
@@ -17,20 +17,20 @@
 export { CacheError } from './errors.js';
 export { buildCacheKey } from './key.js';
 export {
+  CACHE_OPERATIONS,
+  type CacheOperation,
+  type CacheOperationCategory,
+  type CacheOperationId,
+  cacheOperation,
+  isCacheOperationId,
+} from './operations.js';
+export {
   type CacheMode,
   CacheModes,
   type CacheOptions,
   type CachePlugin,
   cache,
 } from './plugin.js';
-export {
-  CACHE_ROUTES,
-  type CacheRoute,
-  type CacheRouteCategory,
-  type CacheRouteId,
-  cacheRoute,
-  isCacheRouteId,
-} from './routes.js';
 
 import type { CacheMode } from './plugin.js';
 

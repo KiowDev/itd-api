@@ -17,7 +17,7 @@ if (!token || !postId) {
 const itd = new ItdClient({ auth: token });
 const cached = cache({
   ttl: 60_000,
-  routes: ['posts.get', 'users.get'],
+  operations: ['posts.get', 'users.get'],
 });
 
 itd.use(cached);

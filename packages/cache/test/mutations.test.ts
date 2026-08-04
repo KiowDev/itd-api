@@ -9,11 +9,11 @@ describe('каталог мутаций', () => {
     ['users.updatePrivacy', 'users.getPrivacy'],
     ['notifications.markAllRead', 'notifications.count'],
     ['subscription.removeMethod', 'subscription.methods'],
-  ] as const)('%s инвалидирует %s', (operationId, route) => {
+  ] as const)('%s инвалидирует %s', (operationId, operation) => {
     const mutation = cacheMutation(operationId);
     expect(mutation).toBeDefined();
     expect(mutation?.invalidates).not.toBe('all');
-    expect(mutation?.invalidates).toContain(route);
+    expect(mutation?.invalidates).toContain(operation);
   });
 
   it.each([
@@ -33,5 +33,11 @@ describe('каталог мутаций', () => {
 
   it('оставляет неизвестную мутацию для безопасного fallback', () => {
     expect(cacheMutation('custom:new-read-or-write')).toBeUndefined();
+  });
+
+  it('замораживает дескриптор и общий список инвалидации', () => {
+    const mutation = cacheMutation('posts.like');
+    expect(Object.isFrozen(mutation)).toBe(true);
+    expect(Object.isFrozen(mutation?.invalidates)).toBe(true);
   });
 });

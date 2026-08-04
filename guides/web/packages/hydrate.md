@@ -175,7 +175,7 @@ stream.use(router);
 import { cache } from '@itd-api/cache';
 
 const raw = new ItdClient({ auth: token });
-raw.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+raw.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
 const itd = hydrateClient(raw);
 const post = await itd.posts.get(postId);

@@ -18,11 +18,39 @@ npm install --save-dev @itd-api/testing
 
 | Задача | Средство |
 |---|---|
+| результат метода SDK без проверки HTTP-деталей | `createMockOperations()` |
 | точная последовательность ответов, сетевой сбой, `401`, `429` или `5xx` | `createMockFetch()` |
 | полный сценарий с несколькими клиентами и общими данными | `createMockServer()` |
 | устойчивые модели для ответов и исходных данных | функции `*Fixture()` |
 | проверка пауз, тайм-аутов и переподключения без ожидания | `createTestClock()` |
 | доставка уведомлений и произвольных кадров realtime | `MockRealtimeTransport` |
+
+## Моки логических операций
+
+```ts
+import { ItdClient } from 'itd-api';
+import { createMockOperations, postFixture, userFixture } from '@itd-api/testing';
+
+const mock = createMockOperations()
+  .operation('users.me', userFixture({ username: 'alice' }))
+  .sequence('posts.get', [postFixture({ id: 'first' }), postFixture({ id: 'second' })]);
+
+const itd = new ItdClient({ auth: 'test-token' }).use(mock);
+await itd.users.me();
+await itd.posts.get('first');
+await itd.posts.get('second');
+mock.assertDone();
+```
+
+`createMockOperations()` является `ClientPlugin`: обработчик выбирается по стабильному
+`operationId` и возвращает уже разобранный результат метода SDK. Он выполняется один раз
+на логическую операцию, выше retry, auth recovery, очереди и transport. По умолчанию
+незарегистрированная операция завершается `UnhandledOperationError`; для смешанного
+сценария задайте `{ passthrough: true }`. История доступна в `mock.calls`, а
+`assertDone()` проверяет обязательные последовательности.
+
+Этот уровень подходит для прикладного кода. Когда нужно проверить HTTP-метод, URL, тело,
+заголовки, повторы или ошибки транспорта, используйте `createMockFetch()` ниже.
 
 ## Сценарные ответы
 

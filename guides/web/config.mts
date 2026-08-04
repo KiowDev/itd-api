@@ -77,6 +77,7 @@ const referenceSidebar = [
       { text: 'Ошибки', link: '/reference/errors' },
       { text: 'Билдеры', link: '/reference/builders' },
       { text: 'Пагинация', link: '/reference/pagination' },
+      { text: 'Request pipeline', link: '/reference/request-pipeline' },
       { text: 'Сессии и хранилища', link: '/reference/storage' },
       { text: 'Матрица endpoint', link: '/reference/endpoints' },
     ],

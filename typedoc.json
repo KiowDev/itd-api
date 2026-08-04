@@ -26,11 +26,6 @@
   "excludeProtected": true,
   "excludeExternals": true,
   "categorizeByGroup": true,
-  "externalSymbolLinkMappings": {
-    "itd-api": {
-      "RequestOptionKeysComplete": "#"
-    }
-  },
 
   "treatWarningsAsErrors": true,
   "validation": {

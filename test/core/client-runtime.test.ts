@@ -24,6 +24,7 @@ describe('createClientRuntime', () => {
       ClientRuntimeStage.Retry,
       ClientRuntimeStage.AuthRecovery,
       ClientRuntimeStage.AuthPreparation,
+      ClientRuntimeStage.Attempt,
       ClientRuntimeStage.AuthHeaders,
       ClientRuntimeStage.Transport,
     ]);
@@ -42,6 +43,7 @@ describe('createClientRuntime', () => {
       ClientRuntimeStage.AuthRecovery,
       ClientRuntimeStage.AuthPreparation,
       ClientRuntimeStage.Queue,
+      ClientRuntimeStage.Attempt,
       ClientRuntimeStage.AuthHeaders,
       ClientRuntimeStage.Transport,
     ]);

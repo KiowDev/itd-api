@@ -9,8 +9,10 @@ export { HttpMethod, RecordedBodyType } from './constants.js';
 export {
   ItdTestingError,
   MockServerSeedError,
+  UnhandledOperationError,
   UnhandledRequestError,
   UnusedMockHandlersError,
+  UnusedMockOperationsError,
 } from './errors.js';
 export {
   type AccessTokenFixtureOptions,
@@ -44,6 +46,15 @@ export {
   type MockRouteOptions,
   networkError,
 } from './mock-fetch.js';
+export {
+  type CreateMockOperationsOptions,
+  createMockOperations,
+  type InitialMockOperation,
+  type MockOperationHandler,
+  type MockOperationOptions,
+  type MockOperations,
+  type RecordedOperation,
+} from './operations.js';
 export {
   MockRealtimeTransport,
   type WaitForUpdateOptions,

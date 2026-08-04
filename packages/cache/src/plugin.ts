@@ -11,7 +11,7 @@ import { LRUCache } from 'lru-cache';
 import { CacheError } from './errors.js';
 import { buildCacheKey } from './key.js';
 import { type CacheMutation, cacheMutation } from './mutations.js';
-import { type CacheRouteId, cacheRoute, isCacheRouteId } from './routes.js';
+import { type CacheOperationId, cacheOperation, isCacheOperationId } from './operations.js';
 
 /** Режимы кэширования отдельного запроса. */
 export const CacheModes = Object.freeze({
@@ -31,7 +31,7 @@ export interface CacheOptions {
   /** Сколько миллисекунд хранить успешный ответ. */
   ttl: number;
   /** Какие операции itd-api кэшировать. */
-  routes: readonly CacheRouteId[];
+  operations: readonly CacheOperationId[];
   /** Максимальное количество ответов. По умолчанию 500. */
   maxEntries?: number | undefined;
   /** Объединять ли одновременные одинаковые запросы. По умолчанию `true`. */
@@ -44,8 +44,8 @@ export interface CachePlugin extends ClientPlugin {
   readonly size: number;
   /** Удаляет все ответы и не даёт выполняющимся запросам вернуть устаревший результат. */
   clear(): void;
-  /** Удаляет все варианты названных маршрутов во всех подключённых клиентах. */
-  invalidate(...routes: CacheRouteId[]): void;
+  /** Удаляет все варианты названных операций во всех подключённых клиентах. */
+  invalidate(...operations: CacheOperationId[]): void;
   /**
    * Очищает список и счётчик уведомлений по событиям realtime.
    *
@@ -56,7 +56,7 @@ export interface CachePlugin extends ClientPlugin {
 
 interface CacheEntry {
   accountScope: string;
-  route: CacheRouteId;
+  operation: CacheOperationId;
   value: unknown;
 }
 
@@ -72,7 +72,7 @@ interface CacheIdentity {
 
 interface PendingEntry {
   accountScope: string;
-  route: CacheRouteId;
+  operation: CacheOperationId;
   promise: Promise<LoadedValue>;
 }
 
@@ -94,7 +94,7 @@ function assertPositive(value: number, name: string, integer = false): void {
 
 function resolveOptions(options: CacheOptions): {
   ttl: number;
-  routes: ReadonlySet<CacheRouteId>;
+  operations: ReadonlySet<CacheOperationId>;
   maxEntries: number;
   deduplicate: boolean;
 } {
@@ -104,16 +104,16 @@ function resolveOptions(options: CacheOptions): {
 
   assertPositive(options.ttl, 'cache.ttl');
 
-  if (!Array.isArray(options.routes) || options.routes.length === 0) {
-    throw new CacheError('cache.routes должен содержать хотя бы один маршрут');
+  if (!Array.isArray(options.operations) || options.operations.length === 0) {
+    throw new CacheError('cache.operations должен содержать хотя бы одну операцию');
   }
 
-  const routes = new Set<CacheRouteId>();
-  for (const route of options.routes as readonly string[]) {
-    if (typeof route !== 'string' || !isCacheRouteId(route)) {
-      throw new CacheError(`Неизвестный маршрут кэша: ${JSON.stringify(route)}`);
+  const operations = new Set<CacheOperationId>();
+  for (const operation of options.operations as readonly string[]) {
+    if (typeof operation !== 'string' || !isCacheOperationId(operation)) {
+      throw new CacheError(`Неизвестная операция кэша: ${JSON.stringify(operation)}`);
     }
-    routes.add(route);
+    operations.add(operation);
   }
 
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
@@ -124,7 +124,7 @@ function resolveOptions(options: CacheOptions): {
     throw new CacheError(`cache.deduplicate должен быть boolean, получено: ${deduplicate}`);
   }
 
-  return { ttl: options.ttl, routes, maxEntries, deduplicate };
+  return { ttl: options.ttl, operations, maxEntries, deduplicate };
 }
 
 function cloneValue(value: unknown): LoadedValue {
@@ -155,15 +155,15 @@ export function cache(options: CacheOptions): CachePlugin {
     allowStale: false,
   });
   const pending = new Map<string, PendingEntry>();
-  const routeGenerations = new Map<CacheRouteId, number>();
+  const operationGenerations = new Map<CacheOperationId, number>();
   const scopeGenerations = new Map<string, number>();
-  const scopeRouteGenerations = new Map<string, number>();
+  const scopeOperationGenerations = new Map<string, number>();
   const keyStates = new Map<string, KeyState>();
   let generation = 0;
   let installationSequence = 0;
 
-  const scopeRouteKey = (accountScope: string, route: CacheRouteId): string =>
-    JSON.stringify([accountScope, route]);
+  const scopeOperationKey = (accountScope: string, operation: CacheOperationId): string =>
+    JSON.stringify([accountScope, operation]);
 
   const clear = (): void => {
     generation += 1;
@@ -171,23 +171,23 @@ export function cache(options: CacheOptions): CachePlugin {
     pending.clear();
   };
 
-  const invalidate = (...routes: CacheRouteId[]): void => {
-    if (routes.length === 0) return;
+  const invalidate = (...operations: CacheOperationId[]): void => {
+    if (operations.length === 0) return;
 
-    const selected = new Set<CacheRouteId>();
-    for (const route of routes as readonly string[]) {
-      if (!isCacheRouteId(route)) {
-        throw new CacheError(`Неизвестный маршрут кэша: ${JSON.stringify(route)}`);
+    const selected = new Set<CacheOperationId>();
+    for (const operation of operations as readonly string[]) {
+      if (!isCacheOperationId(operation)) {
+        throw new CacheError(`Неизвестная операция кэша: ${JSON.stringify(operation)}`);
       }
-      selected.add(route);
-      routeGenerations.set(route, (routeGenerations.get(route) ?? 0) + 1);
+      selected.add(operation);
+      operationGenerations.set(operation, (operationGenerations.get(operation) ?? 0) + 1);
     }
 
     for (const [key, entry] of values.entries()) {
-      if (selected.has(entry.route)) values.delete(key);
+      if (selected.has(entry.operation)) values.delete(key);
     }
     for (const [key, entry] of pending) {
-      if (selected.has(entry.route)) pending.delete(key);
+      if (selected.has(entry.operation)) pending.delete(key);
     }
   };
 
@@ -202,20 +202,20 @@ export function cache(options: CacheOptions): CachePlugin {
     }
   };
 
-  const invalidateScope = (accountScope: string, routes: readonly CacheRouteId[]): void => {
-    if (routes.length === 0) return;
+  const invalidateScope = (accountScope: string, operations: readonly CacheOperationId[]): void => {
+    if (operations.length === 0) return;
 
-    const selected = new Set(routes);
-    for (const route of selected) {
-      const key = scopeRouteKey(accountScope, route);
-      scopeRouteGenerations.set(key, (scopeRouteGenerations.get(key) ?? 0) + 1);
+    const selected = new Set(operations);
+    for (const operation of selected) {
+      const key = scopeOperationKey(accountScope, operation);
+      scopeOperationGenerations.set(key, (scopeOperationGenerations.get(key) ?? 0) + 1);
     }
 
     for (const [key, entry] of values.entries()) {
-      if (entry.accountScope === accountScope && selected.has(entry.route)) values.delete(key);
+      if (entry.accountScope === accountScope && selected.has(entry.operation)) values.delete(key);
     }
     for (const [key, entry] of pending) {
-      if (entry.accountScope === accountScope && selected.has(entry.route)) pending.delete(key);
+      if (entry.accountScope === accountScope && selected.has(entry.operation)) pending.delete(key);
     }
   };
 
@@ -255,9 +255,9 @@ export function cache(options: CacheOptions): CachePlugin {
     };
 
     return async (request, next) => {
-      const route = cacheRoute(request.operationId);
+      const operation = cacheOperation(request.operationId);
       const method = request.method.toUpperCase();
-      const isRead = route !== undefined || method === 'GET' || method === 'HEAD';
+      const isRead = operation !== undefined || method === 'GET' || method === 'HEAD';
 
       if (!isRead) {
         const mutation = cacheMutation(request.operationId);
@@ -278,16 +278,17 @@ export function cache(options: CacheOptions): CachePlugin {
         return result;
       }
 
-      if (!route || !config.routes.has(route.id)) return next(request);
+      if (!operation || !config.operations.has(operation.id)) return next(request);
 
       const mode = cacheMode(request);
       if (mode === CacheModes.NoStore) return next(request);
 
-      const unscopedKey = buildCacheKey(route.id, request);
+      const unscopedKey = buildCacheKey(operation.id, request);
       if (unscopedKey === undefined) return next(request);
 
       const identity = await resolveIdentity();
-      const scope = route.id === 'auth.sessions' ? identity.sessionScope : identity.accountScope;
+      const scope =
+        operation.id === 'auth.sessions' ? identity.sessionScope : identity.accountScope;
       const key = JSON.stringify([scope, unscopedKey]);
 
       if (mode === CacheModes.Reload) {
@@ -324,9 +325,10 @@ export function cache(options: CacheOptions): CachePlugin {
 
       const startedGeneration = generation;
       const startedScopeGeneration = scopeGenerations.get(identity.accountScope) ?? 0;
-      const startedRouteGeneration = routeGenerations.get(route.id) ?? 0;
-      const scopedRouteKey = scopeRouteKey(identity.accountScope, route.id);
-      const startedScopeRouteGeneration = scopeRouteGenerations.get(scopedRouteKey) ?? 0;
+      const startedOperationGeneration = operationGenerations.get(operation.id) ?? 0;
+      const scopedOperationKey = scopeOperationKey(identity.accountScope, operation.id);
+      const startedScopeOperationGeneration =
+        scopeOperationGenerations.get(scopedOperationKey) ?? 0;
       const keyState = keyStates.get(key) ?? {
         active: 0,
         generation: 0,
@@ -340,7 +342,7 @@ export function cache(options: CacheOptions): CachePlugin {
           const stored = cloneValue(result);
           const currentIdentity = await resolveIdentity();
           const currentScope =
-            route.id === 'auth.sessions'
+            operation.id === 'auth.sessions'
               ? currentIdentity.sessionScope
               : currentIdentity.accountScope;
 
@@ -349,13 +351,14 @@ export function cache(options: CacheOptions): CachePlugin {
             currentScope === scope &&
             generation === startedGeneration &&
             (scopeGenerations.get(identity.accountScope) ?? 0) === startedScopeGeneration &&
-            (routeGenerations.get(route.id) ?? 0) === startedRouteGeneration &&
-            (scopeRouteGenerations.get(scopedRouteKey) ?? 0) === startedScopeRouteGeneration &&
+            (operationGenerations.get(operation.id) ?? 0) === startedOperationGeneration &&
+            (scopeOperationGenerations.get(scopedOperationKey) ?? 0) ===
+              startedScopeOperationGeneration &&
             keyState.generation === startedKeyGeneration
           ) {
             values.set(key, {
               accountScope: identity.accountScope,
-              route: route.id,
+              operation: operation.id,
               value: stored.value,
             });
           }
@@ -375,7 +378,7 @@ export function cache(options: CacheOptions): CachePlugin {
         request.timeout === undefined;
       const entry: PendingEntry = {
         accountScope: identity.accountScope,
-        route: route.id,
+        operation: operation.id,
         promise: load,
       };
       if (mayDeduplicate) pending.set(key, entry);
@@ -402,7 +405,7 @@ export function cache(options: CacheOptions): CachePlugin {
         throw new CacheError('attachRealtime() принимает поток из itd.realtime()');
       }
 
-      const invalidateStream = (...routes: CacheRouteId[]): void => {
+      const invalidateStream = (...operations: CacheOperationId[]): void => {
         const identity =
           typeof stream.getAuthIdentity === 'function' ? stream.getAuthIdentity() : undefined;
         const streamBaseUrl =
@@ -417,8 +420,8 @@ export function cache(options: CacheOptions): CachePlugin {
             : legacyScope !== undefined && streamBaseUrl
               ? JSON.stringify([streamBaseUrl, legacyScope])
               : undefined;
-        if (accountScope === undefined) invalidate(...routes);
-        else invalidateScope(accountScope, routes);
+        if (accountScope === undefined) invalidate(...operations);
+        else invalidateScope(accountScope, operations);
       };
 
       invalidateStream('notifications.list', 'notifications.count');

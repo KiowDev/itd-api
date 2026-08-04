@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createClientRuntime } from '../../src/core/client-runtime.js';
-import { ItdAuthError, ItdConfigError } from '../../src/core/errors.js';
+import { ItdApiError, ItdAuthError, ItdConfigError } from '../../src/core/errors.js';
 import { type ItdSession, MemoryTokenStorage } from '../../src/core/storage.js';
 import type { ItdClientOptions } from '../../src/types/options.js';
 import { makeJwt } from '../helpers/jwt.js';
@@ -93,6 +93,19 @@ describe('отложенный вход по логину и паролю', () =
     expect(mock.callCount).toBe(1);
   });
 
+  it('повторяет idempotent вход при временной транспортной ошибке', async () => {
+    const { auth, mock } = makeAuth(
+      [json({ error: 'temporary' }, { status: 500 }), json({ accessToken: 'new-token' })],
+      {
+        auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+        retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+      },
+    );
+
+    await expect(auth.getAccessToken()).resolves.toBe('new-token');
+    expect(mock.callCount).toBe(2);
+  });
+
   it('показывает отложенный вход плагинам', async () => {
     const paths: string[] = [];
     const { auth, config, plugins } = makeAuth([json({ accessToken: 'new-token' })], {
@@ -163,7 +176,7 @@ describe('обновление токена', () => {
     expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
   });
 
-  it('повторяет refresh при временной ошибке с обычной настройкой retry', async () => {
+  it('не повторяет unsafe refresh при временной ошибке', async () => {
     const { auth, mock } = makeAuth(
       [json({ error: 'temporary' }, { status: 500 }), json({ accessToken: 'refreshed' })],
       {
@@ -172,8 +185,8 @@ describe('обновление токена', () => {
       },
     );
 
-    await expect(auth.refresh()).resolves.toBe('refreshed');
-    expect(mock.callCount).toBe(2);
+    await expect(auth.refresh()).rejects.toThrow(ItdApiError);
+    expect(mock.callCount).toBe(1);
   });
 
   it('бросает ItdAuthError, если обновлять нечем', async () => {

@@ -1,4 +1,5 @@
 import { ItdConfigError } from '../core/errors.js';
+import type { HttpClient } from '../core/http.js';
 import { createDeviceId } from '../core/runtime.js';
 import { InteractionType, type ViewReason, type ViewSource } from '../types/enums.js';
 import type { RequestOptions } from '../types/options.js';
@@ -251,8 +252,22 @@ class ViewTrackerImpl implements ViewTracker {
   }
 }
 
+type SendDwell = (
+  entries: readonly DwellEntry[],
+  telemetryOptions: TelemetryOptions,
+  requestOptions: RequestOptions,
+  disposeCleanup: boolean,
+) => Promise<unknown>;
+type SendInteraction = (
+  entries: readonly InteractionEntry[],
+  telemetryOptions: TelemetryOptions,
+  requestOptions: RequestOptions,
+  disposeCleanup: boolean,
+) => Promise<unknown>;
+
 class TelemetryBatchImpl implements TelemetryBatch {
-  readonly #resource: TelemetryResource;
+  readonly #sendDwell: SendDwell;
+  readonly #sendInteraction: SendInteraction;
   readonly #telemetryOptions: TelemetryOptions;
   readonly #requestOptions: RequestOptions;
   readonly #clock: TelemetryClock;
@@ -263,9 +278,11 @@ class TelemetryBatchImpl implements TelemetryBatch {
   #state: 'open' | 'closing' | 'closed' = 'open';
   #flushPromise: Promise<void> | undefined;
   #closePromise: Promise<void> | undefined;
+  #disposeCleanup = false;
 
   constructor(
-    resource: TelemetryResource,
+    sendDwell: SendDwell,
+    sendInteraction: SendInteraction,
     options: TelemetryBatchOptions,
     requestOptions: RequestOptions,
     onClose: () => void,
@@ -278,7 +295,8 @@ class TelemetryBatchImpl implements TelemetryBatch {
     if (!Number.isInteger(maxBatchSize) || maxBatchSize < 1) {
       throw new ItdConfigError('maxBatchSize должен быть целым числом от 1');
     }
-    this.#resource = resource;
+    this.#sendDwell = sendDwell;
+    this.#sendInteraction = sendInteraction;
     this.#telemetryOptions = telemetryOptions;
     this.#requestOptions = requestOptions;
     this.#clock = clock;
@@ -340,6 +358,22 @@ class TelemetryBatchImpl implements TelemetryBatch {
   }
 
   close(): Promise<void> {
+    return this.#close(false);
+  }
+
+  /** Внутренняя финализация после перехода клиента в terminal state. */
+  closeForDispose(): Promise<void> {
+    this.prepareForDispose();
+    return this.#close(true);
+  }
+
+  /** Переключает ещё не начатые части flush на terminal-cleanup канал. */
+  prepareForDispose(): void {
+    this.#disposeCleanup = true;
+  }
+
+  #close(disposeCleanup: boolean): Promise<void> {
+    this.#disposeCleanup ||= disposeCleanup;
     if (this.#state === 'closed') return Promise.resolve();
     if (this.#closePromise) return this.#closePromise;
 
@@ -364,7 +398,7 @@ class TelemetryBatchImpl implements TelemetryBatch {
     while (this.#dwell.length > 0) {
       const chunk = this.#dwell.splice(0, this.#maxBatchSize);
       try {
-        await this.#resource.dwell(chunk, this.#telemetryOptions, options);
+        await this.#sendDwell(chunk, this.#telemetryOptions, options, this.#disposeCleanup);
       } catch (error) {
         this.#dwell.unshift(...chunk);
         throw error;
@@ -374,7 +408,7 @@ class TelemetryBatchImpl implements TelemetryBatch {
     while (this.#interactions.length > 0) {
       const chunk = this.#interactions.splice(0, this.#maxBatchSize);
       try {
-        await this.#resource.interaction(chunk, this.#telemetryOptions, options);
+        await this.#sendInteraction(chunk, this.#telemetryOptions, options, this.#disposeCleanup);
       } catch (error) {
         this.#interactions.unshift(...chunk);
         throw error;
@@ -389,6 +423,9 @@ class TelemetryBatchImpl implements TelemetryBatch {
   }
 }
 
+const TELEMETRY_DISPOSE_CLOSERS = new WeakMap<TelemetryResource, () => Promise<void>>();
+const TELEMETRY_DISPOSE_PREPARERS = new WeakMap<TelemetryResource, () => void>();
+
 /**
  * Телеметрия просмотров и взаимодействий.
  *
@@ -398,6 +435,16 @@ class TelemetryBatchImpl implements TelemetryBatch {
 export class TelemetryResource extends BaseResource {
   #sessionId: string | undefined;
   readonly #batches = new Set<TelemetryBatchImpl>();
+
+  constructor(http: HttpClient) {
+    super(http);
+    // Финализация накопителей нужна только владельцу lifecycle. Замыкания на приватные
+    // методы отдают её `ItdClient.dispose()`, не добавляя ресурсу публичных членов.
+    TELEMETRY_DISPOSE_PREPARERS.set(this, () => {
+      for (const batch of this.#batches) batch.prepareForDispose();
+    });
+    TELEMETRY_DISPOSE_CLOSERS.set(this, () => this.#close(true));
+  }
 
   /** Идентификатор сессии телеметрии, общий для всех событий этого ресурса. */
   get sessionId(): string {
@@ -412,11 +459,20 @@ export class TelemetryResource extends BaseResource {
     requestOptions: RequestOptions = {},
   ): Promise<unknown> {
     const validated = entries.map(validateDwell);
-    return this.http.operation('telemetry.dwell', {
+    return this.#sendDwell(validated, telemetryOptions, requestOptions, false);
+  }
+
+  #sendDwell(
+    entries: readonly DwellEntry[],
+    telemetryOptions: TelemetryOptions,
+    requestOptions: RequestOptions,
+    disposeCleanup: boolean,
+  ): Promise<unknown> {
+    const options = {
       path: '/api/v1/i',
       body: {
         sid: telemetryOptions.sid ?? this.sessionId,
-        e: validated.map((entry) => ({
+        e: entries.map((entry) => ({
           md: entry.durationMs ?? entry.exitAt - entry.enterAt,
           et: entry.enterAt,
           xt: entry.exitAt,
@@ -428,7 +484,10 @@ export class TelemetryResource extends BaseResource {
         })),
       },
       ...requestOptions,
-    });
+    };
+    return disposeCleanup
+      ? this.http.cleanupOperation('telemetry.dwell', options)
+      : this.http.operation('telemetry.dwell', options);
   }
 
   /** Отправляет события взаимодействия с контентом (`POST /api/v1/x`). */
@@ -438,11 +497,20 @@ export class TelemetryResource extends BaseResource {
     requestOptions: RequestOptions = {},
   ): Promise<unknown> {
     const validated = entries.map(validateInteraction);
-    return this.http.operation('telemetry.interaction', {
+    return this.#sendInteraction(validated, telemetryOptions, requestOptions, false);
+  }
+
+  #sendInteraction(
+    entries: readonly InteractionEntry[],
+    telemetryOptions: TelemetryOptions,
+    requestOptions: RequestOptions,
+    disposeCleanup: boolean,
+  ): Promise<unknown> {
+    const options = {
       path: '/api/v1/x',
       body: {
         sid: telemetryOptions.sid ?? this.sessionId,
-        e: validated.map((entry) => ({
+        e: entries.map((entry) => ({
           t: entry.type,
           v: entry.vs,
           ai: entry.postId,
@@ -453,7 +521,10 @@ export class TelemetryResource extends BaseResource {
         })),
       },
       ...requestOptions,
-    });
+    };
+    return disposeCleanup
+      ? this.http.cleanupOperation('telemetry.interaction', options)
+      : this.http.operation('telemetry.interaction', options);
   }
 
   /** Начинает измерять время просмотра и отправляет результат после `finish()`. */
@@ -493,16 +564,30 @@ export class TelemetryResource extends BaseResource {
    */
   batch(options: TelemetryBatchOptions = {}, requestOptions: RequestOptions = {}): TelemetryBatch {
     let batch: TelemetryBatchImpl;
-    batch = new TelemetryBatchImpl(this, options, requestOptions, () => {
-      this.#batches.delete(batch);
-    });
+    batch = new TelemetryBatchImpl(
+      (entries, telemetry, request, cleanup) =>
+        this.#sendDwell(entries, telemetry, request, cleanup),
+      (entries, telemetry, request, cleanup) =>
+        this.#sendInteraction(entries, telemetry, request, cleanup),
+      options,
+      requestOptions,
+      () => {
+        this.#batches.delete(batch);
+      },
+    );
     this.#batches.add(batch);
     return batch;
   }
 
   /** Закрывает все созданные накопители, отправляя оставшиеся записи. */
   async close(): Promise<void> {
-    const results = await Promise.allSettled([...this.#batches].map((batch) => batch.close()));
+    return this.#close(false);
+  }
+
+  async #close(disposeCleanup: boolean): Promise<void> {
+    const results = await Promise.allSettled(
+      [...this.#batches].map((batch) => (disposeCleanup ? batch.closeForDispose() : batch.close())),
+    );
     const errors = results
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       .map((result) => result.reason);
@@ -510,4 +595,16 @@ export class TelemetryResource extends BaseResource {
       throw new AggregateError(errors, 'Не удалось отправить накопленную телеметрию');
     }
   }
+}
+
+/** Помечает открытые накопители для terminal cleanup до первой асинхронной границы. @internal */
+export function prepareTelemetryForDispose(resource: TelemetryResource | undefined): void {
+  if (resource) TELEMETRY_DISPOSE_PREPARERS.get(resource)?.();
+}
+
+/** Финализирует созданные накопители после перехода клиента в terminal state. @internal */
+export function closeTelemetryForDispose(resource: TelemetryResource | undefined): Promise<void> {
+  return resource
+    ? (TELEMETRY_DISPOSE_CLOSERS.get(resource)?.() ?? Promise.resolve())
+    : Promise.resolve();
 }

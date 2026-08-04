@@ -1,5 +1,5 @@
 import type { OperationRequestOptions } from 'itd-api';
-import type { CacheRouteId } from './routes.js';
+import type { CacheOperationId } from './operations.js';
 
 const OMITTED_FIELDS = new Set([
   'method',
@@ -46,7 +46,7 @@ function queryKey(query: OperationRequestOptions['query']): string {
  * плагина не сериализуются как JSON, запрос выполняется без кэша.
  */
 export function buildCacheKey(
-  route: CacheRouteId,
+  operation: CacheOperationId,
   request: OperationRequestOptions,
 ): string | undefined {
   const extras: Record<string, unknown> = {};
@@ -58,7 +58,7 @@ export function buildCacheKey(
 
   try {
     return JSON.stringify({
-      route,
+      operation,
       method: request.method.toUpperCase(),
       service: request.service ?? null,
       baseUrl: request.baseUrl ?? null,

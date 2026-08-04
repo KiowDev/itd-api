@@ -208,7 +208,7 @@ describe('hydrateClient', () => {
 
   it('гидратирует сетевой ответ и ответ из кэша одинаково', async () => {
     const { server, raw } = hydratedServerClient();
-    raw.use(cache({ ttl: 60_000, routes: ['posts.get'] }));
+    raw.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
     const itd = hydrateClient(raw);
 
     const plain = await raw.posts.get('post-1');

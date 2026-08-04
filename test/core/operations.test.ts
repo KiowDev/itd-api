@@ -37,6 +37,13 @@ describe('каталог операций', () => {
   it('служит единым источником retry safety', () => {
     expect(operationRetrySafety('posts.stats')).toBe(RetrySafety.Safe);
     expect(operationRetrySafety('users.updateMe')).toBe(RetrySafety.Idempotent);
+    expect(operationRetrySafety('auth.signIn')).toBe(RetrySafety.Safe);
+    expect(operationRetrySafety('auth.refresh')).toBe(RetrySafety.Unsafe);
     expect(operationRetrySafety('posts.create')).toBe(RetrySafety.Unsafe);
+  });
+
+  it('замораживает и каталог, и каждое описание операции', () => {
+    expect(Object.isFrozen(OPERATIONS)).toBe(true);
+    expect(Object.values(OPERATIONS).every(Object.isFrozen)).toBe(true);
   });
 });

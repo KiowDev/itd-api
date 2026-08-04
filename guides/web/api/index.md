@@ -13,7 +13,7 @@
 |---|---|
 | [`itd-api`](./generated/core/) | основной REST/realtime-клиент, модели, ошибки и билдеры |
 | [`itd-api/node`](./generated/node/) | файловые хранилища и чтение файлов с диска для Node, Bun и Deno |
-| [`itd-api/web`](./generated/web/) | хранилище сессии в `localStorage` |
+| [`itd-api/web`](./generated/web/) | хранилища сессии в `localStorage` и `sessionStorage` |
 
 ## Дополнительные пакеты
 

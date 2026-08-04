@@ -3,7 +3,7 @@ export type OperationMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** Семантическая безопасность автоматического повтора операции. */
 export const RetrySafety = Object.freeze({
-  /** Операция только читает состояние и может быть повторена. */
+  /** Автоматический повтор не создаёт неприемлемого эффекта; обычно это чтение. */
   Safe: 'safe',
   /** Повтор операции приводит к тому же состоянию, что и один вызов. */
   Idempotent: 'idempotent',
@@ -18,16 +18,23 @@ export interface OperationDefinition {
   readonly retrySafety: RetrySafety;
 }
 
+function freezeOperations<const T extends Record<string, OperationDefinition>>(
+  operations: T,
+): Readonly<{ readonly [K in keyof T]: Readonly<T[K]> }> {
+  for (const definition of Object.values(operations)) Object.freeze(definition);
+  return Object.freeze(operations);
+}
+
 /**
  * Каталог встроенных операций.
  *
  * ID описывает смысл вызова и не меняется при переносе HTTP-пути. Method и retrySafety
  * хранятся здесь, чтобы resources, retry и плагины не вели независимые таблицы операций.
  */
-export const OPERATIONS = Object.freeze({
+export const OPERATIONS = freezeOperations({
   'auth.check': { method: 'GET', retrySafety: RetrySafety.Safe },
   'auth.signUp': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.signIn': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'auth.signIn': { method: 'POST', retrySafety: RetrySafety.Safe },
   'auth.verifyOtp': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'auth.resendOtp': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'auth.refresh': { method: 'POST', retrySafety: RetrySafety.Unsafe },
