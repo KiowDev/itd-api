@@ -1,6 +1,6 @@
 {
   "name": "itd-api",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Клиент REST и realtime API социальной сети итд.com для JavaScript и TypeScript",
   "repository": {
     "type": "git",
@@ -110,8 +110,8 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@biomejs/biome": "^2.5.5",
-    "@types/node": "^26.1.1",
+    "@biomejs/biome": "^2.5.6",
+    "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^4.1.10",
     "eventsource-parser": "^3.1.0",
     "publint": "^0.3.22",
