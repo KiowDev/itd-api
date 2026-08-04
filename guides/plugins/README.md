@@ -309,5 +309,6 @@ my-plugin/
 
 - [`@itd-api/cache`](/packages/cache)
 - [`@itd-api/crypto`](/packages/crypto)
+- [Request pipeline: operation и attempt](../reference/request-pipeline.md)
 - [Методы плагинов у `ItdClient`](../reference/client.md#методы)
 - [Плагины нескольких аккаунтов](../reference/accounts.md#методы)

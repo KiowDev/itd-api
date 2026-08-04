@@ -272,6 +272,18 @@ interface RawRequestOptions extends RequestOptions {
 `retrySafety: RetrySafety.Safe` или `RetrySafety.Idempotent`, если это гарантирует контракт
 интеграции. Глобального переключателя для повтора всех записей намеренно нет.
 
+Каталог встроенных операций доступен программно — это тот же источник, которым пользуются
+resources, повторы и плагины:
+
+```ts
+import { isBuiltInOperationId, OPERATIONS, operationMethod, operationRetrySafety } from 'itd-api';
+
+Object.keys(OPERATIONS).length;             // все встроенные ID
+operationMethod('posts.create');            // 'POST'
+operationRetrySafety('posts.stats');        // 'safe'
+isBuiltInOperationId('posts.create');       // true
+```
+
 `service` выбирает зарегистрированный хост. `baseUrl` имеет более высокий приоритет и
 задаёт хост только этому запросу. Для внешнего `baseUrl` авторизация выключена
 автоматически; `skipAuth: false` явно разрешает отправить текущий Bearer-токен.
