@@ -4,7 +4,6 @@ import {
   ItdRealtime,
   RealtimeComposer,
   type RealtimeContext,
-  type RealtimeDeps,
   type RealtimeMiddlewareObj,
   type RealtimeOptions,
   RealtimeRouter,
@@ -15,6 +14,7 @@ import {
   type TransportContext,
   type TransportEvent,
 } from '../../src/index.js';
+import type { RealtimeDeps } from '../../src/realtime/stream.js';
 
 class TestTransport implements RealtimeTransport {
   readonly name = 'test';

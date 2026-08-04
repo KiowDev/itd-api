@@ -25,7 +25,7 @@ export const itd = new ItdClient({
 ## Таймаут и отмена
 
 Глобальный таймаут по умолчанию — 30 секунд. `0` отключает его. Загрузка файлов использует
-отдельное значение `DEFAULT_UPLOAD_TIMEOUT` — 5 минут.
+отдельное значение — 5 минут.
 
 ```ts
 import { ItdAbortError, ItdClient } from 'itd-api';
@@ -33,11 +33,10 @@ import { ItdAbortError, ItdClient } from 'itd-api';
 const itd = new ItdClient({ timeout: 20_000 });
 
 const controller = new AbortController();
-const request = itd.posts.list({
-  tab: 'popular',
-  signal: controller.signal,
-  timeout: 5_000,
-});
+const request = itd.posts.list(
+  { tab: 'popular' },
+  { signal: controller.signal, timeout: 5_000 },
+);
 
 controller.abort();
 
@@ -151,8 +150,9 @@ Bearer-токен включён по умолчанию только для о�
 
 ### Переопределение встроенных сервисов
 
-Имена встроенных сервисов перечислены в `BUILT_IN_SERVICES`. Указав такое имя в `services`,
-вы задаёте сервису другой хост — например собственный прокси, когда браузеру мешает CORS:
+Встроен один сервис — `status`, его имя доступно как `STATUS_SERVICE`. Указав такое имя
+в `services`, вы задаёте сервису другой хост — например собственный прокси, когда браузеру
+мешает CORS:
 
 ```ts
 const itd = new ItdClient({

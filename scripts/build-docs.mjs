@@ -10,6 +10,9 @@ const builds = [
     entryPoint: 'src/index.ts',
     tsconfig: 'tsconfig.json',
     out: 'guides/web/api/generated/core',
+    // Поток создаётся `itd.realtime()`, а его зависимости собирает клиент. Тип остаётся
+    // внутренним: публичной остаётся только сама форма потока.
+    intentionallyNotExported: ['RealtimeDeps'],
   },
   // Платформенные точки входа реализуют интерфейсы ядра и ссылаются на его типы.
   // Дублировать их описание здесь незачем: оно целиком лежит в наборе `itd-api`.

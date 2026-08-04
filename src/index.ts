@@ -43,8 +43,6 @@ export { createClient, ItdClient } from './client.js';
 // не нужно. Загрузка по адресу работает на всех платформах и живёт здесь; чтение с диска
 // требует `node:fs` — за ним `fromPath` из `itd-api/node`.
 export {
-  DEFAULT_FILE_STREAM_BUFFER_BYTES,
-  DEFAULT_URL_FILE_MAX_BYTES,
   type FileContent,
   type FileContext,
   type FileInput,
@@ -58,24 +56,9 @@ export {
   type UrlFileOptions,
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
-export {
-  AUTH_PATHS,
-  type AuthEvents,
-  type AuthIdentity,
-  DEVICE_ID_HEADER,
-  TURNSTILE_SITE_KEY,
-} from './core/auth.js';
+export { type AuthEvents, type AuthIdentity, TURNSTILE_SITE_KEY } from './core/auth.js';
 export { type ItdClock, systemClock } from './core/clock.js';
-export {
-  BUILT_IN_SERVICES,
-  DEFAULT_BASE_URL,
-  DEFAULT_STATUS_BASE_URL,
-  DEFAULT_TIMEOUT,
-  DEFAULT_USER_AGENT,
-  LIBRARY_VERSION,
-  STATUS_SERVICE,
-} from './core/config.js';
-export { AUTH_FLAG_COOKIE, REFRESH_COOKIE, REFRESH_COOKIE_PATH } from './core/cookies.js';
+export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';
 export {
   ItdAbortError,
@@ -172,9 +155,9 @@ export type {
   PluginApi,
   PluginTeardown,
 } from './core/plugins/contracts.js';
-export { DetectedRuntime, RuntimeMode } from './core/runtime.js';
+export { RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
-export { type ServiceDefinition, ServiceRegistry } from './core/services.js';
+export type { ServiceDefinition } from './core/services.js';
 // Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
 // и потому не может попасть в нейтральный бандл, а Web Storage backend вынесены
 // в `itd-api/web`, чтобы их молчаливый откат в память выбирали осознанно.
@@ -235,18 +218,9 @@ export type {
 } from './models/users.js';
 // Уведомления приводятся к единой форме, поэтому объекты из REST и из потока событий
 // можно складывать в один список. Подробности — в notifications/normalize.ts.
-export {
-  type NotificationEvent,
-  normalizeNotification,
-  readNotificationEvent,
-  readUnreadCountEvent,
-} from './notifications/normalize.js';
+export { type NotificationEvent, normalizeNotification } from './notifications/normalize.js';
 export { formatNotificationText } from './notifications/text.js';
-export {
-  canonicalNotificationType,
-  isKnownNotificationType,
-  NOTIFICATION_TYPE_ALIASES,
-} from './notifications/type-map.js';
+export { canonicalNotificationType, isKnownNotificationType } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
 export {
   RealtimeComposer,
@@ -268,18 +242,10 @@ export {
   type RealtimeTypeGuard,
   runRealtimeMiddleware,
 } from './realtime/middleware.js';
-export type { PollTransportOptions } from './realtime/poll.js';
-export {
-  MAX_RECONNECT_ATTEMPTS,
-  RECONNECT_BACKOFF,
-  RECONNECT_JITTER,
-  type ReconnectOptions,
-} from './realtime/reconnect.js';
+export type { ReconnectOptions } from './realtime/reconnect.js';
 export { RealtimeRouter, type RealtimeRouteSelector } from './realtime/router.js';
-export { type SseTransportOptions, STREAM_PATH } from './realtime/sse.js';
 export {
   ItdRealtime,
-  type RealtimeDeps,
   type RealtimeEvents,
   type RealtimeOptions,
   RealtimeTransportKind,
@@ -305,7 +271,6 @@ export {
   RealtimeUpdateType,
 } from './realtime/updates.js';
 export {
-  WEBSOCKET_PATH,
   type WebSocketImplementationOptions,
   type WebSocketLike,
   type WebSocketOpenFailureClassifier,
@@ -322,11 +287,10 @@ export type {
 } from './resources/auth.js';
 export { SignInStatus } from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
-export {
-  DEFAULT_UPLOAD_TIMEOUT,
-  type FilesResource,
-  type UploadedFile,
-  type UploadOptions,
+export type {
+  FilesResource,
+  UploadedFile,
+  UploadOptions,
 } from './resources/files.js';
 export type { HashtagPostsParams, HashtagsResource } from './resources/hashtags.js';
 export type {
