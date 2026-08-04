@@ -13,6 +13,7 @@ import packageJson from '../../package.json';
 const guideSidebar = [
   {
     text: 'Начало работы',
+    collapsed: true,
     items: [
       { text: 'Обзор руководств', link: '/guides/' },
       { text: 'Быстрый старт', link: '/quickstart/' },
@@ -22,6 +23,7 @@ const guideSidebar = [
   },
   {
     text: 'Практические сценарии',
+    collapsed: true,
     items: [
       { text: 'Realtime', link: '/realtime/' },
       { text: 'Несколько аккаунтов', link: '/multi-accounts/' },
@@ -32,10 +34,11 @@ const guideSidebar = [
   },
   {
     text: 'Дальше',
+    collapsed: true,
     items: [
       { text: 'Справочник', link: '/reference/' },
-      { text: 'API из TSDoc', link: '/api/' },
       { text: 'Пакеты', link: '/packages/' },
+      { text: 'API из TSDoc', link: '/api/' },
     ],
   },
 ];
@@ -43,6 +46,7 @@ const guideSidebar = [
 const referenceSidebar = [
   {
     text: 'Справочник',
+    collapsed: true,
     items: [
       { text: 'Обзор', link: '/reference/' },
       { text: 'Клиент', link: '/reference/client' },
@@ -82,33 +86,64 @@ const referenceSidebar = [
       { text: 'Матрица endpoint', link: '/reference/endpoints' },
     ],
   },
+  {
+    text: 'Дальше',
+    collapsed: true,
+    items: [
+      { text: 'Пакеты', link: '/packages/' },
+      { text: 'API из TSDoc', link: '/api/' },
+    ],
+  },
 ];
 
+/**
+ * Раздел «Пакеты» — рукописные руководства по каждому пакету.
+ *
+ * Порядок — по пути приложения: сначала то, без чего не начать работу (вход и сеть),
+ * потом ускорение и удобство, в конце — тестирование.
+ */
 const packagesSidebar = [
   {
     text: 'Пакеты',
     items: [
       { text: 'Обзор', link: '/packages/' },
-      { text: '@itd-api/testing', link: '/packages/testing' },
-      { text: '@itd-api/hydrate', link: '/packages/hydrate' },
-      { text: '@itd-api/cache', link: '/packages/cache' },
-      { text: '@itd-api/crypto', link: '/packages/crypto' },
-      { text: '@itd-api/proxy', link: '/packages/proxy' },
       { text: '@itd-api/turnstile', link: '/packages/turnstile' },
+      { text: '@itd-api/proxy', link: '/packages/proxy' },
+      { text: '@itd-api/cache', link: '/packages/cache' },
+      { text: '@itd-api/hydrate', link: '/packages/hydrate' },
+      { text: '@itd-api/crypto', link: '/packages/crypto' },
+      { text: '@itd-api/testing', link: '/packages/testing' },
     ],
   },
   {
-    text: 'Точные сигнатуры',
+    text: 'Дальше',
+    collapsed: true,
     items: [
+      { text: 'API из TSDoc', link: '/api/' },
+    ],
+  },
+];
+
+/**
+ * Раздел «API» — точки входа сгенерированной документации.
+ *
+ * Отдельно от `packagesSidebar`: рукописные руководства и сигнатуры из TSDoc — разные
+ * разделы, и общее меню делало их неразличимыми.
+ */
+const apiEntriesSidebar = [
+  {
+    text: 'API из TSDoc',
+    items: [
+      { text: 'Обзор', link: '/api/' },
       { text: 'itd-api', link: '/api/generated/core/' },
       { text: 'itd-api/node', link: '/api/generated/node/' },
       { text: 'itd-api/web', link: '/api/generated/web/' },
-      { text: '@itd-api/testing', link: '/api/generated/testing/' },
-      { text: '@itd-api/hydrate', link: '/api/generated/hydrate/' },
-      { text: '@itd-api/cache', link: '/api/generated/cache/' },
-      { text: '@itd-api/crypto', link: '/api/generated/crypto/' },
-      { text: '@itd-api/proxy', link: '/api/generated/proxy/' },
       { text: '@itd-api/turnstile', link: '/api/generated/turnstile/' },
+      { text: '@itd-api/proxy', link: '/api/generated/proxy/' },
+      { text: '@itd-api/cache', link: '/api/generated/cache/' },
+      { text: '@itd-api/hydrate', link: '/api/generated/hydrate/' },
+      { text: '@itd-api/crypto', link: '/api/generated/crypto/' },
+      { text: '@itd-api/testing', link: '/api/generated/testing/' },
     ],
   },
 ];
@@ -136,6 +171,15 @@ export default defineConfig({
     'web/index.md': 'index.md',
     'web/api/:path*': 'api/:path*',
     'web/packages/:path*': 'packages/:path*',
+  },
+  markdown: {
+    config: (md) => {
+      // Таблицу заворачиваем в контейнер: прокрутку берёт на себя он, а сама таблица
+      // остаётся полноценной (`display: table`) и растягивается на всю ширину колонки.
+      // Без обёртки VitePress делает таблицу `display: block`, и она сжимается по тексту.
+      md.renderer.rules.table_open = () => '<div class="table-scroll"><table>';
+      md.renderer.rules.table_close = () => '</table></div>';
+    },
   },
   head: [
     ['meta', { name: 'theme-color', content: '#3b82f6' }],
@@ -168,18 +212,17 @@ export default defineConfig({
     nav: [
       { text: 'Быстрый старт', link: '/quickstart/' },
       {
+        // Ссылка, а не выпадающий список: заголовок группы в теме не кликается, и попытка
+        // открыть обзор руководств упиралась в меню. Сами руководства перечислены на
+        // странице обзора и в боковом меню.
         text: 'Руководства',
-        items: [
-          { text: 'Все руководства', link: '/guides/' },
-          { text: 'Авторизация', link: '/authentication/' },
-          { text: 'Конфигурация', link: '/configuration/' },
-          { text: 'Realtime', link: '/realtime/' },
-          { text: 'Несколько аккаунтов', link: '/multi-accounts/' },
-        ],
+        link: '/guides/',
+        activeMatch:
+          '^/(guides|authentication|configuration|realtime|multi-accounts|text-markup|integrations|plugins)/',
       },
       { text: 'Справочник', link: '/reference/' },
-      { text: 'API', link: '/api/' },
       { text: 'Пакеты', link: '/packages/' },
+      { text: 'API', link: '/api/' },
       {
         text: `v${packageJson.version}`,
         link: 'https://www.npmjs.com/package/itd-api',
@@ -221,7 +264,7 @@ export default defineConfig({
         '/api/generated/turnstile/',
         turnstileSidebar,
       ),
-      '/api/': packagesSidebar,
+      '/api/': apiEntriesSidebar,
       '/': guideSidebar,
     },
     search: {

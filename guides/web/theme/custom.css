@@ -14,7 +14,12 @@
   --itd-border-subtle: rgba(0, 0, 0, 0.05);
   --itd-glass-bg: rgba(255, 255, 255, 0.8);
   --itd-shadow-elevated: 0 4px 16px rgb(0 0 0 / 8%);
+  --itd-shadow-resting: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 26px rgb(0 0 0 / 5%);
   --itd-bg-hover: rgba(0, 0, 0, 0.05);
+
+  /* Одна кривая и одна длительность на всю анимацию интерфейса: разнобой был заметен. */
+  --itd-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --itd-duration: 260ms;
 
   --vp-c-bg: var(--itd-bg-primary);
   --vp-c-bg-alt: var(--itd-bg-secondary);
@@ -67,6 +72,7 @@
   --itd-border-subtle: rgba(255, 255, 255, 0.05);
   --itd-glass-bg: rgba(35, 35, 35, 0.8);
   --itd-shadow-elevated: 0 4px 16px rgb(0 0 0 / 20%);
+  --itd-shadow-resting: 0 1px 2px rgb(0 0 0 / 30%), 0 10px 26px rgb(0 0 0 / 22%);
   --itd-bg-hover: rgba(255, 255, 255, 0.08);
 
   --vp-c-bg: var(--itd-bg-primary);
@@ -93,17 +99,74 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-.VPNavBar {
-  background: var(--itd-glass-bg);
+/*
+ * Стекло шапки во всю ширину.
+ *
+ * На страницах с боковым меню тема делает саму панель прозрачной и красит только
+ * `.content-body`, который не доходит до правого края экрана: под оставшейся полосой
+ * просвечивал уезжающий контент — та самая «размытая» зона справа. Красим панель целиком,
+ * а внутренние блоки обнуляем. Селектор с `.Layout` нужен, чтобы перебить scoped-правила
+ * темы: у них специфичность выше обычного класса.
+ */
+.Layout .VPNavBar {
   backdrop-filter: blur(16px);
 }
 
-.VPNavBar.has-sidebar .content-body {
-  background: transparent;
+/* `.screen-open` не трогаем: под открытым мобильным меню фон должен быть плотным. */
+.Layout .VPNavBar:not(.screen-open),
+.Layout .VPNavBar:not(.has-sidebar):not(.home.top) {
+  background-color: var(--itd-glass-bg);
 }
 
+/*
+ * Формы селекторов повторяют тему: у неё `.VPNavBar:not(.home.top) .content-body[data-v-…]`,
+ * и более коротким правилом это не перебить.
+ */
+.Layout .VPNavBar.has-sidebar:not(.home.top) .content-body,
+.Layout .VPNavBar:not(.home.top) .content-body,
+.Layout .VPNavBar.has-sidebar .title {
+  background-color: transparent;
+}
+
+/* Раз фон непрерывный, то и линия под шапкой идёт во всю ширину, а не от края меню. */
+.Layout .VPNavBar.has-sidebar .divider {
+  padding-left: 0;
+}
+
+/*
+ * Кнопки: блик пробегает по поверхности при наведении.
+ * `overflow: hidden` держит его внутри скруглённой формы.
+ */
 .VPButton {
+  position: relative;
+  overflow: hidden;
   border-radius: 9999px;
+}
+
+.VPButton.brand::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 38%;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 42%), transparent);
+  transform: skewX(-18deg);
+  content: '';
+  pointer-events: none;
+}
+
+.VPButton.brand:hover::after {
+  animation: itd-shine 700ms var(--itd-ease);
+}
+
+@keyframes itd-shine {
+  from {
+    left: -60%;
+  }
+
+  to {
+    left: 120%;
+  }
 }
 
 .VPButton.alt {
@@ -156,32 +219,42 @@ body {
   height: min(320px, 74vw);
 }
 
-.VPFeature {
+/*
+ * Карточки возможностей.
+ *
+ * Селектор длиннее `.VPFeature` намеренно: у темы правило со scoped-атрибутом, и короткий
+ * селектор проигрывал ему по специфичности. Из-за этого рамка оставалась белой (карточка
+ * сливалась с фоном), а `transition` темы знал только про цвета — подъём и тень появлялись
+ * мгновенно, отдельным рывком от плавной рамки.
+ */
+.VPHome .VPFeatures .VPFeature {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--itd-border-color);
   border-radius: 28px;
   background: var(--itd-block-bg);
-  box-shadow: 0 1px 0 var(--itd-border-subtle);
+  background-clip: padding-box;
+  box-shadow: var(--itd-shadow-resting);
   transition:
-    transform 180ms ease,
-    border-color 180ms ease,
-    background-color 180ms ease,
-    box-shadow 180ms ease;
+    transform var(--itd-duration) var(--itd-ease),
+    border-color var(--itd-duration) var(--itd-ease),
+    background-color var(--itd-duration) var(--itd-ease),
+    box-shadow var(--itd-duration) var(--itd-ease);
 }
 
-.VPFeature::before {
+.VPHome .VPFeatures .VPFeature::before {
   position: absolute;
   top: 0;
   right: 24px;
   left: 24px;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--itd-accent-primary), transparent);
-  opacity: 0.55;
+  opacity: 0.4;
   content: '';
+  transition: opacity var(--itd-duration) var(--itd-ease);
 }
 
-.VPFeature .icon {
+.VPHome .VPFeatures .VPFeature .icon {
   display: inline-grid;
   place-items: center;
   width: 42px;
@@ -194,43 +267,45 @@ body {
   font-size: 13px;
   font-weight: 750;
   letter-spacing: -0.03em;
+  transition: background-color var(--itd-duration) var(--itd-ease);
 }
 
-.VPFeature.link:hover {
+.VPHome .VPFeatures .VPFeature.link:hover {
   border-color: color-mix(in srgb, var(--itd-accent-primary) 38%, var(--itd-border-color));
   background: var(--itd-block-hover-bg);
   box-shadow: var(--itd-shadow-elevated);
   transform: translateY(-4px);
 }
 
-.VPFeature.link:focus-visible {
+.VPHome .VPFeatures .VPFeature.link:hover::before {
+  opacity: 1;
+}
+
+.VPHome .VPFeatures .VPFeature.link:focus-visible {
   outline: 3px solid var(--vp-c-brand-soft);
   outline-offset: 3px;
 }
 
-.VPFeature.link .link-text {
+.VPHome .VPFeatures .VPFeature.link .link-text {
   color: var(--itd-accent-primary);
-  transition: transform 180ms ease;
+  transition: transform var(--itd-duration) var(--itd-ease);
 }
 
-.VPFeature.link:hover .link-text {
+.VPHome .VPFeatures .VPFeature.link:hover .link-text {
   transform: translateX(3px);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .VPFeature,
-  .VPFeature.link .link-text {
-    transition: none;
-  }
-
-  .VPFeature.link:hover {
-    transform: none;
-  }
+/*
+ * Тема отбивает главную от футера собственным `margin-bottom: 96–128px`, а снизу уже есть
+ * отступ этого блока — вместе получалась пустая полоса почти в треть экрана.
+ */
+.Layout .VPHome {
+  margin-bottom: 0;
 }
 
 .docs-home {
   margin: 24px auto 0;
-  padding: 0 24px 80px;
+  padding: 0 24px 56px;
   max-width: 1152px;
 }
 
@@ -326,32 +401,46 @@ body {
   margin-top: 28px;
 }
 
-.package-card {
+/*
+ * Карточка — ссылка внутри `.vp-doc`, а у темы там своё правило для `a` с переходом только
+ * по цвету. Без `.docs-home` впереди оно перебивало этот блок, и рамка с тенью появлялись
+ * рывком.
+ */
+.docs-home .package-card {
   display: block;
   border: 1px solid var(--itd-border-color);
   border-radius: 28px;
   background: var(--itd-block-bg);
+  /* Фон обрезается по внутреннему краю рамки: иначе он просвечивает сквозь неё на скруглениях. */
+  background-clip: padding-box;
   padding: 24px;
   color: inherit;
+  box-shadow: var(--itd-shadow-resting);
+  /* Без подъёма: карточки лежат плотной сеткой, и движение здесь только мешает. */
   transition:
-    border-color 180ms ease,
-    background-color 180ms ease,
-    box-shadow 180ms ease;
+    border-color var(--itd-duration) var(--itd-ease),
+    background-color var(--itd-duration) var(--itd-ease),
+    box-shadow var(--itd-duration) var(--itd-ease);
 }
 
-.package-card:hover {
+.docs-home .package-card:hover {
   border-color: color-mix(in srgb, var(--itd-accent-primary) 38%, var(--itd-border-color));
   background: var(--itd-block-hover-bg);
   box-shadow: var(--itd-shadow-elevated);
 }
 
-.package-card code {
+.docs-home .package-card code {
   color: var(--itd-accent-primary);
   font-size: 16px;
   font-weight: 650;
+  transition: color var(--itd-duration) var(--itd-ease);
 }
 
-.package-card p {
+.docs-home .package-card:hover code {
+  color: var(--itd-accent-hover);
+}
+
+.docs-home .package-card p {
   margin: 10px 0 0;
   color: var(--vp-c-text-2);
   line-height: 1.6;
@@ -373,6 +462,30 @@ body {
   background: var(--itd-block-bg);
   padding: clamp(24px, 4vw, 40px);
   box-shadow: var(--itd-shadow-elevated);
+}
+
+/*
+ * Воздух под контентом.
+ *
+ * Тема резервирует внизу 96–128px под футер, но на страницах с боковым меню он скрыт,
+ * и там оставалась пустая полоса почти в экран высотой.
+ */
+.Layout .VPDoc {
+  padding-bottom: 40px;
+}
+
+.Layout .VPDocFooter {
+  margin-top: 40px;
+}
+
+@media (min-width: 960px) {
+  .Layout .VPDoc {
+    padding-bottom: 0;
+  }
+
+  .Layout .VPDoc .content {
+    padding-bottom: 40px;
+  }
 }
 
 .vp-doc a {
@@ -413,15 +526,27 @@ body {
   background: var(--itd-bg-hover);
 }
 
-.vp-doc table {
-  display: block;
-  overflow-x: auto;
+/*
+ * Таблицы.
+ *
+ * Прокрутку держит обёртка из `markdown.config`, а сама таблица остаётся `display: table`
+ * и занимает всю ширину колонки: раньше она была блоком и сжималась по самому длинному
+ * слову. Скругления нет намеренно — оно срезало углы рамок ячеек.
+ */
+.vp-doc .table-scroll {
+  margin: 20px 0;
   max-width: 100%;
-  border-radius: 12px;
-  background: var(--itd-block-bg-secondary);
+  overflow-x: auto;
   overscroll-behavior-inline: contain;
   scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
+}
+
+.vp-doc .table-scroll > table {
+  display: table;
+  margin: 0;
+  width: 100%;
+  table-layout: auto;
 }
 
 .vp-doc div[class*='language-'] {
@@ -453,5 +578,59 @@ body {
   .vp-block {
     margin-right: 0;
     margin-left: 0;
+  }
+}
+
+/*
+ * Появление при скролле.
+ *
+ * Scroll-driven animations вместо наблюдателей на JS: браузеры без поддержки просто
+ * показывают блок сразу, отсюда `@supports`. Анимируется `translate`, а не `transform`, —
+ * иначе финальный кадр перебивал бы подъём карточки при наведении.
+ */
+@keyframes itd-rise-in {
+  from {
+    opacity: 0;
+    translate: 0 18px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /*
+     * Карточек пакетов здесь нет намеренно: они лежат в самом низу страницы, прокрутка
+     * заканчивается раньше, чем завершается фаза входа, и вместо появления получается
+     * рывок на последних пикселях скролла.
+     */
+    .VPHome .VPFeatures .VPFeature,
+    .docs-home .quick-panel,
+    .docs-home section > h2 {
+      animation: itd-rise-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 60%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .VPHome .VPFeatures .VPFeature,
+  .VPHome .VPFeatures .VPFeature .icon,
+  .VPHome .VPFeatures .VPFeature.link .link-text,
+  .docs-home .package-card,
+  .docs-home .package-card code {
+    transition: none;
+  }
+
+  .VPHome .VPFeatures .VPFeature.link:hover {
+    transform: none;
+  }
+
+  .VPButton.brand:hover::after {
+    animation: none;
   }
 }

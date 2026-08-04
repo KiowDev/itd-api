@@ -49,17 +49,16 @@ features:
       <div class="section-kicker">Первый запрос</div>
       <h2>От установки до данных — несколько строк</h2>
       <p>
-        Установите пакет, создайте клиент и читайте публичные данные без обязательной
-        настройки. Авторизацию можно подключить тогда, когда она действительно нужна.
+        Создайте клиент с токеном и весь API в вашем распоряжении.
       </p>
       <p><a href="./quickstart/">Перейти к быстрому старту →</a></p>
     </div>
     <div class="quick-code" aria-label="Пример использования itd-api">
       <div class="quick-code-bar"><span></span><span></span><span></span></div>
       <pre v-pre><code>import { ItdClient } from 'itd-api';
-const itd = new ItdClient();
-const posts = await itd.posts.byUser('nowkie');
-console.log(posts.items);</code></pre>
+const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
+const me = await itd.users.me();
+console.log(`@${me.username}: ${me.followersCount}`);</code></pre>
     </div>
   </section>
 
@@ -71,25 +70,29 @@ console.log(posts.items);</code></pre>
       вынесены в небольшие самостоятельные пакеты.
     </p>
     <div class="package-grid">
-      <a class="package-card" href="./packages/testing">
-        <code>@itd-api/testing</code>
-        <p>Сценарные ответы, сервер API в памяти и управляемый realtime.</p>
-      </a>
-      <a class="package-card" href="./packages/cache">
-        <code>@itd-api/cache</code>
-        <p>TTL/LRU-кэш и дедупликация одинаковых запросов.</p>
-      </a>
-      <a class="package-card" href="./packages/crypto">
-        <code>@itd-api/crypto</code>
-        <p>Скрытые сообщения и шифрование содержимого через плагин.</p>
+      <a class="package-card" href="./packages/turnstile">
+        <code>@itd-api/turnstile</code>
+        <p>Токен капчи для входа по логину и паролю — через локальный браузер.</p>
       </a>
       <a class="package-card" href="./packages/proxy">
         <code>@itd-api/proxy</code>
         <p>Готовый fetch через HTTP, HTTPS и SOCKS5-прокси.</p>
       </a>
-      <a class="package-card" href="./packages/turnstile">
-        <code>@itd-api/turnstile</code>
-        <p>Получение Turnstile-токена через локальный браузер.</p>
+      <a class="package-card" href="./packages/cache">
+        <code>@itd-api/cache</code>
+        <p>TTL/LRU-кэш и дедупликация одинаковых запросов.</p>
+      </a>
+      <a class="package-card" href="./packages/hydrate">
+        <code>@itd-api/hydrate</code>
+        <p>Методы действий прямо на моделях API: пост, комментарий, профиль.</p>
+      </a>
+      <a class="package-card" href="./packages/crypto">
+        <code>@itd-api/crypto</code>
+        <p>Скрытые сообщения и шифрование содержимого через плагин.</p>
+      </a>
+      <a class="package-card" href="./packages/testing">
+        <code>@itd-api/testing</code>
+        <p>Сценарные ответы, сервер API в памяти и управляемый realtime.</p>
       </a>
     </div>
   </section>
