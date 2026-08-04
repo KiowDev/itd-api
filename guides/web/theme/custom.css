@@ -396,9 +396,9 @@ body {
 
 .package-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 28px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 24px;
 }
 
 /*
@@ -409,12 +409,14 @@ body {
 .docs-home .package-card {
   display: block;
   border: 1px solid var(--itd-border-color);
-  border-radius: 28px;
+  border-radius: 18px;
   background: var(--itd-block-bg);
   /* Фон обрезается по внутреннему краю рамки: иначе он просвечивает сквозь неё на скруглениях. */
   background-clip: padding-box;
-  padding: 24px;
+  padding: 16px 18px;
   color: inherit;
+  /* Подчёркивание из `.vp-doc a` карточке ни к чему: она и так читается как ссылка. */
+  text-decoration: none;
   box-shadow: var(--itd-shadow-resting);
   /* Без подъёма: карточки лежат плотной сеткой, и движение здесь только мешает. */
   transition:
@@ -431,7 +433,7 @@ body {
 
 .docs-home .package-card code {
   color: var(--itd-accent-primary);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 650;
   transition: color var(--itd-duration) var(--itd-ease);
 }
@@ -441,9 +443,10 @@ body {
 }
 
 .docs-home .package-card p {
-  margin: 10px 0 0;
+  margin: 6px 0 0;
   color: var(--vp-c-text-2);
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .section-kicker {
@@ -552,6 +555,13 @@ body {
 .vp-doc div[class*='language-'] {
   border: 1px solid var(--itd-border-color);
   border-radius: 12px;
+}
+
+/* Три колонки живут только на широком экране; дальше сетка складывается по шагам. */
+@media (max-width: 1000px) {
+  .package-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
