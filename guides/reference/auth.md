@@ -4,8 +4,15 @@
 клиент авторизуется сам через опцию `auth` конструктора; эти методы нужны для ручных
 сценариев входа. Полное руководство — [Авторизация](../authentication/).
 
-Вход, регистрация и сброс пароля требуют одноразовый **Turnstile token**. Ключ виджета —
-экспорт `TURNSTILE_SITE_KEY`.
+Капчу требуют только три метода — `signIn()`, `signUp()` и `forgotPassword()` (и надстройки
+над ними: `signInWithOtp()`, `resetPasswordWithOtp()`): без поля `turnstileToken` сервер
+отвечает `422`. Токен выдаёт виджет Cloudflare Turnstile, и работает он только на домене
+итд.com: ключ `TURNSTILE_SITE_KEY` привязан к нему, на чужом origin Cloudflare отвечает
+ошибкой `110200`. В Node токен умеет добывать [`@itd-api/turnstile`](/packages/turnstile).
+
+Остальным методам капча не нужна. `refresh()`, `check()`, `logout()` и работа с сессиями
+обходятся без неё, поэтому [готовые токены из браузера](../authentication/#токены-из-браузера)
+или сохранённая сессия позволяют вообще не встречаться с Turnstile.
 
 ## Состояние авторизации
 
@@ -50,7 +57,9 @@ resendOtp(input: { email: string; flowToken: string }): Promise<void>
 refresh(): Promise<string>
 ```
 Обновляет токен доступа. Параллельные вызовы объединяются в один сетевой запрос. При включённом
-`autoRefresh` вручную обычно не нужен.
+`autoRefresh` вручную обычно не нужен. Refresh-токен уходит на сервер cookie `refresh_token`
+(тело запроса игнорируется), а в ответе вместе с новым access token приходит **новый**
+refresh-токен: прежний в этот момент гаснет. Обновлённая сессия сразу записывается в `storage`.
 
 ```ts
 hasRefreshSession(): Promise<boolean>

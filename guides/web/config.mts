@@ -250,7 +250,17 @@ export default defineConfig({
         },
       },
     },
-    socialLinks: [{ icon: 'github', link: 'https://github.com/KiowDev/itd-api' }],
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/KiowDev/itd-api' },
+      {
+        // У DeepWiki нет иконки в наборе темы, поэтому рисуем свою — раскрытая книга.
+        icon: {
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11.25 5.6C9.53 4.2 7.4 3.5 5.25 3.5c-1.06 0-2.11.17-3.12.5A1 1 0 0 0 1.5 5v13.2a1 1 0 0 0 1.31.95c.78-.26 1.6-.4 2.44-.4 1.98 0 3.9.72 5.38 2.03a1 1 0 0 0 1.24 0 8.13 8.13 0 0 1 5.38-2.03c.84 0 1.66.14 2.44.4a1 1 0 0 0 1.31-.95V5a1 1 0 0 0-.63-.95 9.87 9.87 0 0 0-3.12-.55c-2.15 0-4.28.7-6 2.1v12.2a10.1 10.1 0 0 0-.5-.24V5.6Z"/></svg>',
+        },
+        link: 'https://deepwiki.com/KiowDev/itd-api',
+        ariaLabel: 'DeepWiki по исходному коду itd-api',
+      },
+    ],
     lastUpdated: {
       text: 'Обновлено',
       formatOptions: {

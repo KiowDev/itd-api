@@ -55,5 +55,6 @@ npm run build
 
 - [Корневой README](https://github.com/KiowDev/itd-api#readme)
 - [Справочник endpoint и wire-контрактов](/reference/endpoints)
+- [DeepWiki по исходному коду](https://deepwiki.com/KiowDev/itd-api)
 - [Политика безопасности](https://github.com/KiowDev/itd-api/blob/main/.github/SECURITY.md)
 - [Как внести вклад](https://github.com/KiowDev/itd-api/blob/main/.github/CONTRIBUTING.md)

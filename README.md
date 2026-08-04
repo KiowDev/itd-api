@@ -145,6 +145,8 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 
 ## Проект
 
+- [DeepWiki по исходному коду](https://deepwiki.com/KiowDev/itd-api) — автоматический разбор
+  репозитория с ответами на вопросы про внутреннее устройство
 - [CI](https://github.com/KiowDev/itd-api/actions/workflows/ci.yml)
 - [История релизов](https://github.com/KiowDev/itd-api/releases)
 - [Как внести вклад](./.github/CONTRIBUTING.md)
