@@ -4,7 +4,7 @@ name: Публикация @itd-api/turnstile в npm
 # Порядок выпуска:
 #   npm version patch --workspace @itd-api/turnstile --no-git-tag-version
 #   git commit -am "@itd-api/turnstile 0.0.2"
-#   git tag turnstile-v0.0.2
+#   git tag -a turnstile-v0.0.2 -m "@itd-api/turnstile 0.0.2"
 #   git push --follow-tags
 on:
   push:

@@ -4,7 +4,7 @@ name: Публикация @itd-api/crypto в npm
 # Порядок выпуска:
 #   npm version patch --workspace @itd-api/crypto --no-git-tag-version
 #   git commit -am "@itd-api/crypto 0.0.2"
-#   git tag crypto-v0.0.2
+#   git tag -a crypto-v0.0.2 -m "@itd-api/crypto 0.0.2"
 #   git push --follow-tags
 on:
   push:

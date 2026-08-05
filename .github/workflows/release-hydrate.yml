@@ -4,7 +4,7 @@ name: Публикация @itd-api/hydrate в npm
 # Порядок выпуска:
 #   npm version patch --workspace @itd-api/hydrate --no-git-tag-version
 #   git commit -am "@itd-api/hydrate 0.0.2"
-#   git tag hydrate-v0.0.2
+#   git tag -a hydrate-v0.0.2 -m "@itd-api/hydrate 0.0.2"
 #   git push --follow-tags
 on:
   push:

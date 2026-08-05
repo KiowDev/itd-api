@@ -4,7 +4,7 @@ name: Публикация @itd-api/testing в npm
 # Порядок выпуска:
 #   npm version patch --workspace @itd-api/testing --no-git-tag-version
 #   git commit -am "@itd-api/testing 0.0.2"
-#   git tag testing-v0.0.2
+#   git tag -a testing-v0.0.2 -m "@itd-api/testing 0.0.2"
 #   git push --follow-tags
 on:
   push:

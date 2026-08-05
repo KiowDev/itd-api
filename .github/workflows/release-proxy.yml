@@ -4,7 +4,7 @@ name: Публикация @itd-api/proxy в npm
 # Порядок выпуска:
 #   npm version patch --workspace @itd-api/proxy --no-git-tag-version
 #   git commit -am "@itd-api/proxy 0.0.2"
-#   git tag proxy-v0.0.2
+#   git tag -a proxy-v0.0.2 -m "@itd-api/proxy 0.0.2"
 #   git push --follow-tags
 on:
   push:

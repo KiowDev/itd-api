@@ -4,7 +4,7 @@ name: Публикация @itd-api/cache в npm
 # Порядок выпуска:
 #   npm version patch --workspace @itd-api/cache --no-git-tag-version
 #   git commit -am "@itd-api/cache 0.0.2"
-#   git tag cache-v0.0.2
+#   git tag -a cache-v0.0.2 -m "@itd-api/cache 0.0.2"
 #   git push --follow-tags
 on:
   push:
