@@ -8,7 +8,7 @@ import {
   ItdTimeoutError,
 } from '../../src/core/errors.js';
 import { RetrySafety } from '../../src/core/operations.js';
-import { RequestQueue } from '../../src/core/rate-limit.js';
+import { RequestQueue, RequestQueuePool } from '../../src/core/rate-limit.js';
 import { createRetryScheduler, type RetryPolicy } from '../../src/core/retry.js';
 
 /** Настройки повторов по умолчанию. */
@@ -414,5 +414,30 @@ describe('RequestQueue — частота', () => {
 
     await expect(promise).resolves.toBe('ок');
     expect(started).toHaveBeenCalledOnce();
+  });
+});
+
+describe('RequestQueuePool', () => {
+  const options = { concurrency: 1, rps: undefined, retryDelays: [1000], respectHeaders: true };
+
+  it('держит по очереди на направление и общую для внутренних клиентов', () => {
+    const pool = new RequestQueuePool(options);
+
+    expect(pool.for(undefined)).toBe(pool.for(undefined));
+    expect(pool.for('https://itd.test')).toBe(pool.for('https://itd.test'));
+    expect(pool.for('https://itd.test')).not.toBe(pool.for('https://other.test'));
+  });
+
+  it('stop не оставляет за собой очереди разовых направений', async () => {
+    const pool = new RequestQueuePool(options);
+    const queue = pool.for('https://once.test');
+    // Единственный слот занят, поэтому следующая задача действительно ждёт очереди.
+    void queue.schedule(() => new Promise<void>(() => {}));
+    const pending = queue.schedule(() => Promise.resolve('ок'));
+
+    pool.stop();
+
+    await expect(pending).rejects.toThrow(ItdAbortError);
+    expect(pool.for('https://once.test')).not.toBe(queue);
   });
 });

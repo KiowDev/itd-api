@@ -24,7 +24,7 @@ export const systemClock: ItdClock = Object.freeze({
 export interface Deadline {
   /** Ждёт промис. `false` — срок истёк раньше, чем промис завершился. */
   wait(promise: Promise<unknown>): Promise<boolean>;
-  /** Снимает таймер: без этого он удерживает event loop до конца срока. */
+  /** Снимает таймер. Обязателен: иначе он удерживает event loop до конца срока. */
   cancel(): void;
 }
 

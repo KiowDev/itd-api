@@ -472,7 +472,7 @@ export class ItdClient {
       this.#runtime.close();
     }
 
-    // Об истёкшем сроке сообщаем последним: телеметрия должна уйти в любом случае.
+    // Об истёкшем сроке сообщаем после отправки телеметрии.
     if (stuck.length > 0) {
       throw new ItdStateError(
         `обработчики потоков (${stuck.map((stream) => stream.transport).join(', ')}) ` +

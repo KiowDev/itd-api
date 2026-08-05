@@ -154,7 +154,9 @@ export class MemoryMultiTokenStorage implements MultiTokenStorage {
   }
 
   accounts(): string[] {
-    return this.#store.keys(ACCOUNT_KEY_PREFIX).map(accountFromKey);
+    return this.#store
+      .keys(ACCOUNT_KEY_PREFIX)
+      .flatMap((key) => readAccountName(key.slice(ACCOUNT_KEY_PREFIX.length)) ?? []);
   }
 }
 
@@ -164,8 +166,16 @@ function accountKey(account: string): string {
   return `${ACCOUNT_KEY_PREFIX}${encodeURIComponent(account)}`;
 }
 
-function accountFromKey(key: string): string {
-  return decodeURIComponent(key.slice(ACCOUNT_KEY_PREFIX.length));
+/** Читает имя аккаунта из ключа. `undefined` — ключ не декодируется и запись пропускается. */
+function readAccountName(encoded: string): string | undefined {
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    console.warn(
+      `[itd-api] запись хранилища пропущена: ключ ${JSON.stringify(encoded)} не декодируется`,
+    );
+    return undefined;
+  }
 }
 
 /** Настройки доменного адаптера нескольких сессий. */
@@ -202,7 +212,7 @@ export function createMultiTokenStorage(
     clear: (account) => backend.delete(key(account)),
     async accounts() {
       const keys = await collectKeyValueStoreKeys(backend, prefix);
-      return keys.map((value) => decodeURIComponent(value.slice(prefix.length)));
+      return keys.flatMap((value) => readAccountName(value.slice(prefix.length)) ?? []);
     },
   };
 }

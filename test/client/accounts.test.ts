@@ -466,6 +466,31 @@ describe('восстановление и удаление', () => {
     expect(accounts.has('kiow')).toBe(true);
   });
 
+  it('не теряет остальные аккаунты из-за нечитаемого ключа', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sessions = new Map<string, ItdSession>([
+      ['accounts/kiow', { accessToken: 'token' }],
+      // Ключ записан не библиотекой: `decodeURIComponent` бросает на нём URIError.
+      ['accounts/%E0%A4%A', { accessToken: 'чужой' }],
+    ]);
+    const storage = createMultiTokenStorage(
+      createKeyValueStore<ItdSession>({
+        get: (key) => sessions.get(key),
+        set: (key, session) => void sessions.set(key, session),
+        delete: (key) => void sessions.delete(key),
+        keys: (prefix = '') => [...sessions.keys()].filter((key) => key.startsWith(prefix)),
+      }),
+    );
+    const { accounts } = makeAccounts(ok, { storage });
+
+    expect(await storage.accounts()).toEqual(['kiow']);
+    expect(await accounts.restore()).toEqual(['kiow']);
+    // Пропуск не молчаливый: иначе аккаунт исчезал бы без объяснений.
+    expect(warn).toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
   it('проверяет все сохранённые имена до частичного восстановления', async () => {
     const storage = new MemoryMultiTokenStorage({
       ok: { accessToken: 'token' },

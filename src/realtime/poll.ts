@@ -95,8 +95,7 @@ export class PollTransport implements RealtimeTransport {
         signal,
       });
     } catch (error) {
-      // Конвейер уже попытался обновить токен; для потока это тот же отказ авторизации,
-      // что и `401` от сервера событий.
+      // Для потока это тот же отказ авторизации, что и `401` от сервера событий.
       if (isItdAuthError(error)) throw new UnauthorizedStreamError();
       throw error;
     }

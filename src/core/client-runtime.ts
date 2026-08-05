@@ -256,8 +256,7 @@ export function createClientRuntime(
       if (ownsQueues) queues?.stop();
     },
     dispose: async () => {
-      // Отмена идёт после отправки телеметрии в #close() фасада и до ожидания плагинов:
-      // иначе оно упиралось бы в таймаут ещё выполняющегося запроса.
+      // Порядок: после отправки телеметрии в #close() фасада и до ожидания плагинов.
       lifetime.abort(new ItdAbortError('Клиент освобождён через dispose(), запрос отменён'));
       auth.dispose();
       await plugins.dispose();

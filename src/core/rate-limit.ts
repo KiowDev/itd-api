@@ -207,5 +207,6 @@ export class RequestQueuePool {
   stop(): void {
     this.#main.stop();
     for (const queue of this.#byDestination.values()) queue.stop();
+    this.#byDestination.clear();
   }
 }

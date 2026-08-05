@@ -95,14 +95,7 @@ interface DispatchWork<C extends RealtimeContextBase> {
   readonly coalesceKey: PropertyKey | undefined;
 }
 
-/**
- * Предел обновлений, ожидающих обработки.
- *
- * Уведомления приходят с человеческой частотой, поэтому такая очередь означает, что
- * обработчик отстал всерьёз, а не на всплеске.
- *
- * @internal
- */
+/** Предел обновлений, ожидающих обработки. @internal */
 export const MAX_PENDING_UPDATES = 256;
 
 export interface RealtimeDispatcherOptions<C extends RealtimeContextBase = RealtimeContext> {
@@ -212,8 +205,7 @@ export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext>
   /**
    * Принимает обновление к обработке.
    *
-   * @param coalesceKey ключ величины, а не события: ожидающая работа с тем же ключом
-   *   заменяется новой, потому что из очереди снимков осмысленно только последнее значение
+   * @param coalesceKey ожидающая работа с тем же ключом заменяется новой
    */
   dispatch(context: C, coalesceKey?: PropertyKey): void {
     let keys: readonly PropertyKey[];
