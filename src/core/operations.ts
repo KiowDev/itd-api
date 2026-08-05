@@ -109,6 +109,9 @@ export const OPERATIONS = freezeOperations({
   'notifications.getSettings': { method: 'GET', retrySafety: RetrySafety.Safe },
   'notifications.updateSettings': { method: 'PUT', retrySafety: RetrySafety.Idempotent },
 
+  'realtime.poll.updates': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'realtime.poll.unread': { method: 'GET', retrySafety: RetrySafety.Safe },
+
   'hashtags.search': { method: 'GET', retrySafety: RetrySafety.Safe },
   'hashtags.trending': { method: 'GET', retrySafety: RetrySafety.Safe },
   'hashtags.posts': { method: 'GET', retrySafety: RetrySafety.Safe },

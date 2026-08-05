@@ -11,7 +11,8 @@ import {
   type TransportEvent,
   UnauthorizedStreamError,
 } from '../../src/realtime/transport.js';
-import { json } from '../helpers/mock-fetch.js';
+import type { ItdClientOptions } from '../../src/types/options.js';
+import { abortError, createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 /** Ответ с телом-потоком: куски отдаются по одному. */
 function streamingResponse(chunks: string[], status = 200): Response {
@@ -526,14 +527,14 @@ describe('поток: жизненный цикл', () => {
   it('poll: недоступная сеть не мешает maxAttempts сработать', async () => {
     // Регрессия: раньше poll вызывал onOpen() до первого ответа, обнуляя счётчик попыток
     // на каждой неудаче, — giveup не наступал никогда.
-    let fetchCalls = 0;
-    const failingFetch = (() => {
-      fetchCalls += 1;
+    let requests = 0;
+    const failingRequest = () => {
+      requests += 1;
       return Promise.reject(new Error('нет сети'));
-    }) as unknown as typeof fetch;
+    };
 
     const transport = new PollTransport();
-    const stream = makeStream(transport, { fetch: failingFetch }, { maxAttempts: 1 });
+    const stream = makeStream(transport, { request: failingRequest }, { maxAttempts: 1 });
 
     const giveup = vi.fn();
     stream.on('giveup', giveup);
@@ -544,7 +545,7 @@ describe('поток: жизненный цикл', () => {
 
     expect(giveup).toHaveBeenCalledOnce();
     // Первая попытка плюс одна разрешённая повторная — и не больше.
-    expect(fetchCalls).toBe(2);
+    expect(requests).toBe(2);
 
     stream.disconnect();
   });
@@ -674,6 +675,170 @@ describe('поток: жизненный цикл', () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     expect(transport.connects).toBe(1);
+  });
+});
+
+describe('поток: опрос через конвейер клиента', () => {
+  /** Опрос, поднятый настоящим клиентом: только так у транспорта есть конвейер. */
+  function makePollStream(
+    handler: MockHandler,
+    options: ItdClientOptions = {},
+    realtime: RealtimeOptions = {},
+  ) {
+    const mock = createMockFetch(handler);
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      auth: 'test-token',
+      retry: false,
+      rateLimit: false,
+      mode: 'server',
+      ...options,
+    });
+    const stream = itd.realtime({
+      transport: 'poll',
+      syncCount: false,
+      reconnectOnVisible: false,
+      reconnectOnOnline: false,
+      ...realtime,
+    });
+
+    return { itd, mock, stream };
+  }
+
+  /** Пустой ответ опроса: список уведомлений и счётчик непрочитанных. */
+  const emptyPoll: MockHandler = (request) =>
+    request.url.includes('/count')
+      ? json({ data: { count: 0 } })
+      : json({ data: { notifications: [] } });
+
+  it('виден attempt interceptors и хукам запросов', async () => {
+    const hooks: string[] = [];
+    const attempts: string[] = [];
+    const { itd, mock, stream } = makePollStream(emptyPoll, {
+      hooks: {
+        onRequest: ({ operationId }) => void hooks.push(`→ ${operationId}`),
+        onResponse: ({ operationId }) => void hooks.push(`← ${operationId}`),
+      },
+    });
+    itd.use({
+      name: 'probe',
+      install({ attempts: wire }) {
+        wire.use((context, next) => {
+          attempts.push(context.operationId);
+          return next();
+        });
+      },
+    });
+
+    await stream.connect();
+    await vi.waitFor(() => expect(mock.callCount).toBe(2));
+    stream.disconnect();
+
+    expect(attempts).toEqual(['realtime.poll.updates', 'realtime.poll.unread']);
+    expect(hooks).toEqual([
+      '→ realtime.poll.updates',
+      '← realtime.poll.updates',
+      '→ realtime.poll.unread',
+      '← realtime.poll.unread',
+    ]);
+  });
+
+  it('занимает слот очереди наравне с REST', async () => {
+    let releasePost: (() => void) | undefined;
+    const { itd, mock, stream } = makePollStream(
+      (request, index) => {
+        if (request.url.includes('/api/posts')) {
+          return new Promise<Response>((resolve) => {
+            releasePost = () => resolve(json({ data: { id: '1' } }));
+          });
+        }
+        return emptyPoll(request, index);
+      },
+      { rateLimit: { concurrency: 1 } },
+    );
+
+    const post = itd.posts.get('1');
+    await vi.waitFor(() => expect(releasePost).toBeTypeOf('function'));
+
+    await stream.connect();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Единственный слот занят REST-запросом, и опрос ждёт его наравне с остальными.
+    expect(mock.callCount).toBe(1);
+
+    releasePost?.();
+    await expect(post).resolves.toMatchObject({ id: '1' });
+    await vi.waitFor(() => expect(mock.callCount).toBeGreaterThan(1));
+    stream.disconnect();
+  });
+
+  it('401 обновляет токен, а не рвёт поток', async () => {
+    let polls = 0;
+    const { mock, stream } = makePollStream(
+      (request, index) => {
+        if (request.url.includes('/auth/refresh')) return json({ accessToken: 'fresh' });
+        if (request.url.includes('/count')) return emptyPoll(request, index);
+
+        polls += 1;
+        return polls === 1
+          ? json({ message: 'токен истёк' }, { status: 401 })
+          : json({ data: { notifications: [] } });
+      },
+      { auth: { accessToken: 'stale', refreshToken: 'refresh-token' } },
+    );
+
+    const statuses: string[] = [];
+    stream.on('status', (status) => statuses.push(status));
+
+    await stream.connect();
+    await vi.waitFor(() => expect(polls).toBe(2));
+    stream.disconnect();
+
+    expect(mock.calls.some((call) => call.url.includes('/auth/refresh'))).toBe(true);
+    expect(statuses).toEqual(['connecting', 'connected', 'disconnected']);
+  });
+
+  it('отмена потока отменяет выполняющийся запрос опроса', async () => {
+    const { mock, stream } = makePollStream(
+      (request) =>
+        new Promise<Response>((_resolve, reject) => {
+          request.signal?.addEventListener('abort', () => reject(abortError()), { once: true });
+        }),
+    );
+
+    await stream.connect();
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+    stream.disconnect();
+
+    expect(mock.calls[0]?.signal?.aborted).toBe(true);
+  });
+
+  it('первый проход не выдаёт историю, следующий отдаёт только новое', async () => {
+    let polls = 0;
+    const { stream } = makePollStream(
+      (request, index) => {
+        if (request.url.includes('/count')) return emptyPoll(request, index);
+
+        polls += 1;
+        const notifications =
+          polls === 1
+            ? [{ id: 'n1', type: 'like' }]
+            : [
+                { id: 'n2', type: 'like' },
+                { id: 'n1', type: 'like' },
+              ];
+        return json({ data: { notifications } });
+      },
+      {},
+      { pollInterval: 1 },
+    );
+
+    const received: string[] = [];
+    stream.on('notification', (event) => received.push(event.notification.id));
+
+    await stream.connect();
+    await vi.waitFor(() => expect(received).toEqual(['n2']));
+    stream.disconnect();
   });
 });
 

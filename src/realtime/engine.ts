@@ -14,6 +14,7 @@ import {
 } from './middleware.js';
 import { MAX_RECONNECT_ATTEMPTS, type ReconnectOptions, reconnectDelay } from './reconnect.js';
 import {
+  type RealtimeRequest,
   type RealtimeTransport,
   type TransportEvent,
   UnauthorizedStreamError,
@@ -64,6 +65,8 @@ export interface RealtimeEngineDeps<U, C extends RealtimeContextBase<U, unknown>
   /** Разрешено ли транспорту передавать токен этому сервису. */
   authorize: boolean;
   fetch: typeof fetch;
+  /** Конвейер клиента — см. {@link TransportContext.request}. */
+  request?: RealtimeRequest | undefined;
   clock?: ItdClock | undefined;
   /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
   baseHeaders: (url: string) => Promise<Headers>;
@@ -356,6 +359,7 @@ export class RealtimeEngine<
         baseUrl: this.#deps.baseUrl,
         authorize: this.#deps.authorize,
         fetch: this.#deps.fetch,
+        request: this.#deps.request,
         baseHeaders: this.#deps.baseHeaders,
         getToken: this.#deps.getToken,
         signal: controller.signal,

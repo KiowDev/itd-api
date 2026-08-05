@@ -19,7 +19,7 @@ import type {
 import { PollTransport } from './poll.js';
 import type { ReconnectOptions } from './reconnect.js';
 import { SseTransport } from './sse.js';
-import type { RealtimeTransport, TransportEvent } from './transport.js';
+import type { RealtimeRequest, RealtimeTransport, TransportEvent } from './transport.js';
 import {
   isNotificationContext,
   matchesNotification,
@@ -141,6 +141,8 @@ export interface RealtimeDeps {
   /** Разрешено ли транспорту передавать токен этому сервису. */
   authorize?: boolean | undefined;
   fetch: typeof fetch;
+  /** Конвейер клиента — см. {@link TransportContext.request}. */
+  request?: RealtimeRequest | undefined;
   clock?: ItdClock;
   /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
   baseHeaders: (url: string) => Promise<Headers>;
@@ -206,6 +208,7 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
         baseUrl: deps.baseUrl,
         authorize: deps.authorize ?? true,
         fetch: deps.fetch,
+        request: deps.request,
         clock: deps.clock,
         baseHeaders: deps.baseHeaders,
         getToken: deps.getToken,

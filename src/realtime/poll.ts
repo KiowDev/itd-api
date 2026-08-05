@@ -1,7 +1,7 @@
 import { type ItdClock, systemClock } from '../core/clock.js';
+import { ItdConfigError, isItdAuthError } from '../core/errors.js';
 import { pickArray, pickNumber } from '../core/unwrap.js';
-import { joinUrl } from '../core/url.js';
-import type { RealtimeTransport, TransportContext } from './transport.js';
+import type { RealtimeRequest, RealtimeTransport, TransportContext } from './transport.js';
 import { UnauthorizedStreamError } from './transport.js';
 
 /** Настройки опроса. */
@@ -38,39 +38,24 @@ export class PollTransport implements RealtimeTransport {
   }
 
   async connect(context: TransportContext): Promise<void> {
+    const request = context.request;
+    if (!request) {
+      throw new ItdConfigError(
+        'опрос уведомлений выполняется через конвейер клиента; создайте поток вызовом itd.realtime()',
+      );
+    }
+
     const seen = new Set<string>();
     let firstRun = true;
     let lastUnreadCount: number | undefined;
 
     while (!context.signal.aborted) {
-      const token = context.authorize ? await context.getToken() : null;
-      if (context.authorize && !token) throw new UnauthorizedStreamError();
-
-      const url = `${joinUrl(context.baseUrl, '/api/notifications/')}?limit=${this.#limit}&offset=0`;
-
-      const headers = await context.baseHeaders(url);
-      headers.set('Accept', 'application/json');
-      if (token) headers.set('Authorization', `Bearer ${token}`);
-
-      const response = await context.fetch(url, {
-        method: 'GET',
-        headers,
-        signal: context.signal,
-      });
-
-      if (context.authorize && response.status === 401) throw new UnauthorizedStreamError();
-      if (!response.ok) throw new Error(`Опрос уведомлений вернул статус ${response.status}`);
+      const payload = await this.#readUpdates(request, context.signal);
 
       // Соединение считается установленным только после первого успешного ответа: иначе
       // при постоянно недоступной сети каждая попытка обнуляла бы счётчик и maxAttempts
       // не срабатывал бы никогда.
       context.onOpen();
-
-      const body: unknown = await response.json();
-      const payload =
-        typeof body === 'object' && body !== null && 'data' in body
-          ? (body as { data: unknown }).data
-          : body;
 
       const items = pickArray<Record<string, unknown>>(payload, 'notifications');
 
@@ -90,7 +75,7 @@ export class PollTransport implements RealtimeTransport {
         for (const id of excess) seen.delete(id);
       }
 
-      const count = await this.#readCount(context, headers);
+      const count = await this.#readCount(request, context.signal);
       if (count !== undefined && count !== lastUnreadCount) {
         lastUnreadCount = count;
         context.onEvent({ name: 'unread_count', data: { payload: { count } } });
@@ -101,22 +86,29 @@ export class PollTransport implements RealtimeTransport {
     }
   }
 
-  async #readCount(context: TransportContext, headers: Headers): Promise<number | undefined> {
+  async #readUpdates(request: RealtimeRequest, signal: AbortSignal): Promise<unknown> {
     try {
-      const response = await context.fetch(joinUrl(context.baseUrl, '/api/notifications/count'), {
-        method: 'GET',
-        headers,
-        signal: context.signal,
+      return await request({
+        operationId: 'realtime.poll.updates',
+        path: '/api/notifications/',
+        query: { limit: this.#limit, offset: 0 },
+        signal,
       });
+    } catch (error) {
+      // Конвейер уже попытался обновить токен; для потока это тот же отказ авторизации,
+      // что и `401` от сервера событий.
+      if (isItdAuthError(error)) throw new UnauthorizedStreamError();
+      throw error;
+    }
+  }
 
-      if (!response.ok) return undefined;
-
-      const body: unknown = await response.json();
-      const payload =
-        typeof body === 'object' && body !== null && 'data' in body
-          ? (body as { data: unknown }).data
-          : body;
-
+  async #readCount(request: RealtimeRequest, signal: AbortSignal): Promise<number | undefined> {
+    try {
+      const payload = await request({
+        operationId: 'realtime.poll.unread',
+        path: '/api/notifications/count',
+        signal,
+      });
       return pickNumber(payload, 'count', 0);
     } catch {
       // Счётчик — вспомогательная величина: его недоступность не должна рвать опрос.

@@ -408,6 +408,8 @@ export class ItdClient {
       {
         baseUrl: this.#runtime.config.baseUrl,
         fetch: this.#runtime.config.fetch,
+        request: ({ operationId, path, query, signal }) =>
+          this.#runtime.http.operation(operationId, { path, query, signal }),
         baseHeaders: (url) => this.#runtime.platformHeaders(url),
         getAuthIdentity: () => this.#runtime.auth.getCurrentAuthIdentity(),
         getAuthScope: () => this.#runtime.auth.getAuthScope(),

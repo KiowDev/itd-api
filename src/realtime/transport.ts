@@ -1,3 +1,22 @@
+import type { BuiltInOperationId } from '../core/operations.js';
+import type { QueryParams } from '../core/url.js';
+
+/** Запрос транспорта к конвейеру клиента. */
+export interface RealtimeRequestInput {
+  operationId: BuiltInOperationId;
+  path: string;
+  query?: QueryParams | undefined;
+  signal: AbortSignal;
+}
+
+/**
+ * Порт к конвейеру клиента: очередь, авторизация, повторы, плагины и хуки.
+ *
+ * Ответ приходит уже разобранным и без обёртки `{ data: … }`, а неудача — типизированной
+ * ошибкой библиотеки.
+ */
+export type RealtimeRequest = (input: RealtimeRequestInput) => Promise<unknown>;
+
 /** Событие, пришедшее по каналу реального времени. */
 export interface TransportEvent {
   /** Имя события: `notification`, `unread_count` и другие. */
@@ -14,6 +33,12 @@ export interface TransportContext {
   authorize: boolean;
   /** Реализация `fetch`. */
   fetch: typeof fetch;
+  /**
+   * Выполнение обычных HTTP-запросов транспорта через конвейер клиента.
+   *
+   * Есть только у потока, созданного клиентом: конвейер принадлежит ему.
+   */
+  request?: RealtimeRequest | undefined;
   /**
    * Общие заголовки клиента: `User-Agent`, `X-Device-Id`, заголовки конфигурации
    * и cookie для указанного адреса.

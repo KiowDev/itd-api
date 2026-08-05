@@ -250,7 +250,13 @@ export {
   type RealtimeOptions,
   RealtimeTransportKind,
 } from './realtime/stream.js';
-export type { RealtimeTransport, TransportContext, TransportEvent } from './realtime/transport.js';
+export type {
+  RealtimeRequest,
+  RealtimeRequestInput,
+  RealtimeTransport,
+  TransportContext,
+  TransportEvent,
+} from './realtime/transport.js';
 // Нужен тем, кто пишет свой транспорт: только этой ошибкой он сообщает потоку,
 // что токен пора обновить.
 export { UnauthorizedStreamError } from './realtime/transport.js';
