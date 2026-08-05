@@ -85,7 +85,7 @@ describe('createRecordKeyValueStore', () => {
     ]);
   });
 
-  it('фиксирует снимок каждой записи и продолжает очередь после ошибки', async () => {
+  it('фиксирует запись только после подтверждения и продолжает очередь после ошибки', async () => {
     const releases: Array<() => void> = [];
     const written: Readonly<Record<string, number>>[] = [];
     let failFirst = true;
@@ -114,7 +114,38 @@ describe('createRecordKeyValueStore', () => {
     releases[1]?.();
     await second;
 
-    expect(written).toEqual([{ a: 1, b: 2 }]);
+    // Неудачная запись не дошла ни до backend, ни до видимого состояния.
+    expect(written).toEqual([{ b: 2 }]);
+    expect(await store.get('a')).toBeUndefined();
+    expect(await store.get('b')).toBe(2);
+  });
+
+  it('сбой записи не отражается на последующих чтениях', async () => {
+    const store = createRecordKeyValueStore<number>({
+      read: () => ({ kept: 1 }),
+      write: () => Promise.reject(new Error('диск недоступен')),
+    });
+
+    await expect(store.set('added', 2)).rejects.toThrow('диск недоступен');
+
+    expect(await store.get('kept')).toBe(1);
+    expect(await store.get('added')).toBeUndefined();
+    expect(await store.keys()).toEqual(['kept']);
+  });
+
+  it('две параллельные записи разных ключей сохраняют оба', async () => {
+    const written: Record<string, number>[] = [];
+    const store = createRecordKeyValueStore<number>({
+      read: () => undefined,
+      write: (record) => {
+        written.push({ ...record });
+      },
+    });
+
+    await Promise.all([store.set('a', 1), store.set('b', 2)]);
+
+    expect(written.at(-1)).toEqual({ a: 1, b: 2 });
+    expect(await store.keys()).toEqual(['a', 'b']);
   });
 
   it('удаляет пустую общую запись', async () => {

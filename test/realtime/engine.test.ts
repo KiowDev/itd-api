@@ -1,10 +1,11 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   RealtimeEngine,
   type RealtimeEngineDeps,
   type RealtimeEngineEvents,
   type RealtimeEngineOptions,
 } from '../../src/realtime/engine.js';
+import { MAX_PENDING_UPDATES } from '../../src/realtime/middleware.js';
 import { RealtimeRouter } from '../../src/realtime/router.js';
 import type {
   RealtimeTransport,
@@ -197,6 +198,56 @@ describe('realtime engine', () => {
     await engine.drain();
     expect(transport.connects).toBe(1);
     expect(delivered).toEqual([2]);
+
+    engine.disconnect();
+  });
+
+  it('переполнение очереди рвёт соединение и переподключается с догоном', async () => {
+    const transport = new TestTransport();
+    const delivered: number[] = [];
+    const syncReasons: string[] = [];
+    let release: (() => void) | undefined;
+    let blocked = false;
+
+    const engine = makeEngine(
+      transport,
+      {
+        deliver: (update) => delivered.push(update.value),
+        sync: (reason) => {
+          syncReasons.push(reason);
+          return Promise.resolve();
+        },
+      },
+      { backoff: [0], jitter: 0 },
+    );
+    engine.on('error', () => {});
+    engine.onUpdate(
+      () => true,
+      async () => {
+        if (blocked) return;
+        blocked = true;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+    );
+
+    await engine.connect();
+    for (let value = 0; value <= MAX_PENDING_UPDATES + 1; value += 1) {
+      transport.emit({ name: 'value', data: value });
+    }
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+
+    // Приём кадров прекращён: единственный способ создать backpressure в потоке.
+    expect(transport.contexts[0]?.signal.aborted).toBe(true);
+
+    release?.();
+    await engine.drain();
+    await vi.waitFor(() => expect(transport.connects).toBe(2));
+
+    expect(syncReasons).toEqual(['initial', 'reconnect']);
+    expect(delivered).toHaveLength(MAX_PENDING_UPDATES + 1);
+    expect(delivered).not.toContain(MAX_PENDING_UPDATES + 1);
 
     engine.disconnect();
   });

@@ -9,6 +9,7 @@ import {
   type WebSocketLike,
   WebSocketTransport,
 } from '../../src/index.js';
+import { MAX_PENDING_FRAMES } from '../../src/realtime/websocket.js';
 
 type SocketListener = (event: unknown) => void;
 
@@ -345,6 +346,36 @@ describe('WebSocketTransport: события и завершение', () => {
       { name: 'first', data: { type: 'first', id: 'blob' } },
       { name: 'second', data: { type: 'second', id: 'text' } },
     ]);
+  });
+
+  it('закрывает соединение, когда кадры копятся быстрее разбора', async () => {
+    const releases: Array<() => void> = [];
+    class SlowBlob extends Blob {
+      override text(): Promise<string> {
+        return new Promise<string>((resolve) => {
+          releases.push(() => resolve('{"type":"frame"}'));
+        });
+      }
+    }
+
+    const connection = makeContext();
+    const transport = new WebSocketTransport({
+      webSocketImpl: FakeWebSocket,
+      idleTimeout: 0,
+      keepAlive: 0,
+      handshakeTimeout: 0,
+    });
+    const connected = transport.connect(connection.context);
+    await flush();
+    const socket = FakeWebSocket.instances[0];
+    socket?.open();
+
+    for (let index = 0; index <= MAX_PENDING_FRAMES; index += 1) socket?.message(new SlowBlob());
+
+    expect(socket?.closeCalls.at(-1)).toMatchObject({ code: 4000, reason: 'queue overflow' });
+
+    for (const release of releases) release();
+    await expect(connected).rejects.toThrow(/очередь кадров переполнена/);
   });
 
   it('классифицирует скрытый HTTP-отказ до открытия соединения', async () => {

@@ -14,6 +14,7 @@ import {
   type TransportContext,
   type TransportEvent,
 } from '../../src/index.js';
+import { MAX_PENDING_UPDATES } from '../../src/realtime/middleware.js';
 import type { RealtimeDeps } from '../../src/realtime/stream.js';
 
 class TestTransport implements RealtimeTransport {
@@ -54,6 +55,10 @@ function makeStream<C extends RealtimeContext = RealtimeContext>(
     reconnectOnOnline: false,
     ...options,
   });
+}
+
+function unreadCount(count: number): TransportEvent {
+  return { name: 'unread_count', data: { payload: { count } } };
 }
 
 function notification(id: string, type = 'comment', actorId = 'actor-1'): TransportEvent {
@@ -600,6 +605,71 @@ describe('realtime dispatch', () => {
     releases.get('multi')?.();
     await stream.drain();
     expect(started).toEqual(['first', 'independent', 'multi', 'later']);
+    stream.disconnect();
+  });
+
+  it('схлопывает ожидающие счётчики, но не уведомления', async () => {
+    const transport = new TestTransport();
+    const stream = makeStream(transport);
+    const counts: number[] = [];
+    const seen: string[] = [];
+    let release: (() => void) | undefined;
+
+    stream.onUpdate(RealtimeUpdateType.Notification, async ({ update }) => {
+      seen.push(update.data.notification.id);
+      if (seen.length > 1) return;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    stream.onUpdate(RealtimeUpdateType.UnreadCount, ({ update }) => {
+      counts.push(update.data);
+    });
+
+    await stream.connect();
+    transport.emit(notification('n1'));
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+
+    transport.emit(unreadCount(1));
+    transport.emit(notification('n2'));
+    transport.emit(unreadCount(2));
+    transport.emit(unreadCount(3));
+
+    release?.();
+    await stream.drain();
+
+    expect(counts).toEqual([3]);
+    expect(seen).toEqual(['n1', 'n2']);
+    stream.disconnect();
+  });
+
+  it('не принимает обновления сверх предела очереди', async () => {
+    const transport = new TestTransport();
+    const stream = makeStream(transport);
+    const seen: string[] = [];
+    let release: (() => void) | undefined;
+
+    stream.on('error', () => {});
+    stream.onUpdate(RealtimeUpdateType.Notification, async ({ update }) => {
+      seen.push(update.data.notification.id);
+      if (seen.length > 1) return;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+
+    await stream.connect();
+    for (let index = 0; index <= MAX_PENDING_UPDATES + 1; index += 1) {
+      transport.emit(notification(`n${index}`));
+    }
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+
+    release?.();
+    await stream.drain();
+
+    // Один активный плюс полная очередь: последнее обновление не принято.
+    expect(seen).toHaveLength(MAX_PENDING_UPDATES + 1);
+    expect(seen).not.toContain(`n${MAX_PENDING_UPDATES + 1}`);
     stream.disconnect();
   });
 

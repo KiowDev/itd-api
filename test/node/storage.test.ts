@@ -99,14 +99,16 @@ describe('FileTokenStorage', () => {
     expect(await readFile(path, 'utf8').catch(() => null)).toBeNull();
   });
 
-  it('get дожидается ранее вызванного set и set сохраняет снимок аргумента', async () => {
+  it('set сохраняет снимок аргумента', async () => {
     const path = join(dir, 'session.json');
     const storage = new FileTokenStorage(path);
     const session = { accessToken: 'исходный', cookies: ['https://itd.test a=1; Path=/'] };
 
-    void storage.set(session);
+    // Снимок берётся в момент вызова, поэтому правки объекта до конца записи в файл не попадут.
+    const writing = storage.set(session);
     session.accessToken = 'изменённый';
     session.cookies.push('https://itd.test leaked=1; Path=/');
+    await writing;
 
     expect(await storage.get()).toEqual({
       accessToken: 'исходный',

@@ -89,6 +89,12 @@ export interface RealtimeEngineDeps<U, C extends RealtimeContextBase<U, unknown>
   handleFrame?: ((event: TransportEvent) => boolean) | undefined;
   /** Превращает кадр в доменное обновление; `undefined` — кадр игнорируется. */
   readUpdate: (event: TransportEvent) => U | undefined;
+  /**
+   * Ключ коалесцирования обновления. `undefined` — обновление является событием и терять
+   * его нельзя; ключ помечает величину, из очереди которой осмысленно только последнее
+   * значение.
+   */
+  coalesceKey?: ((update: U) => PropertyKey | undefined) | undefined;
   /** Собирает контекст. Точка, куда домен добавляет свои поля и действия. */
   createContext: (update: U, raw: TransportEvent | undefined, origin: RealtimeUpdateOrigin) => C;
   /** Доставляет обновление доменным подписчикам после цепочки обработчиков. */
@@ -217,6 +223,7 @@ export class RealtimeEngine<
         middlewareError: (error, context) =>
           this.#reportDispatchError('middlewareError', error, context),
         handlerError: (error, context) => this.#reportDispatchError('handlerError', error, context),
+        overflow: () => this.#handleOverflow(),
       },
     );
   }
@@ -325,7 +332,34 @@ export class RealtimeEngine<
   /** Пропускает актуальное обновление через цепочку обработчиков. */
   #dispatch(update: U, raw: TransportEvent | undefined, origin: RealtimeUpdateOrigin): void {
     if (!this.#wanted) return;
-    this.#dispatcher.dispatch(this.#deps.createContext(update, raw, origin));
+    this.#dispatcher.dispatch(
+      this.#deps.createContext(update, raw, origin),
+      this.#deps.coalesceKey?.(update),
+    );
+  }
+
+  /**
+   * Очередь обновлений достигла предела.
+   *
+   * Backpressure у потока нет, поэтому единственный способ перестать принимать кадры —
+   * закрыть соединение. Переподключаемся, когда обработчики разберут очередь; догон
+   * состояния делает та же синхронизация, что и перед любым переподключением.
+   */
+  #handleOverflow(): void {
+    const controller = this.#controller;
+    if (!this.#wanted || !controller) return;
+
+    const generation = this.#generation;
+    controller.abort();
+    this.#controller = undefined;
+    this.#setStatus(RealtimeStatus.Error);
+
+    const error = new Error('Обработчики не успевают за потоком: очередь обновлений переполнена');
+    void this.#dispatcher.drain().then(() => {
+      if (this.#isCurrentGeneration(generation) && !this.#controller) {
+        this.#scheduleReconnect(error);
+      }
+    });
   }
 
   /** Выполняет доменную синхронизацию, не роняя подключение из-за её ошибки. */

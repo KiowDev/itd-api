@@ -91,7 +91,19 @@ interface DispatchWork<C extends RealtimeContextBase> {
   readonly middleware: readonly RealtimeMiddleware<C>[];
   readonly handlers: readonly HandlerRegistration<C>[];
   readonly keys: readonly PropertyKey[];
+  /** Ключ снимка: ожидающая работа с тем же ключом заменяется новой. */
+  readonly coalesceKey: PropertyKey | undefined;
 }
+
+/**
+ * Предел обновлений, ожидающих обработки.
+ *
+ * Уведомления приходят с человеческой частотой, поэтому такая очередь означает, что
+ * обработчик отстал всерьёз, а не на всплеске.
+ *
+ * @internal
+ */
+export const MAX_PENDING_UPDATES = 256;
 
 export interface RealtimeDispatcherOptions<C extends RealtimeContextBase = RealtimeContext> {
   concurrency: number;
@@ -102,6 +114,8 @@ export interface RealtimeDispatcherHooks<C extends RealtimeContextBase = Realtim
   deliver: (context: C) => void;
   middlewareError: (error: unknown, context: C) => void;
   handlerError: (error: unknown, context: C) => void;
+  /** Очередь достигла предела: обновление не принято, поток обязан прекратить их приём. */
+  overflow: () => void;
 }
 
 /** Выполняет промежуточные обработчики по порядку и запрещает повторный вызов `next()`. */
@@ -195,7 +209,13 @@ export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext>
     };
   }
 
-  dispatch(context: C): void {
+  /**
+   * Принимает обновление к обработке.
+   *
+   * @param coalesceKey ключ величины, а не события: ожидающая работа с тем же ключом
+   *   заменяется новой, потому что из очереди снимков осмысленно только последнее значение
+   */
+  dispatch(context: C, coalesceKey?: PropertyKey): void {
     let keys: readonly PropertyKey[];
     let middleware: readonly RealtimeMiddleware<C>[];
     try {
@@ -206,12 +226,25 @@ export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext>
       return;
     }
 
-    this.#queue.push({
+    const replaced =
+      coalesceKey === undefined
+        ? -1
+        : this.#queue.findIndex((pending) => pending.coalesceKey === coalesceKey);
+    if (replaced < 0 && this.#queue.length >= MAX_PENDING_UPDATES) {
+      this.#hooks.overflow();
+      return;
+    }
+
+    const work: DispatchWork<C> = {
       context,
       middleware,
       handlers: [...this.#handlers],
       keys,
-    });
+      coalesceKey,
+    };
+    if (replaced >= 0) this.#queue[replaced] = work;
+    else this.#queue.push(work);
+
     this.#pump();
   }
 

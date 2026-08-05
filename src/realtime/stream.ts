@@ -220,6 +220,8 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
         transport: createTransport(deps, options),
         handleFrame: (event) => this.#handleFrame(event),
         readUpdate: readRealtimeUpdate,
+        coalesceKey: (update) =>
+          update.type === RealtimeUpdateType.UnreadCount ? update.type : undefined,
         createContext: (update, raw, origin) =>
           // Флейворные поля появляются в контексте позже — их присваивают плагины
           // в своих middleware, поэтому здесь собирается базовая форма.

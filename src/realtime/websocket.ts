@@ -11,6 +11,17 @@ import {
 /** Стандартный путь WebSocket-подключения. */
 export const WEBSOCKET_PATH = '/api/ws';
 
+/**
+ * Предел кадров, ожидающих разбора.
+ *
+ * Кадры разбираются по одному, а двоичные ещё и асинхронно, поэтому цепочка может расти,
+ * если сервер шлёт быстрее, чем среда декодирует. Переполнение закрывает соединение — так же,
+ * как это делает переполнение очереди обновлений.
+ *
+ * @internal
+ */
+export const MAX_PENDING_FRAMES = 256;
+
 /** Дополнительные параметры конструктора, поддерживаемые Node-реализациями вроде `ws`. */
 export interface WebSocketImplementationOptions {
   headers?: Record<string, string> | undefined;
@@ -298,6 +309,7 @@ export class WebSocketTransport implements RealtimeTransport {
       let discardMessages = false;
       let socketError: unknown;
       let messageQueue = Promise.resolve();
+      let pendingFrames = 0;
       let cancelHandshake: (() => void) | undefined;
       let cancelIdle: (() => void) | undefined;
       let cancelKeepAlive: (() => void) | undefined;
@@ -405,8 +417,19 @@ export class WebSocketTransport implements RealtimeTransport {
         }
         if (pending === undefined) return;
 
+        if (pendingFrames >= MAX_PENDING_FRAMES) {
+          closeWithError(
+            new Error(`WebSocket ${redactUrl(url)}: очередь кадров переполнена`),
+            4000,
+            'queue overflow',
+          );
+          return;
+        }
+
+        pendingFrames += 1;
         messageQueue = messageQueue
           .then(async () => {
+            pendingFrames -= 1;
             if (settled || discardMessages) return;
 
             const decoded = await pending;

@@ -207,9 +207,10 @@ function copyRecord<T>(record: Readonly<Record<string, T>> | undefined): Record<
 /**
  * Создаёт key-value backend поверх одной общей записи.
  *
- * Чтение выполняется один раз, изменения сразу попадают в локальный снимок, а записи
- * выстраиваются последовательно. Несколько экземпляров или процессов требуют внешней
- * синхронизации со стороны source.
+ * Чтение выполняется один раз, а записи выстраиваются последовательно. Изменение становится
+ * видимым только после подтверждения source, поэтому неудачная запись не расходится с backend
+ * и не мешает чтениям. Несколько экземпляров или процессов требуют внешней синхронизации
+ * со стороны source.
  */
 export function createRecordKeyValueStore<T>(
   source: RecordKeyValueStoreSource<T>,
@@ -225,19 +226,19 @@ export function createRecordKeyValueStore<T>(
     throw new ItdConfigError('RecordKeyValueStoreSource.delete должен быть функцией');
   }
 
-  let snapshot: Record<string, T> | undefined;
+  let committed: Record<string, T> | undefined;
   let loading: Promise<Record<string, T>> | undefined;
-  let writing: Promise<void> = Promise.resolve();
+  let writes: Promise<void> = Promise.resolve();
 
   const load = async (): Promise<Record<string, T>> => {
-    if (snapshot !== undefined) return snapshot;
+    if (committed !== undefined) return committed;
     loading ??= Promise.resolve(source.read())
       .then((value) => {
         if (value !== undefined && !isRecord(value)) {
           throw new ItdConfigError('RecordKeyValueStoreSource.read() должен вернуть объект');
         }
-        snapshot = copyRecord(value as Readonly<Record<string, T>> | undefined);
-        return snapshot;
+        committed = copyRecord(value as Readonly<Record<string, T>> | undefined);
+        return committed;
       })
       .finally(() => {
         loading = undefined;
@@ -245,36 +246,47 @@ export function createRecordKeyValueStore<T>(
     return loading;
   };
 
-  const flush = (): Promise<void> => {
-    const current = copyRecord(snapshot);
-    const operation = async () => {
-      if (source.delete && Object.keys(current).length === 0) await source.delete();
-      else await source.write(current);
+  /**
+   * Записывает изменение и фиксирует его только после подтверждения source.
+   *
+   * Черновик строится внутри очереди записей: построенный заранее, он потерял бы изменение
+   * параллельной записи, начатой от той же базы.
+   *
+   * @param apply вносит изменение в черновик; `false` — менять нечего
+   */
+  const mutate = (apply: (draft: Record<string, T>) => boolean): Promise<void> => {
+    const run = async (): Promise<void> => {
+      const draft = copyRecord(await load());
+      if (!apply(draft)) return;
+
+      if (source.delete && Object.keys(draft).length === 0) await source.delete();
+      else await source.write(draft);
+      committed = draft;
     };
-    writing = writing.then(operation, operation);
-    return writing;
+    writes = writes.then(run, run);
+    return writes;
   };
 
   return {
     async get(key) {
       const current = await load();
-      await writing;
       return Object.hasOwn(current, key) ? current[key] : undefined;
     },
-    async set(key, value) {
-      const current = await load();
-      current[key] = value;
-      await flush();
+    set(key, value) {
+      return mutate((draft) => {
+        draft[key] = value;
+        return true;
+      });
     },
-    async delete(key) {
-      const current = await load();
-      if (!Object.hasOwn(current, key)) return;
-      delete current[key];
-      await flush();
+    delete(key) {
+      return mutate((draft) => {
+        if (!Object.hasOwn(draft, key)) return false;
+        delete draft[key];
+        return true;
+      });
     },
     async keys(prefix = '') {
       const current = await load();
-      await writing;
       return Object.keys(current).filter((key) => key.startsWith(prefix));
     },
   };
