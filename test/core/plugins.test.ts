@@ -186,6 +186,27 @@ describe('обёртки запроса', () => {
     expect(attempts).toBe(3);
     expect(runs).toBe(1);
   });
+
+  it('не позволяет обёртке породить вторую логическую операцию', async () => {
+    const { itd, mock } = makeClient([json({ data: { id: '1' } })]);
+    let started: Promise<unknown> | undefined;
+
+    itd.use(
+      plugin('duplicator', async (request, next) => {
+        started = next(request);
+        return Promise.all([started, next(request)]);
+      }),
+    );
+
+    const error = await itd.posts.create({ content: 'привет' }).catch((e: unknown) => e);
+    await started;
+
+    expect(error).toBeInstanceOf(ItdConfigError);
+    expect((error as Error).message).toMatch(
+      /плагина «duplicator» вызвал next\(\) больше одного раза/,
+    );
+    expect(mock.callCount).toBe(1);
+  });
 });
 
 describe('namespaces расширений операции', () => {

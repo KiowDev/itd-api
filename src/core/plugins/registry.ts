@@ -206,6 +206,9 @@ export class PluginRegistry {
    * Снимки обеих цепочек берутся в начале: `unuse()` влияет на новые операции, но не меняет
    * уже выполняющуюся и не удаляет interceptors из её последующих retry.
    *
+   * Каждый `next` одноразовый: transformer может завершить операцию сам, но не может породить
+   * вторую — для `posts.create` это была бы вторая публикация.
+   *
    * @param execute выполнение логической операции, вызываемое самым внутренним transformer
    */
   async run(
@@ -220,10 +223,23 @@ export class PluginRegistry {
     const scoped = (current: OperationRequestOptions): OperationRequestOptions =>
       withAttemptInterceptorScope(current, interceptorScope);
     const chain = entries
-      .flatMap((entry) => entry.transformers)
+      .flatMap((entry) =>
+        entry.transformers.map((transformer) => ({ plugin: entry.plugin.name, transformer })),
+      )
       .reduceRight<(request: OperationRequestOptions) => Promise<unknown>>(
-        (next, transformer) => (current) =>
-          transformer(scoped(current), (prepared) => next(scoped(prepared))),
+        (next, { plugin, transformer }) =>
+          (current) => {
+            let called = false;
+            return transformer(scoped(current), (prepared) => {
+              if (called) {
+                throw new ItdConfigError(
+                  `operation transformer плагина «${plugin}» вызвал next() больше одного раза`,
+                );
+              }
+              called = true;
+              return next(scoped(prepared));
+            });
+          },
         (current) => execute(scoped(current)),
       );
 
