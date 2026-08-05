@@ -1,9 +1,10 @@
 /**
  * Минимальные структурные типы драйвера браузера.
  *
- * Playwright не импортируется даже как тип: пакет собирается и проверяется без него,
- * а на его место годится любой совместимый по API драйвер — `playwright-core`, `patchright`,
- * `rebrowser-playwright`. Описаны только те методы, которыми пользуется солвер.
+ * Ни один драйвер не импортируется даже как тип: пакет собирается и проверяется без них,
+ * а подойдёт любой совместимый по API — `patchright`, `playwright`, `playwright-core`,
+ * Camoufox. Форма взята у Playwright, потому что её повторяют остальные. Описаны только
+ * те методы, которыми пользуется солвер.
  */
 
 /** Перехваченный запрос. Нужен, чтобы отдать свою страницу вместо настоящей. */
@@ -47,14 +48,23 @@ export interface BrowserContext {
   close(): Promise<void>;
 }
 
-/** Настройки контекста. Совпадают по форме с `browser.newContext` в Playwright. */
+/**
+ * Настройки контекста. Совпадают по форме с `browser.newContext` в Playwright.
+ *
+ * Кроме перечисленных полей принимается что угодно ещё: драйверы вроде Camoufox понимают
+ * свои настройки, и перечислять их здесь пакет не берётся.
+ */
 export interface NewContextOptions {
   locale?: string;
-  viewport?: { width: number; height: number };
+  viewport?: { width: number; height: number } | null;
+  userAgent?: string;
+  [option: string]: unknown;
 }
 
 export interface Browser {
   newContext(options?: NewContextOptions): Promise<BrowserContext>;
+  /** Версия браузера, например `149.0.7827.55`. Есть не у всякого драйвера. */
+  version?(): string;
   close(): Promise<void>;
 }
 
@@ -62,6 +72,7 @@ export interface Browser {
 export interface LaunchOptions {
   headless?: boolean;
   executablePath?: string;
+  channel?: string;
   args?: string[];
   proxy?: { server: string; username?: string; password?: string };
 }
@@ -70,8 +81,7 @@ export interface BrowserType {
   launch(options?: LaunchOptions): Promise<Browser>;
 }
 
-/** То, что отдаёт `import('playwright')`. */
-export interface PlaywrightModule {
+/** То, что отдаёт `import('patchright')`, `import('playwright')` и им подобные. */
+export interface DriverModule {
   chromium: BrowserType;
-  firefox?: BrowserType;
 }

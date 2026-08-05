@@ -71,7 +71,7 @@ for (const post of page.items) {
 | Пакет | Назначение | Среда | npm | Документация |
 |---|---|---|---|---|
 | `itd-api` | REST/realtime-клиент | Node.js 18+, браузер, Bun, Deno, React Native | [npm](https://www.npmjs.com/package/itd-api) | [быстрый старт](https://kiowdev.github.io/itd-api/quickstart/) |
-| `@itd-api/turnstile` | получение Turnstile-токена в локальном браузере | Node.js 18+, Bun, Deno + Playwright | [npm](https://www.npmjs.com/package/@itd-api/turnstile) | [документация](https://kiowdev.github.io/itd-api/packages/turnstile) |
+| `@itd-api/turnstile` | получение Turnstile-токена в локальном браузере | Node.js 18+, Bun, Deno + драйвер браузера | [npm](https://www.npmjs.com/package/@itd-api/turnstile) | [документация](https://kiowdev.github.io/itd-api/packages/turnstile) |
 | `@itd-api/proxy` | HTTP/HTTPS- и SOCKS5-транспорт | Node.js 18+, Bun, Deno | [npm](https://www.npmjs.com/package/@itd-api/proxy) | [документация](https://kiowdev.github.io/itd-api/packages/proxy) |
 | `@itd-api/cache` | TTL/LRU-кэш и дедупликация запросов | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/cache) | [документация](https://kiowdev.github.io/itd-api/packages/cache) |
 | `@itd-api/hydrate` | методы действий на моделях API | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/hydrate) | [документация](https://kiowdev.github.io/itd-api/packages/hydrate) |

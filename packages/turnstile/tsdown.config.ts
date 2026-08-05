@@ -17,6 +17,6 @@ export default defineConfig({
   deps: {
     // Драйвер браузера подключается динамически и выбирается пользователем: playwright,
     // playwright-core, patchright — любой с тем же API. Бандлить его нельзя.
-    neverBundle: ['playwright', 'playwright-core'],
+    neverBundle: ['patchright', 'playwright', 'playwright-core'],
   },
 });

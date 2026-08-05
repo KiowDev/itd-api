@@ -3,7 +3,7 @@
  *
  * Вход на итд.com требует токен капчи, а получить его можно только в браузере. Этот пакет
  * поднимает браузер, берёт токен и отдаёт функцию, которая подставляется в `auth`
- * клиента `itd-api`. Вынесен отдельно, чтобы `itd-api` не зависел от Playwright.
+ * клиента `itd-api`. Вынесен отдельно, чтобы `itd-api` не зависел от драйвера браузера.
  *
  * Токен берётся не с живого сайта: навигация перехватывается и подменяется собственной
  * страницей с одним виджетом. Origin при этом настоящий, поэтому проверка домена проходит,
@@ -28,9 +28,9 @@
  * @packageDocumentation
  */
 
+export type { Browser, BrowserContext, NewContextOptions, Page } from './driver.js';
 export { TurnstileError, TurnstileFailure } from './errors.js';
-export type { BrowserOptions } from './launch.js';
-export type { Browser, BrowserContext, Page } from './playwright.js';
+export { type BrowserOptions, launchBrowser } from './launch.js';
 export {
   createTurnstileSolver,
   DEFAULT_ORIGIN,

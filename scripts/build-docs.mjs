@@ -72,7 +72,7 @@ const builds = [
     entryPoint: 'packages/turnstile/src/index.ts',
     tsconfig: 'packages/turnstile/tsconfig.json',
     out: 'guides/web/api/generated/turnstile',
-    intentionallyNotExported: ['Mouse', 'ElementHandle', 'NewContextOptions', 'Route'],
+    intentionallyNotExported: ['Mouse', 'ElementHandle', 'Route'],
   },
 ];
 

@@ -56,14 +56,19 @@
     "dev": "tsdown --watch",
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs",
+    "drivers": "node scripts/drivers.mjs",
     "typecheck": "tsc --noEmit",
     "check:pack": "publint && attw --pack .",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
   "peerDependencies": {
+    "patchright": ">=1.40.0",
     "playwright": ">=1.40.0"
   },
   "peerDependenciesMeta": {
+    "patchright": {
+      "optional": true
+    },
     "playwright": {
       "optional": true
     }

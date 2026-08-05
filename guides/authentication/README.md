@@ -152,8 +152,8 @@ new ItdClient({ auth: { getToken: () => vault.read() } });
 ### Node: браузер добывает токен сам
 
 ```bash
-npm i @itd-api/turnstile playwright
-npx playwright install chromium
+npm i @itd-api/turnstile patchright
+npx patchright install chromium
 ```
 
 ```ts
@@ -176,6 +176,10 @@ const itd = new ItdClient({
 Пароль в браузер не попадает: форма входа не участвует, вход выполняет сам `itd-api`.
 Со `storage` браузер понадобится только при первом запуске. Подробности, работа на сервере
 без графической оболочки и Docker — в [документации пакета](/packages/turnstile).
+
+Драйвер браузера берётся тот, что установлен: `patchright`, `playwright` или
+`playwright-core`. Рабочие связки перечислены в разделе
+[Совместимость](/packages/turnstile#совместимость).
 
 > [!NOTE]
 > Нарисовать виджет на собственной странице не выйдет: ключ `TURNSTILE_SITE_KEY` привязан

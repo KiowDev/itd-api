@@ -27,12 +27,14 @@
 ## Установка
 
 ```sh
-npm i @itd-api/turnstile playwright
-npx playwright install chromium
+npm i @itd-api/turnstile patchright
+npx patchright install chromium
 ```
 
-`playwright` объявлен необязательной одноранговой зависимостью: подойдёт и `playwright-core`,
-и совместимая по API сборка вроде `patchright` — см. параметр `launch`.
+Драйвер подключается динамически, в порядке `patchright` → `playwright` → `playwright-core`:
+что из этого установлено, то и берётся. Все три — необязательные одноранговые зависимости,
+достаточно любой одной. Любой другой совместимый по API драйвер передаётся через `launch`.
+Какие связки сейчас выдают токен — в разделе [Совместимость](#совместимость).
 
 ## Использование
 
@@ -74,7 +76,7 @@ apt install xvfb
 xvfb-run -a node bot.js
 ```
 
-В Docker к образу нужны системные библиотеки браузера: `npx playwright install --with-deps chromium`.
+В Docker к образу нужны системные библиотеки браузера: `npx patchright install --with-deps chromium`.
 
 ## Как это устроено
 
@@ -108,11 +110,14 @@ xvfb-run -a node bot.js
 | `theme` | `'auto'` | Оформление виджета. |
 | `origin` | `https://xn--d1ah4a.com` | Сайт, чей виджет решается. |
 | `sitekey` | ключ итд.com | Публичный ключ виджета. |
-| `executablePath` | — | Путь к браузеру, если он лежит не там, где ищет Playwright. |
+| `driver` | перебор | Какой драйвер брать, когда установлено несколько. |
+| `executablePath` | — | Путь к браузеру, если он лежит не там, где его ищет драйвер. |
+| `channel` | — | Канал браузера, например `chrome`, вместо сборки из комплекта драйвера. |
 | `args` | — | Дополнительные аргументы командной строки. |
 | `proxy` | — | Прокси для браузера. |
 | `browser` | — | Готовый браузер. Тогда пакет его не запускает и не закрывает. |
 | `launch` | — | Свой запуск браузера. Заменяет все параметры запуска. |
+| `contextOptions` | `locale: 'ru-RU'`, окно 1280×800 | Настройки контекста. Заменяют стандартные целиком. |
 | `logger` | — | Куда писать ход решения, например `console.debug`. |
 
 Свой драйвер:
@@ -126,16 +131,57 @@ createTurnstileSolver({
 });
 ```
 
+Драйверу, который собирает отпечаток браузера сам, контекст лучше отдать целиком:
+
+```ts
+createTurnstileSolver({
+  contextOptions: {},
+  launch: async () => {
+    const { Camoufox } = await import('camoufox-js');
+    return Camoufox({ headless: false, humanize: true });
+  },
+});
+```
+
 ## Ошибки
 
 Всё, что пошло не так, приходит как `TurnstileError` с полем `reason`:
 
 | `reason` | Что делать |
 | --- | --- |
-| `driver-missing` | Установить `playwright` либо передать свой `launch`. |
+| `driver-missing` | Установить `patchright` либо передать свой `launch`. |
 | `launch-failed` | Браузер не запустился: нет исполняемого файла или дисплея. |
 | `timeout` | Виджет не отдал токен. Обычно лечится повтором. |
 | `widget-error` | Виджет отказал; код Cloudflare лежит в `widgetCode`. |
 
 Код `110200` в `widgetCode` означает, что ключ не разрешён для указанного домена, —
 повторять бессмысленно, и пакет этого не делает.
+
+## Совместимость
+
+Виджет пропускает не всякий браузер. Данные на 5 августа 2026 года:
+
+| Драйвер | Версии | Браузер | Токен |
+| --- | --- | --- | --- |
+| `patchright` | 1.59.4, 1.60.2, 1.61.1 | Chromium 147, 148, 149 | ✅ |
+| `playwright` | 1.60.0, 1.61.0 | Chromium 148, 149 | ✅ |
+| `playwright` | 1.62.1 | Chromium 151 | ❌ |
+| `playwright` с `channel: 'chrome'` | 1.61.0 | Google Chrome 150 | ❌ |
+| `camoufox-js` с `contextOptions: {}` | 0.11.5, 0.12.0 | Camoufox 152 | ✅ |
+| `camoufox-js` с `contextOptions: {}` | 0.10.2 | Camoufox 152 | ❌ |
+| `rebrowser-playwright` | 1.48.2, 1.49.1, 1.52.0 | Chromium 149 | ❌ |
+| `playwright-extra` + `puppeteer-extra-plugin-stealth` 2.11 | 4.3.4, 4.3.5, 4.3.6 | Chromium 149 | ❌ |
+
+Всё перечисленное — с окном; `headless: true` токена не даёт нигде, кроме Camoufox.
+Двум последним сборка задана принудительно, чтобы отказ относился к самой библиотеке.
+
+Сборка приезжает вместе с версией драйвера, ею и выбирается — `npm i playwright@1.61`.
+Поставленная отдельно тоже годится: `npx @puppeteer/browsers install chrome@149.0.7827.55`
+и путь в `executablePath`. Версию запущенного браузера пакет называет в сообщении о таймауте.
+
+Таблица пересобирается скриптом `scripts/drivers.mjs` из исходников пакета:
+
+```sh
+npm i --no-save patchright playwright camoufox-js
+node scripts/drivers.mjs
+```

@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { TurnstileError, TurnstileFailure } from '../src/errors.js';
-import { resolveLaunchOptions } from '../src/launch.js';
 import type {
   BoundingBox,
   Browser,
   BrowserContext,
   ElementHandle,
   Mouse,
+  NewContextOptions,
   Page,
   Route,
-} from '../src/playwright.js';
+} from '../src/driver.js';
+import { TurnstileError, TurnstileFailure } from '../src/errors.js';
+import { launchBrowser, resolveLaunchOptions } from '../src/launch.js';
 import { ITD_SITE_KEY, solveTurnstile } from '../src/solve.js';
 
-/** Поддельный браузер: весь путь до токена проверяется без Playwright и без сети. */
+/** Поддельный браузер: весь путь до токена проверяется без драйвера и без сети. */
 
 const BOX: BoundingBox = { x: 40, y: 40, width: 300, height: 65 };
 
@@ -23,6 +24,50 @@ describe('настройки запуска браузера', () => {
 
   it('отключает sandbox только по явной opt-in настройке', () => {
     expect(resolveLaunchOptions({ disableSandbox: true }).args).toContain('--no-sandbox');
+  });
+
+  it('подмешивает свои флаги обычному драйверу', () => {
+    expect(resolveLaunchOptions({}, 'playwright').args).toContain(
+      '--disable-blink-features=AutomationControlled',
+    );
+  });
+
+  it('не принимает под видом драйвера путь', async () => {
+    // Имя уезжает в динамический импорт, поэтому относительным адресом быть не должно.
+    await expect(launchBrowser({ driver: '../evil' })).rejects.toThrow(TypeError);
+    await expect(launchBrowser({ driver: './evil.js' })).rejects.toThrow(TypeError);
+  });
+
+  it('не подставляет соседний драйвер вместо названного', async () => {
+    // Молчаливая подмена означала бы, что проверена не та связка, которую просили.
+    const error = await launchBrowser({ driver: 'playwright-no-such-package' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect((error as TurnstileError).reason).toBe(TurnstileFailure.DriverMissing);
+    expect((error as TurnstileError).message).toContain('playwright-no-such-package');
+  });
+
+  it('передаёт канал браузера драйверу', () => {
+    expect(resolveLaunchOptions({ channel: 'chrome' }).channel).toBe('chrome');
+  });
+
+  it('не упоминает канал, когда его не просили', () => {
+    expect(resolveLaunchOptions({})).not.toHaveProperty('channel');
+  });
+
+  it('не трогает флаги драйвера, который выверил их сам', () => {
+    // Лишний флаг у patchright — такой же след, как недостающий: он ставит их сам.
+    const args = resolveLaunchOptions(
+      { disableSandbox: true, args: ['--mute-audio'] },
+      'patchright',
+    ).args;
+
+    expect(args).not.toContain('--disable-blink-features=AutomationControlled');
+    expect(args).not.toContain('--disable-dev-shm-usage');
+    // Явные настройки при этом остаются: их запросил вызывающий, а не пакет.
+    expect(args).toContain('--no-sandbox');
+    expect(args).toContain('--mute-audio');
   });
 });
 
@@ -133,6 +178,7 @@ class FakePage implements Page {
 class FakeBrowser implements Browser {
   contexts = 0;
   closed = false;
+  contextOptions: NewContextOptions | undefined;
 
   readonly #page: FakePage;
 
@@ -140,12 +186,17 @@ class FakeBrowser implements Browser {
     this.#page = page;
   }
 
-  async newContext(): Promise<BrowserContext> {
+  async newContext(options?: NewContextOptions): Promise<BrowserContext> {
     this.contexts += 1;
+    this.contextOptions = options;
     return {
       newPage: async () => this.#page,
       close: async () => {},
     };
+  }
+
+  version(): string {
+    return '149.0.7827.55';
   }
 
   async close(): Promise<void> {
@@ -226,6 +277,25 @@ describe('solveTurnstile', () => {
     await expect(solveTurnstile({ browser: new FakeBrowser(page) })).resolves.toBe('TOKEN');
   });
 
+  it('задаёт контексту язык и размер окна', async () => {
+    const browser = new FakeBrowser(new FakePage({ tokenAfterClicks: 0 }));
+
+    await solveTurnstile({ browser });
+
+    expect(browser.contextOptions?.locale).toBe('ru-RU');
+    expect(browser.contextOptions?.viewport).toEqual({ width: 1280, height: 800 });
+  });
+
+  it('отдаёт контекст целиком на откуп contextOptions', async () => {
+    // Драйверам, собирающим отпечаток самостоятельно, навязанный locale мешает,
+    // поэтому свои настройки заменяют стандартные, а не дополняют их.
+    const browser = new FakeBrowser(new FakePage({ tokenAfterClicks: 0 }));
+
+    await solveTurnstile({ browser, contextOptions: {} });
+
+    expect(browser.contextOptions).toEqual({});
+  });
+
   it('сдаётся по таймауту', async () => {
     // Токена не будет никогда: порог кликов недостижим за отведённое время.
     const browser = new FakeBrowser(new FakePage({ tokenAfterClicks: 1000 }));
@@ -236,6 +306,18 @@ describe('solveTurnstile', () => {
 
     expect(error).toBeInstanceOf(TurnstileError);
     expect((error as TurnstileError).reason).toBe(TurnstileFailure.Timeout);
+  });
+
+  it('называет версию браузера в сообщении о таймауте', async () => {
+    // Сборка браузера — первое, что стоит проверить при отказе виджета, поэтому она
+    // должна быть видна в самой ошибке, а не только в документации.
+    const browser = new FakeBrowser(new FakePage({ tokenAfterClicks: 1000 }));
+
+    const error = await solveTurnstile({ browser, timeout: 3000, attempts: 1 }).catch(
+      (e: unknown) => e,
+    );
+
+    expect((error as TurnstileError).message).toContain('149.0.7827.55');
   });
 
   it('прикладывает к таймауту последнюю ошибку виджета', async () => {
@@ -262,5 +344,8 @@ describe('solveTurnstile', () => {
     await expect(solveTurnstile({ disableSandbox: 'yes' as never })).rejects.toThrow(TypeError);
     await expect(solveTurnstile({ logger: true as never })).rejects.toThrow(TypeError);
     await expect(solveTurnstile({ args: ['ok', 42] as never })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ contextOptions: 'ru' as never })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ driver: '' })).rejects.toThrow(TypeError);
+    await expect(solveTurnstile({ channel: 42 as never })).rejects.toThrow(TypeError);
   });
 });

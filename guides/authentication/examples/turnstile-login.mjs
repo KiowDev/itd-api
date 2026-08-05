@@ -9,8 +9,8 @@
  * в ITD_TURNSTILE. Здесь его берёт `@itd-api/turnstile`: поднимает браузер, забирает токен
  * и закрывается. Установите отдельно, основному пакету он не нужен:
  *
- *   npm i @itd-api/turnstile playwright
- *   npx playwright install chromium
+ *   npm i @itd-api/turnstile patchright
+ *   npx patchright install chromium
  *
  * Браузер открывается с окном — так виджет проходится надёжнее. На сервере без графической
  * оболочки запускайте через

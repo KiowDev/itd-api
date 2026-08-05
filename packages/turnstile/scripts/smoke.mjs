@@ -1,6 +1,11 @@
 /**
  * Проверка солвера вживую. Учётные данные не нужны.
  *
+ * Нужен установленный драйвер браузера — в devDependencies его нет намеренно, чтобы
+ * обычная установка не тянула сборку браузера ради ручного скрипта:
+ *
+ *   npm i --no-save patchright && npx patchright install chromium
+ *
  *   node scripts/smoke.mjs             — только добыть токен
  *   node scripts/smoke.mjs --verify    — ещё и убедиться, что сервер его принимает
  *   node scripts/smoke.mjs --headless  — проверить безоконный режим
@@ -36,7 +41,7 @@ if (!verify) {
 
 // Адрес случайный: аккаунта с ним нет, поэтому дальше проверки пароля запрос не пройдёт
 // и ничего не изменит. Письма такой запрос тоже не отправляет.
-const email = `itd-api-smoke-${Math.random().toString(36).slice(2)}@example.invalid`;
+const email = `itd-api-smoke-${Math.random().toString(36).slice(2)}@gmail.com`;
 
 const response = await fetch(`${BASE_URL}/api/v1/auth/sign-in`, {
   method: 'POST',
@@ -62,6 +67,12 @@ if (code === 'INVALID_CREDENTIALS') {
 if (String(code).includes('TURNSTILE') || code === 'VALIDATION_ERROR') {
   console.error('Токен отвергнут — капча не прошла. Проверьте sitekey и origin.');
   console.error(JSON.stringify(body, null, 2));
+  process.exit(1);
+}
+
+if (code === 'EMAIL_DOMAIN_NOT_ALLOWED') {
+  console.error('Сервер отклонил адрес до проверки капчи — по такому ответу о токене судить нельзя.');
+  console.error('Подставьте в скрипт адрес на домене, который сервер принимает.');
   process.exit(1);
 }
 

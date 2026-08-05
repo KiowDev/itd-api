@@ -1,5 +1,5 @@
+import type { Browser, DriverModule, LaunchOptions } from './driver.js';
 import { TurnstileError, TurnstileFailure } from './errors.js';
-import type { Browser, LaunchOptions, PlaywrightModule } from './playwright.js';
 
 /**
  * Аргументы запуска Chromium.
@@ -11,8 +11,30 @@ import type { Browser, LaunchOptions, PlaywrightModule } from './playwright.js';
  */
 const DEFAULT_ARGS = ['--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
 
-/** Драйверы в порядке предпочтения. */
-const DRIVERS = ['playwright', 'playwright-core'];
+/**
+ * Драйверы в порядке предпочтения.
+ *
+ * `patchright` впереди намеренно: он ставит собственную сборку Chromium, и та проходит
+ * виджет там, где сборка из свежего Playwright уже нет. Если стоит только `playwright`,
+ * ничего не меняется — берётся он.
+ */
+const DRIVERS = ['patchright', 'playwright', 'playwright-core'];
+
+/**
+ * Как выглядит имя пакета драйвера.
+ *
+ * Имя приходит извне и уезжает в динамический импорт, поэтому путями и относительными
+ * адресами быть не должно — только имя пакета.
+ */
+const DRIVER_NAME = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i;
+
+/**
+ * Драйверы, которые сами приводят аргументы запуска в порядок.
+ *
+ * Им ничего не подмешивается: набор флагов у них выверен, а лишний флаг — такой же след,
+ * как и недостающий.
+ */
+const SELF_TUNED_DRIVERS = new Set(['patchright']);
 
 function isModuleNotFound(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
@@ -23,12 +45,15 @@ function isModuleNotFound(error: unknown): boolean {
  * Подключает драйвер браузера.
  *
  * Импорт динамический: драйвер объявлен необязательной одноранговой зависимостью,
- * поэтому его может не быть вовсе.
+ * поэтому его может не быть вовсе. Названный явно берётся один, без перебора: молча
+ * подставить вместо него другой значило бы проверить не то, что просили.
  */
-async function loadPlaywright(): Promise<PlaywrightModule> {
-  for (const name of DRIVERS) {
+async function loadDriver(requested?: string): Promise<{ driver: string; module: DriverModule }> {
+  const wanted = requested ? [requested] : DRIVERS;
+
+  for (const name of wanted) {
     try {
-      return (await import(/* @vite-ignore */ name)) as PlaywrightModule;
+      return { driver: name, module: (await import(/* @vite-ignore */ name)) as DriverModule };
     } catch (error) {
       // Установленный драйвер, упавший при загрузке, — не то же самое, что отсутствующий.
       // Его ошибку нужно показать как есть, а не подменять советом установить пакет.
@@ -38,8 +63,10 @@ async function loadPlaywright(): Promise<PlaywrightModule> {
 
   throw new TurnstileError(
     TurnstileFailure.DriverMissing,
-    'Не найден драйвер браузера. Установите его командой: npm i playwright && npx playwright install chromium. ' +
-      'Либо передайте свой запуск браузера через параметр launch.',
+    requested
+      ? `Драйвер ${requested} не установлен.`
+      : 'Не найден драйвер браузера. Установите его командой: npm i patchright && npx patchright install chromium. ' +
+          'Либо передайте свой запуск браузера через параметр launch.',
   );
 }
 
@@ -52,8 +79,17 @@ export interface BrowserOptions {
    * странице. На сервере поднимите виртуальный дисплей (`xvfb-run -a node bot.js`).
    */
   headless?: boolean | undefined;
-  /** Путь к исполняемому файлу браузера, если он лежит не там, где ищет Playwright. */
+  /**
+   * Какой драйвер брать вместо перебора `patchright` → `playwright` → `playwright-core`.
+   *
+   * Нужен, когда установлено несколько и важно, какой именно поднимется. Названный
+   * драйвер берётся один: не найден — ошибка, а не молчаливая подмена соседним.
+   */
+  driver?: string | undefined;
+  /** Путь к исполняемому файлу браузера, если он лежит не там, где его ищет драйвер. */
   executablePath?: string | undefined;
+  /** Канал браузера, например `chrome` или `msedge`, — вместо сборки из комплекта драйвера. */
+  channel?: string | undefined;
   /** Дополнительные аргументы командной строки — добавляются к стандартным. */
   args?: readonly string[] | undefined;
   /**
@@ -82,26 +118,41 @@ export interface BrowserOptions {
   launch?: (() => Promise<Browser>) | undefined;
 }
 
-/** Собирает параметры Playwright без запуска браузера. @internal */
-export function resolveLaunchOptions(options: BrowserOptions): LaunchOptions {
+/** Собирает параметры запуска, не поднимая браузер. @internal */
+export function resolveLaunchOptions(options: BrowserOptions, driver = ''): LaunchOptions {
   return {
     headless: options.headless ?? false,
     args: [
-      ...DEFAULT_ARGS,
+      ...(SELF_TUNED_DRIVERS.has(driver) ? [] : DEFAULT_ARGS),
       ...(options.disableSandbox ? ['--no-sandbox'] : []),
       ...(options.args ?? []),
     ],
     ...(options.executablePath ? { executablePath: options.executablePath } : {}),
+    ...(options.channel ? { channel: options.channel } : {}),
     ...(options.proxy ? { proxy: options.proxy } : {}),
   };
 }
 
-/** Поднимает браузер по настройкам. */
+/**
+ * Поднимает браузер по настройкам.
+ *
+ * Тем же путём, что и {@link solveTurnstile}: те же флаги, тот же порядок драйверов.
+ * Пригодится, чтобы поднять браузер один раз на несколько токенов и передать его
+ * в `browser`, — и чтобы проверять связки драйвера и сборки ровно в том виде,
+ * в каком их поднимает пакет.
+ */
 export async function launchBrowser(options: BrowserOptions): Promise<Browser> {
   if (options.launch) return options.launch();
 
-  const { chromium } = await loadPlaywright();
-  const launchOptions = resolveLaunchOptions(options);
+  if (options.driver !== undefined && !DRIVER_NAME.test(options.driver)) {
+    throw new TypeError(`driver должен быть именем пакета, получено: ${options.driver}`);
+  }
+
+  const {
+    driver,
+    module: { chromium },
+  } = await loadDriver(options.driver);
+  const launchOptions = resolveLaunchOptions(options, driver);
 
   try {
     return await chromium.launch(launchOptions);

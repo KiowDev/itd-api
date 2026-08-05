@@ -1,7 +1,7 @@
+import type { Browser, NewContextOptions, Page } from './driver.js';
 import { TurnstileError, TurnstileFailure } from './errors.js';
 import { type BrowserOptions, launchBrowser } from './launch.js';
 import { buildWidgetPage, type WidgetState } from './page.js';
-import type { Browser, Page } from './playwright.js';
 
 /** Базовый URL сайта итд.com. Домен записан в punycode: `итд.com`. */
 export const DEFAULT_ORIGIN = 'https://xn--d1ah4a.com';
@@ -36,9 +36,29 @@ const WIDGET_READY_SELECTOR = '#widget > div';
 /** Коды Cloudflare вида `110***` означают, что ключ не разрешён для домена. */
 const DOMAIN_ERROR_PREFIX = '110';
 
+/** Настройки контекста по умолчанию. Заменяются целиком через `contextOptions`. */
+const DEFAULT_CONTEXT_OPTIONS: NewContextOptions = {
+  locale: 'ru-RU',
+  viewport: { width: 1280, height: 800 },
+};
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const between = (min: number, max: number): number => min + Math.random() * (max - min);
+
+/**
+ * Версия браузера для текста ошибки.
+ *
+ * Сборка Chromium — первое, что стоит проверить при отказе виджета: часть сборок Cloudflare
+ * не пропускает. Метода может не быть, если браузер передали свой.
+ */
+function browserVersion(browser: Browser): string | undefined {
+  try {
+    return browser.version?.();
+  } catch {
+    return undefined;
+  }
+}
 
 /** Настройки получения токена. */
 export interface TurnstileOptions extends BrowserOptions {
@@ -58,6 +78,13 @@ export interface TurnstileOptions extends BrowserOptions {
    * Пригодится, если браузер уже поднят для чего-то ещё.
    */
   browser?: Browser | undefined;
+  /**
+   * Настройки контекста. Заменяют стандартные целиком, а не дополняют их.
+   *
+   * По умолчанию `{ locale: 'ru-RU', viewport: { width: 1280, height: 800 } }`. Драйверам,
+   * которые собирают отпечаток браузера сами, навязанный `locale` мешает — им передайте `{}`.
+   */
+  contextOptions?: NewContextOptions | undefined;
   /** Куда писать ход решения. Например `console.debug`. */
   logger?: ((message: string) => void) | undefined;
 }
@@ -120,8 +147,24 @@ function resolveOptions(options: TurnstileOptions): ResolvedOptions {
       throw new TypeError(`${name} должен быть boolean`);
     }
   }
+  for (const [name, value] of [
+    ['driver', options.driver],
+    ['channel', options.channel],
+  ] as const) {
+    if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
+      throw new TypeError(`${name} должен быть непустой строкой`);
+    }
+  }
   if (options.logger !== undefined && typeof options.logger !== 'function') {
     throw new TypeError('logger должен быть функцией');
+  }
+  if (
+    options.contextOptions !== undefined &&
+    (typeof options.contextOptions !== 'object' ||
+      options.contextOptions === null ||
+      Array.isArray(options.contextOptions))
+  ) {
+    throw new TypeError('contextOptions должен быть объектом');
   }
   if (options.launch !== undefined && typeof options.launch !== 'function') {
     throw new TypeError('launch должен быть функцией');
@@ -187,7 +230,11 @@ async function clickCheckbox(page: Page): Promise<boolean> {
 }
 
 /** Ждёт токен, периодически подталкивая виджет кликом. */
-async function waitForToken(page: Page, options: ResolvedOptions): Promise<string> {
+async function waitForToken(
+  page: Page,
+  options: ResolvedOptions,
+  browser: Browser,
+): Promise<string> {
   const deadline = Date.now() + options.timeout;
 
   // Ожидание разметки необязательное: Cloudflare её меняет, и привязываться жёстко нельзя.
@@ -236,10 +283,14 @@ async function waitForToken(page: Page, options: ResolvedOptions): Promise<strin
     await sleep(POLL_INTERVAL);
   }
 
+  const version = browserVersion(browser);
+
   throw new TurnstileError(
     TurnstileFailure.Timeout,
     `Виджет Turnstile не отдал токен за ${options.timeout} мс` +
-      (lastError ? `; последняя ошибка виджета — ${lastError}` : ''),
+      (lastError ? `; последняя ошибка виджета — ${lastError}` : '') +
+      (version ? `; браузер — ${version}` : '') +
+      '. Рабочие связки драйвера и браузера перечислены в README пакета.',
     lastError ? { widgetCode: lastError } : {},
   );
 }
@@ -247,10 +298,7 @@ async function waitForToken(page: Page, options: ResolvedOptions): Promise<strin
 async function solveOnce(browser: Browser, options: ResolvedOptions): Promise<string> {
   // Каждая попытка идёт в чистом контексте: cookie и хранилище от неудачной попытки
   // достались бы следующей, а виджет их учитывает.
-  const context = await browser.newContext({
-    locale: 'ru-RU',
-    viewport: { width: 1280, height: 800 },
-  });
+  const context = await browser.newContext(options.contextOptions ?? DEFAULT_CONTEXT_OPTIONS);
 
   try {
     const page = await context.newPage();
@@ -265,7 +313,7 @@ async function solveOnce(browser: Browser, options: ResolvedOptions): Promise<st
     );
     await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-    return await waitForToken(page, options);
+    return await waitForToken(page, options, browser);
   } finally {
     await context.close().catch(() => {});
   }
