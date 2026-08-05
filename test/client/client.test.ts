@@ -8,10 +8,49 @@ import {
   ItdStateError,
 } from '../../src/core/errors.js';
 import type { FileInput } from '../../src/index.js';
+import type {
+  RealtimeTransport,
+  TransportContext,
+  TransportEvent,
+} from '../../src/realtime/transport.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
 import type { ItdClientOptions } from '../../src/types/options.js';
 import { makeJwt } from '../helpers/jwt.js';
-import { createMockFetch, json, type MockHandler, noContent } from '../helpers/mock-fetch.js';
+import {
+  createHangingFetch,
+  createMockFetch,
+  json,
+  type MockHandler,
+  noContent,
+} from '../helpers/mock-fetch.js';
+
+/** Поток, которым управляет тест: событие и обрыв приходят по команде. */
+class TestStreamTransport implements RealtimeTransport {
+  readonly name = 'test';
+
+  #context: TransportContext | undefined;
+  #fail: ((error: unknown) => void) | undefined;
+
+  connect(context: TransportContext): Promise<void> {
+    this.#context = context;
+    context.onOpen();
+
+    return new Promise<void>((resolve, reject) => {
+      this.#fail = reject;
+      context.signal.addEventListener('abort', () => resolve(), { once: true });
+    });
+  }
+
+  /** Отправляет событие так, будто оно пришло от сервера. */
+  emit(event: TransportEvent): void {
+    this.#context?.onEvent(event);
+  }
+
+  /** Обрывает соединение ошибкой. */
+  fail(error: unknown): void {
+    this.#fail?.(error);
+  }
+}
 
 function makeClient(handler: MockHandler | Response[], options: ItdClientOptions = {}) {
   const mock = createMockFetch(handler);
@@ -1170,5 +1209,92 @@ describe('жизненный цикл', () => {
     }
 
     expect(disconnect).toHaveBeenCalled();
+  });
+
+  it('dispose() отменяет начатый запрос и отклоняет ожидающие в очереди', async () => {
+    const mock = createHangingFetch();
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      auth: 'test-token',
+      retry: false,
+      rateLimit: { concurrency: 1 },
+      mode: 'server',
+    });
+
+    const active = itd.posts.get('1').catch((error: unknown) => error);
+    const waiting = itd.posts.get('2').catch((error: unknown) => error);
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+
+    await itd.dispose();
+
+    const cancelled = (await active) as ItdAbortError;
+    expect(cancelled).toBeInstanceOf(ItdAbortError);
+    // Причина отмены доходит до вызывающего кода.
+    expect((cancelled.cause as Error).message).toMatch(/dispose\(\)/);
+    expect(await waiting).toBeInstanceOf(ItdAbortError);
+    // Ожидавший очереди запрос до сети так и не дошёл.
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('dispose() не ждёт зависший обработчик потока дольше срока и называет поток', async () => {
+    const { itd } = makeClient([], { shutdownTimeout: 20 });
+    const transport = new TestStreamTransport();
+    const stream = itd.realtime({ transport, syncCount: false });
+    stream.onUpdate(() => new Promise<never>(() => {}));
+
+    await stream.connect();
+    transport.emit({ name: 'notification', data: { payload: { id: 'n1', type: 'like' } } });
+
+    const error = (await itd.dispose().catch((cause: unknown) => cause)) as AggregateError;
+    const [stuck] = error.errors as Error[];
+
+    expect(stuck).toBeInstanceOf(ItdStateError);
+    expect(stuck?.message).toMatch(/обработчики потоков \(test\) не завершились за 20 мс/);
+  });
+
+  it('dispose() не ждёт зависшую операцию плагина дольше срока и называет плагин', async () => {
+    const { itd } = makeClient([], { shutdownTimeout: 20 });
+    let entered = false;
+    itd.use({
+      name: 'stuck',
+      install({ operations }) {
+        operations.use(() => {
+          entered = true;
+          return new Promise<never>(() => {});
+        });
+      },
+    });
+
+    void itd.posts.get('1');
+    await vi.waitFor(() => expect(entered).toBe(true));
+
+    const error = (await itd.dispose().catch((cause: unknown) => cause)) as AggregateError;
+    const [plugins] = error.errors as AggregateError[];
+    const [stuck] = (plugins?.errors ?? []) as Error[];
+
+    expect(stuck).toBeInstanceOf(ItdStateError);
+    expect(stuck?.message).toMatch(/плагин «stuck» не завершил операции за 20 мс/);
+  });
+
+  it('поток, исчерпавший попытки, покидает клиент и возвращается по connect()', async () => {
+    const { itd } = makeClient([]);
+    const transport = new TestStreamTransport();
+    const stream = itd.realtime({ transport, syncCount: false, maxAttempts: 0 });
+    const disconnect = vi.spyOn(stream, 'disconnect');
+    stream.on('error', () => {});
+
+    await stream.connect();
+    await new Promise<void>((resolve) => {
+      stream.once('giveup', resolve);
+      transport.fail(new Error('сервер недоступен'));
+    });
+
+    await itd.close();
+    expect(disconnect).not.toHaveBeenCalled();
+
+    await stream.connect();
+    await itd.close();
+    expect(disconnect).toHaveBeenCalledOnce();
   });
 });

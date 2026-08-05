@@ -111,6 +111,11 @@ dispose(): Promise<void>
 новым пользовательским вызовам. Повторный `dispose()` возвращает тот же результат очистки.
 `await using` вызывает `dispose()`.
 
+Оба метода ждут чужой код не дольше `shutdownTimeout`; по истечении срока ресурсы всё равно
+освобождаются, а метод отклоняется `ItdStateError` с именем плагина или транспорта потока,
+который удерживал остановку. `dispose()` вдобавок отменяет незавершённые запросы —
+они получают `ItdAbortError`.
+
 ```ts
 getSession(): Promise<ItdSession | null>
 setSession(session: ItdSession): Promise<void>
@@ -144,6 +149,7 @@ interface ItdClientOptions {
   reloginOnRefreshFailure?: boolean;     // повторный вход при неудаче refresh; по умолчанию true
   fetch?: typeof fetch;                  // своя реализация: Deno, RN, тесты, прокси
   timeout?: number;                      // по умолчанию 30000; 0 — без ограничения
+  shutdownTimeout?: number;              // сколько close()/dispose() ждут чужой код; 10000
   retry?: RetryOptions | false;
   rateLimit?: RateLimitOptions | false;
   hooks?: ClientHooks;

@@ -1,5 +1,6 @@
 import type { OperationRequestOptions } from '../../types/options.js';
-import { ItdConfigError } from '../errors.js';
+import { createDeadline, type Deadline, type ItdClock } from '../clock.js';
+import { ItdConfigError, ItdStateError } from '../errors.js';
 import { type RegisteredAttemptInterceptor, withAttemptInterceptorScope } from './attempts.js';
 import type {
   AttemptInterceptor,
@@ -24,6 +25,13 @@ interface InstalledPlugin {
   finishDrain: (() => void) | undefined;
 }
 
+/** Что реестру нужно знать об остановке. @internal */
+export interface PluginRegistryOptions {
+  /** Срок ожидания операций плагина при его отключении, мс. `0` — ждать без ограничения. */
+  shutdownTimeout: number;
+  clock: ItdClock;
+}
+
 /**
  * Список подключённых плагинов и зарегистрированных ими расширений.
  *
@@ -37,7 +45,12 @@ export class PluginRegistry {
   readonly #entries = new Map<string, InstalledPlugin>();
   readonly #removing = new Set<string>();
   readonly #cleanups = new Set<Promise<void>>();
+  readonly #options: PluginRegistryOptions;
   #ordered: InstalledPlugin[] = [];
+
+  constructor(options: PluginRegistryOptions) {
+    this.#options = options;
+  }
 
   /** Сколько плагинов подключено. */
   get size(): number {
@@ -137,9 +150,11 @@ export class PluginRegistry {
    * Отключает плагин и вызывает его функцию очистки.
    *
    * Новые запросы перестают видеть расширения плагина сразу. Снимок уже начавшейся операции,
-   * включая её будущие retry, остаётся неизменным; очистка дождётся завершения операции.
+   * включая её будущие retry, остаётся неизменным; очистка дождётся завершения операции,
+   * но не дольше отведённого срока.
    *
    * @returns `false`, если такого плагина не было
+   * @throws {ItdStateError} если операции плагина не завершились за отведённый срок
    */
   async remove(name: string): Promise<boolean> {
     const entry = this.#entries.get(name);
@@ -149,16 +164,18 @@ export class PluginRegistry {
     this.#ordered = this.#ordered.filter((current) => current !== entry);
     this.#removing.add(name);
 
+    const deadline = createDeadline(this.#options.shutdownTimeout, this.#options.clock);
     const cleanup = this.#trackCleanup(
       (async () => {
-        await this.#waitForDrain(entry);
-        await entry.teardown?.();
+        const expired = await this.#release(entry, deadline);
+        if (expired) throw expired;
       })(),
     );
     try {
       await cleanup;
       return true;
     } finally {
+      deadline.cancel();
       this.#removing.delete(name);
     }
   }
@@ -166,7 +183,8 @@ export class PluginRegistry {
   /**
    * Отключает все плагины окончательно.
    *
-   * Очистка идёт изнутри наружу — в порядке, обратном выполнению расширений.
+   * Очистка идёт изнутри наружу — в порядке, обратном выполнению расширений. Срок ожидания
+   * общий на все плагины.
    */
   async dispose(): Promise<void> {
     const entries = [...this.#ordered].reverse();
@@ -175,6 +193,7 @@ export class PluginRegistry {
     this.#ordered = [];
     for (const { plugin } of entries) this.#removing.add(plugin.name);
 
+    const deadline = createDeadline(this.#options.shutdownTimeout, this.#options.clock);
     const cleanup = this.#trackCleanup(
       (async () => {
         const errors: unknown[] = [];
@@ -184,8 +203,8 @@ export class PluginRegistry {
         }
         for (const entry of entries) {
           try {
-            await this.#waitForDrain(entry);
-            await entry.teardown?.();
+            const expired = await this.#release(entry, deadline);
+            if (expired) errors.push(expired);
           } catch (error) {
             errors.push(error);
           } finally {
@@ -197,7 +216,11 @@ export class PluginRegistry {
         }
       })(),
     );
-    await cleanup;
+    try {
+      await cleanup;
+    } finally {
+      deadline.cancel();
+    }
   }
 
   /**
@@ -255,6 +278,26 @@ export class PluginRegistry {
         }
       }
     }
+  }
+
+  /**
+   * Дожидается операций плагина и освобождает его ресурсы.
+   *
+   * `teardown` выполняется и после истечения срока: иначе заведённые плагином соединения
+   * и таймеры остались бы навсегда.
+   *
+   * @returns ошибка истёкшего срока, если ждать пришлось дольше отведённого
+   */
+  async #release(entry: InstalledPlugin, deadline: Deadline): Promise<ItdStateError | undefined> {
+    const finished = await deadline.wait(this.#waitForDrain(entry));
+    await entry.teardown?.();
+
+    return finished
+      ? undefined
+      : new ItdStateError(
+          `плагин «${entry.plugin.name}» не завершил операции за ${this.#options.shutdownTimeout} мс; ` +
+            'ожидание прекращено, ресурсы плагина освобождены',
+        );
   }
 
   #waitForDrain(entry: InstalledPlugin): Promise<void> {

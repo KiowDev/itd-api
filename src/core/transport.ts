@@ -45,9 +45,9 @@ export interface TransportConfig {
 /**
  * Внешние части, которыми пользуется транспорт.
  *
- * Все три обязательны к передаче и все три могут отсутствовать по существу: cookie-jar
- * не нужен в браузере, идентификатор устройства — при выключенной авторизации, а сведения
- * об ограничении частоты интересны только тогда, когда есть очередь.
+ * Все обязательны к передаче и все могут отсутствовать по существу: cookie-jar не нужен
+ * в браузере, идентификатор устройства — при выключенной авторизации, сведения об ограничении
+ * частоты интересны только тогда, когда есть очередь, а сигнал жизни — только у клиента.
  */
 export interface TransportDeps {
   /** Хранилище cookie. `undefined` — cookie ведёт сама среда. */
@@ -66,6 +66,8 @@ export interface TransportDeps {
   onRateLimit:
     | ((limit: number | undefined, remaining: number | undefined, request: PipelineRequest) => void)
     | undefined;
+  /** Сигнал времени жизни владельца: `dispose()` клиента отменяет начатые запросы. */
+  lifetimeSignal: AbortSignal | undefined;
 }
 
 /** Ставит заголовок, превращая ошибку среды в понятную ошибку конфигурации. */
@@ -149,7 +151,7 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-/** Результат объединения пользовательской отмены и таймаута. */
+/** Результат объединения отмены запроса, отмены клиента и таймаута. */
 interface AbortBundle {
   signal: AbortSignal;
   /** Сработал ли именно таймаут — от этого зависит класс ошибки. */
@@ -158,25 +160,33 @@ interface AbortBundle {
 }
 
 /**
- * Объединяет пользовательский `AbortSignal` с таймаутом.
+ * Объединяет пользовательский `AbortSignal`, сигнал жизни клиента и таймаут.
  *
  * Реализовано вручную, а не через `AbortSignal.any`: последний появился только в Node 20,
- * а библиотека поддерживает Node 18.
+ * а библиотека поддерживает Node 18. Причина отмены переносится от источника как есть.
  */
 function createAbortBundle(
   userSignal: AbortSignal | undefined,
+  lifetimeSignal: AbortSignal | undefined,
   timeout: number,
   clock: ItdClock,
 ): AbortBundle {
   const controller = new AbortController();
   let timedOut = false;
 
-  const onUserAbort = () => controller.abort(userSignal?.reason);
+  const link = (source: AbortSignal | undefined): (() => void) | undefined => {
+    if (!source) return undefined;
+    if (source.aborted) {
+      controller.abort(source.reason);
+      return undefined;
+    }
 
-  if (userSignal) {
-    if (userSignal.aborted) controller.abort(userSignal.reason);
-    else userSignal.addEventListener('abort', onUserAbort, { once: true });
-  }
+    const onAbort = () => controller.abort(source.reason);
+    source.addEventListener('abort', onAbort, { once: true });
+    return () => source.removeEventListener('abort', onAbort);
+  };
+
+  const unlink = [link(userSignal), link(lifetimeSignal)];
 
   const cancelTimer =
     timeout > 0
@@ -191,7 +201,7 @@ function createAbortBundle(
     timedOut: () => timedOut,
     cleanup: () => {
       cancelTimer?.();
-      userSignal?.removeEventListener('abort', onUserAbort);
+      for (const detach of unlink) detach?.();
     },
   };
 }
@@ -233,7 +243,12 @@ export class Transport {
     const attempt = request.attempt ?? 1;
 
     const timeout = request.timeout ?? this.#config.timeout;
-    const abort = createAbortBundle(request.signal, timeout, this.#config.clock);
+    const abort = createAbortBundle(
+      request.signal,
+      this.#deps.lifetimeSignal,
+      timeout,
+      this.#config.clock,
+    );
     const startedAt = this.#config.clock.now();
     let cleanupBody: (() => void | Promise<void>) | undefined;
 
@@ -536,8 +551,8 @@ export class Transport {
     }
 
     if (aborted) {
-      // Сохраняем причину отмены: пользователь мог передать её в `abort(reason)`.
-      const reason = request.signal?.reason;
+      // Причину задаёт `abort(reason)` пользователя либо освобождение клиента.
+      const reason = abort.signal.reason;
       return new ItdAbortError(
         `Запрос ${method} ${request.path} отменён`,
         reason !== undefined ? { cause: reason } : undefined,

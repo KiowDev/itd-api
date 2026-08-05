@@ -2,6 +2,7 @@ import type { ItdClientOptions } from '../types/options.js';
 import { AuthManager } from './auth.js';
 import { BUILT_IN_SERVICES, type ResolvedConfig, resolveConfig } from './config.js';
 import { CookieJar } from './cookies.js';
+import { ItdAbortError } from './errors.js';
 import { HttpClient } from './http.js';
 import {
   composePipeline,
@@ -67,7 +68,7 @@ export interface ClientRuntime {
   platformHeaders(url: string): Promise<Headers>;
   /** Временно останавливает только принадлежащие runtime очереди. */
   close(): void;
-  /** Снимает auth listeners и окончательно освобождает плагины. */
+  /** Отменяет начатые запросы, снимает auth listeners и освобождает плагины. */
   dispose(): Promise<void>;
 }
 
@@ -98,8 +99,14 @@ export function createClientRuntime(
 ): ClientRuntime {
   const config = resolveConfig(options);
   const jar = new CookieJar();
-  const plugins = new PluginRegistry();
+  const plugins = new PluginRegistry({
+    shutdownTimeout: config.shutdownTimeout,
+    clock: config.clock,
+  });
   const services = createServiceRegistry(config);
+
+  // Транспорт объединяет этот сигнал с сигналом запроса: dispose() отменяет начатые запросы.
+  const lifetime = new AbortController();
 
   // Общая очередь принадлежит ItdAccounts. `rateLimit: false` исключает отдельный клиент
   // из неё, поэтому переданный pool учитывается только при включённом ограничителе.
@@ -148,6 +155,7 @@ export function createClientRuntime(
       cookies: config.useCookieJar ? jar : undefined,
       getDeviceId: () => auth.getDeviceId(),
       onRateLimit: queues && config.rateLimit?.respectHeaders ? throttleByHeaders : undefined,
+      lifetimeSignal: lifetime.signal,
     },
   );
 
@@ -247,9 +255,12 @@ export function createClientRuntime(
     close: () => {
       if (ownsQueues) queues?.stop();
     },
-    dispose: () => {
+    dispose: async () => {
+      // Отмена идёт после отправки телеметрии в #close() фасада и до ожидания плагинов:
+      // иначе оно упиралось бы в таймаут ещё выполняющегося запроса.
+      lifetime.abort(new ItdAbortError('Клиент освобождён через dispose(), запрос отменён'));
       auth.dispose();
-      return plugins.dispose();
+      await plugins.dispose();
     },
   };
 }

@@ -19,3 +19,39 @@ export const systemClock: ItdClock = Object.freeze({
     return () => clearTimeout(timer);
   },
 });
+
+/** Общий срок на несколько ожиданий. @internal */
+export interface Deadline {
+  /** Ждёт промис. `false` — срок истёк раньше, чем промис завершился. */
+  wait(promise: Promise<unknown>): Promise<boolean>;
+  /** Снимает таймер: без этого он удерживает event loop до конца срока. */
+  cancel(): void;
+}
+
+/**
+ * Заводит срок, общий на все ожидания: от ожидания к ожиданию он не продлевается.
+ *
+ * @param timeout срок в миллисекундах; `0` — ждать без ограничения
+ * @internal
+ */
+export function createDeadline(timeout: number, clock: ItdClock = systemClock): Deadline {
+  if (timeout <= 0) {
+    return {
+      wait: async (promise) => {
+        await promise;
+        return true;
+      },
+      cancel: () => {},
+    };
+  }
+
+  let expire!: () => void;
+  const expired = new Promise<void>((resolve) => {
+    expire = resolve;
+  });
+
+  return {
+    wait: (promise) => Promise.race([promise.then(() => true), expired.then(() => false)]),
+    cancel: clock.schedule(() => expire(), timeout),
+  };
+}

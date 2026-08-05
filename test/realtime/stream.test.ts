@@ -613,6 +613,29 @@ describe('поток: жизненный цикл', () => {
     expect(flags).toEqual([true, false]);
   });
 
+  it('отказ от переподключения снимает владение так же, как disconnect()', async () => {
+    const transport = new FailingTransport();
+    const onClose = vi.fn();
+    const onConnect = vi.fn();
+    const stream = makeStream(transport, { onClose, onConnect }, { maxAttempts: 0 });
+    stream.on('error', () => {});
+
+    await new Promise<void>((resolve) => {
+      stream.once('giveup', resolve);
+      void stream.connect();
+    });
+
+    expect(onConnect).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+
+    await new Promise<void>((resolve) => {
+      stream.once('giveup', resolve);
+      void stream.connect();
+    });
+
+    expect(onConnect).toHaveBeenCalledTimes(2);
+  });
+
   it('connect() после giveup запускает новую попытку', async () => {
     const transport = new FailingTransport();
     const stream = makeStream(transport, {}, { maxAttempts: 0 });

@@ -1,6 +1,7 @@
 import type { FileInput } from './core/attachments/contracts.js';
 import type { AuthEvents } from './core/auth.js';
 import { type ClientRuntime, createClientRuntime } from './core/client-runtime.js';
+import { createDeadline } from './core/clock.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdStateError } from './core/errors.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
@@ -431,13 +432,16 @@ export class ItdClient {
    * Освобождает ресурсы клиента: закрывает все потоки уведомлений, отправляет открытые
    * накопители {@link telemetry}, затем останавливает очередь запросов.
    *
-   * Метод дожидается активных обработчиков потока. После вызова клиентом можно пользоваться
-   * снова; ранее созданный поток можно запустить повторным `connect()`.
+   * Метод дожидается активных обработчиков потока, но не дольше `shutdownTimeout`. После
+   * вызова клиентом можно пользоваться снова; ранее созданный поток можно запустить
+   * повторным `connect()`.
    *
    * Общая очередь, полученная от {@link ItdAccounts}, не останавливается: её гасит сам
    * контейнер, когда закрывает все аккаунты разом.
    *
    * Терминальное освобождение — это {@link dispose}.
+   *
+   * @throws {ItdStateError} если обработчики потока не завершились за отведённый срок
    */
   async close(): Promise<void> {
     return this.#close(false);
@@ -448,24 +452,43 @@ export class ItdClient {
     // Terminal cleanup должен пометить batch до первого await: параллельный обычный close()
     // мог уже начать drain потоков, но ещё не дойти до отправки телеметрии.
     if (disposeCleanup) prepareTelemetryForDispose(this.#telemetry);
+    const { shutdownTimeout, clock } = this.#runtime.config;
+    const deadline = createDeadline(shutdownTimeout, clock);
+    let stuck: ItdRealtime[] = [];
     try {
-      await Promise.all(streams.map((stream) => stream.drain()));
+      const waited = await Promise.all(
+        streams.map(async (stream) => ((await deadline.wait(stream.drain())) ? undefined : stream)),
+      );
+      stuck = waited.filter((stream): stream is ItdRealtime => stream !== undefined);
+
       // Через геттер закрытие клиента поднимало бы накопитель телеметрии только ради
       // того, чтобы его тут же закрыть.
       if (disposeCleanup) await closeTelemetryForDispose(this.#telemetry);
       else await this.#telemetry?.close();
     } finally {
+      deadline.cancel();
       this.#runtime.close();
+    }
+
+    // Об истёкшем сроке сообщаем последним: телеметрия должна уйти в любом случае.
+    if (stuck.length > 0) {
+      throw new ItdStateError(
+        `обработчики потоков (${stuck.map((stream) => stream.transport).join(', ')}) ` +
+          `не завершились за ${shutdownTimeout} мс; ожидание прекращено`,
+      );
     }
   }
 
   /**
-   * Окончательно освобождает клиент: выполняет {@link close} и отключает все плагины.
+   * Окончательно освобождает клиент: выполняет {@link close}, отменяет незавершённые
+   * запросы и отключает все плагины.
    *
    * Терминальное состояние устанавливается сразу при первом вызове. После этого новые
    * запросы, подключение плагинов, регистрация сервисов и создание или повторный запуск
    * realtime-потоков завершаются с {@link ItdStateError}. Повторные вызовы возвращают
    * тот же результат очистки.
+   *
+   * Ожидание обработчиков потока и операций плагинов ограничено `shutdownTimeout`.
    *
    * @example
    * ```ts

@@ -228,6 +228,26 @@ describe('telemetry helpers', () => {
     expect(new URL(mock.calls[0]?.url ?? '').pathname).toBe('/api/v1/x');
   });
 
+  it('dispose даёт накопителю уйти до отмены незавершённых запросов', async () => {
+    let release: (() => void) | undefined;
+    const { itd, mock } = makeClient(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(json({ ok: true }));
+        }),
+    );
+    itd.telemetry
+      .batch()
+      .interaction({ type: InteractionType.PhotoOpen, vs: 'view', postId: 'post' });
+
+    const disposing = itd.dispose();
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+    // Отмена, опередившая отправку, оборвала бы этот запрос и завалила бы dispose().
+    release?.();
+
+    await expect(disposing).resolves.toBeUndefined();
+  });
+
   it('dispose отправляет телеметрию до teardown плагинов', async () => {
     const { itd } = makeClient();
     const order: string[] = [];

@@ -480,7 +480,13 @@ export class RealtimeEngine<
     if (this.#isCurrentGeneration(generation)) this.#run(generation);
   }
 
-  /** Завершает автоматические попытки переподключения. */
+  /**
+   * Завершает автоматические попытки переподключения.
+   *
+   * Владелец узнаёт об этом так же, как при {@link disconnect}: оба пути ведут в одно
+   * состояние. `onClose` идёт до событий — обработчик `giveup` может тут же вызвать
+   * `connect()` и вернуть поток владельцу.
+   */
   #giveUp(error: unknown): void {
     this.#wanted = false;
     this.#generation += 1;
@@ -489,6 +495,8 @@ export class RealtimeEngine<
 
     this.#detachEnvironment?.();
     this.#detachEnvironment = undefined;
+
+    this.#deps.onClose?.();
 
     this.#emitEngine('error', { error, willReconnect: false });
     this.#emitEngine('giveup', undefined);

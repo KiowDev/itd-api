@@ -30,6 +30,9 @@ export const BUILT_IN_SERVICES: readonly ServiceDefinition[] = Object.freeze([
 /** Таймаут запроса по умолчанию — 30 секунд. */
 export const DEFAULT_TIMEOUT = 30_000;
 
+/** Срок ожидания чужого кода при остановке по умолчанию — 10 секунд. */
+export const DEFAULT_SHUTDOWN_TIMEOUT = 10_000;
+
 // Значение живёт в отдельном модуле, который порождается из package.json скриптом
 // scripts/sync-version.mjs: две записанные вручную версии рано или поздно разъезжаются.
 export { LIBRARY_VERSION } from './version.js';
@@ -102,6 +105,8 @@ export interface ResolvedConfig extends AuthConfig {
   autoRefresh: boolean;
   fetch: typeof fetch;
   timeout: number;
+  /** Срок ожидания чужого кода при остановке. `0` — без срока. */
+  shutdownTimeout: number;
   retry: ResolvedRetryOptions | undefined;
   rateLimit: ResolvedRateLimitOptions | undefined;
   hooks: ClientHooks;
@@ -396,6 +401,10 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
   }
 
   const timeout = requirePositive(options.timeout ?? DEFAULT_TIMEOUT, 'timeout');
+  const shutdownTimeout = requirePositive(
+    options.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT,
+    'shutdownTimeout',
+  );
 
   if (
     options.clock !== undefined &&
@@ -434,6 +443,7 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
     fetch: resolveFetch(options.fetch),
     clock: options.clock ?? systemClock,
     timeout,
+    shutdownTimeout,
     retry: resolveRetry(options.retry),
     rateLimit: resolveRateLimit(options.rateLimit),
     hooks: resolveHooks(options.hooks),
