@@ -981,6 +981,64 @@ describe('общее поведение клиента', () => {
     expect(itd.rateLimitState().map((state) => state.bucket)).toEqual(['default', 'posts.create']);
   });
 
+  it('close не сбрасывает паузу исчерпанного бакета', async () => {
+    const starts: number[] = [];
+    const begin = Date.now();
+
+    const { itd } = makeClient(
+      () => {
+        starts.push(Date.now() - begin);
+        return json(
+          { data: { posts: [], pagination: { hasMore: false } } },
+          { headers: { 'x-ratelimit-limit': '120', 'x-ratelimit-remaining': '0' } },
+        );
+      },
+      { rateLimit: { concurrency: 1 } },
+    );
+
+    await itd.posts.list();
+
+    // Лимит 120 даёт паузу в полсекунды. Закрытие клиента серверный счётчик
+    // не восстанавливает, поэтому следующий запрос обязан её досидеть.
+    await itd.close();
+    await itd.posts.list();
+
+    expect(starts).toHaveLength(2);
+    expect(starts[1] ?? 0).toBeGreaterThanOrEqual(500);
+  });
+
+  it('rateLimitBucket с опечаткой отвергается до отправки', async () => {
+    const { itd, mock } = makeClient(() => json({ data: { ok: true } }), {
+      rateLimit: { concurrency: 1 },
+    });
+
+    await expect(
+      itd.request({ method: 'POST', path: '/api/posts', rateLimitBucket: 'posts.craete' }),
+    ).rejects.toThrow(ItdConfigError);
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('rateLimitBucket проверяется и при выключенной очереди', async () => {
+    // makeClient по умолчанию идёт с rateLimit: false. Бакет там ни на что не влияет,
+    // но опечатка остаётся опечаткой и не должна зависеть от режима.
+    const { itd, mock } = makeClient(() => json({ data: { ok: true } }));
+
+    await expect(
+      itd.request({ method: 'GET', path: '/api/whatever', rateLimitBucket: 'feeed' }),
+    ).rejects.toThrow(ItdConfigError);
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('своё правило выбора бакета снимает проверку rateLimitBucket', async () => {
+    const { itd } = makeClient(() => json({ data: { ok: true } }), {
+      rateLimit: { concurrency: 1, bucket: () => undefined },
+    });
+
+    await itd.request({ method: 'GET', path: '/api/whatever', rateLimitBucket: 'proxy' });
+
+    expect(itd.rateLimitState().map((state) => state.bucket)).toEqual(['proxy']);
+  });
+
   it('не тормозит, пока лимит не исчерпан', async () => {
     const { itd, mock } = makeClient(
       () =>

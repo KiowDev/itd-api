@@ -169,6 +169,12 @@ function readIntHeader(headers: Headers | undefined, name: string): number | und
   return Number.isFinite(value) ? value : undefined;
 }
 
+/** Читает положительное целое число из заголовка. */
+function readPositiveIntHeader(headers: Headers | undefined, name: string): number | undefined {
+  const value = readIntHeader(headers, name);
+  return value !== undefined && value > 0 ? value : undefined;
+}
+
 /**
  * Читает сведения об ограничении частоты.
  *
@@ -180,7 +186,10 @@ export function readRateLimit(headers: Headers | undefined): {
   remaining: number | undefined;
 } {
   return {
-    limit: readIntHeader(headers, 'x-ratelimit-limit'),
+    // Нулевой или отрицательный размер бакета не имеет смысла и привёл бы к делению
+    // на ноль в режиме smooth. Считаем такой заголовок отсутствующим и используем
+    // табличную ёмкость бакета.
+    limit: readPositiveIntHeader(headers, 'x-ratelimit-limit'),
     remaining: readIntHeader(headers, 'x-ratelimit-remaining'),
   };
 }

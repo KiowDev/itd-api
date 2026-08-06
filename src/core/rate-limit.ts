@@ -143,7 +143,6 @@ export class RequestQueue {
       this.#cancelTimer();
       this.#cancelTimer = undefined;
     }
-    this.#nextSlot = 0;
 
     const pending = this.#waiting.splice(0, this.#waiting.length);
     for (const task of pending) task.cancel(queueStoppedError());
@@ -283,10 +282,9 @@ export class BucketQueue {
     this.#seedLimit = options.buckets ? seedLimit(bucket, options) : undefined;
     this.#gate = new RequestQueue(
       {
-        // Без раздельных бакетов уровень бакета остаётся только ради паузы и пропускной
-        // способности не режет: предел совпадает с общим, поэтому связывающим ограничением
-        // всегда оказывается общая очередь. Снимать предел вовсе нельзя — `#drain`
-        // обходит очередь рекурсией, и она должна упираться в конечную конкурентность.
+        // Без раздельных бакетов предел шлюза равен общему, поэтому пропускной способности
+        // он не режет. Снять его вовсе нельзя: `#drain` обходит очередь рекурсией и должен
+        // упираться в конечную конкурентность.
         concurrency: options.buckets
           ? (options.bucketOverrides[bucket]?.concurrency ?? options.bucketConcurrency)
           : options.concurrency,
@@ -294,6 +292,11 @@ export class BucketQueue {
       },
       clock,
     );
+  }
+
+  /** Имя счётчика. При `buckets: false` — всегда `default`, каким бы ни был запрос. */
+  get bucket(): string {
+    return this.#bucket;
   }
 
   /** Запросов бакета прошло в общую очередь и ещё не завершилось. */
@@ -328,7 +331,10 @@ export class BucketQueue {
    * @returns на сколько миллисекунд придержан бакет; `0` — темп не ограничен
    */
   observe(limit: number | undefined, remaining: number | undefined): number {
-    if (limit !== undefined) this.#limit = limit;
+    // Основной транспорт уже отбрасывает некорректный заголовок, но очередь остаётся
+    // самостоятельным внутренним примитивом: не позволяем прямому вызову записать
+    // нулевую ёмкость и получить бесконечный таймер в режиме smooth.
+    if (limit !== undefined && Number.isFinite(limit) && limit > 0) this.#limit = limit;
     if (remaining !== undefined) this.#remaining = remaining;
     if (this.#pacing === RateLimitPacing.Off || remaining === undefined) return 0;
 
@@ -387,9 +393,6 @@ export class BucketQueue {
   /**
    * Останавливает уровень бакета. Общая очередь направления гасится пулом.
    *
-   * Очередь остаётся пригодной к работе, а `#limit`, `#remaining` и оценка `#tokens`
-   * сохраняются: серверный счётчик от остановки клиента не сбрасывается, и после
-   * повторного запуска темп должен продолжиться с накопленного состояния.
    */
   stop(): void {
     this.#generation += 1;
@@ -495,8 +498,8 @@ export class RequestQueuePool {
   }
 
   /**
-   * Останавливает оба уровня всех очередей: ожидающие задачи отклоняются, отложенные
-   * паузы снимаются.
+   * Останавливает оба уровня всех очередей: ожидающие задачи отклоняются, а состояние
+   * счётчиков и отложенные паузы сохраняются до следующего запуска — путь `close()`.
    */
   stop(): void {
     for (const entry of this.#destinations.values()) {

@@ -257,7 +257,26 @@ export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOpt
 }
 
 /** Выбор бакета, заданный пользователем вместо встроенной карты. */
-type BucketResolver = ((request: RateLimitBucketContext) => string | undefined) | undefined;
+export type BucketResolver = ((request: RateLimitBucketContext) => string | undefined) | undefined;
+
+/**
+ * Сверяет имя бакета со встроенной картой.
+ *
+ * Своё правило выбора заводит собственное пространство имён, и встроенные имена в нём
+ * необязательны — тогда проверка снимается.
+ *
+ * @param option путь опции для текста ошибки
+ * @throws {ItdConfigError} если имени нет во встроенной карте
+ *
+ * @internal
+ */
+export function assertKnownBucket(name: string, option: string, bucket: BucketResolver): void {
+  if (bucket !== undefined || isKnownBucket(name)) return;
+
+  throw new ItdConfigError(
+    `${option}: бакета «${name}» нет. Известны: ${Object.keys(BUCKET_LIMITS).join(', ')}`,
+  );
+}
 
 function requireConcurrency(value: number, name: string): number {
   if (!Number.isInteger(value) || value < 1) {
@@ -297,12 +316,7 @@ function resolveBucketOverrides(
     if (!isRecord(override)) {
       throw new ItdConfigError(`rateLimit.bucketOverrides.${name} должен быть объектом`);
     }
-    if (bucket === undefined && !isKnownBucket(name)) {
-      throw new ItdConfigError(
-        `rateLimit.bucketOverrides.${name}: бакета с таким именем нет. ` +
-          `Известны: ${Object.keys(BUCKET_LIMITS).join(', ')}`,
-      );
-    }
+    assertKnownBucket(name, 'rateLimit.bucketOverrides', bucket);
     if (override.concurrency !== undefined) {
       requireConcurrency(override.concurrency, `rateLimit.bucketOverrides.${name}.concurrency`);
     }

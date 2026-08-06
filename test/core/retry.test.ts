@@ -365,7 +365,7 @@ describe('RequestQueue — частота', () => {
     expect(queue.pending).toBe(0);
   });
 
-  it('stop снимает отложенную паузу для следующих задач', async () => {
+  it('stop сохраняет отложенную паузу для следующих задач', async () => {
     const queue = new RequestQueue({
       concurrency: 1,
     });
@@ -379,8 +379,12 @@ describe('RequestQueue — частота', () => {
       return Promise.resolve('ок');
     });
 
-    await vi.advanceTimersByTimeAsync(0);
+    // Пауза отсчитывает восстановление серверного счётчика, а тот от остановки клиента
+    // не сбрасывается: забыв её, очередь выпустила бы запрос в исчерпанный лимит.
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(started).not.toHaveBeenCalled();
 
+    await vi.advanceTimersByTimeAsync(1000);
     await expect(promise).resolves.toBe('ок');
     expect(started).toHaveBeenCalledOnce();
   });
@@ -543,17 +547,22 @@ describe('RequestQueuePool', () => {
     expect(pool.for('https://once.test')).toBe(queue);
   });
 
-  it('после stop очередь снова принимает задачи', async () => {
+  it('после stop очередь снова принимает задачи, но помнит паузу', async () => {
     const pool = new RequestQueuePool(poolOptions());
     const queue = pool.for('https://itd.test', 'feed');
+    const started = vi.fn(() => Promise.resolve('вторая'));
 
     queue.pause(60_000);
     const cancelled = queue.schedule(() => Promise.resolve('первая'));
     pool.stop();
     await expect(cancelled).rejects.toThrow(ItdAbortError);
 
-    // stop снимает и отложенную паузу, поэтому следующая задача уходит сразу.
-    await expect(queue.schedule(() => Promise.resolve('вторая'))).resolves.toBe('вторая');
+    const pending = queue.schedule(started);
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(started).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(pending).resolves.toBe('вторая');
   });
 
   it('stop сохраняет остаток квоты, clear забывает', () => {
@@ -732,6 +741,14 @@ describe('BucketQueue — режимы реакции на заголовки', 
 
     await vi.advanceTimersByTimeAsync(12_000);
     expect(starts).toEqual([0, 12_000, 24_000]);
+  });
+
+  it('smooth: нулевая ёмкость не создаёт бесконечный таймер', () => {
+    const queue = pool({ pacing: RateLimitPacing.Smooth }).for('https://itd.test', 'posts.create');
+
+    // Некорректный ответ не заменяет встроенную ёмкость 5 запросов в минуту.
+    expect(queue.observe(0, 0)).toBe(12_000);
+    expect(queue.state().limit).toBeUndefined();
   });
 
   it('smooth: остаток из заголовка опускает оценку, но не поднимает', () => {

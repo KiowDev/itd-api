@@ -4,6 +4,7 @@ import {
   getRequestId,
   parseErrorBody,
   parseRetryAfter,
+  readRateLimit,
 } from '../../src/core/error-factory.js';
 import {
   ItdApiError,
@@ -276,6 +277,19 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter('скоро')).toBeUndefined();
     expect(parseRetryAfter(null)).toBeUndefined();
     expect(parseRetryAfter(undefined)).toBeUndefined();
+  });
+});
+
+describe('readRateLimit', () => {
+  it('отбрасывает нулевую и отрицательную ёмкость бакета', () => {
+    expect(
+      readRateLimit(new Headers({ 'x-ratelimit-limit': '0', 'x-ratelimit-remaining': '0' })),
+    ).toEqual({ limit: undefined, remaining: 0 });
+    expect(readRateLimit(new Headers({ 'x-ratelimit-limit': '-5' })).limit).toBeUndefined();
+  });
+
+  it('сохраняет положительную ёмкость бакета', () => {
+    expect(readRateLimit(new Headers({ 'x-ratelimit-limit': '150' })).limit).toBe(150);
   });
 });
 

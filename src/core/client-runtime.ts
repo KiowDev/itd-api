@@ -1,6 +1,11 @@
 import type { ItdClientOptions } from '../types/options.js';
 import { AuthManager } from './auth.js';
-import { BUILT_IN_SERVICES, type ResolvedConfig, resolveConfig } from './config.js';
+import {
+  assertKnownBucket,
+  BUILT_IN_SERVICES,
+  type ResolvedConfig,
+  resolveConfig,
+} from './config.js';
 import { CookieJar } from './cookies.js';
 import { ItdAbortError } from './errors.js';
 import { HttpClient } from './http.js';
@@ -170,11 +175,14 @@ export function createClientRuntime(
     remaining: number | undefined,
     request: PipelineRequest,
   ): void => {
-    const waited = queueFor(request)?.observe(limit, remaining) ?? 0;
+    const queue = queueFor(request);
+    if (!queue) return;
+
+    const waited = queue.observe(limit, remaining);
     if (waited > 0) {
       config.logger?.debug(
         `остаток лимита ${remaining} из ${limit ?? '?'}, ` +
-          `бакет ${queueKeyFor(request).bucket} ждёт ${waited} мс`,
+          `бакет ${queue.bucket} ждёт ${waited} мс`,
       );
     }
   };
@@ -257,6 +265,9 @@ export function createClientRuntime(
     try {
       if (!isDisposeCleanupRequest(request)) {
         internals.assertActive?.('выполнить новый запрос');
+      }
+      if (request.rateLimitBucket !== undefined) {
+        assertKnownBucket(request.rateLimitBucket, 'rateLimitBucket', config.rateLimit?.bucket);
       }
     } catch (error) {
       return Promise.reject(error);
