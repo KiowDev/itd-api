@@ -1,6 +1,6 @@
+import type { RateLimitPacing } from '../core/buckets.js';
 import type { ItdClock } from '../core/clock.js';
 import type { OperationId, RetrySafety } from '../core/operations.js';
-import type { RateLimitPacing } from '../core/rate-limit.js';
 import type { RuntimeMode } from '../core/runtime.js';
 import type { ServiceDefinition } from '../core/services.js';
 import type { TokenStorage } from '../core/storage.js';
@@ -80,7 +80,7 @@ export interface RetryDecisionContext {
   path: string;
 }
 
-/** Поправка к одному серверному счётчику частоты. */
+/** Поправка к одному бакету. */
 export interface RateLimitBucketOverride {
   /** Одновременных запросов внутри бакета. */
   concurrency?: number | undefined;
@@ -107,15 +107,18 @@ export interface RateLimitOptions {
   // — Раздельные счётчики ——————————————————————————————————————————————————————————————
 
   /**
-   * Отдельная очередь на каждый серверный счётчик частоты. По умолчанию `true`.
+   * Отдельная очередь на каждый бакет. По умолчанию `true`.
    *
    * `false` — одна очередь на направление: её пауза придерживает все запросы разом.
+   * В этом режиме ёмкость отдельного счётчика неизвестна, поэтому `bucketConcurrency`,
+   * `bucketOverrides` и режим `pacing: 'smooth'` не действуют, а исчерпанный остаток
+   * встречается первой ступенью `retryDelays`.
    */
   buckets?: boolean | undefined;
   /**
    * Одновременных запросов внутри одного бакета. По умолчанию равен `concurrency`.
    *
-   * Встроенное исключение — `files.upload` с пределом 1.
+   * Встроенное исключение — `files.upload` с пределом 1. При `buckets: false` не действует.
    */
   bucketConcurrency?: number | undefined;
   /**
@@ -337,7 +340,7 @@ export interface RequestOptions {
    */
   retrySafety?: RetrySafety | undefined;
   /**
-   * Имя серверного счётчика частоты, из которого списывается запрос.
+   * Имя бакета, из которого списывается запрос.
    *
    * Встроенные resources берут его из каталога операций; низкоуровневый вызов без этой
    * опции попадает в `default`.

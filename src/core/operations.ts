@@ -1,3 +1,5 @@
+import { DEFAULT_RATE_LIMIT_BUCKET, type RateLimitBucket } from './buckets.js';
+
 /** HTTP-метод встроенной операции. */
 export type OperationMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -12,52 +14,12 @@ export const RetrySafety = Object.freeze({
 } as const);
 export type RetrySafety = (typeof RetrySafety)[keyof typeof RetrySafety];
 
-/**
- * Ёмкость серверных счётчиков частоты, запросов в минуту.
- *
- * Значения действуют до первого ответа бакета; дальше ёмкость приходит
- * в `x-ratelimit-limit` и заменяет табличную. `default` — счётчик любого пути
- * без собственного правила на сервере.
- */
-export const BUCKET_LIMITS = Object.freeze({
-  'posts.stats': 180,
-  default: 150,
-  feed: 90,
-  'posts.like': 85,
-  'posts.comments': 80,
-  hashtags: 50,
-  users: 40,
-  notifications: 40,
-  'files.get': 40,
-  auth: 35,
-  'auth.refresh': 25,
-  search: 25,
-  'comments.like': 22,
-  'files.upload': 15,
-  'files.remove': 15,
-  'posts.comment': 14,
-  'hashtags.trending': 13,
-  'posts.repost': 7,
-  'users.follow': 7,
-  'verification.status': 6,
-  'posts.create': 5,
-  'users.updateMe': 3,
-  'reports.create': 3,
-  'verification.submit': 3,
-} as const satisfies Record<string, number>);
-
-/** Имя встроенного серверного счётчика частоты. */
-export type RateLimitBucket = keyof typeof BUCKET_LIMITS;
-
-/** Счётчик, из которого списывается путь без собственного правила на сервере. */
-export const DEFAULT_RATE_LIMIT_BUCKET: RateLimitBucket = 'default';
-
 /** Минимальное стабильное описание операции, доступное core и плагинам. */
 export interface OperationDefinition {
   readonly method: OperationMethod;
   readonly retrySafety: RetrySafety;
   /**
-   * Серверный счётчик частоты. Опущено — операция списывает из `default`.
+   * Бакет операции. Опущено — операция списывает из `default`.
    *
    * Счётчик определяется парой «путь + метод»: `GET /api/users/me` — 40 запросов
    * в минуту, `PUT` того же пути — 3, `DELETE` — 150.
@@ -248,7 +210,7 @@ export function operationRetrySafety(id: BuiltInOperationId): RetrySafety {
 }
 
 /**
- * Серверный счётчик частоты операции.
+ * Бакет операции.
  *
  * `raw` и `custom:*` попадают в `default`; назвать бакет явно позволяет
  * `rateLimitBucket` у запроса.

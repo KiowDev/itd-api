@@ -95,7 +95,7 @@ export function currentTransportAttempt(request: PipelineRequest): number {
   return (request as InternalPipelineRequest)[REQUEST_ATTEMPT_STATE]?.value ?? 0;
 }
 
-/** Куда встаёт запрос: направление и серверный счётчик частоты. @internal */
+/** Куда встаёт запрос: направление и бакет. @internal */
 export interface RequestQueueKey {
   /** Origin разрешённого URL. `undefined` — направление неизвестно. */
   destination: string | undefined;

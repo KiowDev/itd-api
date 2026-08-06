@@ -1,18 +1,12 @@
+import {
+  BUCKET_LIMITS,
+  DEFAULT_RATE_LIMIT_BUCKET,
+  isKnownBucket,
+  RateLimitPacing,
+} from './buckets.js';
 import { type ItdClock, systemClock } from './clock.js';
 import type { ResolvedRateLimitOptions } from './config.js';
 import { ItdAbortError } from './errors.js';
-import { BUCKET_LIMITS, DEFAULT_RATE_LIMIT_BUCKET, type RateLimitBucket } from './operations.js';
-
-/** Реакция на остаток лимита из заголовков ответа. */
-export const RateLimitPacing = Object.freeze({
-  /** Задержек нет, пока в бакете есть остаток; исчерпанный бакет ждёт `60000 / limit`. */
-  React: 'react',
-  /** Ровный темп в пределах минутного лимита: задержки с первого запроса, `429` не бывает. */
-  Smooth: 'smooth',
-  /** Остаток на темп не влияет; остаётся пауза после `429`. */
-  Off: 'off',
-} as const);
-export type RateLimitPacing = (typeof RateLimitPacing)[keyof typeof RateLimitPacing];
 
 /** Задача, ожидающая своей очереди. */
 interface QueuedTask {
@@ -209,7 +203,7 @@ const RATE_LIMIT_WINDOW = 60_000;
  */
 const UNKNOWN_CAPACITY_PAUSE = 1000;
 
-/** Снимок одного серверного счётчика частоты. */
+/** Снимок одного бакета. */
 export interface RateLimitBucketState {
   /** Origin, на котором ведётся счётчик. `undefined` — очередь без известного направления. */
   destination: string | undefined;
@@ -225,7 +219,7 @@ export interface RateLimitBucketState {
 }
 
 /**
- * Очередь одного серверного счётчика поверх общей очереди направления.
+ * Очередь одного бакета поверх общей очереди направления.
  *
  * Задача занимает слот бакета, затем общий слот направления, поэтому суммарная
  * одновременность остаётся равной `concurrency`. Пауза бакета удерживает задачу до
@@ -240,7 +234,18 @@ export class BucketQueue {
   readonly #shared: RequestQueue;
   readonly #clock: ItdClock;
   readonly #pacing: RateLimitPacing;
-  /** Лимит группы до первого ответа. */
+  /** Ровный темп. Требует раздельных бакетов: без них ёмкость счётчика неизвестна. */
+  readonly #smooth: boolean;
+  /**
+   * Пауза на исчерпанный остаток в режиме `buckets: false`; `undefined` — бакеты разделены.
+   *
+   * Одна очередь на направление принимает заголовки всех счётчиков вперемешку, поэтому
+   * `x-ratelimit-limit` принадлежит тому счётчику, который ответил последним, и ёмкость
+   * очереди из него не выводится: ответ `posts.create` с ёмкостью 5 остановил бы всё
+   * направление на двенадцать секунд. Вместо расчёта берётся первая ступень `retryDelays`.
+   */
+  readonly #flatPause: number | undefined;
+  /** Лимит бакета до первого ответа. */
   readonly #seedLimit: number | undefined;
 
   /** Последнее, что сказал сервер. Живёт и в режиме `off` — ради `rateLimitState()`. */
@@ -255,7 +260,11 @@ export class BucketQueue {
    */
   #tokens = 1;
   #tokensAt: number | undefined;
-  #stopped = false;
+  /**
+   * Номер поколения очереди. `stop()` увеличивает его, отсекая задачи, которые уже взяли
+   * слот бакета, но до общей очереди ещё не дошли.
+   */
+  #generation = 0;
 
   constructor(
     destination: string | undefined,
@@ -269,11 +278,19 @@ export class BucketQueue {
     this.#shared = shared;
     this.#clock = clock;
     this.#pacing = options.pacing;
-    this.#seedLimit = seedLimit(bucket, options);
+    this.#smooth = options.buckets && options.pacing === RateLimitPacing.Smooth;
+    this.#flatPause = options.buckets ? undefined : (options.retryDelays[0] ?? 0);
+    this.#seedLimit = options.buckets ? seedLimit(bucket, options) : undefined;
     this.#gate = new RequestQueue(
       {
-        concurrency: options.bucketOverrides[bucket]?.concurrency ?? options.bucketConcurrency,
-        onDispatch: options.pacing === RateLimitPacing.Smooth ? () => this.#spend() : undefined,
+        // Без раздельных бакетов уровень бакета остаётся только ради паузы и пропускной
+        // способности не режет: предел совпадает с общим, поэтому связывающим ограничением
+        // всегда оказывается общая очередь. Снимать предел вовсе нельзя — `#drain`
+        // обходит очередь рекурсией, и она должна упираться в конечную конкурентность.
+        concurrency: options.buckets
+          ? (options.bucketOverrides[bucket]?.concurrency ?? options.bucketConcurrency)
+          : options.concurrency,
+        onDispatch: this.#smooth ? () => this.#spend() : undefined,
       },
       clock,
     );
@@ -291,11 +308,13 @@ export class BucketQueue {
 
   /** Ставит запрос в очередь: сначала слот бакета, затем общий слот направления. */
   schedule<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const generation = this.#generation;
+
     return this.#gate.schedule(() => {
       // Между уровнями запрос успевает побыть нигде: слот бакета уже взят, а в общую
       // очередь он попадёт следующей микрозадачей. Остановка, пришедшая в этот момент,
       // не нашла бы его ни в одном из двух списков ожидания.
-      if (this.#stopped) return Promise.reject(queueStoppedError());
+      if (generation !== this.#generation) return Promise.reject(queueStoppedError());
       return this.#shared.schedule(task, signal);
     }, signal);
   }
@@ -313,20 +332,29 @@ export class BucketQueue {
     if (remaining !== undefined) this.#remaining = remaining;
     if (this.#pacing === RateLimitPacing.Off || remaining === undefined) return 0;
 
+    if (this.#flatPause !== undefined) {
+      if (remaining > 0) return 0;
+      this.#gate.pause(this.#flatPause);
+      return this.#flatPause;
+    }
+
     const capacity = this.#capacity();
 
-    if (this.#pacing === RateLimitPacing.Smooth) {
+    if (this.#smooth) {
       if (capacity === undefined) return 0;
       this.#refill(capacity);
-      // Оценка идёт только вниз: большое `remaining` в начале окна не значит, что столько
-      // же можно потратить прямо сейчас.
+      // Заголовок только опускает оценку: большое `remaining` в начале окна не значит,
+      // что столько же можно потратить прямо сейчас. Вверх её двигает лишь `#refill`,
+      // по мере того как сервер действительно возвращает квоту.
       if (remaining < this.#tokens) this.#tokens = remaining;
       return this.#armPause(capacity);
     }
 
     if (remaining > 0) return 0;
 
-    // Время восстановления одной единицы квоты при линейном возврате.
+    // Нижняя оценка ожидания: столько нужно серверу, чтобы вернуть одну единицу квоты,
+    // если он возвращает её линейно. Граница окна из ответа не выводится, поэтому ждать
+    // может потребоваться дольше — оставшийся путь доделает лестница `retryDelays`.
     const wait =
       capacity === undefined
         ? UNKNOWN_CAPACITY_PAUSE
@@ -337,7 +365,7 @@ export class BucketQueue {
 
   /** Придерживает бакет на названное время — путь ответа `429`. Оценка остатка обнуляется. */
   pause(ms: number): void {
-    if (this.#pacing === RateLimitPacing.Smooth) {
+    if (this.#smooth) {
       this.#tokens = 0;
       this.#tokensAt = this.#clock.now();
     }
@@ -359,10 +387,12 @@ export class BucketQueue {
   /**
    * Останавливает уровень бакета. Общая очередь направления гасится пулом.
    *
-   * Очередь после этого одноразовая: пул её выбрасывает и на следующий запрос заводит новую.
+   * Очередь остаётся пригодной к работе, а `#limit`, `#remaining` и оценка `#tokens`
+   * сохраняются: серверный счётчик от остановки клиента не сбрасывается, и после
+   * повторного запуска темп должен продолжиться с накопленного состояния.
    */
   stop(): void {
-    this.#stopped = true;
+    this.#generation += 1;
     this.#gate.stop();
   }
 
@@ -405,9 +435,7 @@ export class BucketQueue {
 function seedLimit(bucket: string, options: ResolvedRateLimitOptions): number | undefined {
   const override = options.bucketOverrides[bucket]?.limit;
   if (override !== undefined) return override;
-  return Object.hasOwn(BUCKET_LIMITS, bucket)
-    ? BUCKET_LIMITS[bucket as RateLimitBucket]
-    : undefined;
+  return isKnownBucket(bucket) ? BUCKET_LIMITS[bucket] : undefined;
 }
 
 /** Общая очередь направления и надстроенные над ней очереди его бакетов. */
@@ -466,12 +494,20 @@ export class RequestQueuePool {
     return states;
   }
 
-  /** Останавливает оба уровня всех очередей и очищает карту. */
+  /**
+   * Останавливает оба уровня всех очередей: ожидающие задачи отклоняются, отложенные
+   * паузы снимаются.
+   */
   stop(): void {
     for (const entry of this.#destinations.values()) {
       for (const queue of entry.buckets.values()) queue.stop();
       entry.shared.stop();
     }
+  }
+
+  /** Останавливает очереди и забывает всё, что известно о счётчиках, — путь `dispose()`. */
+  clear(): void {
+    this.stop();
     this.#destinations.clear();
   }
 }

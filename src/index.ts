@@ -57,6 +57,12 @@ export {
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
 export { type AuthEvents, type AuthIdentity, TURNSTILE_SITE_KEY } from './core/auth.js';
+export {
+  BUCKET_LIMITS,
+  DEFAULT_RATE_LIMIT_BUCKET,
+  type RateLimitBucket,
+  RateLimitPacing,
+} from './core/buckets.js';
 export { type ItdClock, systemClock } from './core/clock.js';
 export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';
@@ -129,10 +135,8 @@ export {
   scopedTokenStorage,
 } from './core/multi-storage.js';
 export {
-  BUCKET_LIMITS,
   type BuiltInOperationId,
   type CustomOperationId,
-  DEFAULT_RATE_LIMIT_BUCKET,
   isBuiltInOperationId,
   OPERATIONS,
   type OperationDefinition,
@@ -141,7 +145,6 @@ export {
   operationBucket,
   operationMethod,
   operationRetrySafety,
-  type RateLimitBucket,
   RetrySafety,
 } from './core/operations.js';
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
@@ -159,7 +162,7 @@ export type {
   PluginApi,
   PluginTeardown,
 } from './core/plugins/contracts.js';
-export { type RateLimitBucketState, RateLimitPacing } from './core/rate-limit.js';
+export type { RateLimitBucketState } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export type { ServiceDefinition } from './core/services.js';

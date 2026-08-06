@@ -7,10 +7,9 @@ import type {
   RateLimitBucketOverride,
   RetryOptions,
 } from '../types/options.js';
+import { BUCKET_LIMITS, isKnownBucket, RateLimitPacing } from './buckets.js';
 import { type ItdClock, systemClock } from './clock.js';
 import { ItdConfigError } from './errors.js';
-import { BUCKET_LIMITS } from './operations.js';
-import { RateLimitPacing } from './rate-limit.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
 import type { ServiceDefinition } from './services.js';
 import { MemoryTokenStorage, type TokenStorage } from './storage.js';
@@ -298,7 +297,7 @@ function resolveBucketOverrides(
     if (!isRecord(override)) {
       throw new ItdConfigError(`rateLimit.bucketOverrides.${name} должен быть объектом`);
     }
-    if (bucket === undefined && !(name in BUCKET_LIMITS)) {
+    if (bucket === undefined && !isKnownBucket(name)) {
       throw new ItdConfigError(
         `rateLimit.bucketOverrides.${name}: бакета с таким именем нет. ` +
           `Известны: ${Object.keys(BUCKET_LIMITS).join(', ')}`,

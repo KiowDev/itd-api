@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { BUCKET_LIMITS } from '../../src/core/buckets.js';
 import {
-  BUCKET_LIMITS,
   isBuiltInOperationId,
   OPERATIONS,
   operationBucket,

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RateLimitPacing } from '../../src/core/buckets.js';
 import { type ResolvedRateLimitOptions, resolveConfig } from '../../src/core/config.js';
 import { createApiError } from '../../src/core/error-factory.js';
 import {
@@ -8,12 +9,7 @@ import {
   ItdTimeoutError,
 } from '../../src/core/errors.js';
 import { RetrySafety } from '../../src/core/operations.js';
-import {
-  type BucketQueue,
-  RateLimitPacing,
-  RequestQueue,
-  RequestQueuePool,
-} from '../../src/core/rate-limit.js';
+import { type BucketQueue, RequestQueue, RequestQueuePool } from '../../src/core/rate-limit.js';
 import { createRetryScheduler, type RetryPolicy } from '../../src/core/retry.js';
 
 /** Настройки повторов по умолчанию. */
@@ -401,6 +397,16 @@ describe('RequestQueuePool', () => {
     return { ...rateLimit, concurrency: 1, ...overrides };
   }
 
+  /**
+   * Занимает слот навсегда, чтобы следующие задачи действительно ждали очереди.
+   *
+   * Отклонение при остановке пула гасится здесь: заглушка никому не возвращается,
+   * а необработанное отклонение испортило бы весь прогон.
+   */
+  function occupy(queue: BucketQueue): void {
+    queue.schedule(() => new Promise<void>(() => {})).catch(() => {});
+  }
+
   it('держит по очереди на каждую пару «направление — бакет»', () => {
     const pool = new RequestQueuePool(poolOptions());
 
@@ -417,6 +423,62 @@ describe('RequestQueuePool', () => {
     const pool = new RequestQueuePool(poolOptions({ buckets: false }));
 
     expect(pool.for('https://itd.test', 'feed')).toBe(pool.for('https://itd.test', 'posts.create'));
+  });
+
+  it('при buckets: false исчерпание встречается первой ступенью retryDelays', () => {
+    const pool = new RequestQueuePool(
+      poolOptions({ buckets: false, retryDelays: [300, 5000] }),
+    ).for('https://itd.test', 'posts.create');
+
+    // Ёмкость 5 принадлежит одному счётчику из многих: рассчитанная по ней пауза
+    // в двенадцать секунд остановила бы и ленту, и всё остальное направление.
+    expect(pool.observe(5, 0)).toBe(300);
+    expect(pool.observe(150, 0)).toBe(300);
+    expect(pool.observe(5, 3)).toBe(0);
+  });
+
+  it('при buckets: false bucketConcurrency не режет пропускную способность', async () => {
+    const pool = new RequestQueuePool(
+      poolOptions({ buckets: false, concurrency: 4, bucketConcurrency: 1 }),
+    );
+    let running = 0;
+    let peak = 0;
+
+    const task = () =>
+      new Promise<void>((resolve) => {
+        running += 1;
+        peak = Math.max(peak, running);
+        setTimeout(() => {
+          running -= 1;
+          resolve();
+        }, 10);
+      });
+
+    const all = Promise.all(
+      ['feed', 'users', 'search', 'hashtags'].map((bucket) =>
+        pool.for('https://itd.test', bucket).schedule(task),
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    await all;
+
+    expect(peak).toBe(4);
+  });
+
+  it('при buckets: false выдерживает большую очередь, накопленную под паузой', async () => {
+    const pool = new RequestQueuePool(poolOptions({ buckets: false, concurrency: 6 }));
+    const queue = pool.for('https://itd.test', 'feed');
+
+    // Очередь обходится рекурсией и останавливается, упершись в конкурентность. Снятый
+    // предел уровня бакета — а он выглядит безобидно, раз ограничивает всё равно общая
+    // очередь, — делает глубину рекурсии равной длине очереди и роняет слив по стеку.
+    queue.pause(1000);
+    const all = Promise.all(
+      Array.from({ length: 20_000 }, () => queue.schedule(() => Promise.resolve(1))),
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(await all).toHaveLength(20_000);
   });
 
   it('не выпускает больше общей конкурентности, сколько бы бакетов ни было', async () => {
@@ -467,36 +529,72 @@ describe('RequestQueuePool', () => {
     expect(started).toEqual(['feed', 'posts.create']);
   });
 
-  it('stop не оставляет за собой очереди разовых направений', async () => {
+  it('stop гасит задачи направления, но саму очередь сохраняет', async () => {
     const pool = new RequestQueuePool(poolOptions());
     const queue = pool.for('https://once.test');
     // Единственный слот занят, поэтому следующая задача действительно ждёт очереди.
-    void queue.schedule(() => new Promise<void>(() => {}));
+    occupy(queue);
+    await vi.advanceTimersByTimeAsync(0);
     const pending = queue.schedule(() => Promise.resolve('ок'));
 
     pool.stop();
 
     await expect(pending).rejects.toThrow(ItdAbortError);
-    expect(pool.for('https://once.test')).not.toBe(queue);
+    expect(pool.for('https://once.test')).toBe(queue);
+  });
+
+  it('после stop очередь снова принимает задачи', async () => {
+    const pool = new RequestQueuePool(poolOptions());
+    const queue = pool.for('https://itd.test', 'feed');
+
+    queue.pause(60_000);
+    const cancelled = queue.schedule(() => Promise.resolve('первая'));
+    pool.stop();
+    await expect(cancelled).rejects.toThrow(ItdAbortError);
+
+    // stop снимает и отложенную паузу, поэтому следующая задача уходит сразу.
+    await expect(queue.schedule(() => Promise.resolve('вторая'))).resolves.toBe('вторая');
+  });
+
+  it('stop сохраняет остаток квоты, clear забывает', () => {
+    const pool = new RequestQueuePool(poolOptions());
+    pool.for('https://itd.test', 'feed').observe(90, 88);
+
+    pool.stop();
+    expect(pool.states()).toEqual([expect.objectContaining({ limit: 90, remaining: 88 })]);
+
+    pool.clear();
+    expect(pool.states()).toEqual([]);
+    expect(pool.for('https://itd.test', 'feed').state().remaining).toBeUndefined();
   });
 
   it('stop отклоняет задачи, ждущие любого из двух уровней', async () => {
     const pool = new RequestQueuePool(poolOptions());
-    // Общий слот один: первая задача занимает его, вторая ждёт общего уровня,
-    // третья — уровня своего бакета, придержанного паузой.
-    void pool.for('https://itd.test', 'feed').schedule(() => new Promise<void>(() => {}));
-    const waitingShared = pool
-      .for('https://itd.test', 'users')
-      .schedule(() => Promise.resolve('общий'));
-    pool.for('https://itd.test', 'search').pause(60_000);
-    const waitingBucket = pool
-      .for('https://itd.test', 'search')
-      .schedule(() => Promise.resolve('бакет'));
+    const started: string[] = [];
+
+    // Общий слот один, и первая задача его занимает. Микрозадача здесь обязательна:
+    // слот бакета берётся сразу, а до общей очереди задача доходит только следующим
+    // тиком — без ожидания обе задачи ниже отсекались бы на уровне бакета, и общий
+    // уровень остался бы непроверенным.
+    occupy(pool.for('https://itd.test', 'feed'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const shared = pool.for('https://itd.test', 'users');
+    const waitingShared = shared.schedule(() => Promise.resolve(started.push('общий')));
+    await vi.advanceTimersByTimeAsync(0);
+    // Слот бакета взят, задача стоит в общей очереди и ещё не начиналась.
+    expect([shared.active, shared.pending, started]).toEqual([1, 0, []]);
+
+    const bucket = pool.for('https://itd.test', 'search');
+    bucket.pause(60_000);
+    const waitingBucket = bucket.schedule(() => Promise.resolve(started.push('бакет')));
+    expect([bucket.active, bucket.pending]).toEqual([0, 1]);
 
     pool.stop();
 
     await expect(waitingShared).rejects.toThrow(ItdAbortError);
     await expect(waitingBucket).rejects.toThrow(ItdAbortError);
+    expect(started).toEqual([]);
   });
 
   it('отмена по signal снимает задачу с любого из двух уровней', async () => {
@@ -505,7 +603,8 @@ describe('RequestQueuePool', () => {
     const sharedLevel = new AbortController();
     const started = vi.fn(() => Promise.resolve());
 
-    void pool.for('https://itd.test', 'feed').schedule(() => new Promise<void>(() => {}));
+    occupy(pool.for('https://itd.test', 'feed'));
+    await vi.advanceTimersByTimeAsync(0);
     const onShared = pool.for('https://itd.test', 'users').schedule(started, sharedLevel.signal);
 
     const search = pool.for('https://itd.test', 'search');

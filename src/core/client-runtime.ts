@@ -72,9 +72,14 @@ export interface ClientRuntime {
   /** Фактический порядок стадий; используется contract-тестом и диагностикой. */
   readonly stageOrder: readonly ClientRuntimeStage[];
   platformHeaders(url: string): Promise<Headers>;
-  /** Снимок известных серверных счётчиков частоты. Пустой, когда очередь отключена. */
+  /** Снимок известных бакетов. Пустой, когда очередь отключена. */
   rateLimitState(): RateLimitBucketState[];
-  /** Временно останавливает только принадлежащие runtime очереди. */
+  /**
+   * Временно останавливает только принадлежащие runtime очереди.
+   *
+   * Накопленный остаток квоты сохраняется: клиент после `close()` может работать дальше,
+   * а серверные счётчики от закрытия клиента не сбрасываются.
+   */
   close(): void;
   /** Отменяет начатые запросы, снимает auth listeners и освобождает плагины. */
   dispose(): Promise<void>;
@@ -130,7 +135,7 @@ export function createClientRuntime(
   let transport!: Transport;
 
   /**
-   * Серверный счётчик частоты, из которого спишется запрос.
+   * Бакет, из которого спишется запрос.
    *
    * Источники по убыванию приоритета: `rateLimitBucket` запроса, правило `rateLimit.bucket`,
    * каталог операций.
@@ -286,6 +291,9 @@ export function createClientRuntime(
     dispose: async () => {
       // Порядок: после отправки телеметрии в #close() фасада и до ожидания плагинов.
       lifetime.abort(new ItdAbortError('Клиент освобождён через dispose(), запрос отменён'));
+      // В отличие от close(), это освобождение терминальное: состояние счётчиков больше
+      // никому не пригодится, и держать карту очередей незачем.
+      if (ownsQueues) queues?.clear();
       auth.dispose();
       await plugins.dispose();
     },

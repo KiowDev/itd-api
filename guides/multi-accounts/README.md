@@ -87,7 +87,7 @@ const accounts = new ItdAccounts({
 const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 ```
 
-Подробнее о группах и лимитах — в [справочнике](/reference/rate-limits).
+Подробнее о лимитах — в [справочнике](/reference/rate-limits).
 
 ## Собственное хранилище
 

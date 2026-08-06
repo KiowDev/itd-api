@@ -946,6 +946,30 @@ describe('общее поведение клиента', () => {
     ]);
   });
 
+  it('close сохраняет остаток квоты, dispose очищает', async () => {
+    const { itd } = makeClient(
+      () =>
+        json(
+          { data: { posts: [], pagination: { hasMore: false } } },
+          { headers: { 'x-ratelimit-limit': '90', 'x-ratelimit-remaining': '87' } },
+        ),
+      { rateLimit: { concurrency: 1 } },
+    );
+
+    await itd.posts.list();
+
+    // Серверный счётчик от закрытия клиента не сбрасывается: продолжив работу, клиент
+    // не должен считать бакет нетронутым.
+    await itd.close();
+    expect(itd.rateLimitState()).toEqual([
+      expect.objectContaining({ bucket: 'feed', limit: 90, remaining: 87 }),
+    ]);
+    await itd.posts.list();
+
+    await itd.dispose();
+    expect(itd.rateLimitState()).toEqual([]);
+  });
+
   it('rateLimitBucket уводит низкоуровневый запрос из умолчания', async () => {
     const { itd } = makeClient(() => json({ data: { ok: true } }), {
       rateLimit: { concurrency: 1 },

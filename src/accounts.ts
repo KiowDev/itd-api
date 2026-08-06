@@ -561,7 +561,7 @@ export class ItdAccounts {
       ...clients.map((client) => client.dispose()),
       ...controls.map((control) => control.drain()),
       ...accountRemovals,
-      Promise.resolve().then(() => this.#queues?.stop()),
+      Promise.resolve().then(() => this.#queues?.clear()),
     ]);
     this.#plugins.splice(0);
     this.#removingPlugins.clear();
