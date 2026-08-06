@@ -225,7 +225,7 @@ export interface RetryMiddlewareDeps {
   /**
    * Придерживает очередь запроса на паузу `429`. `undefined`, если очереди нет.
    *
-   * Тормозится очередь того хоста, который ответил отказом: лимит у каждого свой.
+   * Тормозится очередь того счётчика, который ответил отказом.
    */
   pauseQueue: ((ms: number, request: PipelineRequest) => void) | undefined;
   hooks: ClientHooks;
@@ -299,7 +299,16 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
         if (rateLimited) rateLimitAttempt += 1;
         else retryAttempt += 1;
 
-        const delay = nextDelay(error, retryAttempt, rateLimitAttempt, request, policy, backoff);
+        // Дальше идёт именно `trackedRequest`, а не исходный объект: он несёт запомненный
+        // ключ очереди, и пауза попадает в тот же бакет, из которого запрос уходил.
+        const delay = nextDelay(
+          error,
+          retryAttempt,
+          rateLimitAttempt,
+          trackedRequest,
+          policy,
+          backoff,
+        );
         if (delay === undefined) throw error;
 
         await dispatchRequestHook(deps.hooks, 'onRetry', {

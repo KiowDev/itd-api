@@ -12,10 +12,57 @@ export const RetrySafety = Object.freeze({
 } as const);
 export type RetrySafety = (typeof RetrySafety)[keyof typeof RetrySafety];
 
+/**
+ * Ёмкость серверных счётчиков частоты, запросов в минуту.
+ *
+ * Значения действуют до первого ответа бакета; дальше ёмкость приходит
+ * в `x-ratelimit-limit` и заменяет табличную. `default` — счётчик любого пути
+ * без собственного правила на сервере.
+ */
+export const BUCKET_LIMITS = Object.freeze({
+  'posts.stats': 180,
+  default: 150,
+  feed: 90,
+  'posts.like': 85,
+  'posts.comments': 80,
+  hashtags: 50,
+  users: 40,
+  notifications: 40,
+  'files.get': 40,
+  auth: 35,
+  'auth.refresh': 25,
+  search: 25,
+  'comments.like': 22,
+  'files.upload': 15,
+  'files.remove': 15,
+  'posts.comment': 14,
+  'hashtags.trending': 13,
+  'posts.repost': 7,
+  'users.follow': 7,
+  'verification.status': 6,
+  'posts.create': 5,
+  'users.updateMe': 3,
+  'reports.create': 3,
+  'verification.submit': 3,
+} as const satisfies Record<string, number>);
+
+/** Имя встроенного серверного счётчика частоты. */
+export type RateLimitBucket = keyof typeof BUCKET_LIMITS;
+
+/** Счётчик, из которого списывается путь без собственного правила на сервере. */
+export const DEFAULT_RATE_LIMIT_BUCKET: RateLimitBucket = 'default';
+
 /** Минимальное стабильное описание операции, доступное core и плагинам. */
 export interface OperationDefinition {
   readonly method: OperationMethod;
   readonly retrySafety: RetrySafety;
+  /**
+   * Серверный счётчик частоты. Опущено — операция списывает из `default`.
+   *
+   * Счётчик определяется парой «путь + метод»: `GET /api/users/me` — 40 запросов
+   * в минуту, `PUT` того же пути — 3, `DELETE` — 150.
+   */
+  readonly bucket?: RateLimitBucket;
 }
 
 function freezeOperations<const T extends Record<string, OperationDefinition>>(
@@ -33,90 +80,117 @@ function freezeOperations<const T extends Record<string, OperationDefinition>>(
  */
 export const OPERATIONS = freezeOperations({
   'auth.check': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'auth.signUp': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.signIn': { method: 'POST', retrySafety: RetrySafety.Safe },
-  'auth.verifyOtp': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.resendOtp': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.refresh': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.logout': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.forgotPassword': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.resetPassword': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.changePassword': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'auth.sessions': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'auth.revokeSession': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
-  'auth.revokeOtherSessions': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
+  'auth.signUp': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.signIn': { method: 'POST', retrySafety: RetrySafety.Safe, bucket: 'auth' },
+  'auth.verifyOtp': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.resendOtp': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.refresh': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth.refresh' },
+  'auth.logout': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.forgotPassword': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.resetPassword': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.changePassword': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.sessions': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'auth' },
+  'auth.revokeSession': { method: 'DELETE', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.revokeOtherSessions': {
+    method: 'DELETE',
+    retrySafety: RetrySafety.Unsafe,
+    bucket: 'auth',
+  },
 
-  'users.me': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'users.updateMe': { method: 'PUT', retrySafety: RetrySafety.Idempotent },
+  'users.me': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
+  'users.updateMe': {
+    method: 'PUT',
+    retrySafety: RetrySafety.Idempotent,
+    bucket: 'users.updateMe',
+  },
   'users.deactivate': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
   'users.restore': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'users.createProfile': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'users.get': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'users.checkUsername': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'users.search': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'users.whoToFollow': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'users.topClans': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'users.follow': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'users.unfollow': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
-  'users.followers': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'users.following': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'users.get': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
+  'users.checkUsername': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
+  'users.search': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
+  'users.whoToFollow': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
+  'users.topClans': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
+  'users.follow': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'users.follow' },
+  'users.unfollow': { method: 'DELETE', retrySafety: RetrySafety.Unsafe, bucket: 'users.follow' },
+  'users.followers': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
+  'users.following': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
   'users.followStatus': { method: 'POST', retrySafety: RetrySafety.Safe },
   'users.block': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'users.unblock': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
-  'users.blocked': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'users.getPrivacy': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'users.blocked': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
+  'users.getPrivacy': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
   'users.updatePrivacy': { method: 'PUT', retrySafety: RetrySafety.Idempotent },
-  'users.pins': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'users.pins': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
   'users.setPin': { method: 'PUT', retrySafety: RetrySafety.Idempotent },
   'users.removePin': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
 
-  'posts.list': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'posts.create': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'posts.list': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'feed' },
+  'posts.create': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'posts.create' },
   'posts.get': { method: 'GET', retrySafety: RetrySafety.Safe },
   'posts.update': { method: 'PUT', retrySafety: RetrySafety.Idempotent },
   'posts.remove': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
   'posts.restore': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'posts.like': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'posts.unlike': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
-  'posts.repost': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'posts.unrepost': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
+  'posts.like': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'posts.like' },
+  'posts.unlike': { method: 'DELETE', retrySafety: RetrySafety.Unsafe, bucket: 'posts.like' },
+  'posts.repost': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'posts.repost' },
+  'posts.unrepost': { method: 'DELETE', retrySafety: RetrySafety.Unsafe, bucket: 'posts.repost' },
   'posts.pin': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'posts.unpin': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
   'posts.vote': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'posts.stats': { method: 'POST', retrySafety: RetrySafety.Safe },
+  'posts.stats': { method: 'POST', retrySafety: RetrySafety.Safe, bucket: 'posts.stats' },
   'posts.byUser': { method: 'GET', retrySafety: RetrySafety.Safe },
   'posts.likedByUser': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'posts.comments': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'posts.comment': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'posts.comments': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'posts.comments' },
+  'posts.comment': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'posts.comment' },
 
   'comments.replies': { method: 'GET', retrySafety: RetrySafety.Safe },
   'comments.reply': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'comments.update': { method: 'PATCH', retrySafety: RetrySafety.Idempotent },
   'comments.remove': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
   'comments.restore': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'comments.like': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'comments.unlike': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
+  'comments.like': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'comments.like' },
+  'comments.unlike': {
+    method: 'DELETE',
+    retrySafety: RetrySafety.Unsafe,
+    bucket: 'comments.like',
+  },
 
-  'files.upload': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-  'files.get': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'files.remove': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
+  'files.upload': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'files.upload' },
+  'files.get': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'files.get' },
+  'files.remove': { method: 'DELETE', retrySafety: RetrySafety.Unsafe, bucket: 'files.remove' },
 
-  'notifications.list': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'notifications.count': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'notifications.list': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'notifications' },
+  'notifications.count': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'notifications' },
   'notifications.markRead': { method: 'POST', retrySafety: RetrySafety.Idempotent },
   'notifications.markReadBatch': { method: 'POST', retrySafety: RetrySafety.Idempotent },
   'notifications.markAllRead': { method: 'POST', retrySafety: RetrySafety.Idempotent },
-  'notifications.getSettings': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'notifications.getSettings': {
+    method: 'GET',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'notifications',
+  },
   'notifications.updateSettings': { method: 'PUT', retrySafety: RetrySafety.Idempotent },
 
-  'realtime.poll.updates': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'realtime.poll.unread': { method: 'GET', retrySafety: RetrySafety.Safe },
+  // Опрос уведомлений идёт по тем же двум маршрутам, что notifications.list и .count,
+  // и делит с ними один серверный счётчик: при интервале 2 секунды фоновый поток
+  // съедает три четверти бакета.
+  'realtime.poll.updates': {
+    method: 'GET',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'notifications',
+  },
+  'realtime.poll.unread': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'notifications' },
 
-  'hashtags.search': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'hashtags.trending': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'hashtags.posts': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'search.all': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'reports.create': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'hashtags.search': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'hashtags' },
+  'hashtags.trending': {
+    method: 'GET',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'hashtags.trending',
+  },
+  'hashtags.posts': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'hashtags' },
+  'search.all': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'search' },
+  'reports.create': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'reports.create' },
 
   'subscription.status': { method: 'GET', retrySafety: RetrySafety.Safe },
   'subscription.pay': { method: 'POST', retrySafety: RetrySafety.Unsafe },
@@ -126,8 +200,16 @@ export const OPERATIONS = freezeOperations({
   'subscription.setDefaultMethod': { method: 'POST', retrySafety: RetrySafety.Idempotent },
   'subscription.removeMethod': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
 
-  'verification.status': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'verification.submit': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'verification.status': {
+    method: 'GET',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'verification.status',
+  },
+  'verification.submit': {
+    method: 'POST',
+    retrySafety: RetrySafety.Unsafe,
+    bucket: 'verification.submit',
+  },
 
   'platform.version': { method: 'GET', retrySafety: RetrySafety.Safe },
   'platform.changelog': { method: 'GET', retrySafety: RetrySafety.Safe },
@@ -163,4 +245,17 @@ export function operationMethod(id: BuiltInOperationId): OperationMethod {
 /** Политика автоматического повтора встроенной операции. */
 export function operationRetrySafety(id: BuiltInOperationId): RetrySafety {
   return OPERATIONS[id].retrySafety;
+}
+
+/**
+ * Серверный счётчик частоты операции.
+ *
+ * `raw` и `custom:*` попадают в `default`; назвать бакет явно позволяет
+ * `rateLimitBucket` у запроса.
+ */
+export function operationBucket(id: OperationId): RateLimitBucket {
+  if (!isBuiltInOperationId(id)) return DEFAULT_RATE_LIMIT_BUCKET;
+  // Литеральный тип каталога не сохраняет необязательное поле у операций без бакета.
+  const definition: OperationDefinition = OPERATIONS[id];
+  return definition.bucket ?? DEFAULT_RATE_LIMIT_BUCKET;
 }

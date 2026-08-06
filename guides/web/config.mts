@@ -82,6 +82,7 @@ const referenceSidebar = [
       { text: 'Билдеры', link: '/reference/builders' },
       { text: 'Пагинация', link: '/reference/pagination' },
       { text: 'Request pipeline', link: '/reference/request-pipeline' },
+      { text: 'Ограничения частоты', link: '/reference/rate-limits' },
       { text: 'Сессии и хранилища', link: '/reference/storage' },
       { text: 'Матрица endpoint', link: '/reference/endpoints' },
     ],

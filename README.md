@@ -138,7 +138,7 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 | CORS основного API | браузерному приложению нужен собственный серверный proxy; [подробнее](https://kiowdev.github.io/itd-api/integrations/#браузер-и-cors) |
 | Подписчики, подписки и блокировки | сервер возвращает только первые 20 записей; [подробнее](https://kiowdev.github.io/itd-api/reference/users) |
 | Посты пользователя | `posts.byUser()` возвращает стену, включая чужие публикации на ней; [подробнее](https://kiowdev.github.io/itd-api/reference/posts) |
-| Rate limiting | лимиты различаются по endpoint, а сервер не сообщает время сброса окна; [настройка очереди](https://kiowdev.github.io/itd-api/configuration/#очередь-и-rate-limiting) |
+| Rate limiting | у каждой группы маршрутов свой лимит запросов в минуту, считается по IP; библиотека держит очередь на каждую группу; [таблица групп](https://kiowdev.github.io/itd-api/reference/rate-limits) |
 
 Матрица известных маршрутов, wire-контрактов и статуса поддержки находится в
 [справочнике endpoint](https://kiowdev.github.io/itd-api/reference/endpoints).

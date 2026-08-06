@@ -872,27 +872,89 @@ describe('общее поведение клиента', () => {
     expect(error).toMatchObject({ status: 429, rateLimit: 5, rateLimitRemaining: 0 });
   });
 
-  it('тормозит очередь, не дожидаясь отказа сервера', async () => {
+  it('тормозит бакет, не дожидаясь отказа сервера', async () => {
     const starts: number[] = [];
     const begin = Date.now();
 
-    // Первый ответ сообщает, что лимит исчерпан, — очередь обязана притормозить.
+    // Первый ответ сообщает, что лимит исчерпан, — бакет обязан притормозить ровно на то
+    // время, за которое сервер вернёт одну единицу квоты: 60000 / limit.
     const { itd } = makeClient(
       () => {
         starts.push(Date.now() - begin);
         return json(
           { data: { posts: [], pagination: { hasMore: false } } },
-          { headers: { 'x-ratelimit-limit': '5', 'x-ratelimit-remaining': '0' } },
+          { headers: { 'x-ratelimit-limit': '600', 'x-ratelimit-remaining': '0' } },
         );
       },
-      { rateLimit: { concurrency: 1, retryDelays: [300] } },
+      { rateLimit: { concurrency: 1 } },
     );
 
     await itd.posts.list();
     await itd.posts.list();
 
     expect(starts).toHaveLength(2);
-    expect(starts[1] ?? 0).toBeGreaterThanOrEqual(250);
+    expect(starts[1] ?? 0).toBeGreaterThanOrEqual(100);
+  });
+
+  it('исчерпание одного бакета не задерживает другой', async () => {
+    const starts: string[] = [];
+
+    const { itd } = makeClient(
+      (request) => {
+        starts.push(request.url);
+        return request.url.includes('/api/posts?') || request.url.endsWith('/api/posts')
+          ? json(
+              { data: { posts: [], pagination: { hasMore: false } } },
+              // Лимит 6 даёт паузу в десять секунд: если бы она была общей, второй
+              // запрос не успел бы уйти за отведённое тесту время.
+              { headers: { 'x-ratelimit-limit': '6', 'x-ratelimit-remaining': '0' } },
+            )
+          : json({ data: { version: '1.0.0' } });
+      },
+      { rateLimit: { concurrency: 1 } },
+    );
+
+    await itd.posts.list();
+    await itd.platform.version();
+
+    expect(starts).toHaveLength(2);
+  });
+
+  it('показывает остаток по каждому счётчику отдельно', async () => {
+    const { itd } = makeClient(
+      (request) =>
+        request.url.includes('/api/platform/version')
+          ? json(
+              { data: { version: '1.0.0' } },
+              { headers: { 'x-ratelimit-limit': '150', 'x-ratelimit-remaining': '149' } },
+            )
+          : json(
+              { data: { posts: [], pagination: { hasMore: false } } },
+              { headers: { 'x-ratelimit-limit': '90', 'x-ratelimit-remaining': '87' } },
+            ),
+      { rateLimit: { concurrency: 1 } },
+    );
+
+    expect(itd.rateLimitState()).toEqual([]);
+
+    await itd.posts.list();
+    await itd.platform.version();
+
+    expect(itd.rateLimitState()).toEqual([
+      expect.objectContaining({ bucket: 'feed', limit: 90, remaining: 87 }),
+      expect.objectContaining({ bucket: 'default', limit: 150, remaining: 149 }),
+    ]);
+  });
+
+  it('rateLimitBucket уводит низкоуровневый запрос из умолчания', async () => {
+    const { itd } = makeClient(() => json({ data: { ok: true } }), {
+      rateLimit: { concurrency: 1 },
+    });
+
+    await itd.request({ method: 'GET', path: '/api/whatever' });
+    await itd.request({ method: 'POST', path: '/api/posts', rateLimitBucket: 'posts.create' });
+
+    expect(itd.rateLimitState().map((state) => state.bucket)).toEqual(['default', 'posts.create']);
   });
 
   it('не тормозит, пока лимит не исчерпан', async () => {

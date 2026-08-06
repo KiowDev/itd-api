@@ -3,10 +3,14 @@ import type {
   ClientHooks,
   ItdClientOptions,
   Logger,
+  RateLimitBucketContext,
+  RateLimitBucketOverride,
   RetryOptions,
 } from '../types/options.js';
 import { type ItdClock, systemClock } from './clock.js';
 import { ItdConfigError } from './errors.js';
+import { BUCKET_LIMITS } from './operations.js';
+import { RateLimitPacing } from './rate-limit.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
 import type { ServiceDefinition } from './services.js';
 import { MemoryTokenStorage, type TokenStorage } from './storage.js';
@@ -66,18 +70,32 @@ export interface ResolvedRetryOptions {
 /**
  * Паузы перед повторами при ответе `429`.
  *
- * Сервер итд.com не присылает `Retry-After` и не сообщает время сброса окна, поэтому
- * паузу приходится подбирать лестницей: от секунды, если окно почти истекло,
- * до полутора минут, если лимит исчерпан всерьёз.
+ * Сервер итд.com не присылает `Retry-After` и не сообщает время сброса окна, поэтому паузу
+ * приходится подбирать лестницей: от секунды, если окно почти истекло, до полутора минут.
  */
 export const DEFAULT_RATE_LIMIT_DELAYS = Object.freeze([1000, 5000, 30_000, 60_000, 90_000]);
+
+/**
+ * Встроенные поправки бакетов.
+ *
+ * Таймаут загрузки файла — пять минут против обычных тридцати секунд, поэтому её
+ * одновременность ограничена одним запросом.
+ */
+export const DEFAULT_BUCKET_OVERRIDES: Readonly<Record<string, RateLimitBucketOverride>> =
+  Object.freeze({
+    'files.upload': Object.freeze({ concurrency: 1 }),
+  });
 
 /** Настройки очереди со всеми значениями по умолчанию. */
 export interface ResolvedRateLimitOptions {
   concurrency: number;
   rps: number | undefined;
   retryDelays: readonly number[];
-  respectHeaders: boolean;
+  buckets: boolean;
+  pacing: RateLimitPacing;
+  bucketConcurrency: number;
+  bucketOverrides: Readonly<Record<string, RateLimitBucketOverride>>;
+  bucket: ((request: RateLimitBucketContext) => string | undefined) | undefined;
 }
 
 /**
@@ -239,6 +257,72 @@ export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOpt
   };
 }
 
+/** Выбор бакета, заданный пользователем вместо встроенной карты. */
+type BucketResolver = ((request: RateLimitBucketContext) => string | undefined) | undefined;
+
+function requireConcurrency(value: number, name: string): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new ItdConfigError(`${name} должен быть целым числом от 1, получено: ${value}`);
+  }
+  return value;
+}
+
+function resolvePacing(pacing: RateLimitPacing | undefined): RateLimitPacing {
+  const known: readonly RateLimitPacing[] = Object.values(RateLimitPacing);
+  if (pacing !== undefined && !known.includes(pacing)) {
+    throw new ItdConfigError(
+      `rateLimit.pacing должен быть одним из ${known.join(', ')}, получено: ${pacing}`,
+    );
+  }
+  return pacing ?? RateLimitPacing.React;
+}
+
+/**
+ * Проверяет поправки бакетов и накладывает их на встроенные.
+ *
+ * Имена сверяются со встроенной картой, пока не задано своё правило выбора бакета.
+ * Поля сливаются по отдельности: своя ёмкость `files.upload` не снимает встроенный
+ * предел одновременности.
+ */
+function resolveBucketOverrides(
+  overrides: Record<string, RateLimitBucketOverride> | undefined,
+  bucket: BucketResolver,
+): Readonly<Record<string, RateLimitBucketOverride>> {
+  if (overrides === undefined) return DEFAULT_BUCKET_OVERRIDES;
+  if (!isRecord(overrides)) {
+    throw new ItdConfigError('rateLimit.bucketOverrides должен быть объектом');
+  }
+
+  const resolved: Record<string, RateLimitBucketOverride> = { ...DEFAULT_BUCKET_OVERRIDES };
+  for (const [name, override] of Object.entries(overrides)) {
+    if (!isRecord(override)) {
+      throw new ItdConfigError(`rateLimit.bucketOverrides.${name} должен быть объектом`);
+    }
+    if (bucket === undefined && !(name in BUCKET_LIMITS)) {
+      throw new ItdConfigError(
+        `rateLimit.bucketOverrides.${name}: бакета с таким именем нет. ` +
+          `Известны: ${Object.keys(BUCKET_LIMITS).join(', ')}`,
+      );
+    }
+    if (override.concurrency !== undefined) {
+      requireConcurrency(override.concurrency, `rateLimit.bucketOverrides.${name}.concurrency`);
+    }
+    if (override.limit !== undefined && (!Number.isFinite(override.limit) || override.limit <= 0)) {
+      throw new ItdConfigError(
+        `rateLimit.bucketOverrides.${name}.limit должен быть положительным числом, ` +
+          `получено: ${override.limit}`,
+      );
+    }
+
+    const built = DEFAULT_BUCKET_OVERRIDES[name];
+    resolved[name] = Object.freeze({
+      concurrency: override.concurrency ?? built?.concurrency,
+      limit: override.limit ?? built?.limit,
+    });
+  }
+  return Object.freeze(resolved);
+}
+
 /**
  * Приводит настройки очереди к полному виду. `undefined` — очередь не нужна.
  *
@@ -257,20 +341,19 @@ export function resolveRateLimit(
     throw new ItdConfigError('rateLimit должен быть объектом или false');
   }
 
-  const defaults = {
+  const defaults: ResolvedRateLimitOptions = {
     concurrency: 6,
     rps: undefined,
     retryDelays: DEFAULT_RATE_LIMIT_DELAYS,
-    respectHeaders: true,
+    buckets: true,
+    pacing: RateLimitPacing.React,
+    bucketConcurrency: 6,
+    bucketOverrides: DEFAULT_BUCKET_OVERRIDES,
+    bucket: undefined,
   };
   if (!rateLimit) return defaults;
 
-  const concurrency = rateLimit.concurrency ?? 6;
-  if (!Number.isInteger(concurrency) || concurrency < 1) {
-    throw new ItdConfigError(
-      `rateLimit.concurrency должен быть целым числом от 1, получено: ${concurrency}`,
-    );
-  }
+  const concurrency = requireConcurrency(rateLimit.concurrency ?? 6, 'rateLimit.concurrency');
 
   if (rateLimit.rps !== undefined && (!Number.isFinite(rateLimit.rps) || rateLimit.rps <= 0)) {
     throw new ItdConfigError(
@@ -283,13 +366,24 @@ export function resolveRateLimit(
     throw new ItdConfigError('rateLimit.retryDelays должен быть массивом чисел');
   }
   for (const delay of retryDelays) requirePositive(delay, 'rateLimit.retryDelays');
-  requireOptionalBoolean(rateLimit.respectHeaders, 'rateLimit.respectHeaders');
+  requireOptionalBoolean(rateLimit.buckets, 'rateLimit.buckets');
+
+  if (rateLimit.bucket !== undefined && typeof rateLimit.bucket !== 'function') {
+    throw new ItdConfigError('rateLimit.bucket должен быть функцией');
+  }
 
   return {
     concurrency,
     rps: rateLimit.rps,
     retryDelays: [...retryDelays],
-    respectHeaders: rateLimit.respectHeaders ?? true,
+    buckets: rateLimit.buckets ?? true,
+    pacing: resolvePacing(rateLimit.pacing),
+    bucketConcurrency: requireConcurrency(
+      rateLimit.bucketConcurrency ?? concurrency,
+      'rateLimit.bucketConcurrency',
+    ),
+    bucketOverrides: resolveBucketOverrides(rateLimit.bucketOverrides, rateLimit.bucket),
+    bucket: rateLimit.bucket,
   };
 }
 

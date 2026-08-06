@@ -1,5 +1,6 @@
 import type { ItdClock } from '../core/clock.js';
 import type { OperationId, RetrySafety } from '../core/operations.js';
+import type { RateLimitPacing } from '../core/rate-limit.js';
 import type { RuntimeMode } from '../core/runtime.js';
 import type { ServiceDefinition } from '../core/services.js';
 import type { TokenStorage } from '../core/storage.js';
@@ -79,31 +80,72 @@ export interface RetryDecisionContext {
   path: string;
 }
 
+/** Поправка к одному серверному счётчику частоты. */
+export interface RateLimitBucketOverride {
+  /** Одновременных запросов внутри бакета. */
+  concurrency?: number | undefined;
+  /** Ёмкость бакета до первого ответа, запросов в минуту. */
+  limit?: number | undefined;
+}
+
+/** Что известно о запросе в момент выбора бакета. */
+export interface RateLimitBucketContext {
+  operationId: OperationId;
+  method: string;
+  path: string;
+}
+
 /** Настройки ограничения нагрузки на API. */
 export interface RateLimitOptions {
-  /** Сколько запросов выполняется одновременно. По умолчанию 6. */
+  // — Пропускная способность ———————————————————————————————————————————————————————————
+
+  /** Одновременных запросов на всех бакетах вместе. По умолчанию 6. */
   concurrency?: number | undefined;
   /** Верхняя граница запросов в секунду. По умолчанию без ограничения. */
   rps?: number | undefined;
+
+  // — Раздельные счётчики ——————————————————————————————————————————————————————————————
+
+  /**
+   * Отдельная очередь на каждый серверный счётчик частоты. По умолчанию `true`.
+   *
+   * `false` — одна очередь на направление: её пауза придерживает все запросы разом.
+   */
+  buckets?: boolean | undefined;
+  /**
+   * Одновременных запросов внутри одного бакета. По умолчанию равен `concurrency`.
+   *
+   * Встроенное исключение — `files.upload` с пределом 1.
+   */
+  bucketConcurrency?: number | undefined;
+  /**
+   * Поправки для отдельных бакетов. Неизвестное имя — ошибка конфигурации.
+   *
+   * @example
+   * ```ts
+   * rateLimit: { bucketOverrides: { 'posts.create': { limit: 10 }, feed: { concurrency: 2 } } }
+   * ```
+   */
+  bucketOverrides?: Record<string, RateLimitBucketOverride> | undefined;
+  /**
+   * Своё правило выбора бакета. `undefined` из функции отдаёт запрос встроенной карте.
+   *
+   * Возвращайте конечное множество имён: каждое заводит свою очередь.
+   */
+  bucket?: ((request: RateLimitBucketContext) => string | undefined) | undefined;
+
+  // — Реакция на исчерпанный лимит —————————————————————————————————————————————————————
+
+  /** Реакция на остаток, см. {@link RateLimitPacing}. По умолчанию `'react'`. */
+  pacing?: RateLimitPacing | undefined;
   /**
    * Паузы перед повторами при ответе `429`, мс.
    * По умолчанию `[1000, 5000, 30000, 60000, 90000]`.
    *
-   * Сервер не сообщает, когда сбросится окно лимита, поэтому паузу приходится подбирать.
-   * Лестница начинается с секунды: если окно почти истекло, работа продолжится почти
-   * сразу, а если лимит исчерпан всерьёз — паузы дорастут до полутора минут.
-   * Когда лестница закончилась, {@link ItdRateLimitError} пробрасывается вызывающему коду.
-   *
-   * Этот список не зависит от `retry.attempts`: тот управляет повторами при обрывах
-   * сети и ошибках сервера, где уместен совсем другой темп.
+   * После последней ступени {@link ItdRateLimitError} пробрасывается вызывающему коду.
+   * От `retry.attempts` не зависит: `retry: false` лестницу не отключает.
    */
   retryDelays?: readonly number[] | undefined;
-  /**
-   * Тормозить ли очередь по заголовкам ответа. По умолчанию `true`.
-   *
-   * Выключите, если управляете темпом сами.
-   */
-  respectHeaders?: boolean | undefined;
 }
 
 /** Данные о запросе, доступные хукам. */
@@ -166,6 +208,8 @@ export interface ClientHooks {
  * может не быть, — например `new ItdClient({ auth: process.env.ITD_TOKEN })`.
  */
 export interface ItdClientOptions {
+  // — Куда ходить —————————————————————————————————————————————————————————————————————
+
   /**
    * Базовый URL API. По умолчанию `https://xn--d1ah4a.com`.
    *
@@ -193,6 +237,9 @@ export interface ItdClientOptions {
    * ```
    */
   services?: Record<string, string | Omit<ServiceDefinition, 'name'>> | undefined;
+
+  // — Чем представляться ———————————————————————————————————————————————————————————————
+
   /** Авторизация. Без неё доступны только публичные эндпоинты. */
   auth?: AuthInput | undefined;
   /** Где хранить сессию. По умолчанию {@link MemoryTokenStorage}. */
@@ -210,10 +257,17 @@ export interface ItdClientOptions {
    * Работает, только когда в `auth` переданы email и пароль. По умолчанию `true`.
    */
   reloginOnRefreshFailure?: boolean | undefined;
-  /** Своя реализация `fetch`: для Deno, React Native, тестов или прокси. */
-  fetch?: typeof fetch | undefined;
-  /** Часы для тайм-аутов, повторов и очередей. Обычно подменяются только в тестах. */
-  clock?: ItdClock | undefined;
+  /**
+   * Значение заголовка `X-Device-Id`, который уходит с каждым запросом.
+   *
+   * Сервер различает по нему записи в списке сессий, поэтому значение должно быть стабильным.
+   * Если не задать, библиотека заведёт идентификатор сама и сохранит его в {@link ItdSession},
+   * так что при постоянном хранилище он переживёт перезапуск процесса.
+   */
+  deviceId?: string | undefined;
+
+  // — Сроки, повторы и нагрузка ————————————————————————————————————————————————————————
+
   /** Таймаут запроса в мс. По умолчанию 30000 — столько же использует сайт итд.com. `0` снимает ограничение. */
   timeout?: number | undefined;
   /**
@@ -228,20 +282,17 @@ export interface ItdClientOptions {
   retry?: RetryOptions | false | undefined;
   /** Ограничение нагрузки. `false` отключает очередь. */
   rateLimit?: RateLimitOptions | false | undefined;
-  /** Перехватчики запросов. */
-  hooks?: ClientHooks | undefined;
-  /** Отладочный вывод. `true` — писать в `console`. */
-  logger?: Logger | boolean | undefined;
+
+  // — Среда исполнения —————————————————————————————————————————————————————————————————
+
+  /** Своя реализация `fetch`: для Deno, React Native, тестов или прокси. */
+  fetch?: typeof fetch | undefined;
+  /** Часы для тайм-аутов, повторов и очередей. Обычно подменяются только в тестах. */
+  clock?: ItdClock | undefined;
+  /** Как обращаться с cookie. По умолчанию определяется по среде исполнения. */
+  mode?: RuntimeMode | undefined;
   /** Заголовки, добавляемые ко всем запросам, — например `User-Agent` для бота. */
   headers?: Record<string, string> | undefined;
-  /**
-   * Значение заголовка `X-Device-Id`, который уходит с каждым запросом.
-   *
-   * Сервер различает по нему записи в списке сессий, поэтому значение должно быть стабильным.
-   * Если не задать, библиотека заведёт идентификатор сама и сохранит его в {@link ItdSession},
-   * так что при постоянном хранилище он переживёт перезапуск процесса.
-   */
-  deviceId?: string | undefined;
   /**
    * Значение заголовка `User-Agent`. `false` — не отправлять его вовсе.
    *
@@ -250,8 +301,13 @@ export interface ItdClientOptions {
    * В браузере опция не действует — там заголовок менять запрещено.
    */
   userAgent?: string | false | undefined;
-  /** Как обращаться с cookie. По умолчанию определяется по среде исполнения. */
-  mode?: RuntimeMode | undefined;
+
+  // — Наблюдаемость ————————————————————————————————————————————————————————————————————
+
+  /** Перехватчики запросов. */
+  hooks?: ClientHooks | undefined;
+  /** Отладочный вывод. `true` — писать в `console`. */
+  logger?: Logger | boolean | undefined;
 }
 
 /**
@@ -280,6 +336,13 @@ export interface RequestOptions {
    * интеграциям и осознанному переопределению серверного контракта.
    */
   retrySafety?: RetrySafety | undefined;
+  /**
+   * Имя серверного счётчика частоты, из которого списывается запрос.
+   *
+   * Встроенные resources берут его из каталога операций; низкоуровневый вызов без этой
+   * опции попадает в `default`.
+   */
+  rateLimitBucket?: string | undefined;
   /** Настройки подключённых operation extensions, сгруппированные по владельцу. */
   extensions?: RequestExtensions | undefined;
 }

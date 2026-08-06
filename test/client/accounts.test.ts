@@ -776,6 +776,36 @@ describe('очередь запросов', () => {
     await accounts.close();
   });
 
+  it('делит очередь между аккаунтами без указания scope', async () => {
+    // Лимиты считаются по IP, поэтому общая очередь — умолчание.
+    const { mock, gates, release } = createGatedFetch();
+    const accounts = new ItdAccounts({
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      retry: false,
+      mode: 'server',
+      rateLimit: { concurrency: 1 },
+    });
+
+    accounts.addAccount('a', { auth: 'token-a' });
+    accounts.addAccount('b', { auth: 'token-b' });
+
+    const requests = [
+      accounts.account('a').request({ method: 'GET', path: '/api/ping' }),
+      accounts.account('b').request({ method: 'GET', path: '/api/ping' }),
+    ];
+
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+    expect(gates).toHaveLength(1);
+
+    release();
+    await vi.waitFor(() => expect(mock.callCount).toBe(2));
+    release();
+    await Promise.all(requests);
+
+    await accounts.close();
+  });
+
   it("'account' пропускает запросы разных аккаунтов одновременно", async () => {
     const { mock, release } = createGatedFetch();
     const accounts = new ItdAccounts({
@@ -784,6 +814,7 @@ describe('очередь запросов', () => {
       retry: false,
       mode: 'server',
       rateLimit: { concurrency: 1 },
+      rateLimitScope: 'account',
     });
 
     accounts.addAccount('a', { auth: 'token-a' });

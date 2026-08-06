@@ -16,9 +16,15 @@ import {
   createServicesMiddleware,
   type RequestMiddleware,
 } from './middleware.js';
-import { isDisposeCleanupRequest, type PipelineRequest, type RequestHandler } from './pipeline.js';
+import { operationBucket } from './operations.js';
+import {
+  isDisposeCleanupRequest,
+  type PipelineRequest,
+  type RequestHandler,
+  requestQueueKey,
+} from './pipeline.js';
 import { PluginRegistry } from './plugins/registry.js';
-import { RequestQueuePool } from './rate-limit.js';
+import { type RateLimitBucketState, RequestQueuePool } from './rate-limit.js';
 import { mergeService, ServiceRegistry } from './services.js';
 import { Transport } from './transport.js';
 import { originOf } from './url.js';
@@ -66,6 +72,8 @@ export interface ClientRuntime {
   /** Фактический порядок стадий; используется contract-тестом и диагностикой. */
   readonly stageOrder: readonly ClientRuntimeStage[];
   platformHeaders(url: string): Promise<Headers>;
+  /** Снимок известных серверных счётчиков частоты. Пустой, когда очередь отключена. */
+  rateLimitState(): RateLimitBucketState[];
   /** Временно останавливает только принадлежащие runtime очереди. */
   close(): void;
   /** Отменяет начатые запросы, снимает auth listeners и освобождает плагины. */
@@ -121,40 +129,59 @@ export function createClientRuntime(
   let auth!: AuthManager;
   let transport!: Transport;
 
-  const queueFor = (request: PipelineRequest) => {
-    const destination = originOf(transport.buildUrl(request));
-    return queues?.for(destination || undefined);
+  /**
+   * Серверный счётчик частоты, из которого спишется запрос.
+   *
+   * Источники по убыванию приоритета: `rateLimitBucket` запроса, правило `rateLimit.bucket`,
+   * каталог операций.
+   */
+  const bucketFor = (request: PipelineRequest): string => {
+    if (request.rateLimitBucket !== undefined) return request.rateLimitBucket;
+
+    const custom = config.rateLimit?.bucket?.({
+      operationId: request.operationId,
+      method: request.method,
+      path: request.path,
+    });
+    return custom ?? operationBucket(request.operationId);
   };
 
-  /**
-   * Сервер сообщает остаток окна в `x-ratelimit-remaining`, но не сообщает момент сброса.
-   * При нуле заранее ставим очередь конечного origin на первую, самую короткую паузу из
-   * `retryDelays`: окно могло почти истечь, поэтому длинный backoff здесь преждевременен.
-   * Если окно всё ещё закрыто, следующий `429` применит самостоятельную лестницу повторов.
-   * Общая пауза очереди не даёт параллельным запросам одновременно ударить в тот же лимит.
-   */
-  const throttleByHeaders = (
+  const queueKeyFor = (request: PipelineRequest) =>
+    requestQueueKey(request, (target) => ({
+      destination: originOf(transport.buildUrl(target)) || undefined,
+      bucket: bucketFor(target),
+    }));
+
+  const queueFor = (request: PipelineRequest) => {
+    if (!queues) return undefined;
+
+    const key = queueKeyFor(request);
+    return queues.for(key.destination, key.bucket);
+  };
+
+  /** Передаёт остаток из заголовков ответа бакету запроса; тот решает, тормозить ли себя. */
+  const observeRateLimit = (
     limit: number | undefined,
     remaining: number | undefined,
     request: PipelineRequest,
   ): void => {
-    if (remaining === undefined || remaining > 0) return;
-
-    const first = config.rateLimit?.retryDelays[0];
-    if (first === undefined) return;
-
-    queueFor(request)?.pause(first);
-    config.logger?.debug(
-      `лимит сервера исчерпан (${remaining} из ${limit ?? '?'}), очередь ждёт ${first} мс`,
-    );
+    const waited = queueFor(request)?.observe(limit, remaining) ?? 0;
+    if (waited > 0) {
+      config.logger?.debug(
+        `остаток лимита ${remaining} из ${limit ?? '?'}, ` +
+          `бакет ${queueKeyFor(request).bucket} ждёт ${waited} мс`,
+      );
+    }
   };
 
   transport = new Transport(
     { ...config, hooks: config.hooks },
     {
+      // Заголовки читаются и при `pacing: 'off'`: на темп они там не влияют, но остаются
+      // единственным источником для rateLimitState().
+      onRateLimit: queues ? observeRateLimit : undefined,
       cookies: config.useCookieJar ? jar : undefined,
       getDeviceId: () => auth.getDeviceId(),
-      onRateLimit: queues && config.rateLimit?.respectHeaders ? throttleByHeaders : undefined,
       lifetimeSignal: lifetime.signal,
     },
   );
@@ -252,6 +279,7 @@ export function createClientRuntime(
     services,
     stageOrder,
     platformHeaders: (url) => transport.platformHeaders(url),
+    rateLimitState: () => queues?.states() ?? [],
     close: () => {
       if (ownsQueues) queues?.stop();
     },

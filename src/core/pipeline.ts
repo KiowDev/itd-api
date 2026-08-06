@@ -2,6 +2,7 @@ import type { OperationRequestOptions } from '../types/options.js';
 import type { OperationId } from './operations.js';
 
 const REQUEST_ATTEMPT_STATE = Symbol('itd-api.request-attempt-state');
+const REQUEST_QUEUE_KEY = Symbol('itd-api.request-queue-key');
 const DISPOSE_CLEANUP_REQUEST = Symbol('itd-api.dispose-cleanup-request');
 
 interface RequestAttemptState {
@@ -10,6 +11,7 @@ interface RequestAttemptState {
 
 type InternalPipelineRequest = PipelineRequest & {
   [REQUEST_ATTEMPT_STATE]?: RequestAttemptState;
+  [REQUEST_QUEUE_KEY]?: RequestQueueKey;
   [DISPOSE_CLEANUP_REQUEST]?: true;
 };
 
@@ -91,6 +93,35 @@ export function beginTransportAttempt(request: PipelineRequest): PipelineRequest
 /** Возвращает номер последней начатой транспортной попытки. @internal */
 export function currentTransportAttempt(request: PipelineRequest): number {
   return (request as InternalPipelineRequest)[REQUEST_ATTEMPT_STATE]?.value ?? 0;
+}
+
+/** Куда встаёт запрос: направление и серверный счётчик частоты. @internal */
+export interface RequestQueueKey {
+  /** Origin разрешённого URL. `undefined` — направление неизвестно. */
+  destination: string | undefined;
+  bucket: string;
+}
+
+/**
+ * Вычисляет ключ очереди один раз на логическую операцию.
+ *
+ * Ключ спрашивают трижды: при постановке в очередь, при чтении заголовков ответа и при
+ * паузе после `429`. Значение пишется прямо в объект запроса — слои ниже копируют его
+ * через spread, и перечислимое символьное поле переходит в копии.
+ *
+ * @internal
+ */
+export function requestQueueKey(
+  request: PipelineRequest,
+  compute: (request: PipelineRequest) => RequestQueueKey,
+): RequestQueueKey {
+  const internal = request as InternalPipelineRequest;
+  const cached = internal[REQUEST_QUEUE_KEY];
+  if (cached) return cached;
+
+  const key = compute(request);
+  internal[REQUEST_QUEUE_KEY] = key;
+  return key;
 }
 
 /** Помечает запрос как часть внутренней финализации уже начатого `dispose()`. @internal */

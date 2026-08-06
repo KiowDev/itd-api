@@ -16,9 +16,8 @@ import { FileMultiTokenStorage } from 'itd-api/node';
 const accounts = new ItdAccounts({
   storage: new FileMultiTokenStorage('./.itd-sessions.json'),
 
-  // Ограничение нагрузки. Лимиты итд.com считаются по аккаунту, поэтому очередь
-  // по умолчанию у каждого своя. Если все аккаунты ходят с одного IP и упираются
-  // в ограничение по адресу — добавьте rateLimitScope: 'shared'.
+  // Ограничение нагрузки. Лимиты считаются по IP, поэтому очередь по умолчанию общая
+  // на всех; при своём прокси у каждого аккаунта добавьте rateLimitScope: 'account'.
   rateLimit: { concurrency: 4, rps: 8 },
 
   // logger: true, // раскомментируйте, чтобы видеть каждый запрос (токены маскируются)

@@ -24,7 +24,11 @@ describe('resolveConfig — значения по умолчанию', () => {
       rps: undefined,
       // Лестница пауз при 429: сервер не сообщает, когда сбросится окно.
       retryDelays: [1000, 5000, 30_000, 60_000, 90_000],
-      respectHeaders: true,
+      buckets: true,
+      pacing: 'react',
+      bucketConcurrency: 6,
+      bucketOverrides: { 'files.upload': { concurrency: 1 } },
+      bucket: undefined,
     });
     expect(config.retry).toMatchObject({ attempts: 3, baseDelay: 500 });
   });
@@ -50,6 +54,40 @@ describe('resolveConfig — отключение подсистем', () => {
   it('timeout: 0 снимает ограничение', () => {
     expect(resolveConfig({ timeout: 0 }).timeout).toBe(0);
   });
+
+  it("pacing: 'off' снимает влияние заголовков на темп", () => {
+    expect(resolveConfig({ rateLimit: { pacing: 'off' } }).rateLimit?.pacing).toBe('off');
+  });
+});
+
+describe('resolveConfig — бакеты', () => {
+  it('наследует конкурентность бакета от общей', () => {
+    expect(resolveConfig({ rateLimit: { concurrency: 3 } }).rateLimit?.bucketConcurrency).toBe(3);
+    expect(
+      resolveConfig({ rateLimit: { concurrency: 3, bucketConcurrency: 2 } }).rateLimit
+        ?.bucketConcurrency,
+    ).toBe(2);
+  });
+
+  it('сохраняет встроенный предел загрузки при своей поправке ёмкости', () => {
+    const overrides = resolveConfig({
+      rateLimit: { bucketOverrides: { 'files.upload': { limit: 30 } } },
+    }).rateLimit?.bucketOverrides;
+
+    expect(overrides?.['files.upload']).toEqual({ concurrency: 1, limit: 30 });
+  });
+
+  it('своё правило выбора бакета снимает проверку имён', () => {
+    const rateLimit = {
+      bucket: () => 'proxy',
+      bucketOverrides: { proxy: { limit: 20 } },
+    };
+
+    expect(resolveConfig({ rateLimit }).rateLimit?.bucketOverrides.proxy).toEqual({
+      concurrency: undefined,
+      limit: 20,
+    });
+  });
 });
 
 describe('resolveConfig — проверки', () => {
@@ -62,6 +100,15 @@ describe('resolveConfig — проверки', () => {
     ['jitter NaN', { retry: { jitter: Number.NaN } }],
     ['дробная конкурентность', { rateLimit: { concurrency: 1.5 } }],
     ['отрицательный rps', { rateLimit: { rps: -1 } }],
+    ['неизвестный pacing', { rateLimit: { pacing: 'fast' } as never }],
+    ['buckets не boolean', { rateLimit: { buckets: 'yes' } as never }],
+    ['bucket не функция', { rateLimit: { bucket: 'posts' } as never }],
+    ['нулевая конкурентность бакета', { rateLimit: { bucketConcurrency: 0 } }],
+    [
+      'опечатка в имени бакета',
+      { rateLimit: { bucketOverrides: { 'posts.craete': { limit: 9 } } } },
+    ],
+    ['нулевая ёмкость бакета', { rateLimit: { bucketOverrides: { feed: { limit: 0 } } } }],
     ['неизвестный mode', { mode: 'proxy' as never }],
     ['fetch не функция', { fetch: 'fetch' as never }],
     ['storage без clear', { storage: { get() {}, set() {} } as never }],

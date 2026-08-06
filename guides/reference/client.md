@@ -209,34 +209,56 @@ HTTP-методом: безопасный `POST` повторяется, тог�
 
 ```ts
 interface RateLimitOptions {
+  // Пропускная способность
   concurrency?: number;                  // одновременных запросов; по умолчанию 6
   rps?: number;                          // верхняя граница запросов в секунду
+
+  // Раздельные счётчики
+  buckets?: boolean;                     // очередь на бакет; по умолчанию true
+  bucketConcurrency?: number;            // предел внутри бакета; по умолчанию как concurrency
+  bucketOverrides?: Record<string, { concurrency?: number; limit?: number }>;
+  bucket?: (request: RateLimitBucketContext) => string | undefined;
+
+  // Реакция на исчерпанный лимит
+  pacing?: RateLimitPacing;              // 'react' | 'smooth' | 'off'; по умолчанию 'react'
   retryDelays?: readonly number[];       // паузы при 429; [1000, 5000, 30000, 60000, 90000]
-  respectHeaders?: boolean;              // тормозить по x-ratelimit-*; по умолчанию true
 }
 ```
 
 `concurrency` ограничивает число одновременных запросов, а `rps` — их темп. Для общего
 лимита всего приложения используйте один экземпляр `ItdClient`.
 
-Очередь выбирается по итоговому `URL.origin`, уже после разрешения `service` и `baseUrl`.
-Два alias одного origin делят concurrency, RPS и паузы, разные origin изолированы. Разовый
-`baseUrl` использует очередь своего origin, а не основного API.
+Очередь выбирается по паре «`URL.origin` — группа маршрутов», уже после разрешения
+`service` и `baseUrl`. Два alias одного origin делят concurrency, RPS и паузы, разные
+origin изолированы; разовый `baseUrl` использует очередь своего origin, а не основного
+API. `buckets: false` оставляет одну очередь на origin.
 
-Лимиты задаются сервером отдельно для разных endpoint. Наблюдаемые значения
-`x-ratelimit-limit`: 90 для `/api/posts`, 40 для `/api/users/me` и
-`/api/notifications/`, 25 для `/api/v1/auth/refresh`, 15 для `/api/files/upload`.
-Сервер не сообщает `Retry-After` и время сброса окна, поэтому при `429` клиент по
-умолчанию использует паузы 1, 5, 30, 60 и 90 секунд. После последней попытки
-выбрасывается `ItdRateLimitError`.
+`bucketConcurrency` по умолчанию равен `concurrency`. Единственное встроенное исключение —
+`files.upload` с пределом 1.
 
-При `respectHeaders: true` очередь заранее приостанавливается, когда
-`x-ratelimit-remaining` достигает нуля. Поскольку время сброса сервер не сообщает, клиент
-берёт первую, короткую паузу из `retryDelays`: окно могло почти закончиться. Если лимит
-ещё действует, следующий `429` продолжит отдельную лестницу повторов. Пауза всей очереди
-конечного origin предотвращает одновременный повтор параллельных запросов. Значения
-заголовков доступны в `ItdRateLimitError.rateLimit` и
-`ItdRateLimitError.rateLimitRemaining`.
+`bucketOverrides` правит лимит и одновременность отдельных групп; неизвестное имя —
+ошибка конфигурации. `bucket` заменяет само правило выбора: верните `undefined`, чтобы
+отдать запрос встроенной карте.
+
+`pacing` выбирает реакцию на остаток. `react` не задерживает ничего, пока в группе есть
+запас, и придерживает исчерпанную группу на `60000 / limit` миллисекунд. `smooth` держит
+ровный темп в пределах лимита группы. `off` оставляет только паузу после `429`.
+
+Время сброса окна сервер не сообщает, поэтому при `429` клиент идёт по лестнице пауз:
+1, 5, 30, 60 и 90 секунд. После последней ступени выбрасывается `ItdRateLimitError`;
+значения заголовков доступны в его `rateLimit` и `rateLimitRemaining`.
+
+Таблица групп и их лимитов — в [«Ограничениях частоты»](/reference/rate-limits).
+
+### Снимок лимитов (`rateLimitState()`)
+
+```ts
+itd.rateLimitState(): RateLimitBucketState[]
+```
+
+Отдаёт по записи `{ destination, bucket, limit, remaining, active, pending }` на каждую
+группу, через которую уже проходили запросы. Значения берутся из последнего ответа
+и быстро устаревают. Пустой массив, если `rateLimit: false`.
 
 ### Хуки (`ClientHooks`)
 

@@ -6,7 +6,7 @@ import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdStateError } from './core/errors.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
-import type { RequestQueuePool } from './core/rate-limit.js';
+import type { RateLimitBucketState, RequestQueuePool } from './core/rate-limit.js';
 import type { ServiceDefinition } from './core/services.js';
 import type { ItdSession } from './core/storage.js';
 import type { UserId } from './models/common.js';
@@ -262,6 +262,23 @@ export class ItdClient {
       ...options,
       operationId: options.operationId ?? 'raw',
     });
+  }
+
+  /**
+   * Остаток серверных лимитов по бакетам, через которые уже проходили запросы.
+   *
+   * Значения берутся из последнего ответа каждого бакета и быстро устаревают: сервер
+   * восстанавливает квоту линейно и границу окна не сообщает. Пустой массив при
+   * `rateLimit: false`.
+   *
+   * @example
+   * ```ts
+   * const posts = itd.rateLimitState().find((state) => state.bucket === 'posts.create');
+   * if ((posts?.remaining ?? Number.POSITIVE_INFINITY) < 3) await sleep(60_000);
+   * ```
+   */
+  rateLimitState(): RateLimitBucketState[] {
+    return this.#runtime.rateLimitState();
   }
 
   /**

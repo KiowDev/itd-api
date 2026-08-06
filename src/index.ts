@@ -129,15 +129,19 @@ export {
   scopedTokenStorage,
 } from './core/multi-storage.js';
 export {
+  BUCKET_LIMITS,
   type BuiltInOperationId,
   type CustomOperationId,
+  DEFAULT_RATE_LIMIT_BUCKET,
   isBuiltInOperationId,
   OPERATIONS,
   type OperationDefinition,
   type OperationId,
   type OperationMethod,
+  operationBucket,
   operationMethod,
   operationRetrySafety,
+  type RateLimitBucket,
   RetrySafety,
 } from './core/operations.js';
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
@@ -155,6 +159,7 @@ export type {
   PluginApi,
   PluginTeardown,
 } from './core/plugins/contracts.js';
+export { type RateLimitBucketState, RateLimitPacing } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export type { ServiceDefinition } from './core/services.js';
@@ -380,6 +385,8 @@ export type {
   Logger,
   OperationRequestOptions,
   PaginationOptions,
+  RateLimitBucketContext,
+  RateLimitBucketOverride,
   RateLimitOptions,
   RawRequestOptions,
   RequestContext,

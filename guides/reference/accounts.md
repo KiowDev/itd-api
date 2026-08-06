@@ -87,7 +87,7 @@ dispose(): Promise<void>
 interface ItdAccountsOptions extends Omit<ItdClientOptions, 'auth' | 'storage' | 'deviceId'> {
   storage?: MultiTokenStorage;           // по умолчанию MemoryMultiTokenStorage
   plugins?: readonly ClientPlugin[];     // подключаются каждому аккаунту
-  rateLimitScope?: 'account' | 'shared'; // очередь: своя у каждого / общая; по умолчанию 'account'
+  rateLimitScope?: 'account' | 'shared'; // очередь: своя у каждого / общая; по умолчанию 'shared'
 }
 
 type AddAccountOptions = Omit<ItdClientOptions, 'storage'>;
@@ -97,6 +97,8 @@ interface RemoveAccountOptions {
 }
 ```
 
-`rateLimitScope: 'shared'` нужен, когда все аккаунты сидят на одном IP и упираются в лимит по
-адресу. Настройки самой очереди тогда задаются контейнеру опцией `rateLimit`; аккаунту можно
-передать только `rateLimit: false`, чтобы вывести его из общей очереди.
+Лимиты итд.com считаются по IP, поэтому по умолчанию очередь общая. Её настройки задаются
+контейнеру опцией `rateLimit`; аккаунту можно передать только `rateLimit: false`, чтобы
+вывести его из общей очереди. `rateLimitScope: 'account'` даёт каждому свою очередь и нужен
+при разных адресах — например, при своём прокси у каждого аккаунта. Подробнее —
+в [«Ограничениях частоты»](/reference/rate-limits).
