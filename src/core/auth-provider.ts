@@ -10,9 +10,8 @@ import { createDeviceId } from './runtime.js';
  * refresh-токены, ни про хранилище, ни про вход по паролю. Благодаря этому клиент с готовым
  * токеном не тянет за собой сессионную машинерию — она подставляется вызывающим кодом.
  *
- * Каждый метод соответствует ровно одной стадии конвейера, см. `ClientRuntimeStage`.
- *
- * @internal
+ * Каждый метод соответствует ровно одной стадии конвейера. Готовые реализации —
+ * {@link bearerToken}, {@link tokenProvider} и {@link anonymousAuth}.
  */
 export interface AuthProvider {
   /**
@@ -59,24 +58,88 @@ export interface AuthProviderDeps {
 }
 
 /**
- * Авторизации нет: заголовок не подставляется, ответ `401` не восстанавливается.
+ * Идентификатор устройства, общий для провайдеров без сессии.
  *
- * Фабрика, а не константа: идентификатор устройства должен быть свой у каждого клиента —
- * сервер различает по нему записи в списке сессий.
- *
- * @internal
+ * Значение своё у каждого провайдера: сервер различает по нему записи в списке сессий,
+ * поэтому делить его между клиентами нельзя. Хранилища нет, так что перезапуск процесса
+ * значение не переживает — в этом и разница с полноценной сессией.
  */
-export function anonymousAuth(): AuthProvider {
+function localDeviceId(): () => Promise<string> {
   let deviceId: string | undefined;
 
+  return () => {
+    deviceId ??= createDeviceId();
+    return Promise.resolve(deviceId);
+  };
+}
+
+/**
+ * Авторизации нет: заголовок не подставляется, ответ `401` не восстанавливается.
+ *
+ * @example
+ * ```ts
+ * const api = createRestClient(); // публичные эндпоинты доступны и без токена
+ * ```
+ */
+export function anonymousAuth(): AuthProvider {
   return {
     prepare: () => Promise.resolve(),
     currentHeaders: () => ({}),
     recover: () => Promise.resolve(false),
-    deviceId: () => {
-      deviceId ??= createDeviceId();
-      return Promise.resolve(deviceId);
-    },
+    deviceId: localDeviceId(),
     dispose: () => {},
+  };
+}
+
+/**
+ * Готовый Bearer-токен: ни хранилища, ни продления.
+ *
+ * Ответ `401` уходит вызывающему коду как есть — обновить токен провайдеру нечем.
+ * Для сессии, которая продлевает себя сама, нужен полный клиент.
+ *
+ * @example
+ * ```ts
+ * const api = createRestClient({ auth: bearerToken(process.env.ITD_TOKEN) });
+ * ```
+ */
+export function bearerToken(token: string): AuthProvider {
+  const headers = { Authorization: `Bearer ${token}` };
+
+  return {
+    prepare: () => Promise.resolve(),
+    currentHeaders: () => headers,
+    recover: () => Promise.resolve(false),
+    deviceId: localDeviceId(),
+    dispose: () => {},
+  };
+}
+
+/**
+ * Токен из внешнего источника — хранилища секретов, кэша, соседнего сервиса.
+ *
+ * Источник спрашивается на стадии подготовки, до входа в очередь: там ожидание безопасно,
+ * а слот транспорта ещё не занят. Значение держится до следующей подготовки, потому что
+ * подстановка заголовков обязана быть синхронной.
+ *
+ * @example
+ * ```ts
+ * const api = createRestClient({ auth: tokenProvider(() => vault.read('itd')) });
+ * ```
+ */
+export function tokenProvider(
+  getToken: () => string | null | Promise<string | null>,
+): AuthProvider {
+  let token: string | null = null;
+
+  return {
+    prepare: async () => {
+      token = await getToken();
+    },
+    currentHeaders: () => (token ? { Authorization: `Bearer ${token}` } : {}),
+    recover: () => Promise.resolve(false),
+    deviceId: localDeviceId(),
+    dispose: () => {
+      token = null;
+    },
   };
 }

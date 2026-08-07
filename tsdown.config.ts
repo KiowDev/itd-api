@@ -3,6 +3,7 @@ import { defineConfig } from 'tsdown';
 export default defineConfig({
   entry: {
     index: 'src/index.ts',
+    rest: 'src/rest.ts',
     node: 'src/node.ts',
     web: 'src/web.ts',
   },

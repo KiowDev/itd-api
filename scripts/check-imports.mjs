@@ -27,10 +27,12 @@ const LAYERS = [
   ['realtime/', 'realtime'],
   ['spans/', 'spans'],
   ['notifications/', 'notifications'],
+  ['rest/', 'rest'],
   ['client.ts', 'sdk'],
   ['accounts.ts', 'sdk'],
   ['options.ts', 'sdk'],
   ['index.ts', 'entry'],
+  ['rest.ts', 'entry'],
   ['node.ts', 'entry'],
   ['web.ts', 'entry'],
 ];
@@ -46,20 +48,25 @@ const FORBIDDEN = {
   types: ['resources', 'builders', 'realtime', 'spans', 'notifications', 'sdk'],
   // Перечисления (`types/enums.ts`) сами ни от чего не зависят, поэтому модели их читают.
   models: ['core', 'domain', 'resources', 'builders', 'realtime', 'notifications', 'sdk'],
-  resources: ['sdk'],
-  builders: ['resources', 'realtime', 'sdk'],
-  realtime: ['resources', 'builders', 'sdk'],
+  resources: ['rest', 'sdk'],
+  builders: ['resources', 'realtime', 'rest', 'sdk'],
+  realtime: ['resources', 'builders', 'rest', 'sdk'],
   // Разметка бросает типизированные ошибки ядра — это нисходящая зависимость.
-  spans: ['domain', 'resources', 'realtime', 'sdk'],
-  notifications: ['resources', 'sdk'],
+  spans: ['domain', 'resources', 'realtime', 'rest', 'sdk'],
+  notifications: ['resources', 'rest', 'sdk'],
+  rest: ['realtime', 'sdk'],
 };
 
 /**
- * Границы внутри одного слоя, которые карта слоёв выразить не может.
+ * Границы, которые карта слоёв выразить не может: они проходят внутри слоя либо
+ * запрещают отдельные файлы соседа, а не слой целиком.
  *
- * Сборка запроса не должна ссылаться на конкретную реализацию сессии, иначе та останется
- * достижимой из любого бандла, включая анонимный, и разделение окажется бумажным.
- * Ни TypeScript, ни тесты такой регресс не заметят — только эта проверка.
+ * Ни `core`, ни `rest` не должны ссылаться на конкретную реализацию сессии, иначе та
+ * останется достижимой из любого бандла, включая анонимный, и разделение окажется
+ * бумажным. Ни TypeScript, ни тесты такой регресс не заметят — только эта проверка.
+ *
+ * `from` и `to` сопоставляются по префиксу, поэтому одним правилом закрывается
+ * и отдельный файл, и весь подкаталог.
  */
 const FORBIDDEN_EDGES = [
   {
@@ -81,6 +88,36 @@ const FORBIDDEN_EDGES = [
     from: 'core/options.ts',
     to: 'core/session-options.ts',
     reason: 'RuntimeOptions и SessionOptions объединяет только sdk-слой',
+  },
+  {
+    from: 'rest/',
+    to: 'core/auth.ts',
+    reason: 'минимальный клиент работает по готовому токену, сессии в нём нет',
+  },
+  {
+    from: 'rest/',
+    to: 'core/storage.ts',
+    reason: 'хранить нечего: токен приходит снаружи',
+  },
+  {
+    from: 'rest/',
+    to: 'core/multi-storage.ts',
+    reason: 'несколько аккаунтов — возможность полного клиента',
+  },
+  {
+    from: 'rest/',
+    to: 'core/jwt.ts',
+    reason: 'разбор токена нужен только сессии',
+  },
+  {
+    from: 'rest.ts',
+    to: 'core/auth.ts',
+    reason: 'точка входа itd-api/rest не публикует сессию',
+  },
+  {
+    from: 'rest.ts',
+    to: 'core/storage.ts',
+    reason: 'точка входа itd-api/rest не публикует хранилища сессии',
   },
 ];
 
@@ -176,7 +213,9 @@ for (const file of listFiles(SRC)) {
     const to = targetOf(from, specifier);
     if (to === undefined) continue;
 
-    const edge = FORBIDDEN_EDGES.find((rule) => rule.from === from && rule.to === to);
+    const edge = FORBIDDEN_EDGES.find(
+      (rule) => from.startsWith(rule.from) && to.startsWith(rule.to),
+    );
     if (edge) {
       violations.push({ from, to, typeOnly, why: edge.reason });
       continue;
