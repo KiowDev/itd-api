@@ -1,3 +1,4 @@
+import { operationMethod } from '../domain/operations.js';
 import type { UserId } from '../models/common.js';
 import type { AuthInput, CredentialsAuth } from '../types/options.js';
 import type { AuthConfig } from './config.js';
@@ -10,7 +11,6 @@ import {
 import { Emitter, reportListenerError } from './emitter.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from './errors.js';
 import { readTokenIdentity, readTokenSubject } from './jwt.js';
-import { operationMethod } from './operations.js';
 import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
 import { copySession, type ItdSession } from './storage.js';

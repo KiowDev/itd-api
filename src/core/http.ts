@@ -1,4 +1,7 @@
-import { type BuiltInOperationId, operationMethod } from './operations.js';
+import type { BuiltInOperationId } from '../domain/operations.js';
+import type { OperationCatalog } from './catalog.js';
+import { ItdConfigError } from './errors.js';
+import type { OperationMethod } from './operation.js';
 import {
   identifyRequest,
   markDisposeCleanupRequest,
@@ -12,6 +15,8 @@ export interface HttpClientDeps {
   /** Готовый обработчик — вся цепочка слоёв поверх транспорта. */
   handler: RequestHandler;
   baseUrl: string;
+  /** Каталог, из которого берётся HTTP-метод семантической операции. */
+  catalog: OperationCatalog;
 }
 
 /**
@@ -24,10 +29,21 @@ export interface HttpClientDeps {
 export class HttpClient {
   readonly #handler: RequestHandler;
   readonly #baseUrl: string;
+  readonly #catalog: OperationCatalog;
 
   constructor(deps: HttpClientDeps) {
     this.#handler = deps.handler;
     this.#baseUrl = deps.baseUrl;
+    this.#catalog = deps.catalog;
+  }
+
+  /** Метод операции из каталога. Отсутствие описания — ошибка сборки клиента, не запроса. */
+  #methodOf(operationId: BuiltInOperationId): OperationMethod {
+    const method = this.#catalog.methodOf(operationId);
+    if (method === undefined) {
+      throw new ItdConfigError(`каталог операций не знает «${operationId}»`);
+    }
+    return method;
   }
 
   /** Базовый URL, к которому обращается клиент. */
@@ -53,7 +69,7 @@ export class HttpClient {
     operationId: BuiltInOperationId,
     options: Omit<PipelineRequest, 'operationId' | 'method'>,
   ): Promise<T> {
-    return this.request<T>({ ...options, operationId, method: operationMethod(operationId) });
+    return this.request<T>({ ...options, operationId, method: this.#methodOf(operationId) });
   }
 
   /** Выполняет внутреннюю операцию финализации после начала `ItdClient.dispose()`. @internal */
@@ -65,7 +81,7 @@ export class HttpClient {
       markDisposeCleanupRequest({
         ...options,
         operationId,
-        method: operationMethod(operationId),
+        method: this.#methodOf(operationId),
       }),
     );
   }

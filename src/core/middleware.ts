@@ -1,4 +1,5 @@
 import type { ClientHooks, Logger, RequestOptions } from '../types/options.js';
+import type { OperationCatalog } from './catalog.js';
 import { type ItdClock, systemClock } from './clock.js';
 import { type ResolvedRetryOptions, resolveRetry } from './config.js';
 import { ItdAbortError, isItdApiError, isItdRateLimitError } from './errors.js';
@@ -213,6 +214,8 @@ export function createAuthMiddleware(deps: AuthMiddlewareDeps): RequestMiddlewar
 /** Что нужно слою повторов. */
 export interface RetryMiddlewareDeps {
   clock?: ItdClock;
+  /** Откуда берётся семантика операции: её повторяемость знает домен, а не ядро. */
+  catalog: OperationCatalog;
   /** Глобальные настройки повторов. `undefined` — по умолчанию не повторять. */
   retry: ResolvedRetryOptions | undefined;
   /**
@@ -285,7 +288,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
   return async (request, next) => {
     const trackedRequest = trackRequestAttempts(request);
     const method = request.method.toUpperCase();
-    const policy = resolveRetryPolicy(request);
+    const policy = resolveRetryPolicy(request, deps.catalog);
     const backoff = resolveBackoff(request.retry, globalScheduler);
     let retryAttempt = 0;
     let rateLimitAttempt = 0;

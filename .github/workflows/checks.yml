@@ -29,6 +29,9 @@ jobs:
       - name: Линтер и форматирование
         run: npm run lint
 
+      - name: Направление импортов между слоями
+        run: npm run check:layers
+
       - name: Тесты
         run: npm test
 

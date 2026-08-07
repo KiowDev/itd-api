@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveConfig } from '../../src/core/config.js';
+import { resolveConfig as resolveClientConfig } from '../../src/core/config.js';
 import { CookieJar } from '../../src/core/cookies.js';
 import {
   ItdAbortError,
@@ -16,9 +16,10 @@ import {
   createQueueMiddleware,
   createRetryMiddleware,
 } from '../../src/core/middleware.js';
-import { RetrySafety } from '../../src/core/operations.js';
+import { RetrySafety } from '../../src/core/operation.js';
 import type { PipelineRequest } from '../../src/core/pipeline.js';
 import { Transport, type TransportDeps } from '../../src/core/transport.js';
+import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/types/options.js';
 import {
   abortError,
@@ -28,6 +29,9 @@ import {
   type MockHandler,
   noContent,
 } from '../helpers/mock-fetch.js';
+
+/** Каталог операций ядру неизвестен — здесь он подставляется явно, как это делает клиент. */
+const resolveConfig = (options: ItdClientOptions = {}) => resolveClientConfig(options, ITD_CATALOG);
 
 /** Собирает транспорт с моком сети — так же, как это делает ItdClient. */
 function makeTransport(
@@ -747,6 +751,7 @@ describe('слой повторов', () => {
     const handlerFn = composePipeline(
       [
         createRetryMiddleware({
+          catalog: ITD_CATALOG,
           retry: config.retry,
           rateLimitDelays,
           pauseQueue: undefined,

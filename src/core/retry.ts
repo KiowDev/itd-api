@@ -1,4 +1,5 @@
 import type { RetryDecisionContext } from '../types/options.js';
+import type { OperationCatalog } from './catalog.js';
 import type { ResolvedRetryOptions } from './config.js';
 import {
   ItdAbortError,
@@ -7,7 +8,7 @@ import {
   ItdNetworkError,
   ItdTimeoutError,
 } from './errors.js';
-import { isBuiltInOperationId, operationRetrySafety, RetrySafety } from './operations.js';
+import { RetrySafety } from './operation.js';
 import type { PipelineRequest } from './pipeline.js';
 
 /** Политика конкретного логического запроса, передаваемая планировщику повторов. */
@@ -34,13 +35,17 @@ export function isRequestBodyReplayable(request: PipelineRequest): boolean {
 }
 
 /** Разрешает retrySafety запроса из явного override, каталога либо raw fallback. */
-export function resolveRetryPolicy(request: PipelineRequest): RetryPolicy {
+export function resolveRetryPolicy(
+  request: PipelineRequest,
+  catalog: OperationCatalog,
+): RetryPolicy {
   let retrySafety: RetrySafety;
+  const known = catalog.retrySafetyOf(request.operationId);
 
   if (request.retrySafety !== undefined) {
     retrySafety = request.retrySafety;
-  } else if (isBuiltInOperationId(request.operationId)) {
-    retrySafety = operationRetrySafety(request.operationId);
+  } else if (known !== undefined) {
+    retrySafety = known;
   } else if (request.operationId === 'raw' && SAFE_RAW_METHODS.has(request.method.toUpperCase())) {
     retrySafety = RetrySafety.Safe;
   } else {

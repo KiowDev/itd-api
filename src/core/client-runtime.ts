@@ -1,5 +1,7 @@
+import { ITD_CATALOG } from '../domain/catalog.js';
 import type { ItdClientOptions } from '../types/options.js';
 import { AuthManager } from './auth.js';
+import type { OperationCatalog } from './catalog.js';
 import {
   assertKnownBucket,
   BUILT_IN_SERVICES,
@@ -21,7 +23,6 @@ import {
   createServicesMiddleware,
   type RequestMiddleware,
 } from './middleware.js';
-import { operationBucket } from './operations.js';
 import {
   isDisposeCleanupRequest,
   type PipelineRequest,
@@ -51,6 +52,14 @@ export type ClientRuntimeStage = (typeof ClientRuntimeStage)[keyof typeof Client
 
 /** Скрытые зависимости runtime, которыми владеет внешний контейнер. @internal */
 export interface ClientRuntimeInternals {
+  /**
+   * Каталог операций, которым пользуется ядро. По умолчанию — {@link ITD_CATALOG}.
+   *
+   * Единственная точка, где generic pipeline получает знание о предметной области:
+   * повторяемость операций, их методы и счётчики частоты. Подмена нужна тестам
+   * и будущим клиентам поверх другого набора эндпоинтов.
+   */
+  catalog?: OperationCatalog | undefined;
   /** Общая очередь нескольких клиентов; runtime не останавливает её самостоятельно. */
   queues?: RequestQueuePool | undefined;
   /** Проверяет терминальное состояние фасада до входа в pipeline. */
@@ -115,7 +124,8 @@ export function createClientRuntime(
   options: ItdClientOptions = {},
   internals: ClientRuntimeInternals = {},
 ): ClientRuntime {
-  const config = resolveConfig(options);
+  const catalog = internals.catalog ?? ITD_CATALOG;
+  const config = resolveConfig(options, catalog);
   const jar = new CookieJar();
   const plugins = new PluginRegistry({
     shutdownTimeout: config.shutdownTimeout,
@@ -153,7 +163,7 @@ export function createClientRuntime(
       method: request.method,
       path: request.path,
     });
-    return custom ?? operationBucket(request.operationId);
+    return custom ?? catalog.bucketOf(request.operationId);
   };
 
   const queueKeyFor = (request: PipelineRequest) =>
@@ -212,6 +222,7 @@ export function createClientRuntime(
       name: ClientRuntimeStage.Retry,
       middleware: createRetryMiddleware({
         clock: config.clock,
+        catalog,
         retry: config.retry,
         rateLimitDelays: config.rateLimit?.retryDelays ?? [],
         pauseQueue: queues ? (ms, request) => queueFor(request)?.pause(ms) : undefined,
@@ -267,7 +278,12 @@ export function createClientRuntime(
         internals.assertActive?.('выполнить новый запрос');
       }
       if (request.rateLimitBucket !== undefined) {
-        assertKnownBucket(request.rateLimitBucket, 'rateLimitBucket', config.rateLimit?.bucket);
+        assertKnownBucket(
+          request.rateLimitBucket,
+          'rateLimitBucket',
+          config.rateLimit?.bucket,
+          catalog,
+        );
       }
     } catch (error) {
       return Promise.reject(error);
@@ -280,7 +296,7 @@ export function createClientRuntime(
   auth = new AuthManager(config, clientHandler, jar, {
     onAccountChange: internals.onAccountChange,
   });
-  const http = new HttpClient({ handler: clientHandler, baseUrl: config.baseUrl });
+  const http = new HttpClient({ handler: clientHandler, baseUrl: config.baseUrl, catalog });
   const stageOrder = Object.freeze([
     ...stages.map(({ name }) => name),
     ClientRuntimeStage.Transport,

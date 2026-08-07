@@ -1,9 +1,9 @@
 import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/http.js';
-import type { BuiltInOperationId } from '../core/operations.js';
 import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { pickArray, pickBoolean, pickString } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
+import type { BuiltInOperationId } from '../domain/operations.js';
 import type { UserId, UserRef } from '../models/common.js';
 import type { Clan } from '../models/platform.js';
 import type {

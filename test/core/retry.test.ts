@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RateLimitPacing } from '../../src/core/buckets.js';
 import { type ResolvedRateLimitOptions, resolveConfig } from '../../src/core/config.js';
 import { createApiError } from '../../src/core/error-factory.js';
 import {
@@ -8,9 +7,11 @@ import {
   ItdNetworkError,
   ItdTimeoutError,
 } from '../../src/core/errors.js';
-import { RetrySafety } from '../../src/core/operations.js';
+import { RetrySafety } from '../../src/core/operation.js';
+import { RateLimitPacing } from '../../src/core/pacing.js';
 import { type BucketQueue, RequestQueue, RequestQueuePool } from '../../src/core/rate-limit.js';
 import { createRetryScheduler, type RetryPolicy } from '../../src/core/retry.js';
+import { ITD_CATALOG } from '../../src/domain/catalog.js';
 
 /** Настройки повторов по умолчанию. */
 function retryOptions(overrides: Partial<ReturnType<typeof defaults>> = {}) {
@@ -18,7 +19,7 @@ function retryOptions(overrides: Partial<ReturnType<typeof defaults>> = {}) {
 }
 
 function defaults() {
-  const config = resolveConfig();
+  const config = resolveConfig({}, ITD_CATALOG);
   if (!config.retry) throw new Error('повторы должны быть включены по умолчанию');
   return config.retry;
 }
@@ -396,7 +397,7 @@ describe('RequestQueuePool', () => {
 
   /** Настройки пула с точечной правкой: остальное берётся из умолчаний клиента. */
   function poolOptions(overrides: Partial<ResolvedRateLimitOptions> = {}) {
-    const rateLimit = resolveConfig().rateLimit;
+    const rateLimit = resolveConfig({}, ITD_CATALOG).rateLimit;
     if (!rateLimit) throw new Error('очередь должна быть включена по умолчанию');
     return { ...rateLimit, concurrency: 1, ...overrides };
   }
@@ -660,7 +661,7 @@ describe('BucketQueue — режимы реакции на заголовки', 
   afterEach(() => vi.useRealTimers());
 
   function pool(overrides: Partial<ResolvedRateLimitOptions> = {}) {
-    const rateLimit = resolveConfig().rateLimit;
+    const rateLimit = resolveConfig({}, ITD_CATALOG).rateLimit;
     if (!rateLimit) throw new Error('очередь должна быть включена по умолчанию');
     return new RequestQueuePool({ ...rateLimit, ...overrides });
   }

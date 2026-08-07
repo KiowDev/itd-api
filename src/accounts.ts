@@ -19,6 +19,7 @@ import type { ClientPlugin } from './core/plugins/contracts.js';
 import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
 import { RequestQueuePool } from './core/rate-limit.js';
 import type { TokenStorage } from './core/storage.js';
+import { ITD_CATALOG } from './domain/catalog.js';
 import type { ItdClientOptions, Logger } from './types/options.js';
 
 /** Как аккаунты делят между собой очередь запросов. */
@@ -180,7 +181,7 @@ export class ItdAccounts {
     // Общая очередь заводится сразу: проверить опции лучше при создании контейнера,
     // а не при добавлении первого аккаунта.
     const rateLimit =
-      this.#rateLimitScope === 'shared' ? resolveRateLimit(base.rateLimit) : undefined;
+      this.#rateLimitScope === 'shared' ? resolveRateLimit(base.rateLimit, ITD_CATALOG) : undefined;
     this.#queues = rateLimit
       ? new RequestQueuePool(rateLimit, base.clock ?? systemClock)
       : undefined;

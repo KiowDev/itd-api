@@ -1,33 +1,12 @@
+import { type OperationDefinition, type OperationMethod, RetrySafety } from '../core/operation.js';
 import { DEFAULT_RATE_LIMIT_BUCKET, type RateLimitBucket } from './buckets.js';
 
-/** HTTP-метод встроенной операции. */
-export type OperationMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-
-/** Семантическая безопасность автоматического повтора операции. */
-export const RetrySafety = Object.freeze({
-  /** Автоматический повтор не создаёт неприемлемого эффекта; обычно это чтение. */
-  Safe: 'safe',
-  /** Повтор операции приводит к тому же состоянию, что и один вызов. */
-  Idempotent: 'idempotent',
-  /** Повтор может создать ещё один побочный эффект. */
-  Unsafe: 'unsafe',
-} as const);
-export type RetrySafety = (typeof RetrySafety)[keyof typeof RetrySafety];
-
-/** Минимальное стабильное описание операции, доступное core и плагинам. */
-export interface OperationDefinition {
-  readonly method: OperationMethod;
-  readonly retrySafety: RetrySafety;
-  /**
-   * Бакет операции. Опущено — операция списывает из `default`.
-   *
-   * Счётчик определяется парой «путь + метод»: `GET /api/users/me` — 40 запросов
-   * в минуту, `PUT` того же пути — 3, `DELETE` — 150.
-   */
+/** Описание встроенной операции: та же форма, что знает ядро, но с именем известного бакета. */
+export interface ItdOperationDefinition extends OperationDefinition {
   readonly bucket?: RateLimitBucket;
 }
 
-function freezeOperations<const T extends Record<string, OperationDefinition>>(
+function freezeOperations<const T extends Record<string, ItdOperationDefinition>>(
   operations: T,
 ): Readonly<{ readonly [K in keyof T]: Readonly<T[K]> }> {
   for (const definition of Object.values(operations)) Object.freeze(definition);
@@ -181,7 +160,7 @@ export const OPERATIONS = freezeOperations({
 
   'telemetry.dwell': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'telemetry.interaction': { method: 'POST', retrySafety: RetrySafety.Unsafe },
-} as const satisfies Record<string, OperationDefinition>);
+} as const satisfies Record<string, ItdOperationDefinition>);
 
 /** Стабильный ID встроенной операции. */
 export type BuiltInOperationId = keyof typeof OPERATIONS;
@@ -218,6 +197,6 @@ export function operationRetrySafety(id: BuiltInOperationId): RetrySafety {
 export function operationBucket(id: OperationId): RateLimitBucket {
   if (!isBuiltInOperationId(id)) return DEFAULT_RATE_LIMIT_BUCKET;
   // Литеральный тип каталога не сохраняет необязательное поле у операций без бакета.
-  const definition: OperationDefinition = OPERATIONS[id];
+  const definition: ItdOperationDefinition = OPERATIONS[id];
   return definition.bucket ?? DEFAULT_RATE_LIMIT_BUCKET;
 }

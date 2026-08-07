@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BUCKET_LIMITS } from '../../src/core/buckets.js';
+import { RetrySafety } from '../../src/core/operation.js';
+import { BUCKET_LIMITS } from '../../src/domain/buckets.js';
 import {
   isBuiltInOperationId,
   OPERATIONS,
   operationBucket,
   operationMethod,
   operationRetrySafety,
-  RetrySafety,
-} from '../../src/core/operations.js';
+} from '../../src/domain/operations.js';
 
 describe('каталог операций', () => {
   it('содержит уникальные стабильные ID и допустимые HTTP-методы', () => {

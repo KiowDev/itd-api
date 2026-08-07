@@ -1,12 +1,7 @@
-import {
-  BUCKET_LIMITS,
-  DEFAULT_RATE_LIMIT_BUCKET,
-  isKnownBucket,
-  RateLimitPacing,
-} from './buckets.js';
 import { type ItdClock, systemClock } from './clock.js';
 import type { ResolvedRateLimitOptions } from './config.js';
 import { ItdAbortError } from './errors.js';
+import { RateLimitPacing } from './pacing.js';
 
 /** Задача, ожидающая своей очереди. */
 interface QueuedTask {
@@ -438,7 +433,7 @@ export class BucketQueue {
 function seedLimit(bucket: string, options: ResolvedRateLimitOptions): number | undefined {
   const override = options.bucketOverrides[bucket]?.limit;
   if (override !== undefined) return override;
-  return isKnownBucket(bucket) ? BUCKET_LIMITS[bucket] : undefined;
+  return options.bucketLimits[bucket];
 }
 
 /** Общая очередь направления и надстроенные над ней очереди его бакетов. */
@@ -468,8 +463,9 @@ export class RequestQueuePool {
   }
 
   /** Очередь бакета на направлении. При `buckets: false` бакет всегда `default`. */
-  for(destination: string | undefined, bucket: string = DEFAULT_RATE_LIMIT_BUCKET): BucketQueue {
-    const name = this.#options.buckets ? bucket : DEFAULT_RATE_LIMIT_BUCKET;
+  for(destination: string | undefined, bucket?: string): BucketQueue {
+    const fallback = this.#options.defaultBucket;
+    const name = this.#options.buckets ? (bucket ?? fallback) : fallback;
 
     let entry = this.#destinations.get(destination);
     if (!entry) {

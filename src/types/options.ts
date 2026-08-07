@@ -1,10 +1,16 @@
-import type { RateLimitPacing } from '../core/buckets.js';
+import type { RateLimitBucketOverride } from '../core/catalog.js';
 import type { ItdClock } from '../core/clock.js';
-import type { OperationId, RetrySafety } from '../core/operations.js';
+import type { RetrySafety } from '../core/operation.js';
+import type { RateLimitPacing } from '../core/pacing.js';
 import type { RuntimeMode } from '../core/runtime.js';
 import type { ServiceDefinition } from '../core/services.js';
 import type { TokenStorage } from '../core/storage.js';
 import type { QueryParams } from '../core/url.js';
+import type { OperationId } from '../domain/operations.js';
+
+// Поправка к бакету описана ядром: очередь тюнится теми же полями независимо от того,
+// чей каталог операций подставлен. Здесь имя лишь публикуется наружу.
+export type { RateLimitBucketOverride };
 
 /**
  * Вход по логину и паролю.
@@ -78,14 +84,6 @@ export interface RetryDecisionContext {
   bodyReplayable: boolean;
   method: string;
   path: string;
-}
-
-/** Поправка к одному бакету. */
-export interface RateLimitBucketOverride {
-  /** Одновременных запросов внутри бакета. */
-  concurrency?: number | undefined;
-  /** Ёмкость бакета до первого ответа, запросов в минуту. */
-  limit?: number | undefined;
 }
 
 /** Что известно о запросе в момент выбора бакета. */

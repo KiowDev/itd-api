@@ -7,9 +7,10 @@ import type {
   RateLimitBucketOverride,
   RetryOptions,
 } from '../types/options.js';
-import { BUCKET_LIMITS, isKnownBucket, RateLimitPacing } from './buckets.js';
+import type { OperationCatalog } from './catalog.js';
 import { type ItdClock, systemClock } from './clock.js';
 import { ItdConfigError } from './errors.js';
+import { RateLimitPacing } from './pacing.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
 import type { ServiceDefinition } from './services.js';
 import { MemoryTokenStorage, type TokenStorage } from './storage.js';
@@ -74,17 +75,6 @@ export interface ResolvedRetryOptions {
  */
 export const DEFAULT_RATE_LIMIT_DELAYS = Object.freeze([1000, 5000, 30_000, 60_000, 90_000]);
 
-/**
- * Встроенные поправки бакетов.
- *
- * Таймаут загрузки файла — пять минут против обычных тридцати секунд, поэтому её
- * одновременность ограничена одним запросом.
- */
-export const DEFAULT_BUCKET_OVERRIDES: Readonly<Record<string, RateLimitBucketOverride>> =
-  Object.freeze({
-    'files.upload': Object.freeze({ concurrency: 1 }),
-  });
-
 /** Настройки очереди со всеми значениями по умолчанию. */
 export interface ResolvedRateLimitOptions {
   concurrency: number;
@@ -95,6 +85,13 @@ export interface ResolvedRateLimitOptions {
   bucketConcurrency: number;
   bucketOverrides: Readonly<Record<string, RateLimitBucketOverride>>;
   bucket: ((request: RateLimitBucketContext) => string | undefined) | undefined;
+  /**
+   * Ёмкость бакетов до первого ответа сервера. Приходит из каталога операций: сама
+   * очередь ни одного имени счётчика не знает.
+   */
+  bucketLimits: Readonly<Record<string, number>>;
+  /** Счётчик, из которого списывается путь без собственного правила на сервере. */
+  defaultBucket: string;
 }
 
 /**
@@ -270,11 +267,16 @@ export type BucketResolver = ((request: RateLimitBucketContext) => string | unde
  *
  * @internal
  */
-export function assertKnownBucket(name: string, option: string, bucket: BucketResolver): void {
-  if (bucket !== undefined || isKnownBucket(name)) return;
+export function assertKnownBucket(
+  name: string,
+  option: string,
+  bucket: BucketResolver,
+  catalog: OperationCatalog,
+): void {
+  if (bucket !== undefined || catalog.isKnownBucket(name)) return;
 
   throw new ItdConfigError(
-    `${option}: бакета «${name}» нет. Известны: ${Object.keys(BUCKET_LIMITS).join(', ')}`,
+    `${option}: бакета «${name}» нет. Известны: ${Object.keys(catalog.bucketLimits).join(', ')}`,
   );
 }
 
@@ -305,18 +307,20 @@ function resolvePacing(pacing: RateLimitPacing | undefined): RateLimitPacing {
 function resolveBucketOverrides(
   overrides: Record<string, RateLimitBucketOverride> | undefined,
   bucket: BucketResolver,
+  catalog: OperationCatalog,
 ): Readonly<Record<string, RateLimitBucketOverride>> {
-  if (overrides === undefined) return DEFAULT_BUCKET_OVERRIDES;
+  const builtIn = catalog.bucketOverrides;
+  if (overrides === undefined) return builtIn;
   if (!isRecord(overrides)) {
     throw new ItdConfigError('rateLimit.bucketOverrides должен быть объектом');
   }
 
-  const resolved: Record<string, RateLimitBucketOverride> = { ...DEFAULT_BUCKET_OVERRIDES };
+  const resolved: Record<string, RateLimitBucketOverride> = { ...builtIn };
   for (const [name, override] of Object.entries(overrides)) {
     if (!isRecord(override)) {
       throw new ItdConfigError(`rateLimit.bucketOverrides.${name} должен быть объектом`);
     }
-    assertKnownBucket(name, 'rateLimit.bucketOverrides', bucket);
+    assertKnownBucket(name, 'rateLimit.bucketOverrides', bucket, catalog);
     if (override.concurrency !== undefined) {
       requireConcurrency(override.concurrency, `rateLimit.bucketOverrides.${name}.concurrency`);
     }
@@ -327,7 +331,7 @@ function resolveBucketOverrides(
       );
     }
 
-    const built = DEFAULT_BUCKET_OVERRIDES[name];
+    const built = builtIn[name];
     resolved[name] = Object.freeze({
       concurrency: override.concurrency ?? built?.concurrency,
       limit: override.limit ?? built?.limit,
@@ -348,6 +352,7 @@ function resolveBucketOverrides(
  */
 export function resolveRateLimit(
   rateLimit: ItdClientOptions['rateLimit'],
+  catalog: OperationCatalog,
 ): ResolvedRateLimitOptions | undefined {
   if (rateLimit === false) return undefined;
   if (rateLimit !== undefined && !isRecord(rateLimit)) {
@@ -361,8 +366,10 @@ export function resolveRateLimit(
     buckets: true,
     pacing: RateLimitPacing.React,
     bucketConcurrency: 6,
-    bucketOverrides: DEFAULT_BUCKET_OVERRIDES,
+    bucketOverrides: catalog.bucketOverrides,
     bucket: undefined,
+    bucketLimits: catalog.bucketLimits,
+    defaultBucket: catalog.defaultBucket,
   };
   if (!rateLimit) return defaults;
 
@@ -395,8 +402,10 @@ export function resolveRateLimit(
       rateLimit.bucketConcurrency ?? concurrency,
       'rateLimit.bucketConcurrency',
     ),
-    bucketOverrides: resolveBucketOverrides(rateLimit.bucketOverrides, rateLimit.bucket),
+    bucketOverrides: resolveBucketOverrides(rateLimit.bucketOverrides, rateLimit.bucket, catalog),
     bucket: rateLimit.bucket,
+    bucketLimits: catalog.bucketLimits,
+    defaultBucket: catalog.defaultBucket,
   };
 }
 
@@ -496,7 +505,10 @@ function resolveServices(services: ItdClientOptions['services']): ServiceDefinit
  *
  * @throws {ItdConfigError} при некорректных значениях
  */
-export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
+export function resolveConfig(
+  options: ItdClientOptions,
+  catalog: OperationCatalog,
+): ResolvedConfig {
   if (!isRecord(options)) throw new ItdConfigError('опции клиента должны быть объектом');
 
   const mode: RuntimeMode = options.mode ?? RuntimeMode.Auto;
@@ -552,7 +564,7 @@ export function resolveConfig(options: ItdClientOptions = {}): ResolvedConfig {
     timeout,
     shutdownTimeout,
     retry: resolveRetry(options.retry),
-    rateLimit: resolveRateLimit(options.rateLimit),
+    rateLimit: resolveRateLimit(options.rateLimit, catalog),
     hooks: resolveHooks(options.hooks),
     logger: resolveLogger(options.logger),
     headers: resolveHeaders(options.headers),

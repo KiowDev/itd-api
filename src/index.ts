@@ -57,12 +57,6 @@ export {
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
 export { type AuthEvents, type AuthIdentity, TURNSTILE_SITE_KEY } from './core/auth.js';
-export {
-  BUCKET_LIMITS,
-  DEFAULT_RATE_LIMIT_BUCKET,
-  type RateLimitBucket,
-  RateLimitPacing,
-} from './core/buckets.js';
 export { type ItdClock, systemClock } from './core/clock.js';
 export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';
@@ -134,19 +128,8 @@ export {
   type MultiTokenStorageAdapterOptions,
   scopedTokenStorage,
 } from './core/multi-storage.js';
-export {
-  type BuiltInOperationId,
-  type CustomOperationId,
-  isBuiltInOperationId,
-  OPERATIONS,
-  type OperationDefinition,
-  type OperationId,
-  type OperationMethod,
-  operationBucket,
-  operationMethod,
-  operationRetrySafety,
-  RetrySafety,
-} from './core/operations.js';
+export { type OperationMethod, RetrySafety } from './core/operation.js';
+export { RateLimitPacing } from './core/pacing.js';
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
 // Плагины расширяют два явных уровня: logical operation и отдельную transport attempt.
@@ -178,6 +161,24 @@ export {
 } from './core/storage.js';
 export { toDate, utcStampToIso } from './core/time.js';
 export type { QueryParams, QueryValue } from './core/url.js';
+// Каталог операций и таблица счётчиков частоты — знание о самом API итд.com, а не о механике
+// исполнения запроса. Ядро получает их через контракт каталога. Подробности — в domain/catalog.ts.
+export {
+  BUCKET_LIMITS,
+  DEFAULT_RATE_LIMIT_BUCKET,
+  type RateLimitBucket,
+} from './domain/buckets.js';
+export {
+  type BuiltInOperationId,
+  type CustomOperationId,
+  type ItdOperationDefinition as OperationDefinition,
+  isBuiltInOperationId,
+  OPERATIONS,
+  type OperationId,
+  operationBucket,
+  operationMethod,
+  operationRetrySafety,
+} from './domain/operations.js';
 export type { PaymentMethod, Session, Subscription } from './models/account.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {

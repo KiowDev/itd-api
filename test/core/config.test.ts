@@ -1,14 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT, resolveConfig } from '../../src/core/config.js';
+import {
+  DEFAULT_BASE_URL,
+  DEFAULT_TIMEOUT,
+  resolveConfig as resolveClientConfig,
+} from '../../src/core/config.js';
 import { ItdConfigError } from '../../src/core/errors.js';
 import { createKeyValueStore } from '../../src/core/key-value-store.js';
 import { createTokenStorage, MemoryTokenStorage } from '../../src/core/storage.js';
+import { ITD_CATALOG } from '../../src/domain/catalog.js';
+import type { ItdClientOptions } from '../../src/types/options.js';
 import {
   LocalStorageKeyValueStore,
   LocalStorageTokenStorage,
   SessionStorageKeyValueStore,
   SessionStorageTokenStorage,
 } from '../../src/web.js';
+
+/** Каталог операций ядру неизвестен — здесь он подставляется явно, как это делает клиент. */
+const resolveConfig = (options: ItdClientOptions = {}) => resolveClientConfig(options, ITD_CATALOG);
 
 describe('resolveConfig — значения по умолчанию', () => {
   it('подставляет базовый URL, таймаут и очередь', () => {
@@ -29,6 +38,9 @@ describe('resolveConfig — значения по умолчанию', () => {
       bucketConcurrency: 6,
       bucketOverrides: { 'files.upload': { concurrency: 1 } },
       bucket: undefined,
+      // Ёмкости и умолчание приходят из каталога операций, а не из самой очереди.
+      bucketLimits: ITD_CATALOG.bucketLimits,
+      defaultBucket: 'default',
     });
     expect(config.retry).toMatchObject({ attempts: 3, baseDelay: 500 });
   });
