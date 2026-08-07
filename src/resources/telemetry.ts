@@ -1,8 +1,8 @@
 import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/http.js';
+import type { RequestOptions } from '../core/options.js';
 import { createDeviceId } from '../core/runtime.js';
 import { InteractionType, type ViewReason, type ViewSource } from '../types/enums.js';
-import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /** Параметры событий телеметрии. */

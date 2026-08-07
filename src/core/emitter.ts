@@ -1,4 +1,4 @@
-import type { Logger } from '../types/options.js';
+import type { Logger } from './options.js';
 
 /** Обработчик события. */
 export type Listener<T> = (payload: T) => void;

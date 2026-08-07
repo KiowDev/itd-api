@@ -1,10 +1,10 @@
 import { type CommentInput, resolveComment } from '../builders/comment.js';
 import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/http.js';
+import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { type Page, PaginationMode, type Paginator, readPagedPage } from '../core/pagination.js';
 import { encodePathSegment } from '../core/url.js';
 import type { Comment, LikeResult } from '../models/content.js';
-import type { PaginationOptions, RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /** Параметры запроса ответов на комментарий. */

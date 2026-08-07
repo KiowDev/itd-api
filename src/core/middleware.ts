@@ -1,8 +1,9 @@
-import type { ClientHooks, Logger, RequestOptions } from '../types/options.js';
+import type { AuthProvider } from './auth-provider.js';
 import type { OperationCatalog } from './catalog.js';
 import { type ItdClock, systemClock } from './clock.js';
 import { type ResolvedRetryOptions, resolveRetry } from './config.js';
 import { ItdAbortError, isItdApiError, isItdRateLimitError } from './errors.js';
+import type { ClientHooks, Logger, RequestOptions } from './options.js';
 import {
   beginTransportAttempt,
   currentTransportAttempt,
@@ -110,37 +111,17 @@ export function createServicesMiddleware(registry: ServiceRegistry): RequestMidd
   };
 }
 
-/** Что нужно слою авторизации. */
-export interface AuthMiddlewareDeps {
-  /** Заголовки авторизации для очередного запроса. Пустой объект, если токена нет. */
-  getAuthHeaders: () => Promise<Record<string, string>> | Record<string, string>;
-  /** Реакция на `401`. Возвращает `true`, если токен обновлён и повтор имеет смысл. */
-  onUnauthorized: () => Promise<boolean>;
-  /** Обновлять ли токен при `401` автоматически. */
-  autoRefresh: boolean;
-}
-
-async function applyAuth(
-  request: PipelineRequest,
-  deps: Pick<AuthMiddlewareDeps, 'getAuthHeaders'>,
-): Promise<PipelineRequest> {
-  if (request.skipAuth) return request;
-
-  const headers = await deps.getAuthHeaders();
-  return Object.keys(headers).length > 0 ? withLayerHeaders(request, headers) : request;
-}
-
 /**
  * Подготавливает auth state до входа транспортной попытки в очередь.
  *
  * Загрузка storage, внешний `getToken` и ленивый sign-in могут быть асинхронными; sign-in
  * сам входит в ту же queue. Поэтому эти действия обязаны завершиться до захвата её слота.
  */
-export function createAuthPreparationMiddleware(deps: {
-  prepareAuth: () => void | Promise<void>;
-}): RequestMiddleware {
+export function createAuthPreparationMiddleware(
+  auth: Pick<AuthProvider, 'prepare'>,
+): RequestMiddleware {
   return async (request, next) => {
-    if (!request.skipAuth) await deps.prepareAuth();
+    if (!request.skipAuth) await auth.prepare();
     return next(request);
   };
 }
@@ -148,13 +129,19 @@ export function createAuthPreparationMiddleware(deps: {
 /**
  * Добавляет уже подготовленные заголовки непосредственно перед transport.
  *
- * В основном pipeline callback синхронен и не запускает I/O, поэтому слой безопасно стоит
- * внутри queue. Если token изменился, пока запрос ждал slot, будет использовано новое значение.
+ * Слой стоит внутри queue, поэтому источник заголовков обязан быть синхронным и не
+ * запускать I/O — это выражено типом {@link AuthProvider.currentHeaders}. Если token
+ * изменился, пока запрос ждал slot, будет использовано новое значение.
  */
 export function createAuthHeadersMiddleware(
-  deps: Pick<AuthMiddlewareDeps, 'getAuthHeaders'>,
+  auth: Pick<AuthProvider, 'currentHeaders'>,
 ): RequestMiddleware {
-  return async (request, next) => next(await applyAuth(request, deps));
+  return (request, next) => {
+    if (request.skipAuth) return next(request);
+
+    const headers = auth.currentHeaders();
+    return next(Object.keys(headers).length > 0 ? withLayerHeaders(request, headers) : request);
+  };
 }
 
 /**
@@ -174,7 +161,7 @@ export function createAttemptMiddleware(): RequestMiddleware {
  * Его `next` включает все эти слои: повтор заново готовит auth state и планируется.
  */
 export function createAuthRecoveryMiddleware(
-  deps: Pick<AuthMiddlewareDeps, 'onUnauthorized' | 'autoRefresh'>,
+  auth: Pick<AuthProvider, 'recover'>,
 ): RequestMiddleware {
   return async (request, next) => {
     try {
@@ -182,33 +169,16 @@ export function createAuthRecoveryMiddleware(
     } catch (error) {
       // Обновляем и повторяем ровно один раз, чтобы не зациклиться, если сервер
       // отдаёт 401 и на свежем токене.
-      if (
-        request.skipAuthRefresh ||
-        !deps.autoRefresh ||
-        !isItdApiError(error) ||
-        error.status !== 401
-      ) {
+      if (request.skipAuthRefresh || !isItdApiError(error) || error.status !== 401) {
         throw error;
       }
 
-      const refreshed = await deps.onUnauthorized();
+      const refreshed = await auth.recover();
       if (!refreshed) throw error;
 
       return next({ ...request, skipAuthRefresh: true });
     }
   };
-}
-
-/**
- * Совместимая составная обёртка авторизации.
- *
- * Основной клиент разделяет preparation, recovery и headers вокруг очереди. Эта функция
- * остаётся удобной для автономной сборки pipeline без queue и внутренних тестов.
- */
-export function createAuthMiddleware(deps: AuthMiddlewareDeps): RequestMiddleware {
-  const recovery = createAuthRecoveryMiddleware(deps);
-  const headers = createAuthHeadersMiddleware(deps);
-  return (request, next) => recovery(request, (prepared) => headers(prepared, next));
 }
 
 /** Что нужно слою повторов. */

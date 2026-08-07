@@ -1,7 +1,7 @@
 import { operationMethod } from '../domain/operations.js';
 import type { UserId } from '../models/common.js';
-import type { AuthInput, CredentialsAuth } from '../types/options.js';
-import type { AuthConfig } from './config.js';
+import type { AuthProvider, AuthProviderDeps } from './auth-provider.js';
+import type { ItdClock } from './clock.js';
 import {
   AUTH_FLAG_COOKIE,
   type CookieJar,
@@ -11,9 +11,158 @@ import {
 import { Emitter, reportListenerError } from './emitter.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from './errors.js';
 import { readTokenIdentity, readTokenSubject } from './jwt.js';
+import type { Logger } from './options.js';
 import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
-import { copySession, type ItdSession } from './storage.js';
+import type { AuthInput, CredentialsAuth, SessionOptions } from './session-options.js';
+import { copySession, type ItdSession, MemoryTokenStorage, type TokenStorage } from './storage.js';
+import { isRecord, requireOptionalBoolean } from './validate.js';
+
+/**
+ * Настройки сессии после подстановки умолчаний и проверок.
+ *
+ * Часть полей заимствована у {@link ResolvedRuntimeConfig}: сессия ходит на тот же хост,
+ * теми же часами и с тем же логгером, но остальные настройки исполнения ей не нужны.
+ */
+export interface SessionConfig {
+  baseUrl: string;
+  clock: ItdClock;
+  useCookieJar: boolean;
+  logger: Logger | undefined;
+  auth: AuthInput | undefined;
+  storage: TokenStorage;
+  deviceId: string | undefined;
+  autoRefresh: boolean;
+  reloginOnRefreshFailure: boolean;
+}
+
+/**
+ * Проверяет форму `auth` и сообщает о типичных ошибках понятным текстом.
+ *
+ * Молчаливое игнорирование неверной формы приводит к загадочным `401`, поэтому
+ * ошибка возникает сразу при создании клиента.
+ */
+function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
+  if (auth === undefined) return undefined;
+
+  if (typeof auth === 'string') {
+    if (auth.trim() === '') {
+      throw new ItdConfigError('auth: передана пустая строка вместо accessToken');
+    }
+    return auth;
+  }
+
+  if (typeof auth !== 'object' || auth === null) {
+    throw new ItdConfigError(
+      `auth должен быть строкой с токеном или объектом, получено: ${typeof auth}`,
+    );
+  }
+
+  if ('getToken' in auth) {
+    if (typeof auth.getToken !== 'function') {
+      throw new ItdConfigError('auth.getToken должен быть функцией');
+    }
+    return { ...auth };
+  }
+
+  if ('accessToken' in auth) {
+    if (typeof auth.accessToken !== 'string' || auth.accessToken.trim() === '') {
+      throw new ItdConfigError('auth.accessToken должен быть непустой строкой');
+    }
+    return { ...auth };
+  }
+
+  if ('email' in auth || 'password' in auth) {
+    const { email, password, turnstileToken, getTurnstileToken } = auth as {
+      email?: unknown;
+      password?: unknown;
+      turnstileToken?: unknown;
+      getTurnstileToken?: unknown;
+    };
+    if (typeof email !== 'string' || email.trim() === '') {
+      throw new ItdConfigError('auth.email должен быть непустой строкой');
+    }
+    if (typeof password !== 'string' || password === '') {
+      throw new ItdConfigError('auth.password должен быть непустой строкой');
+    }
+    if (getTurnstileToken !== undefined && typeof getTurnstileToken !== 'function') {
+      throw new ItdConfigError('auth.getTurnstileToken должен быть функцией');
+    }
+    if (
+      turnstileToken !== undefined &&
+      (typeof turnstileToken !== 'string' || turnstileToken.trim() === '')
+    ) {
+      throw new ItdConfigError('auth.turnstileToken должен быть непустой строкой');
+    }
+
+    // Отсутствие капчи — не ошибка конфигурации: сессия может быть восстановлена из
+    // хранилища, и до входа по паролю дело вообще не дойдёт. Ошибка возникнет в момент
+    // входа, где её текст может объяснить, что именно нужно сделать.
+    return { ...auth };
+  }
+
+  throw new ItdConfigError(
+    'auth не распознан. Ожидается строка с accessToken либо объект ' +
+      '{ accessToken }, { email, password } или { getToken }',
+  );
+}
+
+function resolveStorage(storage: TokenStorage | undefined): TokenStorage {
+  if (storage === undefined) return new MemoryTokenStorage();
+  if (!isRecord(storage)) throw new ItdConfigError('storage должен быть объектом TokenStorage');
+
+  for (const method of ['get', 'set', 'clear'] as const) {
+    if (typeof storage[method] !== 'function') {
+      throw new ItdConfigError(`storage.${method} должен быть функцией`);
+    }
+  }
+  return storage;
+}
+
+/**
+ * Приводит настройки сессии к полному виду.
+ *
+ * @param runtime уже разрешённая конфигурация исполнения — из неё берутся общие поля
+ * @throws {ItdConfigError} при некорректных значениях
+ */
+export function resolveSessionConfig(
+  options: SessionOptions,
+  runtime: Pick<SessionConfig, 'baseUrl' | 'clock' | 'useCookieJar' | 'logger'>,
+): SessionConfig {
+  if (!isRecord(options)) throw new ItdConfigError('опции клиента должны быть объектом');
+
+  requireOptionalBoolean(options.autoRefresh, 'autoRefresh');
+  requireOptionalBoolean(options.reloginOnRefreshFailure, 'reloginOnRefreshFailure');
+
+  if (
+    options.deviceId !== undefined &&
+    (typeof options.deviceId !== 'string' || options.deviceId.trim() === '')
+  ) {
+    throw new ItdConfigError('deviceId должен быть непустой строкой');
+  }
+
+  return {
+    ...runtime,
+    auth: validateAuth(options.auth),
+    storage: resolveStorage(options.storage),
+    deviceId: options.deviceId,
+    autoRefresh: options.autoRefresh ?? true,
+    reloginOnRefreshFailure: options.reloginOnRefreshFailure ?? true,
+  };
+}
+
+/**
+ * Собирает менеджер сессии итд.com как реализацию {@link AuthProvider}.
+ *
+ * Единственная точка, где конвейер запросов встречается с полноценной авторизацией.
+ * Ядро её не вызывает — фабрику передаёт фасад клиента, иначе ссылка на сессию оказалась бы
+ * достижимой из любой сборки, включая анонимную.
+ */
+export function createItdAuth(options: SessionOptions, deps: AuthProviderDeps): AuthManager {
+  return new AuthManager(resolveSessionConfig(options, deps.config), deps.handler, deps.cookies, {
+    onAccountChange: deps.onAccountChange,
+  });
+}
 
 /** Пути эндпоинтов авторизации. */
 export const AUTH_PATHS = {
@@ -111,8 +260,8 @@ interface AuthManagerHooks {
  * дождаться его результата. Иначе сервер увидит десять параллельных `refresh`, и все,
  * кроме первого, скорее всего получат отказ по уже использованному токену.
  */
-export class AuthManager {
-  readonly #config: AuthConfig;
+export class AuthManager implements AuthProvider {
+  readonly #config: SessionConfig;
   readonly #send: RequestHandler;
   readonly #jar: CookieJar;
   readonly #emitter: Emitter<AuthEvents>;
@@ -155,7 +304,7 @@ export class AuthManager {
   #authEpoch = 0;
 
   constructor(
-    config: AuthConfig,
+    config: SessionConfig,
     send: RequestHandler,
     jar: CookieJar,
     hooks: AuthManagerHooks = {},
@@ -295,25 +444,37 @@ export class AuthManager {
     return Boolean(this.#session?.refreshToken);
   }
 
-  /** Заголовки авторизации для очередного запроса. Пустой объект, если токена нет. */
-  async getAuthHeaders(): Promise<Record<string, string>> {
-    const token = await this.getAccessToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
+  /**
+   * Готовит состояние авторизации до входа запроса в очередь. Стадия `auth_preparation`.
+   *
+   * Загрузка хранилища, внешний источник токена и отложенный вход асинхронны, поэтому
+   * обязаны завершиться до захвата слота очереди.
+   */
+  async prepare(): Promise<void> {
+    await this.getAccessToken();
   }
 
   /**
    * Заголовки уже подготовленной авторизации без чтения storage или вызова внешнего источника.
    *
-   * Используются после ожидания транспортной очереди: к этому моменту `getAccessToken()` уже
+   * Используются после ожидания транспортной очереди: к этому моменту {@link prepare} уже
    * был вызван снаружи неё, но token мог успеть смениться из-за refresh или `setSession()`.
-   *
-   * @internal
    */
-  getCurrentAuthHeaders(): Record<string, string> {
+  currentHeaders(): Record<string, string> {
     const session =
       this.#session === undefined ? this.#sessionFromConfig(this.#config.auth) : this.#session;
     const token = session?.accessToken ?? this.#externalToken ?? null;
     return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  /**
+   * Реакция конвейера на `401`. Стадия `auth_recovery`.
+   *
+   * При выключенном `autoRefresh` ничего не делает: вызывающий код обновляет сессию сам
+   * через `itd.auth.refresh()`, а библиотека просто пробрасывает {@link ItdAuthError}.
+   */
+  recover(): Promise<boolean> {
+    return this.#config.autoRefresh ? this.onUnauthorized() : Promise.resolve(false);
   }
 
   /**
@@ -323,7 +484,7 @@ export class AuthManager {
    * сервер связывает с ним запись в списке сессий, и плавающее значение плодило бы
    * по новой сессии на каждый старт.
    */
-  getDeviceId(): Promise<string> {
+  deviceId(): Promise<string> {
     if (this.#deviceId) return Promise.resolve(this.#deviceId);
 
     // Дедупликация: параллельные вызовы на холодном клиенте получают один `X-Device-Id`.

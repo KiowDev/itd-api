@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createItdAuth } from '../../src/core/auth.js';
 import { createClientRuntime } from '../../src/core/client-runtime.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from '../../src/core/errors.js';
 import { type ItdSession, MemoryTokenStorage } from '../../src/core/storage.js';
-import type { ItdClientOptions } from '../../src/types/options.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
@@ -13,18 +14,19 @@ function makeAuth(
   onAccountChange?: () => void,
 ) {
   const mock = createMockFetch(handler);
-  const runtime = createClientRuntime(
-    {
-      baseUrl: 'https://itd.test',
-      fetch: mock.fetch,
-      retry: false,
-      rateLimit: false,
-      mode: 'server',
-      storage: new MemoryTokenStorage(),
-      ...options,
-    },
-    { onAccountChange },
-  );
+  const resolved: ItdClientOptions = {
+    baseUrl: 'https://itd.test',
+    fetch: mock.fetch,
+    retry: false,
+    rateLimit: false,
+    mode: 'server',
+    storage: new MemoryTokenStorage(),
+    ...options,
+  };
+  const runtime = createClientRuntime(resolved, {
+    // Сессию подставляет вызывающий — ровно как это делает ItdClient.
+    auth: (deps) => createItdAuth(resolved, { ...deps, onAccountChange }),
+  });
 
   return {
     auth: runtime.auth,
@@ -32,6 +34,7 @@ function makeAuth(
     jar: runtime.cookies,
     mock,
     config: runtime.config,
+    storage: resolved.storage as MemoryTokenStorage,
     plugins: runtime.plugins,
   };
 }
@@ -40,7 +43,8 @@ describe('получение токена', () => {
   it('берёт токен из строки в конфигурации', async () => {
     const { auth } = makeAuth([], { auth: 'token-1' });
 
-    expect(await auth.getAuthHeaders()).toEqual({ Authorization: 'Bearer token-1' });
+    await auth.prepare();
+    expect(auth.currentHeaders()).toEqual({ Authorization: 'Bearer token-1' });
   });
 
   it('берёт токен из объекта сессии', async () => {
@@ -62,7 +66,8 @@ describe('получение токена', () => {
   it('без авторизации отдаёт пустые заголовки', async () => {
     const { auth } = makeAuth([]);
 
-    expect(await auth.getAuthHeaders()).toEqual({});
+    await auth.prepare();
+    expect(auth.currentHeaders()).toEqual({});
   });
 
   it('сохранённая сессия важнее токена из конфигурации', async () => {
@@ -195,6 +200,29 @@ describe('обновление токена', () => {
     await expect(auth.refresh()).rejects.toThrow(ItdAuthError);
   });
 
+  it('recover обновляет токен и разрешает повтор запроса', async () => {
+    const { auth, mock } = makeAuth([json({ accessToken: 'refreshed' })], {
+      auth: { accessToken: 'old-token', refreshToken: 'r' },
+    });
+
+    await expect(auth.recover()).resolves.toBe(true);
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('autoRefresh: false оставляет обновление вызывающему коду', async () => {
+    const { auth, mock } = makeAuth([json({ accessToken: 'refreshed' })], {
+      auth: { accessToken: 'old-token', refreshToken: 'r' },
+      autoRefresh: false,
+    });
+
+    // Конвейер спрашивает разрешения на повтор и получает отказ, не тратя сетевой запрос.
+    await expect(auth.recover()).resolves.toBe(false);
+    expect(mock.callCount).toBe(0);
+
+    // Ручное обновление при этом доступно.
+    await expect(auth.refresh()).resolves.toBe('refreshed');
+  });
+
   it('чистит сессию, когда сервер отверг обновление', async () => {
     const storage = new MemoryTokenStorage();
     const { auth } = makeAuth([json({ code: 'SESSION_EXPIRED' }, { status: 401 })], {
@@ -292,7 +320,7 @@ describe('гонка выхода и запоздавшего обновлени
       release = resolve;
     });
 
-    const { auth, config } = makeAuth(
+    const { auth, storage } = makeAuth(
       async () => {
         await gate;
         return json({ accessToken: 'refreshed' });
@@ -301,7 +329,7 @@ describe('гонка выхода и запоздавшего обновлени
     );
 
     // Заранее фиксируем deviceId, чтобы его ленивое сохранение не мешало проверке гонки.
-    await auth.getDeviceId();
+    await auth.deviceId();
 
     // Обновление стартует и виснет на ответе сервера.
     const refreshing = auth.refresh();
@@ -313,7 +341,7 @@ describe('гонка выхода и запоздавшего обновлени
     await expect(refreshing).rejects.toBeInstanceOf(ItdAuthError);
 
     expect(await auth.getAccessToken()).toBeNull();
-    const stored = await config.storage.get();
+    const stored = await storage.get();
     expect(stored?.accessToken).toBeUndefined();
   });
 
@@ -323,7 +351,7 @@ describe('гонка выхода и запоздавшего обновлени
       release = resolve;
     });
 
-    const { auth, config } = makeAuth(
+    const { auth, storage } = makeAuth(
       async () => {
         await gate;
         return json({ accessToken: 'stale-refreshed' });
@@ -331,7 +359,7 @@ describe('гонка выхода и запоздавшего обновлени
       { auth: { accessToken: 'old-token', refreshToken: 'r' } },
     );
 
-    await auth.getDeviceId();
+    await auth.deviceId();
 
     const refreshing = auth.refresh();
     await auth.setSession({ accessToken: 'explicit', obtainedAt: Date.now() });
@@ -341,7 +369,7 @@ describe('гонка выхода и запоздавшего обновлени
     await expect(refreshing).resolves.toBe('explicit');
 
     expect(await auth.getAccessToken()).toBe('explicit');
-    const stored = await config.storage.get();
+    const stored = await storage.get();
     expect(stored?.accessToken).toBe('explicit');
   });
 });
@@ -481,7 +509,8 @@ describe('сессия из хранилища без опции auth', () => {
     const storage = new MemoryTokenStorage({ accessToken: 'from-storage' });
     const { auth } = makeAuth([], { storage });
 
-    expect(await auth.getAuthHeaders()).toEqual({ Authorization: 'Bearer from-storage' });
+    await auth.prepare();
+    expect(auth.currentHeaders()).toEqual({ Authorization: 'Bearer from-storage' });
   });
 
   it('одних cookie хватает, чтобы поднять сессию через 401', async () => {

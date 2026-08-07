@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveConfig as resolveClientConfig } from '../../src/core/config.js';
+import { resolveRuntimeConfig } from '../../src/core/config.js';
 import { CookieJar } from '../../src/core/cookies.js';
 import {
   ItdAbortError,
@@ -12,7 +12,8 @@ import {
 } from '../../src/core/errors.js';
 import {
   composePipeline,
-  createAuthMiddleware,
+  createAuthHeadersMiddleware,
+  createAuthRecoveryMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
 } from '../../src/core/middleware.js';
@@ -20,7 +21,7 @@ import { RetrySafety } from '../../src/core/operation.js';
 import type { PipelineRequest } from '../../src/core/pipeline.js';
 import { Transport, type TransportDeps } from '../../src/core/transport.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
-import type { ItdClientOptions } from '../../src/types/options.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import {
   abortError,
   createHangingFetch,
@@ -31,7 +32,8 @@ import {
 } from '../helpers/mock-fetch.js';
 
 /** Каталог операций ядру неизвестен — здесь он подставляется явно, как это делает клиент. */
-const resolveConfig = (options: ItdClientOptions = {}) => resolveClientConfig(options, ITD_CATALOG);
+const resolveConfig = (options: ItdClientOptions = {}) =>
+  resolveRuntimeConfig(options, ITD_CATALOG);
 
 /** Собирает транспорт с моком сети — так же, как это делает ItdClient. */
 function makeTransport(
@@ -572,23 +574,25 @@ describe('Transport: хуки и логгер', () => {
   });
 });
 
-/** Собирает конвейер только со слоем авторизации поверх транспорта. */
+/**
+ * Собирает конвейер только со слоями авторизации поверх транспорта.
+ *
+ * Порядок тот же, что у клиента: восстановление снаружи подстановки заголовков, чтобы
+ * повтор после обновления токена получил свежее значение.
+ */
 function withAuth(
   handler: MockHandler | Response[],
   options: ItdClientOptions = {},
   authDeps: {
-    getAuthHeaders?: () => Record<string, string> | Promise<Record<string, string>>;
-    onUnauthorized?: () => Promise<boolean>;
+    currentHeaders?: () => Record<string, string>;
+    recover?: () => Promise<boolean>;
   } = {},
 ) {
-  const { transport, mock, config } = makeTransport(handler, options);
+  const { transport, mock } = makeTransport(handler, options);
   const handler401 = composePipeline(
     [
-      createAuthMiddleware({
-        getAuthHeaders: authDeps.getAuthHeaders ?? (() => ({})),
-        onUnauthorized: authDeps.onUnauthorized ?? (async () => false),
-        autoRefresh: config.autoRefresh,
-      }),
+      createAuthRecoveryMiddleware({ recover: authDeps.recover ?? (async () => false) }),
+      createAuthHeadersMiddleware({ currentHeaders: authDeps.currentHeaders ?? (() => ({})) }),
     ],
     transport.send,
   );
@@ -602,7 +606,7 @@ describe('слой авторизации', () => {
       [json({})],
       {},
       {
-        getAuthHeaders: () => ({ Authorization: 'Bearer test-token' }),
+        currentHeaders: () => ({ Authorization: 'Bearer test-token' }),
       },
     );
 
@@ -612,8 +616,8 @@ describe('слой авторизации', () => {
   });
 
   it('skipAuth не подставляет заголовки авторизации', async () => {
-    const getAuthHeaders = vi.fn(() => ({ Authorization: 'Bearer test-token' }));
-    const { request, mock } = withAuth([json({})], {}, { getAuthHeaders });
+    const currentHeaders = vi.fn(() => ({ Authorization: 'Bearer test-token' }));
+    const { request, mock } = withAuth([json({})], {}, { currentHeaders });
 
     await request({
       operationId: 'raw',
@@ -622,46 +626,46 @@ describe('слой авторизации', () => {
       skipAuth: true,
     });
 
-    expect(getAuthHeaders).not.toHaveBeenCalled();
+    expect(currentHeaders).not.toHaveBeenCalled();
     expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
   });
 
   it('повторяет запрос ровно один раз после успешного обновления', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(true);
+    const recover = vi.fn().mockResolvedValue(true);
     const { request, mock } = withAuth(
       [json({ code: 'UNAUTHORIZED' }, { status: 401 }), json({ data: { id: '1' } })],
       {},
-      { onUnauthorized },
+      { recover },
     );
 
     await expect(
       request({ operationId: 'raw', method: 'GET', path: '/api/users/me' }),
     ).resolves.toEqual({ id: '1' });
-    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(recover).toHaveBeenCalledTimes(1);
     expect(mock.callCount).toBe(2);
   });
 
   it('не зацикливается, если 401 приходит и на свежем токене', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(true);
+    const recover = vi.fn().mockResolvedValue(true);
     const { request, mock } = withAuth(
       () => json({ code: 'UNAUTHORIZED' }, { status: 401 }),
       {},
-      { onUnauthorized },
+      { recover },
     );
 
     await expect(
       request({ operationId: 'raw', method: 'GET', path: '/api/users/me' }),
     ).rejects.toThrow();
-    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(recover).toHaveBeenCalledTimes(1);
     expect(mock.callCount).toBe(2);
   });
 
   it('не обновляет токен, если обновление не удалось', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(false);
+    const recover = vi.fn().mockResolvedValue(false);
     const { request, mock } = withAuth(
       [json({ code: 'SESSION_EXPIRED' }, { status: 401 })],
       {},
-      { onUnauthorized },
+      { recover },
     );
 
     await expect(
@@ -671,11 +675,11 @@ describe('слой авторизации', () => {
   });
 
   it('skipAuthRefresh отключает обновление — так защищены сами эндпоинты авторизации', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(true);
+    const recover = vi.fn().mockResolvedValue(true);
     const { request } = withAuth(
       [json({ code: 'UNAUTHORIZED' }, { status: 401 })],
       {},
-      { onUnauthorized },
+      { recover },
     );
 
     await expect(
@@ -686,21 +690,7 @@ describe('слой авторизации', () => {
         skipAuthRefresh: true,
       }),
     ).rejects.toThrow();
-    expect(onUnauthorized).not.toHaveBeenCalled();
-  });
-
-  it('autoRefresh: false отключает обновление полностью', async () => {
-    const onUnauthorized = vi.fn().mockResolvedValue(true);
-    const { request } = withAuth(
-      [json({ code: 'UNAUTHORIZED' }, { status: 401 })],
-      { autoRefresh: false },
-      { onUnauthorized },
-    );
-
-    await expect(
-      request({ operationId: 'raw', method: 'GET', path: '/api/users/me' }),
-    ).rejects.toThrow();
-    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(recover).not.toHaveBeenCalled();
   });
 });
 

@@ -2,11 +2,11 @@ import type { AuthIdentity } from '../core/auth.js';
 import type { ItdClock } from '../core/clock.js';
 import type { Listener, Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
+import type { Logger } from '../core/options.js';
 import { supportsStreamingBody } from '../core/runtime.js';
 import { pickString } from '../core/unwrap.js';
 import type { NotificationEvent } from '../notifications/normalize.js';
 import type { NotificationType, RealtimeStatus } from '../types/enums.js';
-import type { Logger } from '../types/options.js';
 import { RealtimeEngine, type RealtimeEngineEvents, type RealtimeSyncReason } from './engine.js';
 import type {
   RealtimeHandler,

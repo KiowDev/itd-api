@@ -1,5 +1,5 @@
+import type { RequestOptions } from '../core/options.js';
 import type { VerificationStatus } from '../models/platform.js';
-import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /**

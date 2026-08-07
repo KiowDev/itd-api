@@ -1,15 +1,17 @@
 import type { FileInput } from './core/attachments/contracts.js';
-import type { AuthEvents } from './core/auth.js';
+import { type AuthEvents, type AuthManager, createItdAuth } from './core/auth.js';
 import { type ClientRuntime, createClientRuntime } from './core/client-runtime.js';
 import { createDeadline } from './core/clock.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdStateError } from './core/errors.js';
+import type { RawRequestOptions, RequestOptions } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
 import type { RateLimitBucketState, RequestQueuePool } from './core/rate-limit.js';
 import type { ServiceDefinition } from './core/services.js';
 import type { ItdSession } from './core/storage.js';
 import type { UserId } from './models/common.js';
+import type { ItdClientOptions } from './options.js';
 import { ItdRealtime, type RealtimeOptions, setRealtimeConnectGuard } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
 import { CommentsResource } from './resources/comments.js';
@@ -28,7 +30,6 @@ import {
 } from './resources/telemetry.js';
 import { UsersResource } from './resources/users.js';
 import { VerificationResource } from './resources/verification.js';
-import type { ItdClientOptions, RawRequestOptions, RequestOptions } from './types/options.js';
 
 declare global {
   interface SymbolConstructor {
@@ -115,7 +116,7 @@ export function createManagedClient(
  * ```
  */
 export class ItdClient {
-  readonly #runtime: ClientRuntime;
+  readonly #runtime: ClientRuntime<AuthManager>;
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
   readonly #streams = new Set<ItdRealtime>();
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
@@ -234,7 +235,10 @@ export class ItdClient {
     this.#runtime = createClientRuntime(options, {
       queues: internals.queues,
       assertActive: (action) => assertClientActive(this, action),
-      onAccountChange: () => this.#disconnectStreams(),
+      // Полноценную сессию подставляет фасад: ядро о ней не знает, и клиент с готовым
+      // токеном не потянет за собой ни хранилище, ни вход по паролю.
+      auth: (deps) =>
+        createItdAuth(options, { ...deps, onAccountChange: () => this.#disconnectStreams() }),
     });
     CLIENT_PLUGIN_REGISTRIES.set(this, this.#runtime.plugins);
   }

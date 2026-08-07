@@ -1,4 +1,4 @@
-import type { RateLimitBucketOverride } from '../core/catalog.js';
+import type { RateLimitBucketOverride } from '../core/options.js';
 
 /**
  * Ёмкость серверных счётчиков частоты, запросов в минуту.

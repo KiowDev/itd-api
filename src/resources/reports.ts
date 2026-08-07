@@ -1,6 +1,6 @@
 import { type ReportInput, resolveReport } from '../builders/report.js';
+import type { RequestOptions } from '../core/options.js';
 import type { Report } from '../models/platform.js';
-import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /**

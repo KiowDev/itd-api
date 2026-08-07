@@ -29,6 +29,7 @@ const LAYERS = [
   ['notifications/', 'notifications'],
   ['client.ts', 'sdk'],
   ['accounts.ts', 'sdk'],
+  ['options.ts', 'sdk'],
   ['index.ts', 'entry'],
   ['node.ts', 'entry'],
   ['web.ts', 'entry'],
@@ -52,6 +53,36 @@ const FORBIDDEN = {
   spans: ['domain', 'resources', 'realtime', 'sdk'],
   notifications: ['resources', 'sdk'],
 };
+
+/**
+ * Границы внутри одного слоя, которые карта слоёв выразить не может.
+ *
+ * Сборка запроса не должна ссылаться на конкретную реализацию сессии, иначе та останется
+ * достижимой из любого бандла, включая анонимный, и разделение окажется бумажным.
+ * Ни TypeScript, ни тесты такой регресс не заметят — только эта проверка.
+ */
+const FORBIDDEN_EDGES = [
+  {
+    from: 'core/client-runtime.ts',
+    to: 'core/auth.ts',
+    reason: 'сессию подставляет вызывающий через фабрику AuthProvider',
+  },
+  {
+    from: 'core/config.ts',
+    to: 'core/storage.ts',
+    reason: 'хранилищем владеет сессия, а не конфигурация исполнения',
+  },
+  {
+    from: 'core/config.ts',
+    to: 'core/session-options.ts',
+    reason: 'настройки исполнения не знают про авторизацию',
+  },
+  {
+    from: 'core/options.ts',
+    to: 'core/session-options.ts',
+    reason: 'RuntimeOptions и SessionOptions объединяет только sdk-слой',
+  },
+];
 
 /**
  * Осознанные исключения. Каждое живёт до конкретного шага декомпозиции.
@@ -145,11 +176,22 @@ for (const file of listFiles(SRC)) {
     const to = targetOf(from, specifier);
     if (to === undefined) continue;
 
+    const edge = FORBIDDEN_EDGES.find((rule) => rule.from === from && rule.to === to);
+    if (edge) {
+      violations.push({ from, to, typeOnly, why: edge.reason });
+      continue;
+    }
+
     const toLayer = layerOf(to);
     if (toLayer === undefined || !forbidden.includes(toLayer)) continue;
     if (isAllowed(from, to, typeOnly)) continue;
 
-    violations.push({ from, fromLayer, to, toLayer, typeOnly });
+    violations.push({
+      from,
+      to,
+      typeOnly,
+      why: `слою «${fromLayer}» запрещено импортировать «${toLayer}»`,
+    });
   }
 }
 
@@ -158,7 +200,7 @@ if (violations.length > 0) {
   for (const v of violations) {
     const kind = v.typeOnly ? ' (только тип)' : '';
     console.error(`  ${v.from} → ${v.to}${kind}`);
-    console.error(`    слою «${v.fromLayer}» запрещено импортировать «${v.toLayer}»\n`);
+    console.error(`    ${v.why}\n`);
   }
   console.error('Добавьте осознанное исключение в scripts/check-imports.mjs либо');
   console.error('переверните зависимость: слой ниже не должен знать о слое выше.');

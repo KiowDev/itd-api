@@ -1,4 +1,3 @@
-import type { ClientHooks, Logger } from '../types/options.js';
 import type { ItdClock } from './clock.js';
 import type { CookieJar } from './cookies.js';
 import { createApiError, readRateLimit } from './error-factory.js';
@@ -9,6 +8,7 @@ import {
   ItdNetworkError,
   ItdTimeoutError,
 } from './errors.js';
+import type { ClientHooks, Logger } from './options.js';
 import {
   identifyRequest,
   type PipelineRequest,

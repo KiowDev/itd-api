@@ -129,6 +129,27 @@ export {
   scopedTokenStorage,
 } from './core/multi-storage.js';
 export { type OperationMethod, RetrySafety } from './core/operation.js';
+// Опции разделены по слоям: RuntimeOptions нужны generic-ядру, SessionOptions — сессии,
+// а ItdClientOptions объединяет их для полного SDK. Подробности — в core/options.ts.
+export type {
+  ClientHooks,
+  ErrorContextHook,
+  Logger,
+  OperationRequestOptions,
+  PaginationOptions,
+  RateLimitBucketContext,
+  RateLimitBucketOverride,
+  RateLimitOptions,
+  RawRequestOptions,
+  RequestContext,
+  RequestExtensions,
+  RequestOptions,
+  ResponseContext,
+  RetryContext,
+  RetryDecisionContext,
+  RetryOptions,
+  RuntimeOptions,
+} from './core/options.js';
 export { RateLimitPacing } from './core/pacing.js';
 export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
@@ -149,6 +170,7 @@ export type { RateLimitBucketState } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export type { ServiceDefinition } from './core/services.js';
+export type { AuthInput, CredentialsAuth, SessionOptions } from './core/session-options.js';
 // Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
 // и потому не может попасть в нейтральный бандл, а Web Storage backend вынесены
 // в `itd-api/web`, чтобы их молчаливый откат в память выбирали осознанно.
@@ -231,6 +253,7 @@ export { type NotificationEvent, normalizeNotification } from './notifications/n
 export { formatNotificationText } from './notifications/text.js';
 export { canonicalNotificationType, isKnownNotificationType } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
+export type { ItdClientOptions } from './options.js';
 export {
   RealtimeComposer,
   type RealtimeErrorBoundary,
@@ -380,27 +403,6 @@ export {
   ViewSource,
   WallAccess,
 } from './types/enums.js';
-export type {
-  AuthInput,
-  ClientHooks,
-  CredentialsAuth,
-  ErrorContextHook,
-  ItdClientOptions,
-  Logger,
-  OperationRequestOptions,
-  PaginationOptions,
-  RateLimitBucketContext,
-  RateLimitBucketOverride,
-  RateLimitOptions,
-  RawRequestOptions,
-  RequestContext,
-  RequestExtensions,
-  RequestOptions,
-  ResponseContext,
-  RetryContext,
-  RetryDecisionContext,
-  RetryOptions,
-} from './types/options.js';
 export type {
   CreateCommentInput,
   CreatePollInput,

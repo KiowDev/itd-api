@@ -1,12 +1,5 @@
 import type { OperationMethod, RetrySafety } from './operation.js';
-
-/** Поправка к одному бакету. */
-export interface RateLimitBucketOverride {
-  /** Одновременных запросов внутри бакета. */
-  concurrency?: number | undefined;
-  /** Ёмкость бакета до первого ответа, запросов в минуту. */
-  limit?: number | undefined;
-}
+import type { RateLimitBucketOverride } from './options.js';
 
 /**
  * Всё, что ядро знает о предметной области.

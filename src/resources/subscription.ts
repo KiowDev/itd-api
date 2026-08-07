@@ -1,6 +1,6 @@
+import type { RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
 import type { PaymentMethod, Subscription } from '../models/account.js';
-import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /**

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type ResolvedRateLimitOptions, resolveConfig } from '../../src/core/config.js';
+import { type ResolvedRateLimitOptions, resolveRuntimeConfig } from '../../src/core/config.js';
 import { createApiError } from '../../src/core/error-factory.js';
 import {
   ItdAbortError,
@@ -19,7 +19,7 @@ function retryOptions(overrides: Partial<ReturnType<typeof defaults>> = {}) {
 }
 
 function defaults() {
-  const config = resolveConfig({}, ITD_CATALOG);
+  const config = resolveRuntimeConfig({}, ITD_CATALOG);
   if (!config.retry) throw new Error('повторы должны быть включены по умолчанию');
   return config.retry;
 }
@@ -397,7 +397,7 @@ describe('RequestQueuePool', () => {
 
   /** Настройки пула с точечной правкой: остальное берётся из умолчаний клиента. */
   function poolOptions(overrides: Partial<ResolvedRateLimitOptions> = {}) {
-    const rateLimit = resolveConfig({}, ITD_CATALOG).rateLimit;
+    const rateLimit = resolveRuntimeConfig({}, ITD_CATALOG).rateLimit;
     if (!rateLimit) throw new Error('очередь должна быть включена по умолчанию');
     return { ...rateLimit, concurrency: 1, ...overrides };
   }
@@ -661,7 +661,7 @@ describe('BucketQueue — режимы реакции на заголовки', 
   afterEach(() => vi.useRealTimers());
 
   function pool(overrides: Partial<ResolvedRateLimitOptions> = {}) {
-    const rateLimit = resolveConfig({}, ITD_CATALOG).rateLimit;
+    const rateLimit = resolveRuntimeConfig({}, ITD_CATALOG).rateLimit;
     if (!rateLimit) throw new Error('очередь должна быть включена по умолчанию');
     return new RequestQueuePool({ ...rateLimit, ...overrides });
   }

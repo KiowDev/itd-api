@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
 import { ItdConfigError } from '../../src/core/errors.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import { PollTransport } from '../../src/realtime/poll.js';
 import { RECONNECT_BACKOFF, reconnectDelay } from '../../src/realtime/reconnect.js';
 import { SseTransport } from '../../src/realtime/sse.js';
@@ -11,7 +12,6 @@ import {
   type TransportEvent,
   UnauthorizedStreamError,
 } from '../../src/realtime/transport.js';
-import type { ItdClientOptions } from '../../src/types/options.js';
 import { abortError, createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 /** Ответ с телом-потоком: куски отдаются по одному. */

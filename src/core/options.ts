@@ -1,57 +1,10 @@
-import type { RateLimitBucketOverride } from '../core/catalog.js';
-import type { ItdClock } from '../core/clock.js';
-import type { RetrySafety } from '../core/operation.js';
-import type { RateLimitPacing } from '../core/pacing.js';
-import type { RuntimeMode } from '../core/runtime.js';
-import type { ServiceDefinition } from '../core/services.js';
-import type { TokenStorage } from '../core/storage.js';
-import type { QueryParams } from '../core/url.js';
 import type { OperationId } from '../domain/operations.js';
-
-// Поправка к бакету описана ядром: очередь тюнится теми же полями независимо от того,
-// чей каталог операций подставлен. Здесь имя лишь публикуется наружу.
-export type { RateLimitBucketOverride };
-
-/**
- * Вход по логину и паролю.
- *
- * Вход требует токен капчи Cloudflare Turnstile, поэтому полностью автоматическим он быть
- * не может: капчу должен решить кто-то снаружи. Токен одноразовый и живёт несколько минут,
- * так что долгоживущему клиенту нужен `getTurnstileToken` — он спрашивается заново перед
- * каждой попыткой входа. Одиночный `turnstileToken` годится для разового скрипта.
- */
-export interface CredentialsAuth {
-  email: string;
-  password: string;
-  /** Разовый токен капчи. Для повторного входа после истечения сессии не подойдёт. */
-  turnstileToken?: string | undefined;
-  /** Источник свежего токена капчи. Спрашивается перед каждым входом. */
-  getTurnstileToken?: (() => string | Promise<string>) | undefined;
-}
-
-/**
- * Как клиент получает доступ к API.
- *
- * Четыре формы — от разового вызова с готовым токеном до полноценной сессии, которую
- * библиотека заводит и продлевает сама.
- *
- * Опция необязательна: если {@link ItdClientOptions.storage} уже содержит сессию, доступ
- * берётся оттуда. Когда заданы обе, хранилище главнее — оно отражает текущее состояние
- * сессии, — а недостающие поля берутся отсюда.
- *
- * @example
- * ```ts
- * new ItdClient({ auth: '<accessToken>' });                    // разовый вызов
- * new ItdClient({ auth: { accessToken, refreshToken } });      // восстановить сессию
- * new ItdClient({ auth: { email, password, getTurnstileToken } });  // залогиниться самому
- * new ItdClient({ auth: { getToken: () => vault.read() } });   // токен из внешнего источника
- * ```
- */
-export type AuthInput =
-  | string
-  | { accessToken: string; refreshToken?: string | undefined }
-  | CredentialsAuth
-  | { getToken: () => string | null | Promise<string | null> };
+import type { ItdClock } from './clock.js';
+import type { RetrySafety } from './operation.js';
+import type { RateLimitPacing } from './pacing.js';
+import type { RuntimeMode } from './runtime.js';
+import type { ServiceDefinition } from './services.js';
+import type { QueryParams } from './url.js';
 
 /** Куда библиотека пишет отладочные сообщения. Совместим с `console`. */
 export interface Logger {
@@ -84,6 +37,14 @@ export interface RetryDecisionContext {
   bodyReplayable: boolean;
   method: string;
   path: string;
+}
+
+/** Поправка к одному бакету. */
+export interface RateLimitBucketOverride {
+  /** Одновременных запросов внутри бакета. */
+  concurrency?: number | undefined;
+  /** Ёмкость бакета до первого ответа, запросов в минуту. */
+  limit?: number | undefined;
 }
 
 /** Что известно о запросе в момент выбора бакета. */
@@ -203,12 +164,15 @@ export interface ClientHooks {
 }
 
 /**
- * Опции конструктора `ItdClient`.
+ * Настройки исполнения запросов: куда ходить, как долго ждать и чем представляться.
+ *
+ * Всё, что нужно generic-ядру и ничего сверх того. Авторизация и сессия описаны отдельно
+ * в {@link SessionOptions}, а полный набор опций клиента их объединяет.
  *
  * Все поля допускают явный `undefined`, чтобы можно было передавать значения, которых
- * может не быть, — например `new ItdClient({ auth: process.env.ITD_TOKEN })`.
+ * может не быть, — например `new ItdClient({ timeout: process.env.TIMEOUT })`.
  */
-export interface ItdClientOptions {
+export interface RuntimeOptions {
   // — Куда ходить —————————————————————————————————————————————————————————————————————
 
   /**
@@ -238,34 +202,6 @@ export interface ItdClientOptions {
    * ```
    */
   services?: Record<string, string | Omit<ServiceDefinition, 'name'>> | undefined;
-
-  // — Чем представляться ———————————————————————————————————————————————————————————————
-
-  /** Авторизация. Без неё доступны только публичные эндпоинты. */
-  auth?: AuthInput | undefined;
-  /** Где хранить сессию. По умолчанию {@link MemoryTokenStorage}. */
-  storage?: TokenStorage | undefined;
-  /**
-   * Обновлять токен автоматически при ответе `401`. По умолчанию `true`.
-   *
-   * При `false` библиотека просто пробросит {@link ItdAuthError}, а обновлением
-   * вы управляете сами через `itd.auth.refresh()`.
-   */
-  autoRefresh?: boolean | undefined;
-  /**
-   * Пытаться ли войти заново, если обновление токена не удалось.
-   *
-   * Работает, только когда в `auth` переданы email и пароль. По умолчанию `true`.
-   */
-  reloginOnRefreshFailure?: boolean | undefined;
-  /**
-   * Значение заголовка `X-Device-Id`, который уходит с каждым запросом.
-   *
-   * Сервер различает по нему записи в списке сессий, поэтому значение должно быть стабильным.
-   * Если не задать, библиотека заведёт идентификатор сама и сохранит его в {@link ItdSession},
-   * так что при постоянном хранилище он переживёт перезапуск процесса.
-   */
-  deviceId?: string | undefined;
 
   // — Сроки, повторы и нагрузка ————————————————————————————————————————————————————————
 
@@ -370,7 +306,7 @@ export interface RawRequestOptions extends RequestOptions {
   path: string;
   /**
    * Имя сервиса, на хост которого уйдёт запрос. Без него запрос идёт на основной `baseUrl`
-   * клиента. Сервисы задаются опцией {@link ItdClientOptions.services}.
+   * клиента. Сервисы задаются опцией {@link RuntimeOptions.services}.
    */
   service?: string | undefined;
   /**

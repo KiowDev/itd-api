@@ -1,7 +1,7 @@
 import type { OperationId } from '../../domain/operations.js';
-import type { Logger, OperationRequestOptions } from '../../types/options.js';
 import type { AuthIdentity } from '../auth.js';
 import type { Unsubscribe } from '../emitter.js';
+import type { Logger, OperationRequestOptions } from '../options.js';
 
 /**
  * Обёртка одной логической операции.

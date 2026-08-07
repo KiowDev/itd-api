@@ -15,12 +15,13 @@ import {
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
 } from './core/multi-storage.js';
+import type { Logger } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
 import { RequestQueuePool } from './core/rate-limit.js';
 import type { TokenStorage } from './core/storage.js';
 import { ITD_CATALOG } from './domain/catalog.js';
-import type { ItdClientOptions, Logger } from './types/options.js';
+import type { ItdClientOptions } from './options.js';
 
 /** Как аккаунты делят между собой очередь запросов. */
 export type RateLimitScope = 'account' | 'shared';

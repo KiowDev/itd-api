@@ -1,10 +1,10 @@
 import { AUTH_PATHS, type AuthManager, type TURNSTILE_SITE_KEY } from '../core/auth.js';
 import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/http.js';
+import type { RequestOptions } from '../core/options.js';
 import { pickArray, pickString } from '../core/unwrap.js';
 import type { Session } from '../models/account.js';
 import type { AuthState } from '../models/users.js';
-import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /** Учётные данные для входа. */

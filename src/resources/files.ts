@@ -15,10 +15,10 @@ import { ItdConfigError, ItdError, ItdFileError, ItdFileErrorReason } from '../c
 import type { HttpClient } from '../core/http.js';
 import { assertAllowedMime, mimeFromFilename } from '../core/mime.js';
 import { createMultipartFileBody } from '../core/multipart.js';
+import type { RequestOptions } from '../core/options.js';
 import type { RequestBodyFactory } from '../core/pipeline.js';
 import { isBlob, isFile } from '../core/runtime.js';
 import { encodePathSegment } from '../core/url.js';
-import type { RequestOptions } from '../types/options.js';
 import { BaseResource } from './base.js';
 
 /** Ответ загрузки файла. */

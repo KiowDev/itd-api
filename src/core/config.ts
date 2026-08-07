@@ -1,20 +1,19 @@
+import type { OperationCatalog } from './catalog.js';
+import { type ItdClock, systemClock } from './clock.js';
+import { ItdConfigError } from './errors.js';
 import type {
-  AuthInput,
   ClientHooks,
-  ItdClientOptions,
   Logger,
   RateLimitBucketContext,
   RateLimitBucketOverride,
   RetryOptions,
-} from '../types/options.js';
-import type { OperationCatalog } from './catalog.js';
-import { type ItdClock, systemClock } from './clock.js';
-import { ItdConfigError } from './errors.js';
+  RuntimeOptions,
+} from './options.js';
 import { RateLimitPacing } from './pacing.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
 import type { ServiceDefinition } from './services.js';
-import { MemoryTokenStorage, type TokenStorage } from './storage.js';
 import { normalizeBaseUrl } from './url.js';
+import { isRecord, requireOptionalBoolean, requirePositive } from './validate.js';
 import { LIBRARY_VERSION } from './version.js';
 
 /** Базовый URL API итд.com. Домен записан в punycode: `итд.com`. */
@@ -95,29 +94,17 @@ export interface ResolvedRateLimitOptions {
 }
 
 /**
- * Срез конфигурации, нужный слою авторизации.
+ * Настройки исполнения запросов после подстановки умолчаний и проверок.
  *
- * Выделен явно, чтобы {@link AuthManager} не получал целиком `ResolvedConfig` со всеми
- * настройками транспорта, повторов и очереди, к которым он отношения не имеет.
- * `ResolvedConfig` содержит все эти поля, поэтому подходит везде, где ждут `AuthConfig`.
+ * Сессии здесь нет намеренно: ядро собирает конвейер, ничего не зная про токены,
+ * хранилище и вход по паролю. Их разбирает `resolveSessionConfig` в слое авторизации.
  */
-export interface AuthConfig {
+export interface ResolvedRuntimeConfig {
   baseUrl: string;
-  clock: ItdClock;
-  auth: AuthInput | undefined;
-  storage: TokenStorage;
-  useCookieJar: boolean;
-  deviceId: string | undefined;
-  reloginOnRefreshFailure: boolean;
-  logger: Logger | undefined;
-}
-
-/** Конфигурация клиента после подстановки значений по умолчанию и проверок. */
-export interface ResolvedConfig extends AuthConfig {
   /** Сервисы из опций клиента. Встроенные сюда не входят. */
   services: ServiceDefinition[];
-  autoRefresh: boolean;
   fetch: typeof fetch;
+  clock: ItdClock;
   timeout: number;
   /** Срок ожидания чужого кода при остановке. `0` — без срока. */
   shutdownTimeout: number;
@@ -128,37 +115,11 @@ export interface ResolvedConfig extends AuthConfig {
   /** Значение заголовка `User-Agent`. `undefined` — заголовок не выставляется. */
   userAgent: string | undefined;
   mode: RuntimeMode;
+  /** Вести ли собственный cookie-jar. */
+  useCookieJar: boolean;
   /** Отправлять ли `credentials: 'include'` (в браузере). */
   sendCredentials: boolean;
-}
-
-function requirePositive(value: number, name: string): number {
-  if (!Number.isFinite(value) || value < 0) {
-    throw new ItdConfigError(`${name} должен быть неотрицательным числом, получено: ${value}`);
-  }
-  return value;
-}
-
-function isRecord(value: unknown): boolean {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function requireOptionalBoolean(value: unknown, name: string): void {
-  if (value !== undefined && typeof value !== 'boolean') {
-    throw new ItdConfigError(`${name} должен быть boolean`);
-  }
-}
-
-function resolveStorage(storage: TokenStorage | undefined): TokenStorage {
-  if (storage === undefined) return new MemoryTokenStorage();
-  if (!isRecord(storage)) throw new ItdConfigError('storage должен быть объектом TokenStorage');
-
-  for (const method of ['get', 'set', 'clear'] as const) {
-    if (typeof storage[method] !== 'function') {
-      throw new ItdConfigError(`storage.${method} должен быть функцией`);
-    }
-  }
-  return storage;
+  logger: Logger | undefined;
 }
 
 function resolveHeaders(headers: Record<string, string> | undefined): Record<string, string> {
@@ -185,7 +146,7 @@ function resolveHooks(hooks: ClientHooks | undefined): ClientHooks {
   return { ...hooks };
 }
 
-function resolveLogger(logger: ItdClientOptions['logger']): Logger | undefined {
+function resolveLogger(logger: RuntimeOptions['logger']): Logger | undefined {
   if (logger === undefined || logger === false) return undefined;
   if (logger === true) return consoleLogger();
   if (!isRecord(logger)) throw new ItdConfigError('logger должен быть boolean или объектом Logger');
@@ -217,7 +178,7 @@ function consoleLogger(): Logger {
  *
  * @throws {ItdConfigError} при некорректных значениях
  */
-export function resolveRetry(retry: ItdClientOptions['retry']): ResolvedRetryOptions | undefined {
+export function resolveRetry(retry: RuntimeOptions['retry']): ResolvedRetryOptions | undefined {
   if (retry === false) return undefined;
   if (retry !== undefined && !isRecord(retry)) {
     throw new ItdConfigError('retry должен быть объектом или false');
@@ -351,7 +312,7 @@ function resolveBucketOverrides(
  * @internal
  */
 export function resolveRateLimit(
-  rateLimit: ItdClientOptions['rateLimit'],
+  rateLimit: RuntimeOptions['rateLimit'],
   catalog: OperationCatalog,
 ): ResolvedRateLimitOptions | undefined {
   if (rateLimit === false) return undefined;
@@ -410,81 +371,10 @@ export function resolveRateLimit(
 }
 
 /**
- * Проверяет форму `auth` и сообщает о типичных ошибках понятным текстом.
- *
- * Молчаливое игнорирование неверной формы приводит к загадочным `401`, поэтому
- * ошибка возникает сразу при создании клиента.
- */
-function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
-  if (auth === undefined) return undefined;
-
-  if (typeof auth === 'string') {
-    if (auth.trim() === '') {
-      throw new ItdConfigError('auth: передана пустая строка вместо accessToken');
-    }
-    return auth;
-  }
-
-  if (typeof auth !== 'object' || auth === null) {
-    throw new ItdConfigError(
-      `auth должен быть строкой с токеном или объектом, получено: ${typeof auth}`,
-    );
-  }
-
-  if ('getToken' in auth) {
-    if (typeof auth.getToken !== 'function') {
-      throw new ItdConfigError('auth.getToken должен быть функцией');
-    }
-    return { ...auth };
-  }
-
-  if ('accessToken' in auth) {
-    if (typeof auth.accessToken !== 'string' || auth.accessToken.trim() === '') {
-      throw new ItdConfigError('auth.accessToken должен быть непустой строкой');
-    }
-    return { ...auth };
-  }
-
-  if ('email' in auth || 'password' in auth) {
-    const { email, password, turnstileToken, getTurnstileToken } = auth as {
-      email?: unknown;
-      password?: unknown;
-      turnstileToken?: unknown;
-      getTurnstileToken?: unknown;
-    };
-    if (typeof email !== 'string' || email.trim() === '') {
-      throw new ItdConfigError('auth.email должен быть непустой строкой');
-    }
-    if (typeof password !== 'string' || password === '') {
-      throw new ItdConfigError('auth.password должен быть непустой строкой');
-    }
-    if (getTurnstileToken !== undefined && typeof getTurnstileToken !== 'function') {
-      throw new ItdConfigError('auth.getTurnstileToken должен быть функцией');
-    }
-    if (
-      turnstileToken !== undefined &&
-      (typeof turnstileToken !== 'string' || turnstileToken.trim() === '')
-    ) {
-      throw new ItdConfigError('auth.turnstileToken должен быть непустой строкой');
-    }
-
-    // Отсутствие капчи — не ошибка конфигурации: сессия может быть восстановлена из
-    // хранилища, и до входа по паролю дело вообще не дойдёт. Ошибка возникнет в момент
-    // входа, где её текст может объяснить, что именно нужно сделать.
-    return { ...auth };
-  }
-
-  throw new ItdConfigError(
-    'auth не распознан. Ожидается строка с accessToken либо объект ' +
-      '{ accessToken }, { email, password } или { getToken }',
-  );
-}
-
-/**
  * Разворачивает запись сервисов из опций в определения: имя берётся из ключа, строка
  * означает один только базовый URL. URL проверяется при регистрации сервиса.
  */
-function resolveServices(services: ItdClientOptions['services']): ServiceDefinition[] {
+function resolveServices(services: RuntimeOptions['services']): ServiceDefinition[] {
   if (services === undefined) return [];
   if (!isRecord(services)) throw new ItdConfigError('services должен быть объектом');
 
@@ -498,17 +388,18 @@ function resolveServices(services: ItdClientOptions['services']): ServiceDefinit
 }
 
 /**
- * Приводит пользовательские опции к полной конфигурации.
+ * Приводит настройки исполнения запросов к полному виду.
  *
  * Все проверки выполняются здесь, до единого сетевого запроса: неверная настройка должна
- * проявляться при создании клиента, а не через полчаса работы бота.
+ * проявляться при создании клиента, а не через полчаса работы бота. Сессионные опции
+ * разбирает `resolveSessionConfig` — ядру они не нужны.
  *
  * @throws {ItdConfigError} при некорректных значениях
  */
-export function resolveConfig(
-  options: ItdClientOptions,
+export function resolveRuntimeConfig(
+  options: RuntimeOptions,
   catalog: OperationCatalog,
-): ResolvedConfig {
+): ResolvedRuntimeConfig {
   if (!isRecord(options)) throw new ItdConfigError('опции клиента должны быть объектом');
 
   const mode: RuntimeMode = options.mode ?? RuntimeMode.Auto;
@@ -534,8 +425,6 @@ export function resolveConfig(
   ) {
     throw new ItdConfigError('clock должен предоставлять методы now() и schedule()');
   }
-  requireOptionalBoolean(options.autoRefresh, 'autoRefresh');
-  requireOptionalBoolean(options.reloginOnRefreshFailure, 'reloginOnRefreshFailure');
 
   if (
     options.userAgent !== undefined &&
@@ -545,20 +434,9 @@ export function resolveConfig(
     throw new ItdConfigError('userAgent должен быть строкой или false');
   }
 
-  if (
-    options.deviceId !== undefined &&
-    (typeof options.deviceId !== 'string' || options.deviceId.trim() === '')
-  ) {
-    throw new ItdConfigError('deviceId должен быть непустой строкой');
-  }
-
   return {
     baseUrl: normalizeBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL),
     services: resolveServices(options.services),
-    auth: validateAuth(options.auth),
-    storage: resolveStorage(options.storage),
-    autoRefresh: options.autoRefresh ?? true,
-    reloginOnRefreshFailure: options.reloginOnRefreshFailure ?? true,
     fetch: resolveFetch(options.fetch),
     clock: options.clock ?? systemClock,
     timeout,
@@ -566,13 +444,12 @@ export function resolveConfig(
     retry: resolveRetry(options.retry),
     rateLimit: resolveRateLimit(options.rateLimit, catalog),
     hooks: resolveHooks(options.hooks),
-    logger: resolveLogger(options.logger),
     headers: resolveHeaders(options.headers),
-    deviceId: options.deviceId,
     // `false` — способ не слать заголовок вовсе; строка заменяет умолчание.
     userAgent: options.userAgent === false ? undefined : (options.userAgent ?? DEFAULT_USER_AGENT),
     mode,
     useCookieJar: shouldUseCookieJar(mode),
     sendCredentials: shouldSendCredentials(mode),
+    logger: resolveLogger(options.logger),
   };
 }

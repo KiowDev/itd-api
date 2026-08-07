@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createItdAuth } from '../../src/core/auth.js';
 import type { OperationCatalog } from '../../src/core/catalog.js';
 import { type ClientRuntime, createClientRuntime } from '../../src/core/client-runtime.js';
 import { resolveRateLimit } from '../../src/core/config.js';
 import { RateLimitPacing } from '../../src/core/pacing.js';
 import { RequestQueuePool } from '../../src/core/rate-limit.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
-import type { ItdClientOptions } from '../../src/types/options.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 /**
@@ -24,17 +25,18 @@ function makeRuntime(
   catalog?: OperationCatalog,
 ) {
   const mock = createMockFetch(handler);
-  const runtime = createClientRuntime(
-    {
-      baseUrl: 'https://itd.test',
-      fetch: mock.fetch,
-      mode: 'server',
-      retry: false,
-      rateLimit: false,
-      ...options,
-    },
-    catalog ? { catalog } : {},
-  );
+  const resolved: ItdClientOptions = {
+    baseUrl: 'https://itd.test',
+    fetch: mock.fetch,
+    mode: 'server',
+    retry: false,
+    rateLimit: false,
+    ...options,
+  };
+  const runtime = createClientRuntime(resolved, {
+    auth: (deps) => createItdAuth(resolved, deps),
+    ...(catalog ? { catalog } : {}),
+  });
   return { runtime, mock };
 }
 

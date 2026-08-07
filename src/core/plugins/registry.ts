@@ -1,6 +1,6 @@
-import type { OperationRequestOptions } from '../../types/options.js';
 import { createDeadline, type Deadline, type ItdClock } from '../clock.js';
 import { ItdConfigError, ItdStateError } from '../errors.js';
+import type { OperationRequestOptions } from '../options.js';
 import { type RegisteredAttemptInterceptor, withAttemptInterceptorScope } from './attempts.js';
 import type {
   AttemptInterceptor,

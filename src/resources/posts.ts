@@ -7,6 +7,7 @@ import {
 } from '../builders/post.js';
 import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/http.js';
+import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import {
   type Page,
   PaginationMode,
@@ -26,7 +27,6 @@ import type {
   PostStats,
 } from '../models/content.js';
 import type { CommentSort, FeedTab } from '../types/enums.js';
-import type { PaginationOptions, RequestOptions } from '../types/options.js';
 import type { CreateCommentInput, CreatePostData } from '../types/params.js';
 import { BaseResource } from './base.js';
 

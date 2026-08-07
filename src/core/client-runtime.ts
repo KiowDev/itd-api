@@ -1,12 +1,11 @@
 import { ITD_CATALOG } from '../domain/catalog.js';
-import type { ItdClientOptions } from '../types/options.js';
-import { AuthManager } from './auth.js';
+import type { AuthProvider, AuthProviderDeps } from './auth-provider.js';
 import type { OperationCatalog } from './catalog.js';
 import {
   assertKnownBucket,
   BUILT_IN_SERVICES,
-  type ResolvedConfig,
-  resolveConfig,
+  type ResolvedRuntimeConfig,
+  resolveRuntimeConfig,
 } from './config.js';
 import { CookieJar } from './cookies.js';
 import { ItdAbortError } from './errors.js';
@@ -23,6 +22,7 @@ import {
   createServicesMiddleware,
   type RequestMiddleware,
 } from './middleware.js';
+import type { RuntimeOptions } from './options.js';
 import {
   isDisposeCleanupRequest,
   type PipelineRequest,
@@ -51,7 +51,15 @@ export const ClientRuntimeStage = Object.freeze({
 export type ClientRuntimeStage = (typeof ClientRuntimeStage)[keyof typeof ClientRuntimeStage];
 
 /** Скрытые зависимости runtime, которыми владеет внешний контейнер. @internal */
-export interface ClientRuntimeInternals {
+export interface ClientRuntimeInternals<A extends AuthProvider> {
+  /**
+   * Фабрика авторизации. Обязательна: умолчание сослалось бы на конкретную реализацию
+   * сессии, и та осталась бы достижимой из любой сборки, включая анонимную.
+   *
+   * Готовый обработчик приходит фабрике внутрь: вход и продление проходят через тот же
+   * конвейер, что и ресурсы, — с точечными skip-флагами вместо второго пути.
+   */
+  auth: (deps: AuthProviderDeps) => A;
   /**
    * Каталог операций, которым пользуется ядро. По умолчанию — {@link ITD_CATALOG}.
    *
@@ -64,8 +72,6 @@ export interface ClientRuntimeInternals {
   queues?: RequestQueuePool | undefined;
   /** Проверяет терминальное состояние фасада до входа в pipeline. */
   assertActive?: ((action: string) => void) | undefined;
-  /** Вызывается перед сменой владельца авторизации. */
-  onAccountChange?: (() => void) | undefined;
 }
 
 /**
@@ -74,12 +80,15 @@ export interface ClientRuntimeInternals {
  * Фасад владеет ресурсами и realtime-потоками, runtime — сетевой механикой и registries.
  * Контракт намеренно не экспортируется из корневой точки входа.
  *
+ * Параметризован реализацией авторизации: ядру достаточно {@link AuthProvider}, а фасад
+ * получает обратно ровно тот тип, который создала его фабрика.
+ *
  * @internal
  */
-export interface ClientRuntime {
-  readonly config: ResolvedConfig;
+export interface ClientRuntime<A extends AuthProvider = AuthProvider> {
+  readonly config: ResolvedRuntimeConfig;
   readonly http: HttpClient;
-  readonly auth: AuthManager;
+  readonly auth: A;
   readonly cookies: CookieJar;
   readonly plugins: PluginRegistry;
   readonly services: ServiceRegistry;
@@ -105,7 +114,7 @@ interface PipelineStage {
 }
 
 /** Регистрирует встроенные сервисы и накладывает пользовательские overrides. */
-function createServiceRegistry(config: ResolvedConfig): ServiceRegistry {
+function createServiceRegistry(config: ResolvedRuntimeConfig): ServiceRegistry {
   const services = new ServiceRegistry(config.baseUrl);
   const overrides = new Map(config.services.map((service) => [service.name.trim(), service]));
 
@@ -120,12 +129,12 @@ function createServiceRegistry(config: ResolvedConfig): ServiceRegistry {
 }
 
 /** Собирает внутренний runtime клиента и единственный request pipeline. @internal */
-export function createClientRuntime(
-  options: ItdClientOptions = {},
-  internals: ClientRuntimeInternals = {},
-): ClientRuntime {
+export function createClientRuntime<A extends AuthProvider>(
+  options: RuntimeOptions,
+  internals: ClientRuntimeInternals<A>,
+): ClientRuntime<A> {
   const catalog = internals.catalog ?? ITD_CATALOG;
-  const config = resolveConfig(options, catalog);
+  const config = resolveRuntimeConfig(options, catalog);
   const jar = new CookieJar();
   const plugins = new PluginRegistry({
     shutdownTimeout: config.shutdownTimeout,
@@ -144,9 +153,9 @@ export function createClientRuntime(
     (config.rateLimit ? new RequestQueuePool(config.rateLimit, config.clock) : undefined);
   const ownsQueues = sharedQueues === undefined;
 
-  // Transport читает deviceId авторизации, а AuthManager отправляет свои запросы через
-  // готовый pipeline. Цикл замыкается ленивыми callbacks строго внутри этой фабрики.
-  let auth!: AuthManager;
+  // Transport читает deviceId авторизации, а та отправляет свои запросы через готовый
+  // pipeline. Цикл замыкается ленивыми callbacks строго внутри этой фабрики.
+  let auth!: A;
   let transport!: Transport;
 
   /**
@@ -204,7 +213,7 @@ export function createClientRuntime(
       // единственным источником для rateLimitState().
       onRateLimit: queues ? observeRateLimit : undefined,
       cookies: config.useCookieJar ? jar : undefined,
-      getDeviceId: () => auth.getDeviceId(),
+      getDeviceId: () => auth.deviceId(),
       lifetimeSignal: lifetime.signal,
     },
   );
@@ -233,16 +242,11 @@ export function createClientRuntime(
     },
     {
       name: ClientRuntimeStage.AuthRecovery,
-      middleware: createAuthRecoveryMiddleware({
-        onUnauthorized: () => auth.onUnauthorized(),
-        autoRefresh: config.autoRefresh,
-      }),
+      middleware: createAuthRecoveryMiddleware({ recover: () => auth.recover() }),
     },
     {
       name: ClientRuntimeStage.AuthPreparation,
-      middleware: createAuthPreparationMiddleware({
-        prepareAuth: () => auth.getAccessToken().then(() => undefined),
-      }),
+      middleware: createAuthPreparationMiddleware({ prepare: () => auth.prepare() }),
     },
   ];
 
@@ -263,9 +267,7 @@ export function createClientRuntime(
 
   stages.push({
     name: ClientRuntimeStage.AuthHeaders,
-    middleware: createAuthHeadersMiddleware({
-      getAuthHeaders: () => auth.getCurrentAuthHeaders(),
-    }),
+    middleware: createAuthHeadersMiddleware({ currentHeaders: () => auth.currentHeaders() }),
   });
 
   const handler = composePipeline(
@@ -293,9 +295,7 @@ export function createClientRuntime(
 
   // Auth использует тот же handler: sign-in и refresh объявляют skip-флаги точечно,
   // вместо отдельного pipeline с постепенно расходящимся порядком стадий.
-  auth = new AuthManager(config, clientHandler, jar, {
-    onAccountChange: internals.onAccountChange,
-  });
+  auth = internals.auth({ config, handler: clientHandler, cookies: jar });
   const http = new HttpClient({ handler: clientHandler, baseUrl: config.baseUrl, catalog });
   const stageOrder = Object.freeze([
     ...stages.map(({ name }) => name),

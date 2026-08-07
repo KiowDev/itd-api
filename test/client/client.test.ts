@@ -8,13 +8,13 @@ import {
   ItdStateError,
 } from '../../src/core/errors.js';
 import type { FileInput } from '../../src/index.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import type {
   RealtimeTransport,
   TransportContext,
   TransportEvent,
 } from '../../src/realtime/transport.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
-import type { ItdClientOptions } from '../../src/types/options.js';
 import { makeJwt } from '../helpers/jwt.js';
 import {
   createHangingFetch,

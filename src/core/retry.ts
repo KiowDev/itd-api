@@ -1,4 +1,3 @@
-import type { RetryDecisionContext } from '../types/options.js';
 import type { OperationCatalog } from './catalog.js';
 import type { ResolvedRetryOptions } from './config.js';
 import {
@@ -9,6 +8,7 @@ import {
   ItdTimeoutError,
 } from './errors.js';
 import { RetrySafety } from './operation.js';
+import type { RetryDecisionContext } from './options.js';
 import type { PipelineRequest } from './pipeline.js';
 
 /** Политика конкретного логического запроса, передаваемая планировщику повторов. */

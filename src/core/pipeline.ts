@@ -1,5 +1,5 @@
 import type { OperationId } from '../domain/operations.js';
-import type { OperationRequestOptions } from '../types/options.js';
+import type { OperationRequestOptions } from './options.js';
 
 const REQUEST_ATTEMPT_STATE = Symbol('itd-api.request-attempt-state');
 const REQUEST_QUEUE_KEY = Symbol('itd-api.request-queue-key');

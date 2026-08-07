@@ -1,14 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  DEFAULT_BASE_URL,
-  DEFAULT_TIMEOUT,
-  resolveConfig as resolveClientConfig,
-} from '../../src/core/config.js';
+import { resolveSessionConfig } from '../../src/core/auth.js';
+import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT, resolveRuntimeConfig } from '../../src/core/config.js';
 import { ItdConfigError } from '../../src/core/errors.js';
 import { createKeyValueStore } from '../../src/core/key-value-store.js';
+import type { SessionOptions } from '../../src/core/session-options.js';
 import { createTokenStorage, MemoryTokenStorage } from '../../src/core/storage.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
-import type { ItdClientOptions } from '../../src/types/options.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import {
   LocalStorageKeyValueStore,
   LocalStorageTokenStorage,
@@ -17,7 +15,12 @@ import {
 } from '../../src/web.js';
 
 /** Каталог операций ядру неизвестен — здесь он подставляется явно, как это делает клиент. */
-const resolveConfig = (options: ItdClientOptions = {}) => resolveClientConfig(options, ITD_CATALOG);
+const resolveConfig = (options: ItdClientOptions = {}) =>
+  resolveRuntimeConfig(options, ITD_CATALOG);
+
+/** Сессия разбирает свои опции поверх уже разрешённой конфигурации исполнения. */
+const resolveSession = (options: SessionOptions = {}) =>
+  resolveSessionConfig(options, resolveConfig());
 
 describe('resolveConfig — значения по умолчанию', () => {
   it('подставляет базовый URL, таймаут и очередь', () => {
@@ -25,9 +28,6 @@ describe('resolveConfig — значения по умолчанию', () => {
 
     expect(config.baseUrl).toBe(DEFAULT_BASE_URL);
     expect(config.timeout).toBe(DEFAULT_TIMEOUT);
-    expect(config.autoRefresh).toBe(true);
-    expect(config.reloginOnRefreshFailure).toBe(true);
-    expect(config.storage).toBeInstanceOf(MemoryTokenStorage);
     expect(config.rateLimit).toEqual({
       concurrency: 6,
       rps: undefined,
@@ -123,13 +123,11 @@ describe('resolveConfig — проверки', () => {
     ['нулевая ёмкость бакета', { rateLimit: { bucketOverrides: { feed: { limit: 0 } } } }],
     ['неизвестный mode', { mode: 'proxy' as never }],
     ['fetch не функция', { fetch: 'fetch' as never }],
-    ['storage без clear', { storage: { get() {}, set() {} } as never }],
     ['headers не строки', { headers: { trace: 42 } as never }],
     ['hook не функция', { hooks: { onRetry: true } as never }],
     ['неполный logger', { logger: { debug() {} } as never }],
     ['retry не объект', { retry: 'yes' as never }],
     ['rateLimit не объект', { rateLimit: 4 as never }],
-    ['autoRefresh не boolean', { autoRefresh: 'false' as never }],
     ['userAgent не строка', { userAgent: 42 as never }],
     ['services не объект', { services: [] as never }],
   ])('отвергает: %s', (_name, options) => {
@@ -137,30 +135,59 @@ describe('resolveConfig — проверки', () => {
   });
 });
 
-describe('resolveConfig — разбор auth', () => {
+describe('resolveSessionConfig — значения по умолчанию', () => {
+  it('включает автообновление и заводит хранилище в памяти', () => {
+    const config = resolveSession();
+
+    expect(config.autoRefresh).toBe(true);
+    expect(config.reloginOnRefreshFailure).toBe(true);
+    expect(config.storage).toBeInstanceOf(MemoryTokenStorage);
+  });
+
+  it('берёт хост, часы и логгер из конфигурации исполнения', () => {
+    const runtime = resolveConfig({ baseUrl: 'https://proxy.example', mode: 'server' });
+    const config = resolveSessionConfig({}, runtime);
+
+    expect(config.baseUrl).toBe('https://proxy.example');
+    expect(config.useCookieJar).toBe(true);
+    expect(config.clock).toBe(runtime.clock);
+  });
+});
+
+describe('resolveSessionConfig — проверки', () => {
+  it.each([
+    ['storage без clear', { storage: { get() {}, set() {} } as never }],
+    ['autoRefresh не boolean', { autoRefresh: 'false' as never }],
+    ['пустой deviceId', { deviceId: '  ' }],
+  ])('отвергает: %s', (_name, options) => {
+    expect(() => resolveSession(options)).toThrow(ItdConfigError);
+  });
+});
+
+describe('resolveSessionConfig — разбор auth', () => {
   it('принимает все четыре формы', () => {
-    expect(resolveConfig({ auth: 'token' }).auth).toBe('token');
-    expect(resolveConfig({ auth: { accessToken: 'a' } }).auth).toEqual({ accessToken: 'a' });
-    expect(resolveConfig({ auth: { email: 'a@b.c', password: 'p' } }).auth).toBeDefined();
-    expect(resolveConfig({ auth: { getToken: () => 'a' } }).auth).toBeDefined();
+    expect(resolveSession({ auth: 'token' }).auth).toBe('token');
+    expect(resolveSession({ auth: { accessToken: 'a' } }).auth).toEqual({ accessToken: 'a' });
+    expect(resolveSession({ auth: { email: 'a@b.c', password: 'p' } }).auth).toBeDefined();
+    expect(resolveSession({ auth: { getToken: () => 'a' } }).auth).toBeDefined();
   });
 
   it('отвергает пустой токен', () => {
-    expect(() => resolveConfig({ auth: '' })).toThrow(/пустая строка/);
-    expect(() => resolveConfig({ auth: { accessToken: '  ' } })).toThrow(/непустой строкой/);
+    expect(() => resolveSession({ auth: '' })).toThrow(/пустая строка/);
+    expect(() => resolveSession({ auth: { accessToken: '  ' } })).toThrow(/непустой строкой/);
   });
 
   it('отвергает неполные креды', () => {
-    expect(() => resolveConfig({ auth: { email: 'a@b.c' } as never })).toThrow(/password/);
-    expect(() => resolveConfig({ auth: { password: 'p' } as never })).toThrow(/email/);
+    expect(() => resolveSession({ auth: { email: 'a@b.c' } as never })).toThrow(/password/);
+    expect(() => resolveSession({ auth: { password: 'p' } as never })).toThrow(/email/);
   });
 
   it('отвергает getToken не-функцию', () => {
-    expect(() => resolveConfig({ auth: { getToken: 'нет' } as never })).toThrow(/функцией/);
+    expect(() => resolveSession({ auth: { getToken: 'нет' } as never })).toThrow(/функцией/);
   });
 
   it('подсказывает про ожидаемые формы при нераспознанном объекте', () => {
-    expect(() => resolveConfig({ auth: { token: 'x' } as never })).toThrow(/getToken/);
+    expect(() => resolveSession({ auth: { token: 'x' } as never })).toThrow(/getToken/);
   });
 });
 

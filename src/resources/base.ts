@@ -1,9 +1,9 @@
 import type { HttpClient } from '../core/http.js';
+import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import type { Page, PageState, PaginationMode } from '../core/pagination.js';
 import { Paginator } from '../core/pagination.js';
 import type { QueryParams } from '../core/url.js';
 import type { BuiltInOperationId } from '../domain/operations.js';
-import type { PaginationOptions, RequestOptions } from '../types/options.js';
 
 /**
  * Описание перебираемого эндпоинта.
