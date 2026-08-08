@@ -1,7 +1,7 @@
 import { installAsyncDisposeFallback } from '../core/async-dispose.js';
 import { type AuthProvider, anonymousAuth, bearerToken } from '../core/auth-provider.js';
-import { type ClientRuntime, createClientRuntime } from '../core/client-runtime.js';
 import { ItdStateError } from '../core/errors.js';
+import { type ClientRuntime, createClientRuntime } from '../core/execution/client-runtime.js';
 import type { RuntimeOptions } from '../core/options.js';
 import { pickNumber } from '../core/unwrap.js';
 import { ITD_CATALOG } from '../domain/catalog.js';

@@ -1,9 +1,19 @@
-import type { AuthProvider } from './auth-provider.js';
-import type { OperationCatalog } from './catalog.js';
-import { type ItdClock, systemClock } from './clock.js';
-import { type ResolvedRetryOptions, resolveRetry } from './config.js';
-import { ItdAbortError, isItdApiError, isItdRateLimitError } from './errors.js';
-import type { ClientHooks, Logger, RequestOptions } from './options.js';
+import type { AuthProvider } from '../auth-provider.js';
+import type { OperationCatalog } from '../catalog.js';
+import { type ItdClock, systemClock } from '../clock.js';
+import { type ResolvedRetryOptions, resolveRetry } from '../config.js';
+import { ItdAbortError, isItdApiError, isItdRateLimitError } from '../errors.js';
+import type { ClientHooks, Logger, RequestOptions } from '../options.js';
+import { dispatchRequestHook } from '../plugins/hooks.js';
+import type { PluginRegistry } from '../plugins/registry.js';
+import {
+  createRetryScheduler,
+  type RetryPolicy,
+  type RetryScheduler,
+  resolveRetryPolicy,
+} from '../scheduling/retry.js';
+import type { ServiceRegistry } from '../services.js';
+import { normalizeBaseUrl } from '../url.js';
 import {
   beginTransportAttempt,
   currentTransportAttempt,
@@ -13,16 +23,6 @@ import {
   trackRequestAttempts,
   withLayerHeaders,
 } from './pipeline.js';
-import { dispatchRequestHook } from './plugins/hooks.js';
-import type { PluginRegistry } from './plugins/registry.js';
-import {
-  createRetryScheduler,
-  type RetryPolicy,
-  type RetryScheduler,
-  resolveRetryPolicy,
-} from './retry.js';
-import type { ServiceRegistry } from './services.js';
-import { normalizeBaseUrl } from './url.js';
 
 /** Ожидание повтора, которое уважает отмену запроса. */
 function sleep(clock: ItdClock, ms: number, signal?: AbortSignal): Promise<void> {

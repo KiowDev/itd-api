@@ -11,7 +11,7 @@ import type {
   RealtimeTransport,
   TransportContext,
   TransportEvent,
-} from '../../src/realtime/transport.js';
+} from '../../src/realtime/transports/transport.js';
 import type { RealtimeContextBase } from '../../src/realtime/updates.js';
 
 interface TestUpdate {

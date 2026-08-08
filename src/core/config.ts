@@ -9,8 +9,8 @@ import type {
   RetryOptions,
   RuntimeOptions,
 } from './options.js';
-import { RateLimitPacing } from './pacing.js';
 import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } from './runtime.js';
+import { RateLimitPacing } from './scheduling/pacing.js';
 import type { ServiceDefinition } from './services.js';
 import { normalizeBaseUrl } from './url.js';
 import { isRecord, requireOptionalBoolean, requirePositive } from './validate.js';

@@ -1,6 +1,6 @@
-import { type ItdClock, systemClock } from '../core/clock.js';
-import { ItdConfigError, isItdAuthError } from '../core/errors.js';
-import { pickArray, pickNumber } from '../core/unwrap.js';
+import { type ItdClock, systemClock } from '../../core/clock.js';
+import { ItdConfigError, isItdAuthError } from '../../core/errors.js';
+import { pickArray, pickNumber } from '../../core/unwrap.js';
 import type { RealtimeRequest, RealtimeTransport, TransportContext } from './transport.js';
 import { UnauthorizedStreamError } from './transport.js';
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { anonymousAuth } from '../../src/core/auth-provider.js';
-import { ClientRuntimeStage, createClientRuntime } from '../../src/core/client-runtime.js';
+import {
+  ClientRuntimeStage,
+  createClientRuntime,
+} from '../../src/core/execution/client-runtime.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createItdAuth } from '../../src/session/auth.js';

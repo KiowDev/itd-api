@@ -1,5 +1,5 @@
 import type { FileInput } from '../core/attachments/contracts.js';
-import type { HttpClient } from '../core/http.js';
+import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
 import { CommentsResource } from '../resources/comments.js';
 import { FilesResource, type UploadOptions } from '../resources/files.js';

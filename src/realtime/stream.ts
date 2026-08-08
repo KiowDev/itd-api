@@ -16,10 +16,10 @@ import type {
   RealtimeSequentializer,
   RealtimeTypeGuard,
 } from './middleware.js';
-import { PollTransport } from './poll.js';
 import type { ReconnectOptions } from './reconnect.js';
-import { SseTransport } from './sse.js';
-import type { RealtimeRequest, RealtimeTransport, TransportEvent } from './transport.js';
+import { PollTransport } from './transports/poll.js';
+import { SseTransport } from './transports/sse.js';
+import type { RealtimeRequest, RealtimeTransport, TransportEvent } from './transports/transport.js';
 import {
   isNotificationContext,
   matchesNotification,

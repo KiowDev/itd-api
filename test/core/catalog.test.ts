@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OperationCatalog } from '../../src/core/catalog.js';
-import { type ClientRuntime, createClientRuntime } from '../../src/core/client-runtime.js';
 import { resolveRateLimit } from '../../src/core/config.js';
-import { RateLimitPacing } from '../../src/core/pacing.js';
-import { RequestQueuePool } from '../../src/core/rate-limit.js';
+import {
+  type ClientRuntime,
+  createClientRuntime,
+} from '../../src/core/execution/client-runtime.js';
+import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
+import { RequestQueuePool } from '../../src/core/scheduling/rate-limit.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createItdAuth } from '../../src/session/auth.js';

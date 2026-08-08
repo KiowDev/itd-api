@@ -1,8 +1,8 @@
 import type { OperationId } from '../domain/operations.js';
 import type { ItdClock } from './clock.js';
 import type { RetrySafety } from './operation.js';
-import type { RateLimitPacing } from './pacing.js';
 import type { RuntimeMode } from './runtime.js';
+import type { RateLimitPacing } from './scheduling/pacing.js';
 import type { ServiceDefinition } from './services.js';
 import type { QueryParams } from './url.js';
 

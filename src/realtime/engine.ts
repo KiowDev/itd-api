@@ -18,7 +18,7 @@ import {
   type RealtimeTransport,
   type TransportEvent,
   UnauthorizedStreamError,
-} from './transport.js';
+} from './transports/transport.js';
 import { type RealtimeContextBase, RealtimeUpdateOrigin } from './updates.js';
 
 /** Зачем движок просит домен синхронизироваться. */

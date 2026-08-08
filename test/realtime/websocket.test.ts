@@ -9,7 +9,7 @@ import {
   type WebSocketLike,
   WebSocketTransport,
 } from '../../src/index.js';
-import { MAX_PENDING_FRAMES } from '../../src/realtime/websocket.js';
+import { MAX_PENDING_FRAMES } from '../../src/realtime/transports/websocket.js';
 
 type SocketListener = (event: unknown) => void;
 

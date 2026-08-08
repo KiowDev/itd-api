@@ -13,7 +13,7 @@ import type {
   RealtimeTransport,
   TransportContext,
   TransportEvent,
-} from '../../src/realtime/transport.js';
+} from '../../src/realtime/transports/transport.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
 import { makeJwt } from '../helpers/jwt.js';
 import {

@@ -1,26 +1,26 @@
-import type { ItdClock } from './clock.js';
-import type { CookieJar } from './cookies.js';
-import { createApiError, readRateLimit } from './error-factory.js';
+import type { ItdClock } from '../clock.js';
+import type { CookieJar } from '../cookies.js';
+import { createApiError, readRateLimit } from '../error-factory.js';
 import {
   ItdAbortError,
   ItdConfigError,
   ItdError,
   ItdNetworkError,
   ItdTimeoutError,
-} from './errors.js';
-import type { ClientHooks, Logger } from './options.js';
+} from '../errors.js';
+import type { ClientHooks, Logger } from '../options.js';
+import { runAttemptInterceptors } from '../plugins/attempts.js';
+import { dispatchRequestHook, hasRequestHook } from '../plugins/hooks.js';
+import { redactBody, redactHeaders } from '../redact.js';
+import { isBlob } from '../runtime.js';
+import { unwrapData } from '../unwrap.js';
+import { buildQuery, joinUrl } from '../url.js';
 import {
   identifyRequest,
   type PipelineRequest,
   type PipelineRequestInput,
   type PreparedRequestBody,
 } from './pipeline.js';
-import { runAttemptInterceptors } from './plugins/attempts.js';
-import { dispatchRequestHook, hasRequestHook } from './plugins/hooks.js';
-import { redactBody, redactHeaders } from './redact.js';
-import { isBlob } from './runtime.js';
-import { unwrapData } from './unwrap.js';
-import { buildQuery, joinUrl } from './url.js';
 
 /**
  * Настройки, нужные транспорту.

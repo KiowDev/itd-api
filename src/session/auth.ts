@@ -8,8 +8,8 @@ import {
 } from '../core/cookies.js';
 import { Emitter, reportListenerError } from '../core/emitter.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from '../core/errors.js';
+import type { RequestHandler } from '../core/execution/pipeline.js';
 import type { Logger } from '../core/options.js';
-import type { RequestHandler } from '../core/pipeline.js';
 import { createDeviceId } from '../core/runtime.js';
 import { isRecord, requireOptionalBoolean } from '../core/validate.js';
 import { operationMethod } from '../domain/operations.js';

@@ -1,13 +1,18 @@
-import type { AuthProvider, AuthProviderDeps } from './auth-provider.js';
-import type { OperationCatalog } from './catalog.js';
+import type { AuthProvider, AuthProviderDeps } from '../auth-provider.js';
+import type { OperationCatalog } from '../catalog.js';
 import {
   assertKnownBucket,
   BUILT_IN_SERVICES,
   type ResolvedRuntimeConfig,
   resolveRuntimeConfig,
-} from './config.js';
-import { CookieJar } from './cookies.js';
-import { ItdAbortError } from './errors.js';
+} from '../config.js';
+import { CookieJar } from '../cookies.js';
+import { ItdAbortError } from '../errors.js';
+import type { RuntimeOptions } from '../options.js';
+import { PluginRegistry } from '../plugins/registry.js';
+import { type RateLimitBucketState, RequestQueuePool } from '../scheduling/rate-limit.js';
+import { mergeService, ServiceRegistry } from '../services.js';
+import { originOf } from '../url.js';
 import { HttpClient } from './http.js';
 import {
   composePipeline,
@@ -21,18 +26,13 @@ import {
   createServicesMiddleware,
   type RequestMiddleware,
 } from './middleware.js';
-import type { RuntimeOptions } from './options.js';
 import {
   isDisposeCleanupRequest,
   type PipelineRequest,
   type RequestHandler,
   requestQueueKey,
 } from './pipeline.js';
-import { PluginRegistry } from './plugins/registry.js';
-import { type RateLimitBucketState, RequestQueuePool } from './rate-limit.js';
-import { mergeService, ServiceRegistry } from './services.js';
 import { Transport } from './transport.js';
-import { originOf } from './url.js';
 
 /** Имена стадий основного request pipeline в порядке выполнения. @internal */
 export const ClientRuntimeStage = Object.freeze({

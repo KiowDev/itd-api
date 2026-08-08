@@ -121,7 +121,6 @@ export type {
   RetryOptions,
   RuntimeOptions,
 } from './core/options.js';
-export { RateLimitPacing } from './core/pacing.js';
 export type {
   AttemptContext,
   AttemptExtensions,
@@ -133,8 +132,9 @@ export type {
   PluginApi,
   PluginTeardown,
 } from './core/plugins/contracts.js';
-export type { RateLimitBucketState } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
+export { RateLimitPacing } from './core/scheduling/pacing.js';
+export type { RateLimitBucketState } from './core/scheduling/rate-limit.js';
 export type { ServiceDefinition } from './core/services.js';
 export type { QueryParams, QueryValue } from './core/url.js';
 export {

@@ -1,7 +1,7 @@
-import { type ItdClock, systemClock } from '../core/clock.js';
-import { ItdConfigError } from '../core/errors.js';
-import { maskSecret, redactUrl } from '../core/redact.js';
-import { buildQuery, joinUrl } from '../core/url.js';
+import { type ItdClock, systemClock } from '../../core/clock.js';
+import { ItdConfigError } from '../../core/errors.js';
+import { maskSecret, redactUrl } from '../../core/redact.js';
+import { buildQuery, joinUrl } from '../../core/url.js';
 import {
   type RealtimeTransport,
   type TransportContext,

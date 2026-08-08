@@ -11,7 +11,7 @@ import { ItdConfigError, ItdStateError } from './core/errors.js';
 import type { Logger } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
-import { RequestQueuePool } from './core/rate-limit.js';
+import { RequestQueuePool } from './core/scheduling/rate-limit.js';
 import { ITD_CATALOG } from './domain/catalog.js';
 import type { ItdClientOptions } from './options.js';
 import {

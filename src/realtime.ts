@@ -97,7 +97,14 @@ export {
   type TransportContext,
   type TransportEvent,
   UnauthorizedStreamError,
-} from './realtime/transport.js';
+} from './realtime/transports/transport.js';
+export {
+  type WebSocketImplementationOptions,
+  type WebSocketLike,
+  type WebSocketOpenFailureClassifier,
+  WebSocketTransport,
+  type WebSocketTransportOptions,
+} from './realtime/transports/websocket.js';
 export {
   type NotificationEventOfType,
   type NotificationOfType,
@@ -114,12 +121,5 @@ export {
   RealtimeUpdateOrigin,
   RealtimeUpdateType,
 } from './realtime/updates.js';
-export {
-  type WebSocketImplementationOptions,
-  type WebSocketLike,
-  type WebSocketOpenFailureClassifier,
-  WebSocketTransport,
-  type WebSocketTransportOptions,
-} from './realtime/websocket.js';
 export type { Loose } from './types/enums.js';
 export { NotificationType, RealtimeStatus } from './types/enums.js';

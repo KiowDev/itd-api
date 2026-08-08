@@ -131,7 +131,6 @@ export type {
   RetryOptions,
   RuntimeOptions,
 } from './core/options.js';
-export { RateLimitPacing } from './core/pacing.js';
 // Плагины расширяют два явных уровня: logical operation и отдельную transport attempt.
 // Публичные контракты отделены от registry и порядка установки.
 export type {
@@ -145,8 +144,9 @@ export type {
   PluginApi,
   PluginTeardown,
 } from './core/plugins/contracts.js';
-export type { RateLimitBucketState } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
+export { RateLimitPacing } from './core/scheduling/pacing.js';
+export type { RateLimitBucketState } from './core/scheduling/rate-limit.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export type { ServiceDefinition } from './core/services.js';
 export type { QueryParams, QueryValue } from './core/url.js';
@@ -273,10 +273,17 @@ export type {
   RealtimeTransport,
   TransportContext,
   TransportEvent,
-} from './realtime/transport.js';
+} from './realtime/transports/transport.js';
 // Нужен тем, кто пишет свой транспорт: только этой ошибкой он сообщает потоку,
 // что токен пора обновить.
-export { UnauthorizedStreamError } from './realtime/transport.js';
+export { UnauthorizedStreamError } from './realtime/transports/transport.js';
+export {
+  type WebSocketImplementationOptions,
+  type WebSocketLike,
+  type WebSocketOpenFailureClassifier,
+  WebSocketTransport,
+  type WebSocketTransportOptions,
+} from './realtime/transports/websocket.js';
 export {
   type NotificationEventOfType,
   type NotificationOfType,
@@ -293,13 +300,6 @@ export {
   RealtimeUpdateOrigin,
   RealtimeUpdateType,
 } from './realtime/updates.js';
-export {
-  type WebSocketImplementationOptions,
-  type WebSocketLike,
-  type WebSocketOpenFailureClassifier,
-  WebSocketTransport,
-  type WebSocketTransportOptions,
-} from './realtime/websocket.js';
 export type {
   AuthResource,
   CaptchaCredentials,

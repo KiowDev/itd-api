@@ -1,5 +1,5 @@
 import { ItdConfigError } from '../core/errors.js';
-import type { HttpClient } from '../core/http.js';
+import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
 import { createDeviceId } from '../core/runtime.js';
 import { InteractionType, type ViewReason, type ViewSource } from '../types/enums.js';

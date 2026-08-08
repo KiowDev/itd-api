@@ -1,4 +1,4 @@
-import type { HttpClient } from '../core/http.js';
+import type { HttpClient } from '../core/execution/http.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import type { QueryParams } from '../core/url.js';
 import type { BuiltInOperationId } from '../domain/operations.js';

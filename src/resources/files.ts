@@ -12,10 +12,10 @@ import {
 import { resolveFileStreamOptions } from '../core/attachments/options.js';
 import { downloadFile, normalizeMimeType, openUrlFile } from '../core/attachments/url-source.js';
 import { ItdConfigError, ItdError, ItdFileError, ItdFileErrorReason } from '../core/errors.js';
-import type { HttpClient } from '../core/http.js';
+import type { HttpClient } from '../core/execution/http.js';
+import type { RequestBodyFactory } from '../core/execution/pipeline.js';
 import { createMultipartFileBody } from '../core/multipart.js';
 import type { RequestOptions } from '../core/options.js';
-import type { RequestBodyFactory } from '../core/pipeline.js';
 import { isBlob, isFile } from '../core/runtime.js';
 import { encodePathSegment } from '../core/url.js';
 import { assertAllowedMime, mimeFromFilename } from '../domain/mime.js';

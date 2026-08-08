@@ -1,6 +1,6 @@
 import { createParser } from 'eventsource-parser';
-import { type ItdClock, systemClock } from '../core/clock.js';
-import { joinUrl } from '../core/url.js';
+import { type ItdClock, systemClock } from '../../core/clock.js';
+import { joinUrl } from '../../core/url.js';
 import {
   type RealtimeTransport,
   type TransportContext,

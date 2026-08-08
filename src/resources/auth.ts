@@ -1,5 +1,5 @@
 import { ItdConfigError } from '../core/errors.js';
-import type { HttpClient } from '../core/http.js';
+import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
 import { pickArray, pickString } from '../core/unwrap.js';
 import type { Session } from '../models/account.js';

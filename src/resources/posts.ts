@@ -6,7 +6,7 @@ import {
   resolvePostUpdate,
 } from '../builders/post.js';
 import type { FileInput } from '../core/attachments/contracts.js';
-import type { HttpClient } from '../core/http.js';
+import type { HttpClient } from '../core/execution/http.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';

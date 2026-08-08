@@ -1,10 +1,10 @@
 import { installAsyncDisposeFallback } from '../core/async-dispose.js';
 import { type AuthProvider, anonymousAuth, bearerToken } from '../core/auth-provider.js';
-import { type ClientRuntime, createClientRuntime } from '../core/client-runtime.js';
 import { ItdStateError } from '../core/errors.js';
+import { type ClientRuntime, createClientRuntime } from '../core/execution/client-runtime.js';
 import type { RawRequestOptions, RuntimeOptions } from '../core/options.js';
 import type { ClientPlugin } from '../core/plugins/contracts.js';
-import type { RateLimitBucketState } from '../core/rate-limit.js';
+import type { RateLimitBucketState } from '../core/scheduling/rate-limit.js';
 import type { ServiceDefinition } from '../core/services.js';
 import { ITD_CATALOG } from '../domain/catalog.js';
 import type { CommentsResource } from '../resources/comments.js';

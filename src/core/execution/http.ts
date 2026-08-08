@@ -1,7 +1,7 @@
-import type { BuiltInOperationId } from '../domain/operations.js';
-import type { OperationCatalog } from './catalog.js';
-import { ItdConfigError } from './errors.js';
-import type { OperationMethod } from './operation.js';
+import type { BuiltInOperationId } from '../../domain/operations.js';
+import type { OperationCatalog } from '../catalog.js';
+import { ItdConfigError } from '../errors.js';
+import type { OperationMethod } from '../operation.js';
 import {
   identifyRequest,
   markDisposeCleanupRequest,

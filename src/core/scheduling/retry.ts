@@ -1,15 +1,15 @@
-import type { OperationCatalog } from './catalog.js';
-import type { ResolvedRetryOptions } from './config.js';
+import type { OperationCatalog } from '../catalog.js';
+import type { ResolvedRetryOptions } from '../config.js';
 import {
   ItdAbortError,
   ItdApiError,
   ItdFileError,
   ItdNetworkError,
   ItdTimeoutError,
-} from './errors.js';
-import { RetrySafety } from './operation.js';
-import type { RetryDecisionContext } from './options.js';
-import type { PipelineRequest } from './pipeline.js';
+} from '../errors.js';
+import type { PipelineRequest } from '../execution/pipeline.js';
+import { RetrySafety } from '../operation.js';
+import type { RetryDecisionContext } from '../options.js';
 
 /** Политика конкретного логического запроса, передаваемая планировщику повторов. */
 export type RetryPolicy = RetryDecisionContext;

@@ -1,5 +1,5 @@
-import type { QueryParams } from '../core/url.js';
-import type { BuiltInOperationId } from '../domain/operations.js';
+import type { QueryParams } from '../../core/url.js';
+import type { BuiltInOperationId } from '../../domain/operations.js';
 
 /** Запрос транспорта к конвейеру клиента. */
 export interface RealtimeRequestInput {

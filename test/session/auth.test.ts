@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createClientRuntime } from '../../src/core/client-runtime.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from '../../src/core/errors.js';
+import { createClientRuntime } from '../../src/core/execution/client-runtime.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createItdAuth } from '../../src/session/auth.js';

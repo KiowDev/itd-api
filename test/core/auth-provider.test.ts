@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type AuthProvider, anonymousAuth } from '../../src/core/auth-provider.js';
-import { type ClientRuntime, createClientRuntime } from '../../src/core/client-runtime.js';
+import {
+  type ClientRuntime,
+  createClientRuntime,
+} from '../../src/core/execution/client-runtime.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { MemoryTokenStorage } from '../../src/session/storage.js';

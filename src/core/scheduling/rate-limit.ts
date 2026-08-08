@@ -1,6 +1,6 @@
-import { type ItdClock, systemClock } from './clock.js';
-import type { ResolvedRateLimitOptions } from './config.js';
-import { ItdAbortError } from './errors.js';
+import { type ItdClock, systemClock } from '../clock.js';
+import type { ResolvedRateLimitOptions } from '../config.js';
+import { ItdAbortError } from '../errors.js';
 import { RateLimitPacing } from './pacing.js';
 
 /** Задача, ожидающая своей очереди. */

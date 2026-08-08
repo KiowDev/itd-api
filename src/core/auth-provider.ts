@@ -1,7 +1,7 @@
 import type { UserId } from '../models/common.js';
 import type { ResolvedRuntimeConfig } from './config.js';
 import type { CookieJar } from './cookies.js';
-import type { RequestHandler } from './pipeline.js';
+import type { RequestHandler } from './execution/pipeline.js';
 import { createDeviceId } from './runtime.js';
 
 /** Области аккаунта и конкретной сессии для локального состояния плагинов. */

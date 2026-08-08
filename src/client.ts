@@ -1,12 +1,12 @@
 import { installAsyncDisposeFallback } from './core/async-dispose.js';
-import { type ClientRuntime, createClientRuntime } from './core/client-runtime.js';
 import { createDeadline } from './core/clock.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdStateError } from './core/errors.js';
+import { type ClientRuntime, createClientRuntime } from './core/execution/client-runtime.js';
 import type { RawRequestOptions } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
-import type { RateLimitBucketState, RequestQueuePool } from './core/rate-limit.js';
+import type { RateLimitBucketState, RequestQueuePool } from './core/scheduling/rate-limit.js';
 import type { ServiceDefinition } from './core/services.js';
 import { ITD_CATALOG } from './domain/catalog.js';
 import type { UserId } from './models/common.js';
