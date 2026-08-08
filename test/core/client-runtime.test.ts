@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { anonymousAuth } from '../../src/core/auth-provider.js';
 import { ClientRuntimeStage, createClientRuntime } from '../../src/core/client-runtime.js';
+import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createItdAuth } from '../../src/session/auth.js';
 import { createMockFetch, json } from '../helpers/mock-fetch.js';
@@ -15,7 +16,7 @@ function makeRuntime(rateLimit: false | { concurrency: number }) {
       retry: false,
       rateLimit,
     },
-    { auth: anonymousAuth },
+    { auth: anonymousAuth, catalog: ITD_CATALOG },
   );
   return { runtime, mock };
 }
@@ -69,6 +70,7 @@ describe('createClientRuntime', () => {
       auth: { accessToken: 'old', refreshToken: 'refresh' },
     };
     const runtime = createClientRuntime(options, {
+      catalog: ITD_CATALOG,
       auth: (deps) => createItdAuth(options, deps),
     });
     const operations: string[] = [];

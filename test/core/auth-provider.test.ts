@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type AuthProvider, anonymousAuth } from '../../src/core/auth-provider.js';
 import { type ClientRuntime, createClientRuntime } from '../../src/core/client-runtime.js';
+import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { MemoryTokenStorage } from '../../src/session/storage.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
@@ -57,7 +58,7 @@ function makeRuntime(
       rateLimit: false,
       ...options,
     },
-    { auth },
+    { auth, catalog: ITD_CATALOG },
   );
   return { runtime, mock };
 }

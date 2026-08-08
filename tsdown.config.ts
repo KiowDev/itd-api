@@ -3,10 +3,10 @@ import { defineConfig } from 'tsdown';
 export default defineConfig({
   entry: {
     index: 'src/index.ts',
-    rest: 'src/rest.ts',
-    realtime: 'src/realtime.ts',
-    node: 'src/node.ts',
-    web: 'src/web.ts',
+    'rest/index': 'src/rest.ts',
+    'realtime/index': 'src/realtime.ts',
+    'node/index': 'src/node.ts',
+    'web/index': 'src/web.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,
@@ -15,6 +15,19 @@ export default defineConfig({
   treeshake: true,
   target: 'es2022',
   platform: 'neutral',
+
+  // Публичные subpath entry points повторяют структуру импортов, а автоматически
+  // выделенные общие части не смешиваются с ними в корне dist/.
+  outputOptions(options) {
+    const chunkFileNames = options.chunkFileNames;
+    return {
+      ...options,
+      chunkFileNames:
+        typeof chunkFileNames === 'function'
+          ? (chunk) => `shared/${chunkFileNames(chunk)}`
+          : `shared/${chunkFileNames ?? '[name]-[hash].js'}`,
+    };
+  },
 
   // Общий код выносится в отдельный чанк: платформенные точки входа делят с основной
   // общие части (`MemoryTokenStorage`, разбор сессий), и без разделения каждая тянула бы

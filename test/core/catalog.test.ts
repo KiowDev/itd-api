@@ -34,8 +34,8 @@ function makeRuntime(
     ...options,
   };
   const runtime = createClientRuntime(resolved, {
+    catalog: catalog ?? ITD_CATALOG,
     auth: (deps) => createItdAuth(resolved, deps),
-    ...(catalog ? { catalog } : {}),
   });
   return { runtime, mock };
 }

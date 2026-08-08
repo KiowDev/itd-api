@@ -105,11 +105,6 @@ const FORBIDDEN_EDGES = [
  */
 const ALLOWED = [
   {
-    from: 'core/client-runtime.ts',
-    to: 'domain/',
-    reason: 'composition root: единственное место, где ядро получает каталог операций',
-  },
-  {
     from: 'core/',
     to: 'domain/operations.ts',
     typeOnly: true,

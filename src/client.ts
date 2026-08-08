@@ -8,6 +8,7 @@ import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
 import type { RateLimitBucketState, RequestQueuePool } from './core/rate-limit.js';
 import type { ServiceDefinition } from './core/services.js';
+import { ITD_CATALOG } from './domain/catalog.js';
 import type { UserId } from './models/common.js';
 import type { ItdClientOptions } from './options.js';
 import { ItdRealtime, type RealtimeOptions, setRealtimeConnectGuard } from './realtime/stream.js';
@@ -187,6 +188,7 @@ export class ItdClient {
   constructor(options: ItdClientOptions = {}) {
     const internals = CLIENT_INTERNALS.get(options) ?? {};
     this.#runtime = createClientRuntime(options, {
+      catalog: ITD_CATALOG,
       queues: internals.queues,
       assertActive: (action) => assertClientActive(this, action),
       // Полноценную сессию подставляет фасад: ядро о ней не знает, и клиент с готовым

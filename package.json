@@ -46,16 +46,16 @@
   "typesVersions": {
     "*": {
       "rest": [
-        "./dist/rest.d.ts"
+        "./dist/rest/index.d.ts"
       ],
       "realtime": [
-        "./dist/realtime.d.ts"
+        "./dist/realtime/index.d.ts"
       ],
       "node": [
-        "./dist/node.d.ts"
+        "./dist/node/index.d.ts"
       ],
       "web": [
-        "./dist/web.d.ts"
+        "./dist/web/index.d.ts"
       ]
     }
   },
@@ -72,42 +72,42 @@
     },
     "./rest": {
       "import": {
-        "types": "./dist/rest.d.ts",
-        "default": "./dist/rest.js"
+        "types": "./dist/rest/index.d.ts",
+        "default": "./dist/rest/index.js"
       },
       "require": {
-        "types": "./dist/rest.d.cts",
-        "default": "./dist/rest.cjs"
+        "types": "./dist/rest/index.d.cts",
+        "default": "./dist/rest/index.cjs"
       }
     },
     "./realtime": {
       "import": {
-        "types": "./dist/realtime.d.ts",
-        "default": "./dist/realtime.js"
+        "types": "./dist/realtime/index.d.ts",
+        "default": "./dist/realtime/index.js"
       },
       "require": {
-        "types": "./dist/realtime.d.cts",
-        "default": "./dist/realtime.cjs"
+        "types": "./dist/realtime/index.d.cts",
+        "default": "./dist/realtime/index.cjs"
       }
     },
     "./node": {
       "import": {
-        "types": "./dist/node.d.ts",
-        "default": "./dist/node.js"
+        "types": "./dist/node/index.d.ts",
+        "default": "./dist/node/index.js"
       },
       "require": {
-        "types": "./dist/node.d.cts",
-        "default": "./dist/node.cjs"
+        "types": "./dist/node/index.d.cts",
+        "default": "./dist/node/index.cjs"
       }
     },
     "./web": {
       "import": {
-        "types": "./dist/web.d.ts",
-        "default": "./dist/web.js"
+        "types": "./dist/web/index.d.ts",
+        "default": "./dist/web/index.js"
       },
       "require": {
-        "types": "./dist/web.d.cts",
-        "default": "./dist/web.cjs"
+        "types": "./dist/web/index.d.cts",
+        "default": "./dist/web/index.cjs"
       }
     },
     "./package.json": "./package.json"

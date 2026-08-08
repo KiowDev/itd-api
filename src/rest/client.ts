@@ -6,6 +6,7 @@ import type { RawRequestOptions, RuntimeOptions } from '../core/options.js';
 import type { ClientPlugin } from '../core/plugins/contracts.js';
 import type { RateLimitBucketState } from '../core/rate-limit.js';
 import type { ServiceDefinition } from '../core/services.js';
+import { ITD_CATALOG } from '../domain/catalog.js';
 import type { CommentsResource } from '../resources/comments.js';
 import type { FilesResource } from '../resources/files.js';
 import type { HashtagsResource } from '../resources/hashtags.js';
@@ -119,6 +120,7 @@ export class ItdRestClient {
     const { auth, ...runtimeOptions } = options;
 
     this.#runtime = createClientRuntime(runtimeOptions, {
+      catalog: ITD_CATALOG,
       assertActive: (action) => this.#assertActive(action),
       auth: () => resolveAuthProvider(auth),
     });

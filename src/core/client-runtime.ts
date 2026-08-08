@@ -1,4 +1,3 @@
-import { ITD_CATALOG } from '../domain/catalog.js';
 import type { AuthProvider, AuthProviderDeps } from './auth-provider.js';
 import type { OperationCatalog } from './catalog.js';
 import {
@@ -61,13 +60,12 @@ export interface ClientRuntimeInternals<A extends AuthProvider> {
    */
   auth: (deps: AuthProviderDeps) => A;
   /**
-   * Каталог операций, которым пользуется ядро. По умолчанию — {@link ITD_CATALOG}.
+   * Каталог операций, которым пользуется ядро.
    *
-   * Единственная точка, где generic pipeline получает знание о предметной области:
-   * повторяемость операций, их методы и счётчики частоты. Подмена нужна тестам
-   * и будущим клиентам поверх другого набора эндпоинтов.
+   * Передаётся composition root: generic pipeline не выбирает предметную область сам.
+   * Подмена нужна тестам и клиентам поверх другого набора эндпоинтов.
    */
-  catalog?: OperationCatalog | undefined;
+  catalog: OperationCatalog;
   /** Общая очередь нескольких клиентов; runtime не останавливает её самостоятельно. */
   queues?: RequestQueuePool | undefined;
   /** Проверяет терминальное состояние фасада до входа в pipeline. */
@@ -133,7 +131,7 @@ export function createClientRuntime<A extends AuthProvider>(
   options: RuntimeOptions,
   internals: ClientRuntimeInternals<A>,
 ): ClientRuntime<A> {
-  const catalog = internals.catalog ?? ITD_CATALOG;
+  const catalog = internals.catalog;
   const config = resolveRuntimeConfig(options, catalog);
   const jar = new CookieJar();
   const plugins = new PluginRegistry({

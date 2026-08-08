@@ -4,6 +4,7 @@ import { type ClientRuntime, createClientRuntime } from '../core/client-runtime.
 import { ItdStateError } from '../core/errors.js';
 import type { RuntimeOptions } from '../core/options.js';
 import { pickNumber } from '../core/unwrap.js';
+import { ITD_CATALOG } from '../domain/catalog.js';
 import {
   ItdRealtime,
   type RealtimeDeps,
@@ -50,6 +51,7 @@ export class ItdRealtimeClient<C extends RealtimeContext = RealtimeContext> exte
 
   constructor(options: RealtimeClientOptions<C> = {}) {
     const runtime = createClientRuntime(options, {
+      catalog: ITD_CATALOG,
       auth: () => resolveAuthProvider(options.auth),
     });
 

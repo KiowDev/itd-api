@@ -38,7 +38,7 @@ const FIXTURES = [
     name: 'rest',
     hint: "import { createRestClient } from 'itd-api/rest'",
     source: `
-      import { createRestClient } from ${JSON.stringify(join(DIST, 'rest.js'))};
+      import { createRestClient } from ${JSON.stringify(join(DIST, 'rest/index.js'))};
       export const run = (token) => createRestClient({ auth: token }).posts.list();
     `,
   },
@@ -46,7 +46,7 @@ const FIXTURES = [
     name: 'realtime',
     hint: "import { createRealtimeClient } from 'itd-api/realtime'",
     source: `
-      import { createRealtimeClient } from ${JSON.stringify(join(DIST, 'realtime.js'))};
+      import { createRealtimeClient } from ${JSON.stringify(join(DIST, 'realtime/index.js'))};
       export const run = (token) => createRealtimeClient({ auth: token }).connect();
     `,
   },
