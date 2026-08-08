@@ -77,23 +77,66 @@ const FORBIDDEN = {
 /**
  * Границы, которые карта слоёв выразить не может.
  *
- * Точки входа собирают всё вместе и потому от правил слоёв освобождены — но `itd-api/rest`
- * и `itd-api/realtime` существуют ровно затем, чтобы сессия в их бандлы не попадала.
- * Ни TypeScript, ни тесты такой регресс не заметят — только эта проверка.
+ * Точки входа собирают разрешённые им слои и потому не подчиняются общей карте. При этом
+ * минимальные `rest` / `realtime` и платформенные `node` / `web` не должны незаметно
+ * затянуть полный SDK или соседнюю крупную подсистему.
  *
- * `from` и `to` сопоставляются по префиксу, поэтому одним правилом закрывается
+ * `from` и элементы `to` сопоставляются по префиксу, поэтому одним значением закрывается
  * и отдельный файл, и весь подкаталог.
  */
 const FORBIDDEN_EDGES = [
   {
     from: 'rest.ts',
-    to: 'session/',
-    reason: 'минимальный клиент работает по готовому токену: сессии в его бандле нет',
+    to: ['client.ts', 'accounts.ts', 'options.ts', 'index.ts', 'session/', 'realtime.ts', 'realtime/'],
+    reason: 'минимальный REST-клиент не должен затягивать полный SDK, сессию или realtime',
   },
   {
     from: 'realtime.ts',
-    to: 'session/',
-    reason: 'поток работает по готовому токену: сессии в его бандле нет',
+    to: [
+      'client.ts',
+      'accounts.ts',
+      'options.ts',
+      'index.ts',
+      'session/',
+      'rest.ts',
+      'rest/',
+      'resources/',
+      'builders/',
+      'spans/',
+    ],
+    reason: 'отдельный поток не должен затягивать полный SDK, REST-ресурсы или сессию',
+  },
+  {
+    from: 'node.ts',
+    to: [
+      'client.ts',
+      'accounts.ts',
+      'options.ts',
+      'index.ts',
+      'rest.ts',
+      'rest/',
+      'realtime.ts',
+      'realtime/',
+      'resources/',
+      'builders/',
+    ],
+    reason: 'платформенная точка входа должна содержать только Node-адаптеры',
+  },
+  {
+    from: 'web.ts',
+    to: [
+      'client.ts',
+      'accounts.ts',
+      'options.ts',
+      'index.ts',
+      'rest.ts',
+      'rest/',
+      'realtime.ts',
+      'realtime/',
+      'resources/',
+      'builders/',
+    ],
+    reason: 'платформенная точка входа должна содержать только браузерные адаптеры',
   },
 ];
 
@@ -174,7 +217,7 @@ for (const file of listFiles(SRC)) {
     if (to === undefined) continue;
 
     const edge = FORBIDDEN_EDGES.find(
-      (rule) => from.startsWith(rule.from) && to.startsWith(rule.to),
+      (rule) => from.startsWith(rule.from) && rule.to.some((target) => to.startsWith(target)),
     );
     if (edge) {
       violations.push({ from, to, typeOnly, why: edge.reason });
