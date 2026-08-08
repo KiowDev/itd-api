@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ItdClient } from '../../src/client.js';
 import { DEFAULT_STATUS_BASE_URL } from '../../src/core/config.js';
-import { toDate, utcStampToIso } from '../../src/core/time.js';
+import { toDate, utcStampToIso } from '../../src/domain/time.js';
 import { statusDays } from '../../src/models/status-helpers.js';
 import { createMockFetch, json } from '../helpers/mock-fetch.js';
 

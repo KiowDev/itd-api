@@ -56,13 +56,7 @@ export {
   type UrlFileOptions,
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
-export { type AuthEvents, type AuthIdentity, TURNSTILE_SITE_KEY } from './core/auth.js';
-export {
-  BUCKET_LIMITS,
-  DEFAULT_RATE_LIMIT_BUCKET,
-  type RateLimitBucket,
-  RateLimitPacing,
-} from './core/buckets.js';
+export type { AuthIdentity } from './core/auth-provider.js';
 export { type ItdClock, systemClock } from './core/clock.js';
 export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';
@@ -115,40 +109,28 @@ export {
   withCodec,
   withNamespace,
 } from './core/key-value-store.js';
-export {
-  ALLOWED_MIME_TYPES,
-  type AllowedMimeType,
-  AUDIO_MIME_TYPES,
-  type AudioMimeType,
-  IMAGE_MIME_TYPES,
-  type ImageMimeType,
-  VIDEO_MIME_TYPES,
-  type VideoMimeType,
-} from './core/mime.js';
-// Хранилище на несколько аккаунтов: те же операции, но с именем аккаунта в каждой.
-// Подробности — в core/multi-storage.ts.
-export {
-  createMultiTokenStorage,
-  MemoryMultiTokenStorage,
-  type MultiTokenStorage,
-  type MultiTokenStorageAdapterOptions,
-  scopedTokenStorage,
-} from './core/multi-storage.js';
-export {
-  type BuiltInOperationId,
-  type CustomOperationId,
-  isBuiltInOperationId,
-  OPERATIONS,
-  type OperationDefinition,
-  type OperationId,
-  type OperationMethod,
-  operationBucket,
-  operationMethod,
-  operationRetrySafety,
-  RetrySafety,
-} from './core/operations.js';
-export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
-export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
+export { type OperationMethod, RetrySafety } from './core/operation.js';
+// Опции разделены по слоям: RuntimeOptions нужны generic-ядру, SessionOptions — сессии,
+// а ItdClientOptions объединяет их для полного SDK. Подробности — в core/options.ts.
+export type {
+  ClientHooks,
+  ErrorContextHook,
+  Logger,
+  OperationRequestOptions,
+  PaginationOptions,
+  RateLimitBucketContext,
+  RateLimitBucketOverride,
+  RateLimitOptions,
+  RawRequestOptions,
+  RequestContext,
+  RequestExtensions,
+  RequestOptions,
+  ResponseContext,
+  RetryContext,
+  RetryDecisionContext,
+  RetryOptions,
+  RuntimeOptions,
+} from './core/options.js';
 // Плагины расширяют два явных уровня: logical operation и отдельную transport attempt.
 // Публичные контракты отделены от registry и порядка установки.
 export type {
@@ -162,22 +144,48 @@ export type {
   PluginApi,
   PluginTeardown,
 } from './core/plugins/contracts.js';
-export type { RateLimitBucketState } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
+export { RateLimitPacing } from './core/scheduling/pacing.js';
+export type { RateLimitBucketState } from './core/scheduling/rate-limit.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export type { ServiceDefinition } from './core/services.js';
-// Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
-// и потому не может попасть в нейтральный бандл, а Web Storage backend вынесены
-// в `itd-api/web`, чтобы их молчаливый откат в память выбирали осознанно.
-export {
-  createTokenStorage,
-  type ItdSession,
-  MemoryTokenStorage,
-  type TokenStorage,
-  type TokenStorageAdapterOptions,
-} from './core/storage.js';
-export { toDate, utcStampToIso } from './core/time.js';
 export type { QueryParams, QueryValue } from './core/url.js';
+// Каталог операций и таблица счётчиков частоты — знание о самом API итд.com, а не о механике
+// исполнения запроса. Ядро получает их через контракт каталога. Подробности — в domain/catalog.ts.
+export {
+  BUCKET_LIMITS,
+  DEFAULT_RATE_LIMIT_BUCKET,
+  type RateLimitBucket,
+} from './domain/buckets.js';
+export {
+  ALLOWED_MIME_TYPES,
+  type AllowedMimeType,
+  AUDIO_MIME_TYPES,
+  type AudioMimeType,
+  IMAGE_MIME_TYPES,
+  type ImageMimeType,
+  VIDEO_MIME_TYPES,
+  type VideoMimeType,
+} from './domain/mime.js';
+export {
+  type BuiltInOperationId,
+  type CustomOperationId,
+  type ItdOperationDefinition as OperationDefinition,
+  isBuiltInOperationId,
+  OPERATIONS,
+  type OperationId,
+  operationBucket,
+  operationMethod,
+  operationRetrySafety,
+} from './domain/operations.js';
+export type {
+  CreateCommentInput,
+  CreatePollInput,
+  CreatePostData,
+  CreateReportInput,
+  UpdatePostInput,
+} from './domain/params.js';
+export { toDate, utcStampToIso } from './domain/time.js';
 export type { PaymentMethod, Session, Subscription } from './models/account.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
@@ -230,6 +238,7 @@ export { type NotificationEvent, normalizeNotification } from './notifications/n
 export { formatNotificationText } from './notifications/text.js';
 export { canonicalNotificationType, isKnownNotificationType } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
+export type { ItdClientOptions } from './options.js';
 export {
   RealtimeComposer,
   type RealtimeErrorBoundary,
@@ -264,10 +273,17 @@ export type {
   RealtimeTransport,
   TransportContext,
   TransportEvent,
-} from './realtime/transport.js';
+} from './realtime/transports/transport.js';
 // Нужен тем, кто пишет свой транспорт: только этой ошибкой он сообщает потоку,
 // что токен пора обновить.
-export { UnauthorizedStreamError } from './realtime/transport.js';
+export { UnauthorizedStreamError } from './realtime/transports/transport.js';
+export {
+  type WebSocketImplementationOptions,
+  type WebSocketLike,
+  type WebSocketOpenFailureClassifier,
+  WebSocketTransport,
+  type WebSocketTransportOptions,
+} from './realtime/transports/websocket.js';
 export {
   type NotificationEventOfType,
   type NotificationOfType,
@@ -284,13 +300,6 @@ export {
   RealtimeUpdateOrigin,
   RealtimeUpdateType,
 } from './realtime/updates.js';
-export {
-  type WebSocketImplementationOptions,
-  type WebSocketLike,
-  type WebSocketOpenFailureClassifier,
-  WebSocketTransport,
-  type WebSocketTransportOptions,
-} from './realtime/websocket.js';
 export type {
   AuthResource,
   CaptchaCredentials,
@@ -312,6 +321,8 @@ export type {
   NotificationsResource,
   UpdateNotificationSettingsInput,
 } from './resources/notifications.js';
+export type { Page, PageState, PaginatorOptions } from './resources/pagination.js';
+export { mapPage, PaginationMode, Paginator } from './resources/pagination.js';
 export type {
   PlatformClientVersion,
   PlatformResource,
@@ -347,6 +358,27 @@ export type {
   UsersResource,
 } from './resources/users.js';
 export type { VerificationResource } from './resources/verification.js';
+export { type AuthEvents, TURNSTILE_SITE_KEY } from './session/auth.js';
+// Хранилище на несколько аккаунтов: те же операции, но с именем аккаунта в каждой.
+// Подробности — в core/multi-storage.ts.
+export {
+  createMultiTokenStorage,
+  MemoryMultiTokenStorage,
+  type MultiTokenStorage,
+  type MultiTokenStorageAdapterOptions,
+  scopedTokenStorage,
+} from './session/multi-storage.js';
+export type { AuthInput, CredentialsAuth, SessionOptions } from './session/options.js';
+// Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
+// и потому не может попасть в нейтральный бандл, а Web Storage backend вынесены
+// в `itd-api/web`, чтобы их молчаливый откат в память выбирали осознанно.
+export {
+  createTokenStorage,
+  type ItdSession,
+  MemoryTokenStorage,
+  type TokenStorage,
+  type TokenStorageAdapterOptions,
+} from './session/storage.js';
 export {
   type ParseMarkupOptions,
   parseHtml,
@@ -379,31 +411,3 @@ export {
   ViewSource,
   WallAccess,
 } from './types/enums.js';
-export type {
-  AuthInput,
-  ClientHooks,
-  CredentialsAuth,
-  ErrorContextHook,
-  ItdClientOptions,
-  Logger,
-  OperationRequestOptions,
-  PaginationOptions,
-  RateLimitBucketContext,
-  RateLimitBucketOverride,
-  RateLimitOptions,
-  RawRequestOptions,
-  RequestContext,
-  RequestExtensions,
-  RequestOptions,
-  ResponseContext,
-  RetryContext,
-  RetryDecisionContext,
-  RetryOptions,
-} from './types/options.js';
-export type {
-  CreateCommentInput,
-  CreatePollInput,
-  CreatePostData,
-  CreateReportInput,
-  UpdatePostInput,
-} from './types/params.js';

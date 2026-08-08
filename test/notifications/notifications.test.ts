@@ -11,8 +11,8 @@ import {
   isKnownNotificationType,
 } from '../../src/notifications/type-map.js';
 import { resolveNotificationUrl } from '../../src/notifications/url.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import { InteractionType, ViewReason, ViewSource } from '../../src/types/enums.js';
-import type { ItdClientOptions } from '../../src/types/options.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 function makeClient(handler: MockHandler | Response[], options: ItdClientOptions = {}) {

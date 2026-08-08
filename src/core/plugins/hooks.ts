@@ -1,4 +1,4 @@
-import type { ClientHooks } from '../../types/options.js';
+import type { ClientHooks } from '../options.js';
 
 type HookName = keyof ClientHooks;
 type HookContext<K extends HookName> = Parameters<NonNullable<ClientHooks[K]>>[0];

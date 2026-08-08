@@ -1,40 +1,33 @@
-import type { FileInput } from './core/attachments/contracts.js';
-import type { AuthEvents } from './core/auth.js';
-import { type ClientRuntime, createClientRuntime } from './core/client-runtime.js';
+import { installAsyncDisposeFallback } from './core/async-dispose.js';
 import { createDeadline } from './core/clock.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdStateError } from './core/errors.js';
+import { type ClientRuntime, createClientRuntime } from './core/execution/client-runtime.js';
+import type { RawRequestOptions } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
-import type { RateLimitBucketState, RequestQueuePool } from './core/rate-limit.js';
+import type { RateLimitBucketState, RequestQueuePool } from './core/scheduling/rate-limit.js';
 import type { ServiceDefinition } from './core/services.js';
-import type { ItdSession } from './core/storage.js';
+import { ITD_CATALOG } from './domain/catalog.js';
 import type { UserId } from './models/common.js';
+import type { ItdClientOptions } from './options.js';
 import { ItdRealtime, type RealtimeOptions, setRealtimeConnectGuard } from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
-import { CommentsResource } from './resources/comments.js';
-import { FilesResource, type UploadOptions } from './resources/files.js';
-import { HashtagsResource } from './resources/hashtags.js';
-import { NotificationsResource } from './resources/notifications.js';
-import { PlatformResource } from './resources/platform.js';
-import { PostsResource } from './resources/posts.js';
-import { ReportsResource } from './resources/reports.js';
-import { SearchResource } from './resources/search.js';
-import { SubscriptionResource } from './resources/subscription.js';
-import {
-  closeTelemetryForDispose,
-  prepareTelemetryForDispose,
-  TelemetryResource,
-} from './resources/telemetry.js';
-import { UsersResource } from './resources/users.js';
-import { VerificationResource } from './resources/verification.js';
-import type { ItdClientOptions, RawRequestOptions, RequestOptions } from './types/options.js';
-
-declare global {
-  interface SymbolConstructor {
-    readonly asyncDispose: unique symbol;
-  }
-}
+import type { CommentsResource } from './resources/comments.js';
+import type { FilesResource } from './resources/files.js';
+import type { HashtagsResource } from './resources/hashtags.js';
+import type { NotificationsResource } from './resources/notifications.js';
+import type { PlatformResource } from './resources/platform.js';
+import type { PostsResource } from './resources/posts.js';
+import type { ReportsResource } from './resources/reports.js';
+import type { SearchResource } from './resources/search.js';
+import type { SubscriptionResource } from './resources/subscription.js';
+import type { TelemetryResource } from './resources/telemetry.js';
+import type { UsersResource } from './resources/users.js';
+import type { VerificationResource } from './resources/verification.js';
+import { createResources, type RestResources } from './rest/resources.js';
+import { type AuthEvents, type AuthManager, createItdAuth } from './session/auth.js';
+import type { ItdSession } from './session/storage.js';
 
 const CLIENT_PLUGIN_REGISTRIES = new WeakMap<ItdClient, PluginRegistry>();
 const DISPOSED_CLIENTS = new WeakSet<ItdClient>();
@@ -115,41 +108,16 @@ export function createManagedClient(
  * ```
  */
 export class ItdClient {
-  readonly #runtime: ClientRuntime;
+  readonly #runtime: ClientRuntime<AuthManager>;
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
   readonly #streams = new Set<ItdRealtime>();
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
   #disposePromise: Promise<void> | undefined;
 
-  // Ресурсы создаются при первом обращении: клиенту редко нужны все тринадцать разом,
-  // а `close()` не должен поднимать накопитель телеметрии только ради его закрытия.
+  /** Ресурсы конвейера запросов; создаются при первом обращении. */
+  readonly #resources: RestResources;
+  /** Сессионный ресурс живёт у фасада: он управляет входом и продлением. */
   #auth: AuthResource | undefined;
-  #users: UsersResource | undefined;
-  #posts: PostsResource | undefined;
-  #comments: CommentsResource | undefined;
-  #files: FilesResource | undefined;
-  #notifications: NotificationsResource | undefined;
-  #hashtags: HashtagsResource | undefined;
-  #search: SearchResource | undefined;
-  #reports: ReportsResource | undefined;
-  #verification: VerificationResource | undefined;
-  #subscription: SubscriptionResource | undefined;
-  #platform: PlatformResource | undefined;
-  #telemetry: TelemetryResource | undefined;
-
-  /**
-   * Загрузка вложений для ресурсов, которые принимают файлы.
-   *
-   * Обращается к {@link files} в момент вызова, поэтому ресурс поднимается только тогда,
-   * когда файл действительно отправляют.
-   */
-  readonly #uploadFile = (
-    file: FileInput,
-    uploadOptions?: UploadOptions,
-    requestOptions?: RequestOptions,
-  ) => this.files.upload(file, uploadOptions ?? {}, requestOptions ?? {});
-  readonly #uploadFiles = (files: FileInput[], requestOptions?: RequestOptions) =>
-    this.files.uploadMany(files, {}, requestOptions ?? {});
 
   /** Авторизация, сессии и пароли. */
   get auth(): AuthResource {
@@ -159,82 +127,78 @@ export class ItdClient {
 
   /** Профили, подписки, блокировки, приватность. */
   get users(): UsersResource {
-    this.#users ??= new UsersResource(this.#runtime.http, { uploadFile: this.#uploadFile });
-    return this.#users;
+    return this.#resources.users;
   }
 
   /** Лента, публикация, реакции, репосты, комментарии к постам. */
   get posts(): PostsResource {
-    this.#posts ??= new PostsResource(this.#runtime.http, { uploadFiles: this.#uploadFiles });
-    return this.#posts;
+    return this.#resources.posts;
   }
 
   /** Ответы на комментарии и действия над ними. */
   get comments(): CommentsResource {
-    this.#comments ??= new CommentsResource(this.#runtime.http, { uploadFiles: this.#uploadFiles });
-    return this.#comments;
+    return this.#resources.comments;
   }
 
   /** Загрузка файлов и медиа. */
   get files(): FilesResource {
-    this.#files ??= new FilesResource(this.#runtime.http, { fetch: this.#runtime.config.fetch });
-    return this.#files;
+    return this.#resources.files;
   }
 
   /** Уведомления: список, счётчик, отметки о прочтении, настройки. */
   get notifications(): NotificationsResource {
-    this.#notifications ??= new NotificationsResource(this.#runtime.http);
-    return this.#notifications;
+    return this.#resources.notifications;
   }
 
   /** Хэштеги и посты по ним. */
   get hashtags(): HashtagsResource {
-    this.#hashtags ??= new HashtagsResource(this.#runtime.http);
-    return this.#hashtags;
+    return this.#resources.hashtags;
   }
 
   /** Глобальный поиск по пользователям и хэштегам. */
   get search(): SearchResource {
-    this.#search ??= new SearchResource(this.#runtime.http);
-    return this.#search;
+    return this.#resources.search;
   }
 
   /** Жалобы на контент и пользователей. */
   get reports(): ReportsResource {
-    this.#reports ??= new ReportsResource(this.#runtime.http);
-    return this.#reports;
+    return this.#resources.reports;
   }
 
   /** Верификация профиля. */
   get verification(): VerificationResource {
-    this.#verification ??= new VerificationResource(this.#runtime.http);
-    return this.#verification;
+    return this.#resources.verification;
   }
 
   /** Подписка и способы оплаты. */
   get subscription(): SubscriptionResource {
-    this.#subscription ??= new SubscriptionResource(this.#runtime.http);
-    return this.#subscription;
+    return this.#resources.subscription;
   }
 
   /** Сведения о платформе: версии приложений, изменения, анонсы, баннер события. */
   get platform(): PlatformResource {
-    this.#platform ??= new PlatformResource(this.#runtime.http);
-    return this.#platform;
+    return this.#resources.platform;
   }
 
   /** Телеметрия просмотров. */
   get telemetry(): TelemetryResource {
-    this.#telemetry ??= new TelemetryResource(this.#runtime.http);
-    return this.#telemetry;
+    return this.#resources.telemetry;
   }
 
   constructor(options: ItdClientOptions = {}) {
     const internals = CLIENT_INTERNALS.get(options) ?? {};
     this.#runtime = createClientRuntime(options, {
+      catalog: ITD_CATALOG,
       queues: internals.queues,
       assertActive: (action) => assertClientActive(this, action),
-      onAccountChange: () => this.#disconnectStreams(),
+      // Полноценную сессию подставляет фасад: ядро о ней не знает, и клиент с готовым
+      // токеном не потянет за собой ни хранилище, ни вход по паролю.
+      auth: (deps) =>
+        createItdAuth(options, { ...deps, onAccountChange: () => this.#disconnectStreams() }),
+    });
+    this.#resources = createResources({
+      http: this.#runtime.http,
+      fetch: this.#runtime.config.fetch,
     });
     CLIENT_PLUGIN_REGISTRIES.set(this, this.#runtime.plugins);
   }
@@ -430,7 +394,7 @@ export class ItdClient {
         baseHeaders: (url) => this.#runtime.platformHeaders(url),
         getAuthIdentity: () => this.#runtime.auth.getCurrentAuthIdentity(),
         getAuthScope: () => this.#runtime.auth.getAuthScope(),
-        getToken: () => this.#runtime.auth.getAccessToken(),
+        getToken: () => this.#runtime.auth.token(),
         refresh: () => this.#runtime.auth.onUnauthorized(),
         fetchUnreadCount: () => this.notifications.count(),
         onConnect: () => this.#streams.add(stream),
@@ -470,7 +434,7 @@ export class ItdClient {
     const streams = this.#disconnectStreams();
     // Terminal cleanup должен пометить batch до первого await: параллельный обычный close()
     // мог уже начать drain потоков, но ещё не дойти до отправки телеметрии.
-    if (disposeCleanup) prepareTelemetryForDispose(this.#telemetry);
+    if (disposeCleanup) this.#resources.prepareTelemetryClose();
     const { shutdownTimeout, clock } = this.#runtime.config;
     const deadline = createDeadline(shutdownTimeout, clock);
     let stuck: ItdRealtime[] = [];
@@ -482,8 +446,7 @@ export class ItdClient {
 
       // Через геттер закрытие клиента поднимало бы накопитель телеметрии только ради
       // того, чтобы его тут же закрыть.
-      if (disposeCleanup) await closeTelemetryForDispose(this.#telemetry);
-      else await this.#telemetry?.close();
+      await this.#resources.closeTelemetry(disposeCleanup);
     } finally {
       deadline.cancel();
       this.#runtime.close();
@@ -552,15 +515,8 @@ export class ItdClient {
     return this.dispose();
   }
 
-  // Fallback для `await using` в Node 18, где `Symbol.asyncDispose` отсутствует.
   static {
-    if (
-      typeof (Symbol as SymbolConstructor & { asyncDispose?: symbol }).asyncDispose !== 'symbol'
-    ) {
-      const prototype = ItdClient.prototype as unknown as Record<PropertyKey, unknown>;
-      prototype[Symbol.for('Symbol.asyncDispose')] = prototype.undefined;
-      delete prototype.undefined;
-    }
+    installAsyncDisposeFallback(ItdClient);
   }
 
   /** Текущая сессия целиком — чтобы сохранить её самостоятельно. */

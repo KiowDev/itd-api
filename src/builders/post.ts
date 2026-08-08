@@ -1,10 +1,10 @@
 import type { FileInput } from '../core/attachments/contracts.js';
 import { ItdConfigError } from '../core/errors.js';
+import type { CreatePostData, UpdatePostInput } from '../domain/params.js';
 import type { Span, UserId } from '../models/common.js';
 import { type ParseMarkupOptions, parseHtml, parseMarkdown } from '../spans/parse.js';
 import { validateSpans } from '../spans/validate.js';
 import { SpanType } from '../types/enums.js';
-import type { CreatePostData, UpdatePostInput } from '../types/params.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, isBuilder } from './base.js';
 import { type AutoSpansOptions, autoSpans, type MarkupInput, resolveMarkup } from './markup.js';
 import { type PollInput, resolvePoll } from './poll.js';

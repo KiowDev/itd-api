@@ -1,12 +1,12 @@
-import type { AuthIdentity } from '../core/auth.js';
+import type { AuthIdentity } from '../core/auth-provider.js';
 import type { ItdClock } from '../core/clock.js';
 import type { Listener, Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
+import type { Logger } from '../core/options.js';
 import { supportsStreamingBody } from '../core/runtime.js';
 import { pickString } from '../core/unwrap.js';
 import type { NotificationEvent } from '../notifications/normalize.js';
 import type { NotificationType, RealtimeStatus } from '../types/enums.js';
-import type { Logger } from '../types/options.js';
 import { RealtimeEngine, type RealtimeEngineEvents, type RealtimeSyncReason } from './engine.js';
 import type {
   RealtimeHandler,
@@ -16,10 +16,10 @@ import type {
   RealtimeSequentializer,
   RealtimeTypeGuard,
 } from './middleware.js';
-import { PollTransport } from './poll.js';
 import type { ReconnectOptions } from './reconnect.js';
-import { SseTransport } from './sse.js';
-import type { RealtimeRequest, RealtimeTransport, TransportEvent } from './transport.js';
+import { PollTransport } from './transports/poll.js';
+import { SseTransport } from './transports/sse.js';
+import type { RealtimeRequest, RealtimeTransport, TransportEvent } from './transports/transport.js';
 import {
   isNotificationContext,
   matchesNotification,
@@ -165,7 +165,10 @@ export interface RealtimeDeps {
 const REALTIME_CONNECT_GUARDS = new WeakMap<object, () => void>();
 
 /** Связывает поток с lifecycle создавшего его клиента. @internal */
-export function setRealtimeConnectGuard(stream: ItdRealtime, guard: () => void): void {
+export function setRealtimeConnectGuard<C extends RealtimeContext>(
+  stream: ItdRealtime<C>,
+  guard: () => void,
+): void {
   REALTIME_CONNECT_GUARDS.set(stream, guard);
 }
 

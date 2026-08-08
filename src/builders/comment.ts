@@ -1,7 +1,7 @@
 import type { FileInput } from '../core/attachments/contracts.js';
 import { ItdConfigError } from '../core/errors.js';
+import type { CreateCommentInput } from '../domain/params.js';
 import type { UserId } from '../models/common.js';
-import type { CreateCommentInput } from '../types/params.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
 
 /** Внутреннее состояние {@link CommentBuilder}. */

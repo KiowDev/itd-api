@@ -1,16 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { ClientRuntimeStage, createClientRuntime } from '../../src/core/client-runtime.js';
+import { anonymousAuth } from '../../src/core/auth-provider.js';
+import {
+  ClientRuntimeStage,
+  createClientRuntime,
+} from '../../src/core/execution/client-runtime.js';
+import { ITD_CATALOG } from '../../src/domain/catalog.js';
+import type { ItdClientOptions } from '../../src/options.js';
+import { createItdAuth } from '../../src/session/auth.js';
 import { createMockFetch, json } from '../helpers/mock-fetch.js';
 
 function makeRuntime(rateLimit: false | { concurrency: number }) {
   const mock = createMockFetch([]);
-  const runtime = createClientRuntime({
-    baseUrl: 'https://itd.test',
-    fetch: mock.fetch,
-    mode: 'server',
-    retry: false,
-    rateLimit,
-  });
+  const runtime = createClientRuntime(
+    {
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      mode: 'server',
+      retry: false,
+      rateLimit,
+    },
+    { auth: anonymousAuth, catalog: ITD_CATALOG },
+  );
   return { runtime, mock };
 }
 
@@ -54,13 +64,17 @@ describe('createClientRuntime', () => {
 
   it('проводит служебный refresh через тот же plugin и attempt pipeline', async () => {
     const mock = createMockFetch([json({ accessToken: 'fresh' })]);
-    const runtime = createClientRuntime({
+    const options: ItdClientOptions = {
       baseUrl: 'https://itd.test',
       fetch: mock.fetch,
       mode: 'server',
       retry: false,
       rateLimit: false,
       auth: { accessToken: 'old', refreshToken: 'refresh' },
+    };
+    const runtime = createClientRuntime(options, {
+      catalog: ITD_CATALOG,
+      auth: (deps) => createItdAuth(options, deps),
     });
     const operations: string[] = [];
     const attempts: string[] = [];

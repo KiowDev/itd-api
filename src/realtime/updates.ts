@@ -4,7 +4,7 @@ import type { NotificationEvent } from '../notifications/normalize.js';
 import { readNotificationEvent, readUnreadCountEvent } from '../notifications/normalize.js';
 import type { NotificationType } from '../types/enums.js';
 import type { ItdRealtime } from './stream.js';
-import type { TransportEvent } from './transport.js';
+import type { TransportEvent } from './transports/transport.js';
 
 /** Типы нормализованных обновлений потока. */
 export const RealtimeUpdateType = Object.freeze({

@@ -1,5 +1,5 @@
-import type { OperationRequestOptions } from '../../types/options.js';
 import { ItdConfigError } from '../errors.js';
+import type { OperationRequestOptions } from '../options.js';
 import type { AttemptContext, AttemptInterceptor } from './contracts.js';
 
 /** Зарегистрированный interceptor вместе с именем владельца для диагностик. */

@@ -6,16 +6,11 @@ import {
   resolvePostUpdate,
 } from '../builders/post.js';
 import type { FileInput } from '../core/attachments/contracts.js';
-import type { HttpClient } from '../core/http.js';
-import {
-  type Page,
-  PaginationMode,
-  type Paginator,
-  readCursorPage,
-  readFlatCursorPage,
-} from '../core/pagination.js';
+import type { HttpClient } from '../core/execution/http.js';
+import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
+import type { CreateCommentInput, CreatePostData } from '../domain/params.js';
 import type { UserRef } from '../models/common.js';
 import type {
   Comment,
@@ -26,9 +21,14 @@ import type {
   PostStats,
 } from '../models/content.js';
 import type { CommentSort, FeedTab } from '../types/enums.js';
-import type { PaginationOptions, RequestOptions } from '../types/options.js';
-import type { CreateCommentInput, CreatePostData } from '../types/params.js';
 import { BaseResource } from './base.js';
+import {
+  type Page,
+  PaginationMode,
+  type Paginator,
+  readCursorPage,
+  readFlatCursorPage,
+} from './pagination.js';
 
 /** Курсорная позиция из параметров: если курсор задан — с него, иначе с начала. */
 function cursorStart(params: { cursor?: string | undefined }): { cursor?: string } {

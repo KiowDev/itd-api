@@ -1,8 +1,8 @@
 import { type ItdClock, systemClock } from '../core/clock.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
+import type { Logger } from '../core/options.js';
 import { RealtimeStatus } from '../types/enums.js';
-import type { Logger } from '../types/options.js';
 import {
   deferRealtimeMiddleware,
   RealtimeDispatcher,
@@ -18,7 +18,7 @@ import {
   type RealtimeTransport,
   type TransportEvent,
   UnauthorizedStreamError,
-} from './transport.js';
+} from './transports/transport.js';
 import { type RealtimeContextBase, RealtimeUpdateOrigin } from './updates.js';
 
 /** Зачем движок просит домен синхронизироваться. */

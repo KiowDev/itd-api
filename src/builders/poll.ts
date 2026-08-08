@@ -1,5 +1,5 @@
 import { ItdConfigError } from '../core/errors.js';
-import type { CreatePollInput } from '../types/params.js';
+import type { CreatePollInput } from '../domain/params.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
 
 /** Минимальное число вариантов ответа. */

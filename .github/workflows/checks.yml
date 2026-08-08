@@ -29,6 +29,9 @@ jobs:
       - name: Линтер и форматирование
         run: npm run lint
 
+      - name: Направление импортов между слоями
+        run: npm run check:layers
+
       - name: Тесты
         run: npm test
 
@@ -110,6 +113,11 @@ jobs:
           node --input-type=module -e "import { ItdClient } from 'itd-api'; if (typeof ItdClient !== 'function') { throw new Error('ESM-сборка не отдаёт ItdClient'); }"
           node -e "const { ItdClient } = require('itd-api'); const key = Symbol.asyncDispose || Symbol.for('Symbol.asyncDispose'); if (typeof ItdClient.prototype[key] !== 'function') { throw new Error('ItdClient не disposable на текущем runtime'); }"
           node --input-type=module -e "import { ItdClient } from 'itd-api'; const key = Symbol.asyncDispose || Symbol.for('Symbol.asyncDispose'); if (typeof ItdClient.prototype[key] !== 'function') { throw new Error('ItdClient не disposable на текущем runtime'); }"
+          node -e "const { createRestClient } = require('itd-api/rest'); if (typeof createRestClient !== 'function') { throw new Error('CJS-сборка не отдаёт createRestClient'); }"
+          node --input-type=module -e "import { createRestClient, bearerToken } from 'itd-api/rest'; if (typeof createRestClient !== 'function' || typeof bearerToken !== 'function') { throw new Error('ESM-сборка не отдаёт минимальный клиент'); }"
+          node --input-type=module -e "import * as rest from 'itd-api/rest'; for (const name of ['ItdClient', 'ItdAccounts', 'ItdRealtime', 'MemoryTokenStorage']) { if (name in rest) throw new Error('itd-api/rest снова тянет ' + name); }"
+          node -e "const { createRealtimeClient } = require('itd-api/realtime'); if (typeof createRealtimeClient !== 'function') { throw new Error('CJS-сборка не отдаёт createRealtimeClient'); }"
+          node --input-type=module -e "import * as rt from 'itd-api/realtime'; for (const name of ['ItdClient', 'ItdAccounts', 'createRestClient', 'MemoryTokenStorage']) { if (name in rt) throw new Error('itd-api/realtime снова тянет ' + name); }"
           node -e "require('itd-api/node');"
           node --input-type=module -e "await import('itd-api/node');"
           node -e "require('itd-api/web');"
