@@ -50,15 +50,15 @@ describe('получение токена', () => {
   it('берёт токен из объекта сессии', async () => {
     const { auth } = makeAuth([], { auth: { accessToken: 'a', refreshToken: 'r' } });
 
-    expect(await auth.getAccessToken()).toBe('a');
+    expect(await auth.token()).toBe('a');
   });
 
   it('спрашивает внешний источник при каждом запросе', async () => {
     const getToken = vi.fn().mockResolvedValue('fresh-token');
     const { auth } = makeAuth([], { auth: { getToken } });
 
-    await auth.getAccessToken();
-    await auth.getAccessToken();
+    await auth.token();
+    await auth.token();
 
     expect(getToken).toHaveBeenCalledTimes(2);
   });
@@ -74,7 +74,7 @@ describe('получение токена', () => {
     const storage = new MemoryTokenStorage({ accessToken: 'from-storage' });
     const { auth } = makeAuth([], { auth: 'from-config', storage });
 
-    expect(await auth.getAccessToken()).toBe('from-storage');
+    expect(await auth.token()).toBe('from-storage');
   });
 });
 
@@ -84,7 +84,7 @@ describe('отложенный вход по логину и паролю', () =
       auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
     });
 
-    expect(await auth.getAccessToken()).toBe('new-token');
+    expect(await auth.token()).toBe('new-token');
     expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/sign-in');
   });
 
@@ -93,7 +93,7 @@ describe('отложенный вход по логину и паролю', () =
       auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
     });
 
-    await Promise.all([auth.getAccessToken(), auth.getAccessToken(), auth.getAccessToken()]);
+    await Promise.all([auth.token(), auth.token(), auth.token()]);
 
     expect(mock.callCount).toBe(1);
   });
@@ -107,7 +107,7 @@ describe('отложенный вход по логину и паролю', () =
       },
     );
 
-    await expect(auth.getAccessToken()).resolves.toBe('new-token');
+    await expect(auth.token()).resolves.toBe('new-token');
     expect(mock.callCount).toBe(2);
   });
 
@@ -130,7 +130,7 @@ describe('отложенный вход по логину и паролю', () =
       { baseUrl: config.baseUrl, logger: config.logger },
     );
 
-    await auth.getAccessToken();
+    await auth.token();
 
     expect(paths).toEqual(['/api/v1/auth/sign-in']);
   });
@@ -141,7 +141,7 @@ describe('отложенный вход по логину и паролю', () =
       auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
     });
 
-    const error = await auth.getAccessToken().catch((e: unknown) => e);
+    const error = await auth.token().catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ItdConfigError);
     expect((error as Error).message).toMatch(/signInWithOtp/);
@@ -157,7 +157,7 @@ describe('обновление токена', () => {
     });
 
     expect(await auth.refresh()).toBe('refreshed');
-    expect(await auth.getAccessToken()).toBe('refreshed');
+    expect(await auth.token()).toBe('refreshed');
   });
 
   it('объединяет параллельные обновления в один запрос', async () => {
@@ -261,7 +261,7 @@ describe('refresh-токен, переданный строкой', () => {
     const { auth, http, mock } = makeAuth([json({ data: {} })], {
       auth: { accessToken: 'a', refreshToken: 'secret-rt' },
     });
-    await auth.getAccessToken();
+    await auth.token();
 
     await http.request({ method: 'GET', path: '/api/users/me' });
 
@@ -340,7 +340,7 @@ describe('гонка выхода и запоздавшего обновлени
 
     await expect(refreshing).rejects.toBeInstanceOf(ItdAuthError);
 
-    expect(await auth.getAccessToken()).toBeNull();
+    expect(await auth.token()).toBeNull();
     const stored = await storage.get();
     expect(stored?.accessToken).toBeUndefined();
   });
@@ -368,7 +368,7 @@ describe('гонка выхода и запоздавшего обновлени
     // Запоздавшее обновление отдаёт актуальный (заданный вручную) токен, но не свой.
     await expect(refreshing).resolves.toBe('explicit');
 
-    expect(await auth.getAccessToken()).toBe('explicit');
+    expect(await auth.token()).toBe('explicit');
     const stored = await storage.get();
     expect(stored?.accessToken).toBe('explicit');
   });
@@ -471,7 +471,7 @@ describe('капча при входе по паролю', () => {
       auth: { email: 'a@b.c', password: 'p', turnstileToken: 'капча' },
     });
 
-    await auth.getAccessToken();
+    await auth.token();
 
     expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
       email: 'a@b.c',
@@ -486,9 +486,9 @@ describe('капча при входе по паролю', () => {
       auth: { email: 'a@b.c', password: 'p', getTurnstileToken },
     });
 
-    await auth.getAccessToken();
+    await auth.token();
     await auth.clear();
-    await auth.getAccessToken();
+    await auth.token();
 
     expect(JSON.parse(mock.calls[1]?.body ?? '{}').turnstileToken).toBe('вторая');
   });
@@ -496,7 +496,7 @@ describe('капча при входе по паролю', () => {
   it('без токена капчи вход не начинается', async () => {
     const { auth, mock } = makeAuth([], { auth: { email: 'a@b.c', password: 'p' } });
 
-    const error = await auth.getAccessToken().catch((e: unknown) => e);
+    const error = await auth.token().catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ItdConfigError);
     expect((error as Error).message).toMatch(/Turnstile/);
@@ -635,7 +635,7 @@ describe('связка с транспортом', () => {
     await expect(http.request({ method: 'GET', path: '/api/users/me' })).resolves.toEqual({
       id: 'я',
     });
-    expect(await auth.getAccessToken()).toBe('refreshed');
+    expect(await auth.token()).toBe('refreshed');
     expect(mock.calls[2]?.headers.get('authorization')).toBe('Bearer refreshed');
   });
 
@@ -791,7 +791,7 @@ describe('события', () => {
     auth.on('tokens', tokens);
     auth.on('signIn', signIn);
 
-    await auth.getAccessToken();
+    await auth.token();
 
     expect(tokens).toHaveBeenCalledWith({ accessToken: 'new-token' });
     expect(signIn).toHaveBeenCalledWith({ accessToken: 'new-token' });
@@ -805,7 +805,7 @@ describe('события', () => {
     await auth.clear();
 
     expect(signOut).toHaveBeenCalledOnce();
-    expect(await auth.getAccessToken()).toBeNull();
+    expect(await auth.token()).toBeNull();
   });
 
   it('сообщает об ошибке авторизации при неудачном обновлении', async () => {
@@ -833,7 +833,7 @@ describe('идентификатор владельца сессии', () => {
       storage,
     });
 
-    await auth.getAccessToken();
+    await auth.token();
 
     expect(await storage.get()).toEqual(expect.not.objectContaining({ userId: expect.anything() }));
     expect(await auth.getUserId()).toBe('user-2');

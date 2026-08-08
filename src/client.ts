@@ -392,7 +392,7 @@ export class ItdClient {
         baseHeaders: (url) => this.#runtime.platformHeaders(url),
         getAuthIdentity: () => this.#runtime.auth.getCurrentAuthIdentity(),
         getAuthScope: () => this.#runtime.auth.getAuthScope(),
-        getToken: () => this.#runtime.auth.getAccessToken(),
+        getToken: () => this.#runtime.auth.token(),
         refresh: () => this.#runtime.auth.onUnauthorized(),
         fetchUnreadCount: () => this.notifications.count(),
         onConnect: () => this.#streams.add(stream),

@@ -44,12 +44,10 @@ const FIXTURES = [
   },
   {
     name: 'realtime',
-    // Своей точки входа у потока событий пока нет, поэтому он идёт из основной —
-    // и платит за неё целиком. Эта строка и есть довод за отдельный `itd-api/realtime`.
-    hint: "import { ItdRealtime } from 'itd-api' — своей точки входа нет",
+    hint: "import { createRealtimeClient } from 'itd-api/realtime'",
     source: `
-      import { ItdRealtime } from ${JSON.stringify(join(DIST, 'index.js'))};
-      export const run = (deps) => new ItdRealtime(deps).connect();
+      import { createRealtimeClient } from ${JSON.stringify(join(DIST, 'realtime.js'))};
+      export const run = (token) => createRealtimeClient({ auth: token }).connect();
     `,
   },
 ];
@@ -105,11 +103,15 @@ try {
   }
 
   const sdk = results.find((result) => result.name === 'sdk');
-  const rest = results.find((result) => result.name === 'rest');
-  if (sdk && rest) {
-    const saved = sdk.gzip - rest.gzip;
-    const share = ((saved / sdk.gzip) * 100).toFixed(0);
-    console.log(`\n  rest против sdk: −${kb(saved)} gzip (−${share} %)`);
+  if (sdk) {
+    console.log('');
+    for (const result of results) {
+      if (result === sdk) continue;
+
+      const saved = sdk.gzip - result.gzip;
+      const share = ((saved / sdk.gzip) * 100).toFixed(0);
+      console.log(`  ${result.name} против sdk: −${kb(saved)} gzip (−${share} %)`);
+    }
   }
 
   console.log('\n  Образцы:');

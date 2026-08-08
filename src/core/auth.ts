@@ -1,6 +1,6 @@
 import { operationMethod } from '../domain/operations.js';
 import type { UserId } from '../models/common.js';
-import type { AuthProvider, AuthProviderDeps } from './auth-provider.js';
+import type { AuthIdentity, AuthProvider, AuthProviderDeps } from './auth-provider.js';
 import type { ItdClock } from './clock.js';
 import {
   AUTH_FLAG_COOKIE,
@@ -239,14 +239,6 @@ function nextAuthScope(): string {
   return String(authScopeSequence);
 }
 
-/** Области аккаунта и конкретной сессии для локального состояния плагинов. */
-export interface AuthIdentity {
-  /** Идентификатор пользователя; отсутствует у непрозрачного или повреждённого токена. */
-  userId?: UserId | undefined;
-  /** Идентификатор серверной сессии; отсутствует у непрозрачного или повреждённого токена. */
-  sessionId?: string | undefined;
-}
-
 interface AuthManagerHooks {
   /** Вызывается синхронно перед заменой владельца авторизации. */
   onAccountChange?: (() => void) | undefined;
@@ -451,7 +443,7 @@ export class AuthManager implements AuthProvider {
    * обязаны завершиться до захвата слота очереди.
    */
   async prepare(): Promise<void> {
-    await this.getAccessToken();
+    await this.token();
   }
 
   /**
@@ -516,7 +508,7 @@ export class AuthManager implements AuthProvider {
    * При необходимости выполняет отложенный вход: если в конфигурации переданы логин
    * и пароль, первый же запрос сам заведёт сессию.
    */
-  async getAccessToken(): Promise<string | null> {
+  async token(): Promise<string | null> {
     const session = await this.#loadSession();
     if (session?.accessToken) return session.accessToken;
 

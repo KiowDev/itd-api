@@ -56,7 +56,8 @@ export {
   type UrlFileOptions,
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
-export { type AuthEvents, type AuthIdentity, TURNSTILE_SITE_KEY } from './core/auth.js';
+export { type AuthEvents, TURNSTILE_SITE_KEY } from './core/auth.js';
+export type { AuthIdentity } from './core/auth-provider.js';
 export { type ItdClock, systemClock } from './core/clock.js';
 export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';

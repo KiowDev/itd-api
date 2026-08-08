@@ -33,6 +33,7 @@ const LAYERS = [
   ['options.ts', 'sdk'],
   ['index.ts', 'entry'],
   ['rest.ts', 'entry'],
+  ['realtime.ts', 'entry'],
   ['node.ts', 'entry'],
   ['web.ts', 'entry'],
 ];
@@ -70,9 +71,9 @@ const FORBIDDEN = {
  */
 const FORBIDDEN_EDGES = [
   {
-    from: 'core/client-runtime.ts',
+    from: 'core/',
     to: 'core/auth.ts',
-    reason: 'сессию подставляет вызывающий через фабрику AuthProvider',
+    reason: 'ядро знает только контракт AuthProvider; сессию подставляет вызывающий',
   },
   {
     from: 'core/config.ts',
@@ -119,6 +120,41 @@ const FORBIDDEN_EDGES = [
     to: 'core/storage.ts',
     reason: 'точка входа itd-api/rest не публикует хранилища сессии',
   },
+  {
+    from: 'realtime/',
+    to: 'core/auth.ts',
+    reason: 'поток работает по готовому токену, сессии в нём нет',
+  },
+  {
+    from: 'realtime/',
+    to: 'core/storage.ts',
+    reason: 'хранить нечего: токен приходит снаружи',
+  },
+  {
+    from: 'realtime/',
+    to: 'core/multi-storage.ts',
+    reason: 'несколько аккаунтов — возможность полного клиента',
+  },
+  {
+    from: 'realtime/',
+    to: 'core/jwt.ts',
+    reason: 'разбор токена нужен только сессии',
+  },
+  {
+    from: 'realtime/',
+    to: 'resources/',
+    reason: 'счётчик непрочитанных поток читает своей операцией, а не ресурсом',
+  },
+  {
+    from: 'realtime.ts',
+    to: 'core/auth.ts',
+    reason: 'точка входа itd-api/realtime не публикует сессию',
+  },
+  {
+    from: 'realtime.ts',
+    to: 'core/storage.ts',
+    reason: 'точка входа itd-api/realtime не публикует хранилища сессии',
+  },
 ];
 
 /**
@@ -151,6 +187,12 @@ const ALLOWED = [
     to: 'models/common.ts',
     typeOnly: true,
     reason: 'существующий долг: UserId ждёт переезда сессии в отдельный слой',
+  },
+  {
+    from: 'core/auth-provider.ts',
+    to: 'models/common.ts',
+    typeOnly: true,
+    reason: 'AuthIdentity описывает пользователя типом UserId из моделей',
   },
   {
     from: 'core/time.ts',

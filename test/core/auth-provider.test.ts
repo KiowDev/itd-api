@@ -8,6 +8,7 @@ import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.j
 /** Провайдер-заглушка со счётчиками: показывает, о чём и когда конвейер его спрашивает. */
 function spyAuth(headers: () => Record<string, string> = () => ({ Authorization: 'Bearer t' })) {
   const calls = {
+    token: vi.fn(),
     prepare: vi.fn(),
     currentHeaders: vi.fn(),
     recover: vi.fn(),
@@ -16,6 +17,10 @@ function spyAuth(headers: () => Record<string, string> = () => ({ Authorization:
   };
 
   const provider: AuthProvider = {
+    token: async () => {
+      calls.token();
+      return headers().Authorization?.replace('Bearer ', '') ?? null;
+    },
     prepare: async () => {
       calls.prepare();
     },

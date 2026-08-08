@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as core from '../src/index.js';
 import * as node from '../src/node.js';
+import * as realtime from '../src/realtime.js';
 import * as rest from '../src/rest.js';
 import * as web from '../src/web.js';
 
@@ -67,6 +68,31 @@ describe('состав точек входа', () => {
       'TURNSTILE_SITE_KEY',
     ]) {
       expect(rest).not.toHaveProperty(name);
+    }
+  });
+
+  it('itd-api/realtime — поток событий с собственным конвейером', () => {
+    for (const name of [
+      'createRealtimeClient',
+      'ItdRealtimeClient',
+      'ItdRealtime',
+      'WebSocketTransport',
+      'bearerToken',
+    ]) {
+      expect(realtime).toHaveProperty(name);
+    }
+  });
+
+  it('itd-api/realtime не тянет ресурсы, сессию и аккаунты', () => {
+    for (const name of [
+      'ItdClient',
+      'ItdAccounts',
+      'createRestClient',
+      'MemoryTokenStorage',
+      'TURNSTILE_SITE_KEY',
+      'post',
+    ]) {
+      expect(realtime).not.toHaveProperty(name);
     }
   });
 });

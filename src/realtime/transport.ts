@@ -6,7 +6,11 @@ export interface RealtimeRequestInput {
   operationId: BuiltInOperationId;
   path: string;
   query?: QueryParams | undefined;
-  signal: AbortSignal;
+  /**
+   * Отмена запроса. Опрос передаёт сигнал своего соединения; разовое чтение счётчика
+   * непрочитанных отменять нечем — оно живёт вне цикла соединения.
+   */
+  signal?: AbortSignal | undefined;
 }
 
 /**

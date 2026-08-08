@@ -48,6 +48,9 @@
       "rest": [
         "./dist/rest.d.ts"
       ],
+      "realtime": [
+        "./dist/realtime.d.ts"
+      ],
       "node": [
         "./dist/node.d.ts"
       ],
@@ -75,6 +78,16 @@
       "require": {
         "types": "./dist/rest.d.cts",
         "default": "./dist/rest.cjs"
+      }
+    },
+    "./realtime": {
+      "import": {
+        "types": "./dist/realtime.d.ts",
+        "default": "./dist/realtime.js"
+      },
+      "require": {
+        "types": "./dist/realtime.d.cts",
+        "default": "./dist/realtime.cjs"
       }
     },
     "./node": {

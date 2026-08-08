@@ -1,7 +1,16 @@
+import type { UserId } from '../models/common.js';
 import type { ResolvedRuntimeConfig } from './config.js';
 import type { CookieJar } from './cookies.js';
 import type { RequestHandler } from './pipeline.js';
 import { createDeviceId } from './runtime.js';
+
+/** Области аккаунта и конкретной сессии для локального состояния плагинов. */
+export interface AuthIdentity {
+  /** Идентификатор пользователя; отсутствует у непрозрачного или повреждённого токена. */
+  userId?: UserId | undefined;
+  /** Идентификатор серверной сессии; отсутствует у непрозрачного или повреждённого токена. */
+  sessionId?: string | undefined;
+}
 
 /**
  * Что конвейер запросов спрашивает у авторизации.
@@ -14,6 +23,13 @@ import { createDeviceId } from './runtime.js';
  * {@link bearerToken}, {@link tokenProvider} и {@link anonymousAuth}.
  */
 export interface AuthProvider {
+  /**
+   * Текущий токен доступа.
+   *
+   * Нужен там, где заголовок не поставить: SSE в браузере и WebSocket передают токен
+   * параметром адреса. Конвейеру запросов достаточно {@link currentHeaders}.
+   */
+  token(): Promise<string | null>;
   /**
    * Готовит состояние авторизации до входа транспортной попытки в очередь.
    *
@@ -83,6 +99,7 @@ function localDeviceId(): () => Promise<string> {
  */
 export function anonymousAuth(): AuthProvider {
   return {
+    token: () => Promise.resolve(null),
     prepare: () => Promise.resolve(),
     currentHeaders: () => ({}),
     recover: () => Promise.resolve(false),
@@ -102,10 +119,11 @@ export function anonymousAuth(): AuthProvider {
  * const api = createRestClient({ auth: bearerToken(process.env.ITD_TOKEN) });
  * ```
  */
-export function bearerToken(token: string): AuthProvider {
-  const headers = { Authorization: `Bearer ${token}` };
+export function bearerToken(accessToken: string): AuthProvider {
+  const headers = { Authorization: `Bearer ${accessToken}` };
 
   return {
+    token: () => Promise.resolve(accessToken),
     prepare: () => Promise.resolve(),
     currentHeaders: () => headers,
     recover: () => Promise.resolve(false),
@@ -129,17 +147,23 @@ export function bearerToken(token: string): AuthProvider {
 export function tokenProvider(
   getToken: () => string | null | Promise<string | null>,
 ): AuthProvider {
-  let token: string | null = null;
+  let cached: string | null = null;
+
+  const read = async () => {
+    cached = await getToken();
+    return cached;
+  };
 
   return {
+    token: read,
     prepare: async () => {
-      token = await getToken();
+      await read();
     },
-    currentHeaders: () => (token ? { Authorization: `Bearer ${token}` } : {}),
+    currentHeaders: () => (cached ? { Authorization: `Bearer ${cached}` } : {}),
     recover: () => Promise.resolve(false),
     deviceId: localDeviceId(),
     dispose: () => {
-      token = null;
+      cached = null;
     },
   };
 }

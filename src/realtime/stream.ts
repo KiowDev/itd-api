@@ -1,4 +1,4 @@
-import type { AuthIdentity } from '../core/auth.js';
+import type { AuthIdentity } from '../core/auth-provider.js';
 import type { ItdClock } from '../core/clock.js';
 import type { Listener, Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
@@ -165,7 +165,10 @@ export interface RealtimeDeps {
 const REALTIME_CONNECT_GUARDS = new WeakMap<object, () => void>();
 
 /** Связывает поток с lifecycle создавшего его клиента. @internal */
-export function setRealtimeConnectGuard(stream: ItdRealtime, guard: () => void): void {
+export function setRealtimeConnectGuard<C extends RealtimeContext>(
+  stream: ItdRealtime<C>,
+  guard: () => void,
+): void {
   REALTIME_CONNECT_GUARDS.set(stream, guard);
 }
 

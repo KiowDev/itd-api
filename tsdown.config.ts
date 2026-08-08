@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     rest: 'src/rest.ts',
+    realtime: 'src/realtime.ts',
     node: 'src/node.ts',
     web: 'src/web.ts',
   },

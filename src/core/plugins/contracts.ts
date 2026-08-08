@@ -1,5 +1,5 @@
 import type { OperationId } from '../../domain/operations.js';
-import type { AuthIdentity } from '../auth.js';
+import type { AuthIdentity } from '../auth-provider.js';
 import type { Unsubscribe } from '../emitter.js';
 import type { Logger, OperationRequestOptions } from '../options.js';
 
