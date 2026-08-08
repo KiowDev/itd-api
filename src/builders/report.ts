@@ -1,6 +1,6 @@
 import { ItdConfigError } from '../core/errors.js';
+import type { CreateReportInput } from '../domain/params.js';
 import { ReportReason, ReportTargetType } from '../types/enums.js';
-import type { CreateReportInput } from '../types/params.js';
 import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
 
 const REASONS = new Set<string>(Object.values(ReportReason));

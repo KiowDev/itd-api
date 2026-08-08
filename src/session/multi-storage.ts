@@ -1,12 +1,12 @@
-import { AUTH_FLAG_COOKIE, CookieJar } from './cookies.js';
-import { ItdConfigError } from './errors.js';
+import { AUTH_FLAG_COOKIE, CookieJar } from '../core/cookies.js';
+import { ItdConfigError } from '../core/errors.js';
 import {
   collectKeyValueStoreKeys,
   createKeyValueStore,
   type EnumerableKeyValueStore,
   isEnumerableKeyValueStore,
   MemoryKeyValueStore,
-} from './key-value-store.js';
+} from '../core/key-value-store.js';
 import { copySession, type ItdSession, type TokenStorage } from './storage.js';
 
 /**

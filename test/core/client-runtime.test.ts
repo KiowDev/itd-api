@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createItdAuth } from '../../src/core/auth.js';
 import { anonymousAuth } from '../../src/core/auth-provider.js';
 import { ClientRuntimeStage, createClientRuntime } from '../../src/core/client-runtime.js';
 import type { ItdClientOptions } from '../../src/options.js';
+import { createItdAuth } from '../../src/session/auth.js';
 import { createMockFetch, json } from '../helpers/mock-fetch.js';
 
 function makeRuntime(rateLimit: false | { concurrency: number }) {

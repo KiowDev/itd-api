@@ -56,7 +56,6 @@ export {
   type UrlFileOptions,
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
-export { type AuthEvents, TURNSTILE_SITE_KEY } from './core/auth.js';
 export type { AuthIdentity } from './core/auth-provider.js';
 export { type ItdClock, systemClock } from './core/clock.js';
 export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';
@@ -120,15 +119,6 @@ export {
   VIDEO_MIME_TYPES,
   type VideoMimeType,
 } from './core/mime.js';
-// Хранилище на несколько аккаунтов: те же операции, но с именем аккаунта в каждой.
-// Подробности — в core/multi-storage.ts.
-export {
-  createMultiTokenStorage,
-  MemoryMultiTokenStorage,
-  type MultiTokenStorage,
-  type MultiTokenStorageAdapterOptions,
-  scopedTokenStorage,
-} from './core/multi-storage.js';
 export { type OperationMethod, RetrySafety } from './core/operation.js';
 // Опции разделены по слоям: RuntimeOptions нужны generic-ядру, SessionOptions — сессии,
 // а ItdClientOptions объединяет их для полного SDK. Подробности — в core/options.ts.
@@ -171,17 +161,6 @@ export type { RateLimitBucketState } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export type { ServiceDefinition } from './core/services.js';
-export type { AuthInput, CredentialsAuth, SessionOptions } from './core/session-options.js';
-// Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
-// и потому не может попасть в нейтральный бандл, а Web Storage backend вынесены
-// в `itd-api/web`, чтобы их молчаливый откат в память выбирали осознанно.
-export {
-  createTokenStorage,
-  type ItdSession,
-  MemoryTokenStorage,
-  type TokenStorage,
-  type TokenStorageAdapterOptions,
-} from './core/storage.js';
 export { toDate, utcStampToIso } from './core/time.js';
 export type { QueryParams, QueryValue } from './core/url.js';
 // Каталог операций и таблица счётчиков частоты — знание о самом API итд.com, а не о механике
@@ -202,6 +181,13 @@ export {
   operationMethod,
   operationRetrySafety,
 } from './domain/operations.js';
+export type {
+  CreateCommentInput,
+  CreatePollInput,
+  CreatePostData,
+  CreateReportInput,
+  UpdatePostInput,
+} from './domain/params.js';
 export type { PaymentMethod, Session, Subscription } from './models/account.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
@@ -372,6 +358,27 @@ export type {
   UsersResource,
 } from './resources/users.js';
 export type { VerificationResource } from './resources/verification.js';
+export { type AuthEvents, TURNSTILE_SITE_KEY } from './session/auth.js';
+// Хранилище на несколько аккаунтов: те же операции, но с именем аккаунта в каждой.
+// Подробности — в core/multi-storage.ts.
+export {
+  createMultiTokenStorage,
+  MemoryMultiTokenStorage,
+  type MultiTokenStorage,
+  type MultiTokenStorageAdapterOptions,
+  scopedTokenStorage,
+} from './session/multi-storage.js';
+export type { AuthInput, CredentialsAuth, SessionOptions } from './session/options.js';
+// Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
+// и потому не может попасть в нейтральный бандл, а Web Storage backend вынесены
+// в `itd-api/web`, чтобы их молчаливый откат в память выбирали осознанно.
+export {
+  createTokenStorage,
+  type ItdSession,
+  MemoryTokenStorage,
+  type TokenStorage,
+  type TokenStorageAdapterOptions,
+} from './session/storage.js';
 export {
   type ParseMarkupOptions,
   parseHtml,
@@ -404,10 +411,3 @@ export {
   ViewSource,
   WallAccess,
 } from './types/enums.js';
-export type {
-  CreateCommentInput,
-  CreatePollInput,
-  CreatePostData,
-  CreateReportInput,
-  UpdatePostInput,
-} from './types/params.js';

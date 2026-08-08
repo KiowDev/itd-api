@@ -1,6 +1,6 @@
 import type { FileInput } from '../core/attachments/contracts.js';
 import type { Span, UserId } from '../models/common.js';
-import type { ReportReason, ReportTargetType } from './enums.js';
+import type { ReportReason, ReportTargetType } from '../types/enums.js';
 
 /** Данные для создания опроса. */
 export interface CreatePollInput {

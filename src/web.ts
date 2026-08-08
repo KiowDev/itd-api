@@ -21,7 +21,7 @@
 
 import { ItdConfigError } from './core/errors.js';
 import { MemoryKeyValueStore } from './core/key-value-store.js';
-import { createTokenStorage, type ItdSession, type TokenStorage } from './core/storage.js';
+import { createTokenStorage, type ItdSession, type TokenStorage } from './session/storage.js';
 
 type WebStorageProperty = 'localStorage' | 'sessionStorage';
 

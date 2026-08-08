@@ -29,8 +29,8 @@ import {
 import { resolveFileStreamOptions } from './core/attachments/options.js';
 import { ItdConfigError, ItdFileError, ItdFileErrorReason } from './core/errors.js';
 import { createRecordKeyValueStore, type EnumerableKeyValueStore } from './core/key-value-store.js';
-import { createMultiTokenStorage, type MultiTokenStorage } from './core/multi-storage.js';
-import { createTokenStorage, type ItdSession, type TokenStorage } from './core/storage.js';
+import { createMultiTokenStorage, type MultiTokenStorage } from './session/multi-storage.js';
+import { createTokenStorage, type ItdSession, type TokenStorage } from './session/storage.js';
 
 /** Проверяет код системной ошибки без привязки к типам конкретного рантайма. */
 function hasErrorCode(error: unknown, code: string): boolean {

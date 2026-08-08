@@ -8,20 +8,20 @@ import { systemClock } from './core/clock.js';
 import { resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
 import { ItdConfigError, ItdStateError } from './core/errors.js';
+import type { Logger } from './core/options.js';
+import type { ClientPlugin } from './core/plugins/contracts.js';
+import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
+import { RequestQueuePool } from './core/rate-limit.js';
+import { ITD_CATALOG } from './domain/catalog.js';
+import type { ItdClientOptions } from './options.js';
 import {
   type ControlledTokenStorage,
   controlledTokenStorage,
   isRestorableSession,
   MemoryMultiTokenStorage,
   type MultiTokenStorage,
-} from './core/multi-storage.js';
-import type { Logger } from './core/options.js';
-import type { ClientPlugin } from './core/plugins/contracts.js';
-import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
-import { RequestQueuePool } from './core/rate-limit.js';
-import type { TokenStorage } from './core/storage.js';
-import { ITD_CATALOG } from './domain/catalog.js';
-import type { ItdClientOptions } from './options.js';
+} from './session/multi-storage.js';
+import type { TokenStorage } from './session/storage.js';
 
 /** Как аккаунты делят между собой очередь запросов. */
 export type RateLimitScope = 'account' | 'shared';

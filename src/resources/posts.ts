@@ -17,6 +17,7 @@ import {
 } from '../core/pagination.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
+import type { CreateCommentInput, CreatePostData } from '../domain/params.js';
 import type { UserRef } from '../models/common.js';
 import type {
   Comment,
@@ -27,7 +28,6 @@ import type {
   PostStats,
 } from '../models/content.js';
 import type { CommentSort, FeedTab } from '../types/enums.js';
-import type { CreateCommentInput, CreatePostData } from '../types/params.js';
 import { BaseResource } from './base.js';
 
 /** Курсорная позиция из параметров: если курсор задан — с него, иначе с начала. */

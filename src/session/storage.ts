@@ -1,5 +1,9 @@
-import { ItdConfigError } from './errors.js';
-import { createKeyValueStore, type KeyValueStore, MemoryKeyValueStore } from './key-value-store.js';
+import { ItdConfigError } from '../core/errors.js';
+import {
+  createKeyValueStore,
+  type KeyValueStore,
+  MemoryKeyValueStore,
+} from '../core/key-value-store.js';
 
 /**
  * Сохранённая сессия.

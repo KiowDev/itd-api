@@ -22,6 +22,7 @@ const LAYERS = [
   ['domain/', 'domain'],
   ['types/', 'types'],
   ['models/', 'models'],
+  ['session/', 'session'],
   ['resources/', 'resources'],
   ['builders/', 'builders'],
   ['realtime/', 'realtime'],
@@ -44,116 +45,55 @@ const LAYERS = [
  * Точки входа отсутствуют: они и есть место сборки всего вместе.
  */
 const FORBIDDEN = {
-  core: ['domain', 'models', 'resources', 'builders', 'realtime', 'spans', 'notifications', 'sdk'],
-  domain: ['resources', 'builders', 'realtime', 'spans', 'notifications', 'sdk'],
-  types: ['resources', 'builders', 'realtime', 'spans', 'notifications', 'sdk'],
+  // Сессия стоит над ядром: конвейер знает только контракт AuthProvider, а вход по паролю,
+  // продление и хранилище подставляет вызывающий. Это же правило держит их вне минимального
+  // клиента и потока событий, то есть вне их бандлов.
+  core: [
+    'session',
+    'domain',
+    'models',
+    'resources',
+    'builders',
+    'realtime',
+    'spans',
+    'notifications',
+    'rest',
+    'sdk',
+  ],
+  domain: ['session', 'resources', 'builders', 'realtime', 'spans', 'notifications', 'rest', 'sdk'],
+  types: ['core', 'session', 'domain', 'resources', 'builders', 'realtime', 'rest', 'sdk'],
   // Перечисления (`types/enums.ts`) сами ни от чего не зависят, поэтому модели их читают.
-  models: ['core', 'domain', 'resources', 'builders', 'realtime', 'notifications', 'sdk'],
+  models: ['core', 'session', 'domain', 'resources', 'builders', 'realtime', 'notifications', 'sdk'],
+  session: ['resources', 'builders', 'realtime', 'spans', 'notifications', 'rest', 'sdk'],
   resources: ['rest', 'sdk'],
   builders: ['resources', 'realtime', 'rest', 'sdk'],
-  realtime: ['resources', 'builders', 'rest', 'sdk'],
+  realtime: ['session', 'resources', 'builders', 'rest', 'sdk'],
   // Разметка бросает типизированные ошибки ядра — это нисходящая зависимость.
-  spans: ['domain', 'resources', 'realtime', 'rest', 'sdk'],
-  notifications: ['resources', 'rest', 'sdk'],
-  rest: ['realtime', 'sdk'],
+  spans: ['session', 'domain', 'resources', 'realtime', 'rest', 'sdk'],
+  notifications: ['session', 'resources', 'rest', 'sdk'],
+  rest: ['session', 'realtime', 'sdk'],
 };
 
 /**
- * Границы, которые карта слоёв выразить не может: они проходят внутри слоя либо
- * запрещают отдельные файлы соседа, а не слой целиком.
+ * Границы, которые карта слоёв выразить не может.
  *
- * Ни `core`, ни `rest` не должны ссылаться на конкретную реализацию сессии, иначе та
- * останется достижимой из любого бандла, включая анонимный, и разделение окажется
- * бумажным. Ни TypeScript, ни тесты такой регресс не заметят — только эта проверка.
+ * Точки входа собирают всё вместе и потому от правил слоёв освобождены — но `itd-api/rest`
+ * и `itd-api/realtime` существуют ровно затем, чтобы сессия в их бандлы не попадала.
+ * Ни TypeScript, ни тесты такой регресс не заметят — только эта проверка.
  *
  * `from` и `to` сопоставляются по префиксу, поэтому одним правилом закрывается
  * и отдельный файл, и весь подкаталог.
  */
 const FORBIDDEN_EDGES = [
   {
-    from: 'core/',
-    to: 'core/auth.ts',
-    reason: 'ядро знает только контракт AuthProvider; сессию подставляет вызывающий',
-  },
-  {
-    from: 'core/config.ts',
-    to: 'core/storage.ts',
-    reason: 'хранилищем владеет сессия, а не конфигурация исполнения',
-  },
-  {
-    from: 'core/config.ts',
-    to: 'core/session-options.ts',
-    reason: 'настройки исполнения не знают про авторизацию',
-  },
-  {
-    from: 'core/options.ts',
-    to: 'core/session-options.ts',
-    reason: 'RuntimeOptions и SessionOptions объединяет только sdk-слой',
-  },
-  {
-    from: 'rest/',
-    to: 'core/auth.ts',
-    reason: 'минимальный клиент работает по готовому токену, сессии в нём нет',
-  },
-  {
-    from: 'rest/',
-    to: 'core/storage.ts',
-    reason: 'хранить нечего: токен приходит снаружи',
-  },
-  {
-    from: 'rest/',
-    to: 'core/multi-storage.ts',
-    reason: 'несколько аккаунтов — возможность полного клиента',
-  },
-  {
-    from: 'rest/',
-    to: 'core/jwt.ts',
-    reason: 'разбор токена нужен только сессии',
-  },
-  {
     from: 'rest.ts',
-    to: 'core/auth.ts',
-    reason: 'точка входа itd-api/rest не публикует сессию',
-  },
-  {
-    from: 'rest.ts',
-    to: 'core/storage.ts',
-    reason: 'точка входа itd-api/rest не публикует хранилища сессии',
-  },
-  {
-    from: 'realtime/',
-    to: 'core/auth.ts',
-    reason: 'поток работает по готовому токену, сессии в нём нет',
-  },
-  {
-    from: 'realtime/',
-    to: 'core/storage.ts',
-    reason: 'хранить нечего: токен приходит снаружи',
-  },
-  {
-    from: 'realtime/',
-    to: 'core/multi-storage.ts',
-    reason: 'несколько аккаунтов — возможность полного клиента',
-  },
-  {
-    from: 'realtime/',
-    to: 'core/jwt.ts',
-    reason: 'разбор токена нужен только сессии',
-  },
-  {
-    from: 'realtime/',
-    to: 'resources/',
-    reason: 'счётчик непрочитанных поток читает своей операцией, а не ресурсом',
+    to: 'session/',
+    reason: 'минимальный клиент работает по готовому токену: сессии в его бандле нет',
   },
   {
     from: 'realtime.ts',
-    to: 'core/auth.ts',
-    reason: 'точка входа itd-api/realtime не публикует сессию',
-  },
-  {
-    from: 'realtime.ts',
-    to: 'core/storage.ts',
-    reason: 'точка входа itd-api/realtime не публикует хранилища сессии',
+    to: 'session/',
+    reason: 'поток работает по готовому токену: сессии в его бандле нет',
   },
 ];
 
@@ -170,23 +110,12 @@ const ALLOWED = [
     reason: 'composition root: единственное место, где ядро получает каталог операций',
   },
   {
-    from: 'core/auth.ts',
-    to: 'domain/operations.ts',
-    reason: 'будущий @itd-api/auth стоит над ядром и знает эндпоинты авторизации итд.com',
-  },
-  {
     from: 'core/',
     to: 'domain/operations.ts',
     typeOnly: true,
     reason:
       'OperationId остаётся доменным union ради автодополнения; снимется, когда ядро ' +
       'станет generic по OperationId extends string',
-  },
-  {
-    from: 'core/auth.ts',
-    to: 'models/common.ts',
-    typeOnly: true,
-    reason: 'существующий долг: UserId ждёт переезда сессии в отдельный слой',
   },
   {
     from: 'core/auth-provider.ts',
@@ -198,7 +127,7 @@ const ALLOWED = [
     from: 'core/time.ts',
     to: 'models/common.ts',
     typeOnly: true,
-    reason: 'существующий долг: IsoDate ждёт переезда моделей в доменный слой',
+    reason: 'IsoDate — форма даты из моделей; ребро стирается при сборке',
   },
 ];
 

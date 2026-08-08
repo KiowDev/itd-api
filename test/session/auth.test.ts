@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createItdAuth } from '../../src/core/auth.js';
 import { createClientRuntime } from '../../src/core/client-runtime.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from '../../src/core/errors.js';
-import { type ItdSession, MemoryTokenStorage } from '../../src/core/storage.js';
 import type { ItdClientOptions } from '../../src/options.js';
+import { createItdAuth } from '../../src/session/auth.js';
+import { type ItdSession, MemoryTokenStorage } from '../../src/session/storage.js';
 import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 

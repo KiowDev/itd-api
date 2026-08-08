@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveSessionConfig } from '../../src/core/auth.js';
 import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT, resolveRuntimeConfig } from '../../src/core/config.js';
 import { ItdConfigError } from '../../src/core/errors.js';
 import { createKeyValueStore } from '../../src/core/key-value-store.js';
-import type { SessionOptions } from '../../src/core/session-options.js';
-import { createTokenStorage, MemoryTokenStorage } from '../../src/core/storage.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
+import { resolveSessionConfig } from '../../src/session/auth.js';
+import type { SessionOptions } from '../../src/session/options.js';
+import { createTokenStorage, MemoryTokenStorage } from '../../src/session/storage.js';
 import {
   LocalStorageKeyValueStore,
   LocalStorageTokenStorage,

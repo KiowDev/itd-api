@@ -166,6 +166,13 @@ export {
   operationMethod,
   operationRetrySafety,
 } from './domain/operations.js';
+export type {
+  CreateCommentInput,
+  CreatePollInput,
+  CreatePostData,
+  CreateReportInput,
+  UpdatePostInput,
+} from './domain/params.js';
 export type { PaymentMethod, Session, Subscription } from './models/account.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
@@ -284,10 +291,3 @@ export {
   ViewSource,
   WallAccess,
 } from './types/enums.js';
-export type {
-  CreateCommentInput,
-  CreatePollInput,
-  CreatePostData,
-  CreateReportInput,
-  UpdatePostInput,
-} from './types/params.js';

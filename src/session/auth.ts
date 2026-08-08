@@ -1,22 +1,22 @@
-import { operationMethod } from '../domain/operations.js';
-import type { UserId } from '../models/common.js';
-import type { AuthIdentity, AuthProvider, AuthProviderDeps } from './auth-provider.js';
-import type { ItdClock } from './clock.js';
+import type { AuthIdentity, AuthProvider, AuthProviderDeps } from '../core/auth-provider.js';
+import type { ItdClock } from '../core/clock.js';
 import {
   AUTH_FLAG_COOKIE,
   type CookieJar,
   REFRESH_COOKIE,
   REFRESH_COOKIE_PATH,
-} from './cookies.js';
-import { Emitter, reportListenerError } from './emitter.js';
-import { ItdApiError, ItdAuthError, ItdConfigError } from './errors.js';
+} from '../core/cookies.js';
+import { Emitter, reportListenerError } from '../core/emitter.js';
+import { ItdApiError, ItdAuthError, ItdConfigError } from '../core/errors.js';
+import type { Logger } from '../core/options.js';
+import type { RequestHandler } from '../core/pipeline.js';
+import { createDeviceId } from '../core/runtime.js';
+import { isRecord, requireOptionalBoolean } from '../core/validate.js';
+import { operationMethod } from '../domain/operations.js';
+import type { UserId } from '../models/common.js';
 import { readTokenIdentity, readTokenSubject } from './jwt.js';
-import type { Logger } from './options.js';
-import type { RequestHandler } from './pipeline.js';
-import { createDeviceId } from './runtime.js';
-import type { AuthInput, CredentialsAuth, SessionOptions } from './session-options.js';
+import type { AuthInput, CredentialsAuth, SessionOptions } from './options.js';
 import { copySession, type ItdSession, MemoryTokenStorage, type TokenStorage } from './storage.js';
-import { isRecord, requireOptionalBoolean } from './validate.js';
 
 /**
  * Настройки сессии после подстановки умолчаний и проверок.

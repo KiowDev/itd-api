@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type AuthProvider, anonymousAuth } from '../../src/core/auth-provider.js';
 import { type ClientRuntime, createClientRuntime } from '../../src/core/client-runtime.js';
-import { MemoryTokenStorage } from '../../src/core/storage.js';
 import type { ItdClientOptions } from '../../src/options.js';
+import { MemoryTokenStorage } from '../../src/session/storage.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 /** Провайдер-заглушка со счётчиками: показывает, о чём и когда конвейер его спрашивает. */

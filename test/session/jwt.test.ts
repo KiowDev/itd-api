@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readTokenIdentity, readTokenSubject } from '../../src/core/jwt.js';
+import { readTokenIdentity, readTokenSubject } from '../../src/session/jwt.js';
 import { makeJwt } from '../helpers/jwt.js';
 
 describe('readTokenSubject', () => {

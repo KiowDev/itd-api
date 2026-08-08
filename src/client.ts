@@ -1,5 +1,4 @@
 import { installAsyncDisposeFallback } from './core/async-dispose.js';
-import { type AuthEvents, type AuthManager, createItdAuth } from './core/auth.js';
 import { type ClientRuntime, createClientRuntime } from './core/client-runtime.js';
 import { createDeadline } from './core/clock.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
@@ -9,7 +8,6 @@ import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
 import type { RateLimitBucketState, RequestQueuePool } from './core/rate-limit.js';
 import type { ServiceDefinition } from './core/services.js';
-import type { ItdSession } from './core/storage.js';
 import type { UserId } from './models/common.js';
 import type { ItdClientOptions } from './options.js';
 import { ItdRealtime, type RealtimeOptions, setRealtimeConnectGuard } from './realtime/stream.js';
@@ -27,6 +25,8 @@ import type { TelemetryResource } from './resources/telemetry.js';
 import type { UsersResource } from './resources/users.js';
 import type { VerificationResource } from './resources/verification.js';
 import { createResources, type RestResources } from './rest/resources.js';
+import { type AuthEvents, type AuthManager, createItdAuth } from './session/auth.js';
+import type { ItdSession } from './session/storage.js';
 
 const CLIENT_PLUGIN_REGISTRIES = new WeakMap<ItdClient, PluginRegistry>();
 const DISPOSED_CLIENTS = new WeakSet<ItdClient>();

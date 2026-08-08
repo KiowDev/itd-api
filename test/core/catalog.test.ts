@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createItdAuth } from '../../src/core/auth.js';
 import type { OperationCatalog } from '../../src/core/catalog.js';
 import { type ClientRuntime, createClientRuntime } from '../../src/core/client-runtime.js';
 import { resolveRateLimit } from '../../src/core/config.js';
@@ -7,6 +6,7 @@ import { RateLimitPacing } from '../../src/core/pacing.js';
 import { RequestQueuePool } from '../../src/core/rate-limit.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
+import { createItdAuth } from '../../src/session/auth.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 /**

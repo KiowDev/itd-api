@@ -1,5 +1,5 @@
 import type { RuntimeOptions } from './core/options.js';
-import type { SessionOptions } from './core/session-options.js';
+import type { SessionOptions } from './session/options.js';
 
 /**
  * Опции конструктора `ItdClient`.
