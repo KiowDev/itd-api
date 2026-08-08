@@ -109,16 +109,6 @@ export {
   withCodec,
   withNamespace,
 } from './core/key-value-store.js';
-export {
-  ALLOWED_MIME_TYPES,
-  type AllowedMimeType,
-  AUDIO_MIME_TYPES,
-  type AudioMimeType,
-  IMAGE_MIME_TYPES,
-  type ImageMimeType,
-  VIDEO_MIME_TYPES,
-  type VideoMimeType,
-} from './core/mime.js';
 export { type OperationMethod, RetrySafety } from './core/operation.js';
 // Опции разделены по слоям: RuntimeOptions нужны generic-ядру, SessionOptions — сессии,
 // а ItdClientOptions объединяет их для полного SDK. Подробности — в core/options.ts.
@@ -142,8 +132,6 @@ export type {
   RuntimeOptions,
 } from './core/options.js';
 export { RateLimitPacing } from './core/pacing.js';
-export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
-export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
 // Плагины расширяют два явных уровня: logical operation и отдельную transport attempt.
 // Публичные контракты отделены от registry и порядка установки.
 export type {
@@ -161,7 +149,6 @@ export type { RateLimitBucketState } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.
 export type { ServiceDefinition } from './core/services.js';
-export { toDate, utcStampToIso } from './core/time.js';
 export type { QueryParams, QueryValue } from './core/url.js';
 // Каталог операций и таблица счётчиков частоты — знание о самом API итд.com, а не о механике
 // исполнения запроса. Ядро получает их через контракт каталога. Подробности — в domain/catalog.ts.
@@ -170,6 +157,16 @@ export {
   DEFAULT_RATE_LIMIT_BUCKET,
   type RateLimitBucket,
 } from './domain/buckets.js';
+export {
+  ALLOWED_MIME_TYPES,
+  type AllowedMimeType,
+  AUDIO_MIME_TYPES,
+  type AudioMimeType,
+  IMAGE_MIME_TYPES,
+  type ImageMimeType,
+  VIDEO_MIME_TYPES,
+  type VideoMimeType,
+} from './domain/mime.js';
 export {
   type BuiltInOperationId,
   type CustomOperationId,
@@ -188,6 +185,7 @@ export type {
   CreateReportInput,
   UpdatePostInput,
 } from './domain/params.js';
+export { toDate, utcStampToIso } from './domain/time.js';
 export type { PaymentMethod, Session, Subscription } from './models/account.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
@@ -323,6 +321,8 @@ export type {
   NotificationsResource,
   UpdateNotificationSettingsInput,
 } from './resources/notifications.js';
+export type { Page, PageState, PaginatorOptions } from './resources/pagination.js';
+export { mapPage, PaginationMode, Paginator } from './resources/pagination.js';
 export type {
   PlatformClientVersion,
   PlatformResource,

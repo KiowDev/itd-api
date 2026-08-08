@@ -1,4 +1,4 @@
-import { ItdConfigError } from './errors.js';
+import { ItdConfigError } from '../core/errors.js';
 
 /** Изображения, которые принимает `POST /api/files/upload`. */
 export const IMAGE_MIME_TYPES = Object.freeze([

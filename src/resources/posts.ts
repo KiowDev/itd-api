@@ -8,13 +8,6 @@ import {
 import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/http.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
-import {
-  type Page,
-  PaginationMode,
-  type Paginator,
-  readCursorPage,
-  readFlatCursorPage,
-} from '../core/pagination.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import type { CreateCommentInput, CreatePostData } from '../domain/params.js';
@@ -29,6 +22,13 @@ import type {
 } from '../models/content.js';
 import type { CommentSort, FeedTab } from '../types/enums.js';
 import { BaseResource } from './base.js';
+import {
+  type Page,
+  PaginationMode,
+  type Paginator,
+  readCursorPage,
+  readFlatCursorPage,
+} from './pagination.js';
 
 /** Курсорная позиция из параметров: если курсор задан — с него, иначе с начала. */
 function cursorStart(params: { cursor?: string | undefined }): { cursor?: string } {

@@ -1,5 +1,5 @@
-import { ItdConfigError } from './errors.js';
-import { pickArray, pickBoolean, pickNumber, pickObject, pickString } from './unwrap.js';
+import { ItdConfigError } from '../core/errors.js';
+import { pickArray, pickBoolean, pickNumber, pickObject, pickString } from '../core/unwrap.js';
 
 /**
  * Страница списка — единая форма для всех трёх схем пагинации API.

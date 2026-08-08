@@ -123,12 +123,6 @@ const ALLOWED = [
     typeOnly: true,
     reason: 'AuthIdentity описывает пользователя типом UserId из моделей',
   },
-  {
-    from: 'core/time.ts',
-    to: 'models/common.ts',
-    typeOnly: true,
-    reason: 'IsoDate — форма даты из моделей; ребро стирается при сборке',
-  },
 ];
 
 function listFiles(dir) {

@@ -101,16 +101,6 @@ export {
   isItdStateError,
   isItdValidationError,
 } from './core/errors.js';
-export {
-  ALLOWED_MIME_TYPES,
-  type AllowedMimeType,
-  AUDIO_MIME_TYPES,
-  type AudioMimeType,
-  IMAGE_MIME_TYPES,
-  type ImageMimeType,
-  VIDEO_MIME_TYPES,
-  type VideoMimeType,
-} from './core/mime.js';
 export { type OperationMethod, RetrySafety } from './core/operation.js';
 export type {
   ClientHooks,
@@ -132,8 +122,6 @@ export type {
   RuntimeOptions,
 } from './core/options.js';
 export { RateLimitPacing } from './core/pacing.js';
-export type { Page, PageState, PaginatorOptions } from './core/pagination.js';
-export { mapPage, PaginationMode, Paginator } from './core/pagination.js';
 export type {
   AttemptContext,
   AttemptExtensions,
@@ -148,13 +136,22 @@ export type {
 export type { RateLimitBucketState } from './core/rate-limit.js';
 export { RuntimeMode } from './core/runtime.js';
 export type { ServiceDefinition } from './core/services.js';
-export { toDate, utcStampToIso } from './core/time.js';
 export type { QueryParams, QueryValue } from './core/url.js';
 export {
   BUCKET_LIMITS,
   DEFAULT_RATE_LIMIT_BUCKET,
   type RateLimitBucket,
 } from './domain/buckets.js';
+export {
+  ALLOWED_MIME_TYPES,
+  type AllowedMimeType,
+  AUDIO_MIME_TYPES,
+  type AudioMimeType,
+  IMAGE_MIME_TYPES,
+  type ImageMimeType,
+  VIDEO_MIME_TYPES,
+  type VideoMimeType,
+} from './domain/mime.js';
 export {
   type BuiltInOperationId,
   type CustomOperationId,
@@ -173,6 +170,7 @@ export type {
   CreateReportInput,
   UpdatePostInput,
 } from './domain/params.js';
+export { toDate, utcStampToIso } from './domain/time.js';
 export type { PaymentMethod, Session, Subscription } from './models/account.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
@@ -230,6 +228,8 @@ export type {
   NotificationsResource,
   UpdateNotificationSettingsInput,
 } from './resources/notifications.js';
+export type { Page, PageState, PaginatorOptions } from './resources/pagination.js';
+export { mapPage, PaginationMode, Paginator } from './resources/pagination.js';
 export type {
   PlatformClientVersion,
   PlatformResource,

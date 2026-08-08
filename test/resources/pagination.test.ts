@@ -9,7 +9,7 @@ import {
   readFlatCursorPage,
   readOffsetPage,
   readPagedPage,
-} from '../../src/core/pagination.js';
+} from '../../src/resources/pagination.js';
 
 describe('чтение форм ответа', () => {
   it('курсорная схема — курсор внутри pagination', () => {

@@ -1,10 +1,10 @@
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
-import { type Page, PaginationMode, type Paginator, readOffsetPage } from '../core/pagination.js';
 import { pickBoolean, pickNumber } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import type { Notification, NotificationSettings } from '../models/notifications.js';
 import { normalizeNotification } from '../notifications/normalize.js';
 import { BaseResource } from './base.js';
+import { type Page, PaginationMode, type Paginator, readOffsetPage } from './pagination.js';
 
 const NOTIFICATION_SETTING_KEYS = [
   'enabled',

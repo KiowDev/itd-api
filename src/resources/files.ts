@@ -13,12 +13,12 @@ import { resolveFileStreamOptions } from '../core/attachments/options.js';
 import { downloadFile, normalizeMimeType, openUrlFile } from '../core/attachments/url-source.js';
 import { ItdConfigError, ItdError, ItdFileError, ItdFileErrorReason } from '../core/errors.js';
 import type { HttpClient } from '../core/http.js';
-import { assertAllowedMime, mimeFromFilename } from '../core/mime.js';
 import { createMultipartFileBody } from '../core/multipart.js';
 import type { RequestOptions } from '../core/options.js';
 import type { RequestBodyFactory } from '../core/pipeline.js';
 import { isBlob, isFile } from '../core/runtime.js';
 import { encodePathSegment } from '../core/url.js';
+import { assertAllowedMime, mimeFromFilename } from '../domain/mime.js';
 import { BaseResource } from './base.js';
 
 /** Ответ загрузки файла. */
