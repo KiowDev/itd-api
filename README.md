@@ -14,6 +14,7 @@
 [![Node.js](https://img.shields.io/node/v/itd-api.svg)](https://www.npmjs.com/package/itd-api)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-3178c6.svg)](./tsconfig.json)
 [![license](https://img.shields.io/npm/l/itd-api.svg)](./LICENSE)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/KiowDev/itd-api)
 
 Независимый TypeScript-клиент REST и realtime API социальной сети **итд.com**.
 Проект не является официальным SDK и не аффилирован с итд.com.
@@ -145,8 +146,7 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 
 ## Проект
 
-- [DeepWiki по исходному коду](https://deepwiki.com/KiowDev/itd-api) — автоматический разбор
-  репозитория с ответами на вопросы про внутреннее устройство
+- [DeepWiki по исходному коду](https://deepwiki.com/KiowDev/itd-api) — можно задать любые вопросы нейронке
 - [CI](https://github.com/KiowDev/itd-api/actions/workflows/ci.yml)
 - [История релизов](https://github.com/KiowDev/itd-api/releases)
 - [Как внести вклад](./.github/CONTRIBUTING.md)
