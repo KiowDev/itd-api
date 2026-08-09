@@ -14,6 +14,10 @@ describe('каталог операций кэша', () => {
     expect(cacheOperation('users.followStatus')?.id).toBe('users.followStatus');
   });
 
+  it('знает status по ID установленного модуля', () => {
+    expect(cacheOperation('status.get')?.category).toBe('platform');
+  });
+
   it('не принимает мутации и неизвестные ID', () => {
     expect(cacheOperation('posts.update')).toBeUndefined();
     expect(cacheOperation('posts.create')).toBeUndefined();

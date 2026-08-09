@@ -30,6 +30,7 @@ const guideSidebar = [
       { text: 'Разметка текста', link: '/text-markup/' },
       { text: 'Интеграции', link: '/integrations/' },
       { text: 'Плагины', link: '/plugins/' },
+      { text: 'Подключаемые модули', link: '/features/' },
     ],
   },
   {
@@ -219,7 +220,7 @@ export default defineConfig({
         text: 'Руководства',
         link: '/guides/',
         activeMatch:
-          '^/(guides|authentication|configuration|realtime|multi-accounts|text-markup|integrations|plugins)/',
+          '^/(guides|authentication|configuration|realtime|multi-accounts|text-markup|integrations|plugins|features)/',
       },
       { text: 'Справочник', link: '/reference/' },
       { text: 'Пакеты', link: '/packages/' },

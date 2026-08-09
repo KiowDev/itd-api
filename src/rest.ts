@@ -101,7 +101,15 @@ export {
   isItdStateError,
   isItdValidationError,
 } from './core/errors.js';
-export { type OperationMethod, RetrySafety } from './core/operation.js';
+export type {
+  ClientFeature,
+  FeatureBucketDefinition,
+  FeatureContext,
+  FeatureInstallation,
+  FeatureOperationDefinition,
+  FeatureRequestOptions,
+} from './core/features.js';
+export { type FeatureOperationId, type OperationMethod, RetrySafety } from './core/operation.js';
 export type {
   ClientHooks,
   ErrorContextHook,

@@ -155,7 +155,7 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 | `verification.submit` | `verification.submit` | 3 |
 | `reports.create` | `reports.create` | 3 |
 
-`platform.status` идёт на `статус.итд.com` — отдельный хост, заголовков лимита он
+`status.get` идёт на `статус.итд.com` — отдельный хост, заголовков лимита он
 не присылает.
 
 Бакет операции и его лимит можно получить из кода:

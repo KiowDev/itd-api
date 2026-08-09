@@ -25,11 +25,6 @@ export const DEFAULT_STATUS_BASE_URL = 'https://xn--80a7abcbg.xn--d1ah4a.com';
 /** Имя встроенного сервиса статуса. */
 export const STATUS_SERVICE = 'status';
 
-/** Сервисы, зарегистрированные у любого клиента. */
-export const BUILT_IN_SERVICES: readonly ServiceDefinition[] = Object.freeze([
-  Object.freeze({ name: STATUS_SERVICE, baseUrl: DEFAULT_STATUS_BASE_URL, auth: false }),
-]);
-
 /** Таймаут запроса по умолчанию — 30 секунд. */
 export const DEFAULT_TIMEOUT = 30_000;
 

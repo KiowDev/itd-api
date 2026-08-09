@@ -1,7 +1,9 @@
 import { installAsyncDisposeFallback } from '../core/async-dispose.js';
 import { type AuthProvider, anonymousAuth, bearerToken } from '../core/auth-provider.js';
-import { ItdStateError } from '../core/errors.js';
+import { ItdConfigError, ItdStateError } from '../core/errors.js';
 import { type ClientRuntime, createClientRuntime } from '../core/execution/client-runtime.js';
+import { ExtensibleOperationCatalog } from '../core/feature-catalog.js';
+import { type ClientFeature, FeatureRegistry } from '../core/features.js';
 import type { RawRequestOptions, RuntimeOptions } from '../core/options.js';
 import type { ClientPlugin } from '../core/plugins/contracts.js';
 import type { RateLimitBucketState } from '../core/scheduling/rate-limit.js';
@@ -15,6 +17,7 @@ import type { PlatformResource } from '../resources/platform.js';
 import type { PostsResource } from '../resources/posts.js';
 import type { ReportsResource } from '../resources/reports.js';
 import type { SearchResource } from '../resources/search.js';
+import { createStatusFeature } from '../resources/status.js';
 import type { SubscriptionResource } from '../resources/subscription.js';
 import type { TelemetryResource } from '../resources/telemetry.js';
 import type { UsersResource } from '../resources/users.js';
@@ -51,6 +54,7 @@ export interface RestClientOptions extends RuntimeOptions {
  */
 export class ItdRestClient {
   readonly #runtime: ClientRuntime;
+  readonly #features: FeatureRegistry;
   readonly #resources: RestResources;
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
   #disposePromise: Promise<void> | undefined;
@@ -118,15 +122,29 @@ export class ItdRestClient {
 
   constructor(options: RestClientOptions = {}) {
     const { auth, ...runtimeOptions } = options;
+    const catalog = new ExtensibleOperationCatalog(ITD_CATALOG);
 
     this.#runtime = createClientRuntime(runtimeOptions, {
-      catalog: ITD_CATALOG,
+      catalog,
       assertActive: (action) => this.#assertActive(action),
       auth: () => resolveAuthProvider(auth),
     });
+    this.#features = new FeatureRegistry({
+      http: this.#runtime.http,
+      services: this.#runtime.services,
+      serviceOverrides: this.#runtime.config.services,
+      catalog,
+      baseUrl: this.#runtime.config.baseUrl,
+      clock: this.#runtime.config.clock,
+      logger: this.#runtime.config.logger,
+      assertActive: (action) => this.#assertActive(action),
+      registerBucket: (name, definition) => this.#runtime.registerRateLimitBucket(name, definition),
+    });
+    const status = this.#features.install(createStatusFeature());
     this.#resources = createResources({
       http: this.#runtime.http,
       fetch: this.#runtime.config.fetch,
+      status,
     });
   }
 
@@ -164,6 +182,47 @@ export class ItdRestClient {
    */
   rateLimitState(): RateLimitBucketState[] {
     return this.#runtime.rateLimitState();
+  }
+
+  /** Устанавливает REST feature поверх общего request pipeline клиента. */
+  install<TApi>(feature: ClientFeature<TApi>): TApi {
+    return this.#features.install(feature);
+  }
+
+  /** Устанавливает REST feature и публикует его API как readonly-свойство клиента. */
+  withFeature<const K extends string, TApi>(
+    key: K,
+    feature: ClientFeature<TApi>,
+  ): this & { readonly [P in K]: TApi } {
+    this.#assertActive('установить feature');
+    if (typeof key !== 'string' || key.trim() === '' || key !== key.trim()) {
+      throw new ItdConfigError('Свойство feature должно иметь непустое имя без краевых пробелов');
+    }
+    if (key === 'then' || key in this) {
+      throw new ItdConfigError(`Свойство клиента «${key}» уже занято или зарезервировано`);
+    }
+    if (!Object.isExtensible(this)) {
+      throw new ItdConfigError('Нельзя опубликовать feature на нерасширяемом клиенте');
+    }
+
+    const api = this.install(feature);
+    Object.defineProperty(this, key, {
+      value: api,
+      enumerable: true,
+      configurable: false,
+      writable: false,
+    });
+    return this as this & { readonly [P in K]: TApi };
+  }
+
+  /** Имена установленных feature в порядке установки. */
+  featureNames(): string[] {
+    return this.#features.names();
+  }
+
+  /** Установлен ли feature с таким именем. */
+  hasFeature(name: string): boolean {
+    return this.#features.has(name);
   }
 
   /**
@@ -223,11 +282,23 @@ export class ItdRestClient {
    * это {@link dispose}.
    */
   async close(): Promise<void> {
+    const errors: unknown[] = [];
     try {
-      await this.#resources.closeTelemetry(false);
+      try {
+        await this.#features.close();
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        await this.#resources.closeTelemetry(false);
+      } catch (error) {
+        errors.push(error);
+      }
     } finally {
       this.#runtime.close();
     }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, 'Не удалось закрыть клиент');
   }
 
   /**
@@ -254,7 +325,17 @@ export class ItdRestClient {
     // Телеметрия уходит через ещё установленный plugin pipeline и мимо проверки состояния.
     this.#resources.prepareTelemetryClose();
     try {
+      await this.#features.close();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
       await this.#resources.closeTelemetry(true);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await this.#features.dispose();
     } catch (error) {
       errors.push(error);
     }

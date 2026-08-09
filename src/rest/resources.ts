@@ -9,6 +9,7 @@ import { PlatformResource } from '../resources/platform.js';
 import { PostsResource } from '../resources/posts.js';
 import { ReportsResource } from '../resources/reports.js';
 import { SearchResource } from '../resources/search.js';
+import type { StatusResource } from '../resources/status.js';
 import { SubscriptionResource } from '../resources/subscription.js';
 import {
   closeTelemetryForDispose,
@@ -24,6 +25,8 @@ export interface ResourceDeps {
   http: HttpClient;
   /** Реализация `fetch` — {@link FilesResource} скачивает по ней вложения по адресу. */
   fetch: typeof fetch;
+  /** Встроенный status feature, которому делегирует `platform.status()`. */
+  status: StatusResource;
 }
 
 /**
@@ -119,7 +122,7 @@ export function createResources(deps: ResourceDeps): RestResources {
       return subscription;
     },
     get platform() {
-      platform ??= new PlatformResource(deps.http);
+      platform ??= new PlatformResource(deps.http, deps.status);
       return platform;
     },
     get telemetry() {

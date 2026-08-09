@@ -88,6 +88,16 @@ describe('настройки', () => {
 });
 
 describe('TTL/LRU-кэш', () => {
+  it('кэширует встроенный status feature по custom ID', async () => {
+    const { itd, calls } = makeClient(() => json({ overall_status: 'operational', services: [] }));
+    itd.use(cache({ ttl: 60_000, operations: ['status.get'] }));
+
+    await itd.platform.status();
+    await itd.platform.status();
+
+    expect(calls).toHaveLength(1);
+  });
+
   it('кэширует только выбранные операции', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
     itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));

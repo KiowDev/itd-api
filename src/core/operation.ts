@@ -1,6 +1,12 @@
 /** HTTP-метод операции. */
 export type OperationMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/** ID операции подключаемого модуля: `<featureName>.<operationName>`. */
+export type FeatureOperationId<
+  TFeatureName extends string = string,
+  TOperationName extends string = string,
+> = `${TFeatureName}.${TOperationName}`;
+
 /** Семантическая безопасность автоматического повтора операции. */
 export const RetrySafety = Object.freeze({
   /** Автоматический повтор не создаёт неприемлемого эффекта; обычно это чтение. */

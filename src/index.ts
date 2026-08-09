@@ -95,6 +95,14 @@ export {
   isItdStateError,
   isItdValidationError,
 } from './core/errors.js';
+export type {
+  ClientFeature,
+  FeatureBucketDefinition,
+  FeatureContext,
+  FeatureInstallation,
+  FeatureOperationDefinition,
+  FeatureRequestOptions,
+} from './core/features.js';
 export {
   createKeyValueStore,
   createRecordKeyValueStore,
@@ -109,7 +117,7 @@ export {
   withCodec,
   withNamespace,
 } from './core/key-value-store.js';
-export { type OperationMethod, RetrySafety } from './core/operation.js';
+export { type FeatureOperationId, type OperationMethod, RetrySafety } from './core/operation.js';
 // Опции разделены по слоям: RuntimeOptions нужны generic-ядру, SessionOptions — сессии,
 // а ItdClientOptions объединяет их для полного SDK. Подробности — в core/options.ts.
 export type {

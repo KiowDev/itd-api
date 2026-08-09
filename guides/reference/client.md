@@ -87,6 +87,17 @@ await itd.request({ method: 'GET', service: 'example', path: '/health' });
 имени одного хоста используют общий лимитер, а разные хосты — разные.
 
 ```ts
+install<TApi>(feature: ClientFeature<TApi>): TApi
+withFeature<K extends string, TApi>(key: K, feature: ClientFeature<TApi>): this & Readonly<Record<K, TApi>>
+featureNames(): string[]
+hasFeature(name: string): boolean
+```
+Устанавливает [предметный модуль](../features/) поверх общей сессии и конвейера запросов.
+`install()` возвращает его типизированный API, а `withFeature()` — тот же клиент с readonly-
+свойством модуля, например `itd.withFeature('chats', chatsFeature).chats`. Остальные методы
+перечисляют установленные модули и проверяют имя; встроенный `status` также виден в реестре.
+
+```ts
 realtime(options?: RealtimeOptions): ItdRealtime
 ```
 Создаёт поток уведомлений. Каждый вызов — новый независимый поток. См. [Realtime](./realtime.md).

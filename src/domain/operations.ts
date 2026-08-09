@@ -1,4 +1,9 @@
-import { type OperationDefinition, type OperationMethod, RetrySafety } from '../core/operation.js';
+import {
+  type FeatureOperationId,
+  type OperationDefinition,
+  type OperationMethod,
+  RetrySafety,
+} from '../core/operation.js';
 import { DEFAULT_RATE_LIMIT_BUCKET, type RateLimitBucket } from './buckets.js';
 
 /** Описание встроенной операции: та же форма, что знает ядро, но с именем известного бакета. */
@@ -156,7 +161,6 @@ export const OPERATIONS = freezeOperations({
   'platform.changelog': { method: 'GET', retrySafety: RetrySafety.Safe },
   'platform.announcements': { method: 'GET', retrySafety: RetrySafety.Safe },
   'platform.portal': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'platform.status': { method: 'GET', retrySafety: RetrySafety.Safe },
 
   'telemetry.dwell': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'telemetry.interaction': { method: 'POST', retrySafety: RetrySafety.Unsafe },
@@ -169,7 +173,7 @@ export type BuiltInOperationId = keyof typeof OPERATIONS;
 export type CustomOperationId = `custom:${string}`;
 
 /** ID любого запроса, видимый transformers и hooks. */
-export type OperationId = BuiltInOperationId | CustomOperationId | 'raw';
+export type OperationId = BuiltInOperationId | FeatureOperationId | CustomOperationId | 'raw';
 
 const BUILT_IN_IDS: ReadonlySet<string> = new Set(Object.keys(OPERATIONS));
 

@@ -1,6 +1,7 @@
 import { type ItdClock, systemClock } from '../clock.js';
 import type { ResolvedRateLimitOptions } from '../config.js';
-import { ItdAbortError } from '../errors.js';
+import { ItdAbortError, ItdConfigError } from '../errors.js';
+import type { RateLimitBucketOverride } from '../options.js';
 import { RateLimitPacing } from './pacing.js';
 
 /** Задача, ожидающая своей очереди. */
@@ -266,6 +267,7 @@ export class BucketQueue {
     shared: RequestQueue,
     options: ResolvedRateLimitOptions,
     clock: ItdClock,
+    featureDefinition?: RateLimitBucketOverride,
   ) {
     this.#destination = destination;
     this.#bucket = bucket;
@@ -274,14 +276,18 @@ export class BucketQueue {
     this.#pacing = options.pacing;
     this.#smooth = options.buckets && options.pacing === RateLimitPacing.Smooth;
     this.#flatPause = options.buckets ? undefined : (options.retryDelays[0] ?? 0);
-    this.#seedLimit = options.buckets ? seedLimit(bucket, options) : undefined;
+    this.#seedLimit = options.buckets
+      ? (featureDefinition?.limit ?? seedLimit(bucket, options))
+      : undefined;
     this.#gate = new RequestQueue(
       {
         // Без раздельных бакетов предел шлюза равен общему, поэтому пропускной способности
         // он не режет. Снять его вовсе нельзя: `#drain` обходит очередь рекурсией и должен
         // упираться в конечную конкурентность.
         concurrency: options.buckets
-          ? (options.bucketOverrides[bucket]?.concurrency ?? options.bucketConcurrency)
+          ? (featureDefinition?.concurrency ??
+            options.bucketOverrides[bucket]?.concurrency ??
+            options.bucketConcurrency)
           : options.concurrency,
         onDispatch: this.#smooth ? () => this.#spend() : undefined,
       },
@@ -456,10 +462,54 @@ export class RequestQueuePool {
   readonly #clock: ItdClock;
   /** Ключ `undefined` — основная очередь внутренних клиентов без известного направления. */
   readonly #destinations = new Map<string | undefined, DestinationQueues>();
+  /** Динамические определения feature вместе с числом использующих их клиентов. */
+  readonly #featureBuckets = new Map<
+    string,
+    { definition: Readonly<RateLimitBucketOverride>; references: number }
+  >();
 
   constructor(options: ResolvedRateLimitOptions, clock: ItdClock = systemClock) {
     this.#options = options;
     this.#clock = clock;
+  }
+
+  /**
+   * Регистрирует бакет подключаемого feature.
+   *
+   * Повтор той же декларации разрешён клиентам, разделяющим один pool через `ItdAccounts`.
+   * Возвращённая функция откатывает регистрацию, пока очередь бакета ещё не создана.
+   */
+  defineBucket(name: string, definition: RateLimitBucketOverride): () => void {
+    const normalized = Object.freeze({
+      ...(definition.limit === undefined ? {} : { limit: definition.limit }),
+      ...(definition.concurrency === undefined ? {} : { concurrency: definition.concurrency }),
+    });
+    const existing = this.#featureBuckets.get(name);
+    if (existing) {
+      if (
+        existing.definition.limit !== normalized.limit ||
+        existing.definition.concurrency !== normalized.concurrency
+      ) {
+        throw new ItdConfigError(
+          `Бакет feature «${name}» уже зарегистрирован с другими ограничениями`,
+        );
+      }
+      existing.references += 1;
+    } else {
+      this.#featureBuckets.set(name, { definition: normalized, references: 1 });
+    }
+
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const current = this.#featureBuckets.get(name);
+      if (!current) return;
+      current.references -= 1;
+      if (current.references > 0) return;
+      const hasQueue = [...this.#destinations.values()].some((entry) => entry.buckets.has(name));
+      if (!hasQueue) this.#featureBuckets.delete(name);
+    };
   }
 
   /** Очередь бакета на направлении. При `buckets: false` бакет всегда `default`. */
@@ -478,7 +528,14 @@ export class RequestQueuePool {
 
     let queue = entry.buckets.get(name);
     if (!queue) {
-      queue = new BucketQueue(destination, name, entry.shared, this.#options, this.#clock);
+      queue = new BucketQueue(
+        destination,
+        name,
+        entry.shared,
+        this.#options,
+        this.#clock,
+        this.#featureBuckets.get(name)?.definition,
+      );
       entry.buckets.set(name, queue);
     }
     return queue;
@@ -508,5 +565,6 @@ export class RequestQueuePool {
   clear(): void {
     this.stop();
     this.#destinations.clear();
+    this.#featureBuckets.clear();
   }
 }

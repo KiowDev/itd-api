@@ -179,7 +179,7 @@ clientB.use(shared);
 | Files | `files.get` |
 | Subscription | `subscription.status`, `subscription.methods` |
 | Verification | `verification.status` |
-| Platform | `platform.changelog`, `platform.announcements`, `platform.portal`, `platform.status` |
+| Platform | `platform.changelog`, `platform.announcements`, `platform.portal`, `status.get` |
 
 Страницы, загружаемые итераторами, используют операцию соответствующего списочного метода:
 `posts.iterate()` — `posts.list`, `users.iterateFollowers()` — `users.followers` и так

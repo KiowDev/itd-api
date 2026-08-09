@@ -1,9 +1,9 @@
-import type { BuiltInOperationId, OperationId } from 'itd-api';
+import type { OperationId } from 'itd-api';
 
 /** Описание читающей операции itd-api. */
 export interface CacheOperation {
   /** Стабильный ID операции и публичное имя для настройки плагина. */
-  id: BuiltInOperationId;
+  id: OperationId;
   /** Раздел клиента. */
   category: string;
 }
@@ -59,7 +59,7 @@ export const CACHE_OPERATIONS = freezeOperations([
   { id: 'platform.changelog', category: 'platform' },
   { id: 'platform.announcements', category: 'platform' },
   { id: 'platform.portal', category: 'platform' },
-  { id: 'platform.status', category: 'platform' },
+  { id: 'status.get', category: 'platform' },
 ] as const satisfies readonly CacheOperation[]);
 
 /** Имя операции, доступное в `cache({ operations: … })`. */

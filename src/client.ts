@@ -1,8 +1,10 @@
 import { installAsyncDisposeFallback } from './core/async-dispose.js';
 import { createDeadline } from './core/clock.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
-import { ItdStateError } from './core/errors.js';
+import { ItdConfigError, ItdStateError } from './core/errors.js';
 import { type ClientRuntime, createClientRuntime } from './core/execution/client-runtime.js';
+import { ExtensibleOperationCatalog } from './core/feature-catalog.js';
+import { type ClientFeature, FeatureRegistry } from './core/features.js';
 import type { RawRequestOptions } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
@@ -21,6 +23,7 @@ import type { PlatformResource } from './resources/platform.js';
 import type { PostsResource } from './resources/posts.js';
 import type { ReportsResource } from './resources/reports.js';
 import type { SearchResource } from './resources/search.js';
+import { createStatusFeature } from './resources/status.js';
 import type { SubscriptionResource } from './resources/subscription.js';
 import type { TelemetryResource } from './resources/telemetry.js';
 import type { UsersResource } from './resources/users.js';
@@ -109,6 +112,7 @@ export function createManagedClient(
  */
 export class ItdClient {
   readonly #runtime: ClientRuntime<AuthManager>;
+  readonly #features: FeatureRegistry;
   /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
   readonly #streams = new Set<ItdRealtime>();
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
@@ -187,8 +191,9 @@ export class ItdClient {
 
   constructor(options: ItdClientOptions = {}) {
     const internals = CLIENT_INTERNALS.get(options) ?? {};
+    const catalog = new ExtensibleOperationCatalog(ITD_CATALOG);
     this.#runtime = createClientRuntime(options, {
-      catalog: ITD_CATALOG,
+      catalog,
       queues: internals.queues,
       assertActive: (action) => assertClientActive(this, action),
       // Полноценную сессию подставляет фасад: ядро о ней не знает, и клиент с готовым
@@ -196,9 +201,22 @@ export class ItdClient {
       auth: (deps) =>
         createItdAuth(options, { ...deps, onAccountChange: () => this.#disconnectStreams() }),
     });
+    this.#features = new FeatureRegistry({
+      http: this.#runtime.http,
+      services: this.#runtime.services,
+      serviceOverrides: this.#runtime.config.services,
+      catalog,
+      baseUrl: this.#runtime.config.baseUrl,
+      clock: this.#runtime.config.clock,
+      logger: this.#runtime.config.logger,
+      assertActive: (action) => assertClientActive(this, action),
+      registerBucket: (name, definition) => this.#runtime.registerRateLimitBucket(name, definition),
+    });
+    const status = this.#features.install(createStatusFeature());
     this.#resources = createResources({
       http: this.#runtime.http,
       fetch: this.#runtime.config.fetch,
+      status,
     });
     CLIENT_PLUGIN_REGISTRIES.set(this, this.#runtime.plugins);
   }
@@ -243,6 +261,57 @@ export class ItdClient {
    */
   rateLimitState(): RateLimitBucketState[] {
     return this.#runtime.rateLimitState();
+  }
+
+  /**
+   * Устанавливает предметный модуль поверх общей сессии и request pipeline клиента.
+   *
+   * Сервисы, операции и бакеты feature регистрируются до синхронного `setup()`. Возвращаемое
+   * значение — типизированный API модуля; повторное имя feature отклоняется.
+   */
+  install<TApi>(feature: ClientFeature<TApi>): TApi {
+    return this.#features.install(feature);
+  }
+
+  /**
+   * Устанавливает feature и публикует его API как readonly-свойство этого же клиента.
+   *
+   * Возвращаемое пересечение сохраняет тип уже подключённых свойств, поэтому вызовы можно
+   * объединять в цепочку: `new ItdClient().withFeature('chats', chatsFeature)`.
+   */
+  withFeature<const K extends string, TApi>(
+    key: K,
+    feature: ClientFeature<TApi>,
+  ): this & { readonly [P in K]: TApi } {
+    assertClientActive(this, 'установить feature');
+    if (typeof key !== 'string' || key.trim() === '' || key !== key.trim()) {
+      throw new ItdConfigError('Свойство feature должно иметь непустое имя без краевых пробелов');
+    }
+    if (key === 'then' || key in this) {
+      throw new ItdConfigError(`Свойство клиента «${key}» уже занято или зарезервировано`);
+    }
+    if (!Object.isExtensible(this)) {
+      throw new ItdConfigError('Нельзя опубликовать feature на нерасширяемом клиенте');
+    }
+
+    const api = this.install(feature);
+    Object.defineProperty(this, key, {
+      value: api,
+      enumerable: true,
+      configurable: false,
+      writable: false,
+    });
+    return this as this & { readonly [P in K]: TApi };
+  }
+
+  /** Имена установленных feature в порядке установки. */
+  featureNames(): string[] {
+    return this.#features.names();
+  }
+
+  /** Установлен ли feature с таким именем. */
+  hasFeature(name: string): boolean {
+    return this.#features.has(name);
   }
 
   /**
@@ -438,15 +507,32 @@ export class ItdClient {
     const { shutdownTimeout, clock } = this.#runtime.config;
     const deadline = createDeadline(shutdownTimeout, clock);
     let stuck: ItdRealtime[] = [];
+    const errors: unknown[] = [];
     try {
-      const waited = await Promise.all(
-        streams.map(async (stream) => ((await deadline.wait(stream.drain())) ? undefined : stream)),
-      );
-      stuck = waited.filter((stream): stream is ItdRealtime => stream !== undefined);
+      try {
+        const waited = await Promise.all(
+          streams.map(async (stream) =>
+            (await deadline.wait(stream.drain())) ? undefined : stream,
+          ),
+        );
+        stuck = waited.filter((stream): stream is ItdRealtime => stream !== undefined);
+      } catch (error) {
+        errors.push(error);
+      }
+
+      try {
+        await this.#features.close();
+      } catch (error) {
+        errors.push(error);
+      }
 
       // Через геттер закрытие клиента поднимало бы накопитель телеметрии только ради
       // того, чтобы его тут же закрыть.
-      await this.#resources.closeTelemetry(disposeCleanup);
+      try {
+        await this.#resources.closeTelemetry(disposeCleanup);
+      } catch (error) {
+        errors.push(error);
+      }
     } finally {
       deadline.cancel();
       this.#runtime.close();
@@ -454,11 +540,15 @@ export class ItdClient {
 
     // Об истёкшем сроке сообщаем после отправки телеметрии.
     if (stuck.length > 0) {
-      throw new ItdStateError(
-        `обработчики потоков (${stuck.map((stream) => stream.transport).join(', ')}) ` +
-          `не завершились за ${shutdownTimeout} мс; ожидание прекращено`,
+      errors.push(
+        new ItdStateError(
+          `обработчики потоков (${stuck.map((stream) => stream.transport).join(', ')}) ` +
+            `не завершились за ${shutdownTimeout} мс; ожидание прекращено`,
+        ),
       );
     }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, 'Не удалось закрыть клиент');
   }
 
   /**
@@ -491,6 +581,11 @@ export class ItdClient {
     try {
       // Сначала завершаем потоки и телеметрию через ещё установленный plugin pipeline.
       await this.#close(true);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await this.#features.dispose();
     } catch (error) {
       errors.push(error);
     }

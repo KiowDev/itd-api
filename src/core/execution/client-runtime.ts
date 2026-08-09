@@ -1,17 +1,12 @@
 import type { AuthProvider, AuthProviderDeps } from '../auth-provider.js';
 import type { OperationCatalog } from '../catalog.js';
-import {
-  assertKnownBucket,
-  BUILT_IN_SERVICES,
-  type ResolvedRuntimeConfig,
-  resolveRuntimeConfig,
-} from '../config.js';
+import { assertKnownBucket, type ResolvedRuntimeConfig, resolveRuntimeConfig } from '../config.js';
 import { CookieJar } from '../cookies.js';
 import { ItdAbortError } from '../errors.js';
-import type { RuntimeOptions } from '../options.js';
+import type { RateLimitBucketOverride, RuntimeOptions } from '../options.js';
 import { PluginRegistry } from '../plugins/registry.js';
 import { type RateLimitBucketState, RequestQueuePool } from '../scheduling/rate-limit.js';
-import { mergeService, ServiceRegistry } from '../services.js';
+import { ServiceRegistry } from '../services.js';
 import { originOf } from '../url.js';
 import { HttpClient } from './http.js';
 import {
@@ -95,6 +90,11 @@ export interface ClientRuntime<A extends AuthProvider = AuthProvider> {
   platformHeaders(url: string): Promise<Headers>;
   /** Снимок известных бакетов. Пустой, когда очередь отключена. */
   rateLimitState(): RateLimitBucketState[];
+  /** Регистрирует ограничения бакета подключаемого feature. @internal */
+  registerRateLimitBucket(
+    name: string,
+    definition: RateLimitBucketOverride,
+  ): (() => void) | undefined;
   /**
    * Временно останавливает только принадлежащие runtime очереди.
    *
@@ -111,17 +111,10 @@ interface PipelineStage {
   middleware: RequestMiddleware;
 }
 
-/** Регистрирует встроенные сервисы и накладывает пользовательские overrides. */
+/** Регистрирует сервисы, заранее объявленные в опциях клиента. */
 function createServiceRegistry(config: ResolvedRuntimeConfig): ServiceRegistry {
   const services = new ServiceRegistry(config.baseUrl);
-  const overrides = new Map(config.services.map((service) => [service.name.trim(), service]));
-
-  for (const builtIn of BUILT_IN_SERVICES) {
-    const override = overrides.get(builtIn.name);
-    overrides.delete(builtIn.name);
-    services.define(override ? mergeService(builtIn, override) : builtIn);
-  }
-  for (const service of overrides.values()) services.define(service);
+  for (const service of config.services) services.define(service);
 
   return services;
 }
@@ -310,6 +303,7 @@ export function createClientRuntime<A extends AuthProvider>(
     stageOrder,
     platformHeaders: (url) => transport.platformHeaders(url),
     rateLimitState: () => queues?.states() ?? [],
+    registerRateLimitBucket: (name, definition) => queues?.defineBucket(name, definition),
     close: () => {
       if (ownsQueues) queues?.stop();
     },

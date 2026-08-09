@@ -1,10 +1,9 @@
-import { STATUS_SERVICE } from '../core/config.js';
 import type { RequestOptions } from '../core/options.js';
-import { isRecord, pickArray } from '../core/unwrap.js';
-import { utcStampToIso } from '../domain/time.js';
+import { pickArray } from '../core/unwrap.js';
 import type { Announcement, ChangelogEntry, Portal } from '../models/platform.js';
-import type { PlatformStatus, ServiceStatus } from '../models/status.js';
+import type { PlatformStatus } from '../models/status.js';
 import { BaseResource } from './base.js';
+import type { StatusResource } from './status.js';
 
 /** Требования к версии одного приложения платформы. */
 export interface PlatformClientVersion {
@@ -23,26 +22,20 @@ export interface PlatformVersions {
   [client: string]: PlatformClientVersion;
 }
 
-/** Приводит `last_checked` каждого сервиса к ISO. Остальное остаётся как прислал сервер. */
-function normalizeStatus(body: PlatformStatus): PlatformStatus {
-  if (!isRecord(body) || !Array.isArray(body.services)) return body;
-
-  return {
-    ...body,
-    services: body.services.map((service: ServiceStatus) =>
-      typeof service?.last_checked === 'string'
-        ? { ...service, last_checked: utcStampToIso(service.last_checked) }
-        : service,
-    ),
-  };
-}
-
 /**
  * Сведения о платформе: версии приложений, изменения, анонсы, баннер события.
  *
  * Доступна как `itd.platform`.
  */
 export class PlatformResource extends BaseResource {
+  readonly #status: StatusResource;
+
+  /** @internal */
+  constructor(http: ConstructorParameters<typeof BaseResource>[0], status: StatusResource) {
+    super(http);
+    this.#status = status;
+  }
+
   /**
    * Загружает минимальные и актуальные версии клиентских приложений.
    *
@@ -107,12 +100,6 @@ export class PlatformResource extends BaseResource {
    * ```
    */
   async status(options: RequestOptions = {}): Promise<PlatformStatus> {
-    const body = await this.http.operation<PlatformStatus>('platform.status', {
-      service: STATUS_SERVICE,
-      path: '/api/status',
-      ...options,
-    });
-
-    return normalizeStatus(body);
+    return this.#status.get(options);
   }
 }

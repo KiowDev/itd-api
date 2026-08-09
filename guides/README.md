@@ -23,6 +23,7 @@ realtime, нескольких аккаунтов и собственных ра
 | Создать форматированный пост | [Разметка текста](/text-markup/) |
 | Использовать browser proxy, HTTP/SOCKS5 или Turnstile | [Интеграции](/integrations/) |
 | Подключить cache/crypto или написать плагин | [Плагины](/plugins/) |
+| Добавить предметный API поверх общей сессии | [Подключаемые модули](/features/) |
 | Разобраться в порядке стадий запроса, повторов и очереди | [Request pipeline](/reference/request-pipeline) |
 | Настроить retries, rate limits, hooks или дополнительные хосты | [Конфигурация клиента](/configuration/) |
 | Найти метод, тип, ошибку или enum | [Справочник API](/reference/) |

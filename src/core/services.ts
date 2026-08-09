@@ -116,6 +116,30 @@ export class ServiceRegistry {
     return this.#services.has(name);
   }
 
+  /** Удаляет сервис при откате атомарной установки feature. @internal */
+  delete(name: string): boolean {
+    return this.#services.delete(name);
+  }
+
+  /**
+   * Атомарно заменяет существующее определение и возвращает прежнее.
+   * Используется feature, накладывающим default на сервис из опций клиента.
+   *
+   * @internal
+   */
+  replace(definition: ServiceDefinition): ServiceDefinition {
+    const name = definition.name.trim();
+    const previous = this.require(name);
+    this.#services.delete(name);
+    try {
+      this.define(definition);
+    } catch (error) {
+      this.#services.set(name, previous);
+      throw error;
+    }
+    return previous;
+  }
+
   /**
    * Определение сервиса.
    *
