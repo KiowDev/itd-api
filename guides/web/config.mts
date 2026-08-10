@@ -184,6 +184,14 @@ export default defineConfig({
     },
   },
   head: [
+    ['meta', { name: 'yandex-verification', content: '3aea310f682d600b' }],
+    [
+      'meta',
+      {
+        name: 'google-site-verification',
+        content: '6YWvFoUlnFhIur3xbQAJpxIeZGqmYGkQTMmCM0lI35c',
+      },
+    ],
     ['meta', { name: 'theme-color', content: '#3b82f6' }],
     [
       'link',
