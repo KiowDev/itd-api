@@ -1,5 +1,7 @@
 # @itd-api/turnstile
 
+[![Версия @itd-api/turnstile в npm](https://img.shields.io/npm/v/%40itd-api%2Fturnstile?logo=npm)](https://www.npmjs.com/package/@itd-api/turnstile)
+
 Токен Cloudflare Turnstile для входа по логину и паролю в [`itd-api`](/quickstart/).
 
 [API из TSDoc](/api/generated/turnstile/)

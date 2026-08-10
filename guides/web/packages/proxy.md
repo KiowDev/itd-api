@@ -1,5 +1,7 @@
 # @itd-api/proxy
 
+[![Версия @itd-api/proxy в npm](https://img.shields.io/npm/v/%40itd-api%2Fproxy?logo=npm)](https://www.npmjs.com/package/@itd-api/proxy)
+
 HTTP/HTTPS- и SOCKS5-прокси для [`itd-api`](/quickstart/).
 
 [API из TSDoc](/api/generated/proxy/)

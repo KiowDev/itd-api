@@ -1,5 +1,7 @@
 # @itd-api/hydrate
 
+[![Версия @itd-api/hydrate в npm](https://img.shields.io/npm/v/%40itd-api%2Fhydrate?logo=npm)](https://www.npmjs.com/package/@itd-api/hydrate)
+
 `@itd-api/hydrate` добавляет к моделям короткие методы действий. Идентификатор модели
 подставляется автоматически, а запрос выполняет обычный ресурс клиента.
 

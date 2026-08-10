@@ -1,5 +1,7 @@
 # @itd-api/testing
 
+[![Версия @itd-api/testing в npm](https://img.shields.io/npm/v/%40itd-api%2Ftesting?logo=npm)](https://www.npmjs.com/package/@itd-api/testing)
+
 `@itd-api/testing` позволяет проверять клиент, плагины и прикладные сценарии без
 настоящего API и сетевых запросов. Пакет работает во всех средах основного клиента.
 

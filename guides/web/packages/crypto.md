@@ -1,5 +1,7 @@
 # @itd-api/crypto
 
+[![Версия @itd-api/crypto в npm](https://img.shields.io/npm/v/%40itd-api%2Fcrypto?logo=npm)](https://www.npmjs.com/package/@itd-api/crypto)
+
 Скрытые сообщения в постах, комментариях и профилях итд.com — плагин к
 [`itd-api`](/quickstart/).
 
