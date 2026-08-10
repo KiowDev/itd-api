@@ -4,6 +4,7 @@ import {
   createManagedClient,
   type ItdClient,
 } from './client.js';
+import { installAsyncDisposeFallback } from './core/async-dispose.js';
 import { systemClock } from './core/clock.js';
 import { resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
@@ -579,16 +580,8 @@ export class ItdAccounts {
     return this.dispose();
   }
 
-  // Fallback для `await using` в Node 18, где `Symbol.asyncDispose` отсутствует, —
-  // тот же приём, что в ItdClient.
   static {
-    if (
-      typeof (Symbol as SymbolConstructor & { asyncDispose?: symbol }).asyncDispose !== 'symbol'
-    ) {
-      const prototype = ItdAccounts.prototype as unknown as Record<PropertyKey, unknown>;
-      prototype[Symbol.for('Symbol.asyncDispose')] = prototype.undefined;
-      delete prototype.undefined;
-    }
+    installAsyncDisposeFallback(ItdAccounts);
   }
 
   /**
