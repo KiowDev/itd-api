@@ -161,6 +161,9 @@ export default defineConfig({
   title: 'itd-api',
   description: 'TypeScript-клиент REST и realtime API социальной сети итд.com',
   base: '/itd-api/',
+  sitemap: {
+    hostname: 'https://kiowdev.github.io/itd-api/',
+  },
   cleanUrls: true,
   lastUpdated: true,
   appearance: true,
