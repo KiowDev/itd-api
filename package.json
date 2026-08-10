@@ -1,7 +1,7 @@
 {
   "name": "itd-api",
   "version": "0.7.2",
-  "description": "Клиент REST и realtime API социальной сети итд.com для JavaScript и TypeScript",
+  "description": "JS/TS SDK & API клиент для соцсети ИТД (итд.com)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KiowDev/itd-api.git"

@@ -1,7 +1,7 @@
 {
   "name": "@itd-api/crypto",
   "version": "0.1.0",
-  "description": "Скрытые сообщения в постах и профилях итд.com: плагин шифрования для itd-api",
+  "description": "Плагин шифрования и стенографии для itd-api",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KiowDev/itd-api.git",
