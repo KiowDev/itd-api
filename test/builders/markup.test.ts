@@ -129,8 +129,8 @@ describe('автоматическая разметка', () => {
     ]);
   });
 
-  it('не включает хвостовую пунктуацию в username', () => {
-    const text = 'спасибо @nowkie. пинг @bot- и @bot_';
+  it('завершает username на точке и дефисе', () => {
+    const text = 'спасибо @nowkie. пинг @some.user и @some-user';
 
     expect(autoSpans(text)).toEqual([
       {
@@ -141,15 +141,37 @@ describe('автоматическая разметка', () => {
       },
       {
         type: SpanType.Mention,
-        offset: text.indexOf('@bot-'),
-        length: '@bot'.length,
-        username: 'bot',
+        offset: text.indexOf('@some.user'),
+        length: '@some'.length,
+        username: 'some',
       },
       {
         type: SpanType.Mention,
-        offset: text.indexOf('@bot_'),
-        length: '@bot'.length,
-        username: 'bot',
+        offset: text.indexOf('@some-user'),
+        length: '@some'.length,
+        username: 'some',
+      },
+    ]);
+  });
+
+  it('распознаёт подчёркивание только внутри username', () => {
+    const text = '@_bot @bot_ @some_user @___';
+
+    expect(autoSpans(text)).toEqual([
+      { type: SpanType.Mention, offset: 6, length: 4, username: 'bot' },
+      { type: SpanType.Mention, offset: 12, length: 10, username: 'some_user' },
+    ]);
+  });
+
+  it('линейно обрабатывает длинный username', () => {
+    const username = `a${'_'.repeat(20_000)}b`;
+
+    expect(autoSpans(`@${username}`)).toEqual([
+      {
+        type: SpanType.Mention,
+        offset: 0,
+        length: username.length + 1,
+        username,
       },
     ]);
   });

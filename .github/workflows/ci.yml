@@ -7,6 +7,9 @@ on:
   # Позволяет запустить проверку вручную из вкладки Actions.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Новый пуш в ту же ветку отменяет предыдущий прогон.
 concurrency:
   group: ci-${{ github.ref }}

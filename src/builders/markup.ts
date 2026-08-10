@@ -285,7 +285,7 @@ export function autoSpans(text: string, options: AutoSpansOptions = {}): Span[] 
   if (includeLinks) spans.push(...links);
 
   if (includeHashtags || includeMentions) {
-    const entityPattern = /#([\p{L}\p{M}\p{N}_]+)|@([a-z\d][a-z\d._-]*)/giu;
+    const entityPattern = /#([\p{L}\p{M}\p{N}_]+)|@([a-z\d](?:[a-z\d_]*[a-z\d])?)/giu;
 
     for (const match of text.matchAll(entityPattern)) {
       if (match.index === undefined) continue;
@@ -297,7 +297,7 @@ export function autoSpans(text: string, options: AutoSpansOptions = {}): Span[] 
       if (links.some((span) => overlaps(span, offset, end))) continue;
 
       const hashtag = match[1];
-      const username = match[2]?.replace(/[._-]+$/u, '');
+      const username = match[2];
       if (hashtag !== undefined && includeHashtags) {
         spans.push({
           type: SpanType.Hashtag,
