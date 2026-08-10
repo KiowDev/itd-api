@@ -1,5 +1,7 @@
 ---
 layout: home
+title: itd-api — TypeScript-клиент API итд.com
+titleTemplate: false
 
 hero:
   name: itd-api
