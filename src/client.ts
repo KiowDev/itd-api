@@ -4,7 +4,8 @@ import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdConfigError, ItdStateError } from './core/errors.js';
 import { type ClientRuntime, createClientRuntime } from './core/execution/client-runtime.js';
 import { ExtensibleOperationCatalog } from './core/feature-catalog.js';
-import { type ClientFeature, FeatureRegistry } from './core/features.js';
+import { createFeatureHost } from './core/feature-host.js';
+import type { ClientFeature, FeatureRegistry } from './core/features.js';
 import type { RawRequestOptions } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
@@ -201,16 +202,9 @@ export class ItdClient {
       auth: (deps) =>
         createItdAuth(options, { ...deps, onAccountChange: () => this.#disconnectStreams() }),
     });
-    this.#features = new FeatureRegistry({
-      http: this.#runtime.http,
-      services: this.#runtime.services,
-      serviceOverrides: this.#runtime.config.services,
+    this.#features = createFeatureHost(this.#runtime, {
       catalog,
-      baseUrl: this.#runtime.config.baseUrl,
-      clock: this.#runtime.config.clock,
-      logger: this.#runtime.config.logger,
       assertActive: (action) => assertClientActive(this, action),
-      registerBucket: (name, definition) => this.#runtime.registerRateLimitBucket(name, definition),
     });
     const status = this.#features.install(createStatusFeature());
     this.#resources = createResources({

@@ -3,7 +3,8 @@ import { type AuthProvider, anonymousAuth, bearerToken } from '../core/auth-prov
 import { ItdConfigError, ItdStateError } from '../core/errors.js';
 import { type ClientRuntime, createClientRuntime } from '../core/execution/client-runtime.js';
 import { ExtensibleOperationCatalog } from '../core/feature-catalog.js';
-import { type ClientFeature, FeatureRegistry } from '../core/features.js';
+import { createFeatureHost } from '../core/feature-host.js';
+import type { ClientFeature, FeatureRegistry } from '../core/features.js';
 import type { RawRequestOptions, RuntimeOptions } from '../core/options.js';
 import type { ClientPlugin } from '../core/plugins/contracts.js';
 import type { RateLimitBucketState } from '../core/scheduling/rate-limit.js';
@@ -129,16 +130,9 @@ export class ItdRestClient {
       assertActive: (action) => this.#assertActive(action),
       auth: () => resolveAuthProvider(auth),
     });
-    this.#features = new FeatureRegistry({
-      http: this.#runtime.http,
-      services: this.#runtime.services,
-      serviceOverrides: this.#runtime.config.services,
+    this.#features = createFeatureHost(this.#runtime, {
       catalog,
-      baseUrl: this.#runtime.config.baseUrl,
-      clock: this.#runtime.config.clock,
-      logger: this.#runtime.config.logger,
       assertActive: (action) => this.#assertActive(action),
-      registerBucket: (name, definition) => this.#runtime.registerRateLimitBucket(name, definition),
     });
     const status = this.#features.install(createStatusFeature());
     this.#resources = createResources({
