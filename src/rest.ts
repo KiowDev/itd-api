@@ -55,6 +55,14 @@ export {
   type UrlFileOptions,
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
+export type {
+  FileResolver,
+  PreparedBufferSource,
+  PreparedFileSource,
+  PreparedStreamSource,
+  ResolveFileContext,
+  ResolveFileOptions,
+} from './core/attachments/resolver.js';
 // Авторизация здесь — готовый токен, а не сессия: продлевать его клиент не умеет.
 // Вход по паролю, refresh и хранилище живут в полном `ItdClient`.
 export {

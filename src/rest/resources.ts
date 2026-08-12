@@ -1,4 +1,5 @@
 import type { FileInput } from '../core/attachments/contracts.js';
+import type { InternalFileResolver } from '../core/attachments/resolver.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
 import { CommentsResource } from '../resources/comments.js';
@@ -23,8 +24,8 @@ import { VerificationResource } from '../resources/verification.js';
 export interface ResourceDeps<N extends NotificationsResource> {
   /** Точка входа в конвейер запросов. */
   http: HttpClient;
-  /** Реализация `fetch` — {@link FilesResource} скачивает по ней вложения по адресу. */
-  fetch: typeof fetch;
+  /** Общий механизм подготовки файловых источников клиента. */
+  files: InternalFileResolver;
   /** Встроенный status feature, которому делегирует `platform.status()`. */
   status: StatusResource;
   /** Выбирает базовый REST-ресурс либо API уведомлений полного клиента. */
@@ -98,7 +99,7 @@ export function createResources<N extends NotificationsResource>(
       return comments;
     },
     get files() {
-      files ??= new FilesResource(deps.http, { fetch: deps.fetch });
+      files ??= new FilesResource(deps.http, { files: deps.files });
       return files;
     },
     get notifications() {

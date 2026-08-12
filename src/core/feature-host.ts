@@ -1,3 +1,4 @@
+import { createFileResolver, type InternalFileResolver } from './attachments/resolver.js';
 import { createDeadline } from './clock.js';
 import { ItdStateError } from './errors.js';
 import type { ClientRuntime } from './execution/client-runtime.js';
@@ -24,9 +25,12 @@ export class ClientFeatureHost {
   readonly #runtime: ClientRuntime;
   readonly #features: FeatureRegistry;
   readonly #resources = new ManagedResourceRegistry();
+  /** Общий файловый порт ресурсов и подключаемых модулей этого клиента. @internal */
+  readonly files: InternalFileResolver;
 
   constructor(runtime: ClientRuntime, options: FeatureHostOptions) {
     this.#runtime = runtime;
+    this.files = createFileResolver(runtime.config.fetch);
     this.#features = new FeatureRegistry({
       http: runtime.http,
       services: runtime.services,
@@ -35,6 +39,7 @@ export class ClientFeatureHost {
       baseUrl: runtime.config.baseUrl,
       clock: runtime.config.clock,
       logger: runtime.config.logger,
+      files: this.files,
       assertActive: options.assertActive,
       connection: (serviceName) => runtime.connection(serviceName),
       manage: (resource) => this.#resources.register(resource),

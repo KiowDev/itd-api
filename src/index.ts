@@ -56,6 +56,14 @@ export {
   type UrlFileOptions,
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
+export type {
+  FileResolver,
+  PreparedBufferSource,
+  PreparedFileSource,
+  PreparedStreamSource,
+  ResolveFileContext,
+  ResolveFileOptions,
+} from './core/attachments/resolver.js';
 export type { AuthIdentity, AuthProvider } from './core/auth-provider.js';
 export { type ItdClock, systemClock } from './core/clock.js';
 export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';

@@ -339,6 +339,30 @@ describe('feature runtime', () => {
   it.each([
     ['full', () => new ItdClient({ rateLimit: false, retry: false })],
     ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
+  ])(
+    'feature получает общий файловый порт без зависимости от FilesResource: %s',
+    async (_name, createClient) => {
+      const client = createClient();
+      const resolve = client.install({
+        name: 'file-probe',
+        operations: {},
+        setup: (context) => ({ api: context.files.resolve.bind(context.files) }),
+      });
+
+      const source = await resolve(new Blob(['x'], { type: 'application/octet-stream' }));
+
+      expect(source).toMatchObject({ mode: 'buffer', size: 1 });
+      expect(source).not.toHaveProperty('filename');
+      await client.dispose();
+      await expect(
+        resolve(new Blob(['x'], { type: 'application/octet-stream' })),
+      ).rejects.toBeInstanceOf(ItdStateError);
+    },
+  );
+
+  it.each([
+    ['full', () => new ItdClient({ rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
   ])('managed resource feature проходит общий lifecycle: %s', async (_name, createClient) => {
     const client = createClient();
     const stop = vi.fn();

@@ -1,3 +1,10 @@
+import type { FileInput } from './attachments/contracts.js';
+import type {
+  FileResolver,
+  PreparedFileSource,
+  ResolveFileContext,
+  ResolveFileOptions,
+} from './attachments/resolver.js';
 import type { ItdClock } from './clock.js';
 import type { ClientConnection } from './connection.js';
 import { ItdAbortError, ItdConfigError, ItdStateError } from './errors.js';
@@ -59,6 +66,8 @@ export interface FeatureContext {
   readonly signal: AbortSignal;
   readonly clock: ItdClock;
   readonly logger: Logger | undefined;
+  /** Открывает файловый источник без правил конкретного протокола загрузки. */
+  readonly files: FileResolver;
 
   /** Выполняет объявленную операцию через общие auth, plugins, retry и очереди клиента. */
   request<T = unknown>(operation: string, options: FeatureRequestOptions): Promise<T>;
@@ -88,6 +97,7 @@ export interface FeatureRegistryDeps {
   readonly baseUrl: string;
   readonly clock: ItdClock;
   readonly logger: Logger | undefined;
+  readonly files: FileResolver;
   readonly assertActive: (action: string) => void;
   readonly connection: (serviceName?: string) => ClientConnection;
   readonly manage: (resource: ManagedClientResource) => () => void;
@@ -301,6 +311,23 @@ export class FeatureRegistry {
         signal: controller.signal,
         clock: this.#deps.clock,
         logger: this.#deps.logger,
+        files: Object.freeze({
+          resolve: (
+            input: FileInput,
+            options?: ResolveFileOptions,
+            context?: ResolveFileContext,
+          ): Promise<PreparedFileSource> => {
+            try {
+              this.#deps.assertActive(`открыть файловый источник feature «${name}»`);
+              if (!committed || controller.signal.aborted) {
+                throw new ItdStateError(`feature «${name}» не активен`);
+              }
+              return this.#deps.files.resolve(input, options, context);
+            } catch (error) {
+              return Promise.reject(error);
+            }
+          },
+        }),
         request: <T>(operation: string, options: FeatureRequestOptions): Promise<T> => {
           try {
             this.#deps.assertActive(`выполнить операцию feature «${name}»`);

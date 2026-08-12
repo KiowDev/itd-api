@@ -561,12 +561,13 @@ describe('WebSocketTransport: конфигурация и маскировани
   it('маскирует секретные параметры, сохраняя остальные', () => {
     const redacted = new URL(
       redactUrl(
-        'wss://itd.test/api/ws?token=very-secret-token&cursor=42&access_token=second-secret',
+        'wss://itd.test/api/ws?token=very-secret-token&cursor=42&access_token=second-secret&C=capability-secret',
       ),
     );
 
     expect(redacted.searchParams.get('token')).toBe('very…(17)…ken');
     expect(redacted.searchParams.get('access_token')).toBe('seco…(13)…ret');
+    expect(redacted.searchParams.get('C')).toBe('capa…(17)…ret');
     expect(redacted.searchParams.get('cursor')).toBe('42');
   });
 });

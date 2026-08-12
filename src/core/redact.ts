@@ -18,7 +18,7 @@ const SECRET_FIELDS = new Set([
 ]);
 
 /** Query-параметры, содержащие секреты. */
-const SECRET_QUERY_PARAMS = new Set(['token', 'access_token']);
+const SECRET_QUERY_PARAMS = new Set(['token', 'access_token', 'c']);
 
 /**
  * Прячет середину секрета, оставляя концы для сопоставления.
@@ -47,7 +47,7 @@ export function redactUrl(url: string): string {
     }
     return parsed.toString();
   } catch {
-    return url.replace(/([?&](?:token|access_token)=)[^&#]*/gi, '$1[скрыто]');
+    return url.replace(/([?&](?:token|access_token|c)=)[^&#]*/gi, '$1[скрыто]');
   }
 }
 

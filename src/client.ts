@@ -214,7 +214,7 @@ export class ItdClient {
     const status = this.#features.install(createStatusFeature());
     this.#resources = createResources({
       http: this.#runtime.http,
-      fetch: this.#runtime.config.fetch,
+      files: this.#features.files,
       status,
       createNotifications: (http) =>
         createNotificationsApi(http, (notifications) => {
