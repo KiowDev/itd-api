@@ -1,4 +1,5 @@
 import { ItdConfigError, ItdError, ItdFileError, ItdFileErrorReason } from '../errors.js';
+import { redactErrorCause } from '../redact.js';
 import { isBlob, isFile } from '../runtime.js';
 import { boundedFileStream, isBoundedFileStream, isReadableByteStream } from './bounded-stream.js';
 import {
@@ -140,7 +141,7 @@ class DefaultFileResolver implements InternalFileResolver {
       throw new ItdFileError('не удалось получить содержимое вложения', {
         reason: ItdFileErrorReason.Read,
         retryable: true,
-        cause: error,
+        cause: redactErrorCause(error),
       });
     }
   }

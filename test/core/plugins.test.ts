@@ -651,6 +651,20 @@ describe('отключение плагинов и очистка ресурсо
     expect(teardown).toHaveBeenCalledOnce();
   });
 
+  it('unuse прекращает ожидание зависшего teardown по shutdownTimeout', async () => {
+    const itd = new ItdClient({ shutdownTimeout: 20, retry: false, rateLimit: false });
+    itd.use({
+      name: 'hanging-cleanup',
+      install: () => () => new Promise<never>(() => {}),
+    });
+
+    await expect(itd.unuse('hanging-cleanup')).rejects.toThrow(
+      /плагин «hanging-cleanup» не завершил teardown за 20 мс/,
+    );
+    expect(itd.hasPlugin('hanging-cleanup')).toBe(false);
+    await itd.dispose();
+  });
+
   it('dispose очищает плагины изнутри наружу и остаётся идемпотентным', async () => {
     const { itd } = makeClient([]);
     const order: string[] = [];
@@ -690,6 +704,19 @@ describe('отключение плагинов и очистка ресурсо
     expect(second).toBe(first);
     await expect(first).rejects.toThrow('Не удалось освободить клиент');
     await expect(itd.dispose()).rejects.toThrow('Не удалось освободить клиент');
+  });
+
+  it('dispose продолжает cleanup после зависшего teardown', async () => {
+    const itd = new ItdClient({ shutdownTimeout: 20, retry: false, rateLimit: false });
+    const laterTeardown = vi.fn();
+    itd.use({ name: 'later-cleanup', install: () => laterTeardown });
+    itd.use({
+      name: 'hanging-cleanup',
+      install: () => () => new Promise<never>(() => {}),
+    });
+
+    await expect(itd.dispose()).rejects.toThrow('Не удалось освободить клиент');
+    expect(laterTeardown).toHaveBeenCalledOnce();
   });
 
   it('await using вызывает teardown плагина', async () => {

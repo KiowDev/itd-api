@@ -53,7 +53,7 @@ function sseLine(name: string, value: string): string {
 
 /**
  * Создаёт конечный поток SSE. Подходит для проверки разбора кадров и ошибочного JSON;
- * после последнего кадра соединение закрывается по обычным правилам realtime.
+ * после последнего кадра соединение закрывается по обычным правилам канала событий.
  */
 export function sseResponse(frames: readonly SseFrame[], init: ResponseInit = {}): Response {
   const encoder = new TextEncoder();

@@ -148,7 +148,7 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 | `files.get` | `files.get` | 40 |
 | `files.upload` | `files.upload` | 15 |
 | `files.remove` | `files.remove` | 15 |
-| `notifications` | `notifications.list`, `notifications.count`, `notifications.getSettings`, `realtime.poll.updates`, `realtime.poll.unread` | 40 |
+| `notifications` | `notifications.list`, `notifications.count`, `notifications.getSettings`, `events.notifications.poll.updates`, `events.notifications.poll.unread` | 40 |
 | `hashtags` | `hashtags.search`, `hashtags.posts` | 50 |
 | `hashtags.trending` | `hashtags.trending` | 13 |
 | `search` | `search.all` | 25 |

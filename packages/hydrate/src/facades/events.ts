@@ -9,21 +9,21 @@ const EVENT_FACADES = new WeakMap<NotificationEvents, NotificationEvents>();
 function replaceValue(target: AnyRecord, key: PropertyKey, value: unknown): void {
   const descriptor = Object.getOwnPropertyDescriptor(target, key);
   if (!descriptor || !('value' in descriptor)) {
-    throw new TypeError(`Контекст realtime не содержит поле ${String(key)}`);
+    throw new TypeError(`Контекст события не содержит поле ${String(key)}`);
   }
   Object.defineProperty(target, key, { ...descriptor, value });
 }
 
 function hydrateNotificationEventContext(
-  realtimeContext: NotificationEventContext,
+  eventContext: NotificationEventContext,
   context: HydrationContext,
   stream: () => NotificationEvents,
   seen: WeakMap<object, unknown>,
 ): HydratedEventContext {
-  const target = realtimeContext as unknown as AnyRecord;
-  replaceValue(target, 'update', hydrateResolved(realtimeContext.update, context, seen));
+  const target = eventContext as unknown as AnyRecord;
+  replaceValue(target, 'update', hydrateResolved(eventContext.update, context, seen));
   replaceValue(target, 'stream', stream());
-  return realtimeContext as unknown as HydratedEventContext;
+  return eventContext as unknown as HydratedEventContext;
 }
 
 function notificationEventsFacade(
@@ -53,8 +53,8 @@ function notificationEventsFacade(
   });
   EVENT_FACADES.set(stream, facade);
 
-  stream.use(async (realtimeContext, next) => {
-    hydrateContext(realtimeContext);
+  stream.use(async (eventContext, next) => {
+    hydrateContext(eventContext);
     await next();
   });
   return facade;
@@ -67,8 +67,8 @@ export function createNotificationEvents(
 ): HydratedNotificationEvents {
   const seen = new WeakMap<object, unknown>();
   let facade!: NotificationEvents;
-  const hydrateContext = (realtimeContext: NotificationEventContext) =>
-    hydrateNotificationEventContext(realtimeContext, context, () => facade, seen);
+  const hydrateContext = (eventContext: NotificationEventContext) =>
+    hydrateNotificationEventContext(eventContext, context, () => facade, seen);
 
   facade = notificationEventsFacade(raw, hydrateContext);
   return facade as unknown as HydratedNotificationEvents;

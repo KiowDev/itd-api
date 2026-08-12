@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { redactUrl } from '../../src/core/redact.js';
+import { MAX_PENDING_FRAMES } from '../../src/events/transports/websocket.js';
 import {
   type EventTransportContext,
   type EventTransportFrame,
@@ -9,7 +10,6 @@ import {
   type WebSocketLike,
   WebSocketTransport,
 } from '../../src/index.js';
-import { MAX_PENDING_FRAMES } from '../../src/realtime/transports/websocket.js';
 
 type SocketListener = (event: unknown) => void;
 

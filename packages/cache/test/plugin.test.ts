@@ -774,7 +774,7 @@ async function fillNotifications(itd: ItdClient): Promise<void> {
   await itd.notifications.count();
 }
 
-describe('realtime', () => {
+describe('события', () => {
   it('очищает список и счётчик и позволяет отписаться', async () => {
     const { itd } = makeClient((url) =>
       url.endsWith('/count')
@@ -789,22 +789,22 @@ describe('realtime', () => {
     await fillNotifications(itd);
     expect(cached.size).toBe(2);
 
-    const realtime = new FakeEvents();
-    const detach = cached.attachEvents(realtime as unknown as NotificationEvents);
+    const events = new FakeEvents();
+    const detach = cached.attachEvents(events as unknown as NotificationEvents);
     expect(cached.size).toBe(0);
 
     await fillNotifications(itd);
-    realtime.emit('notification');
+    events.emit('notification');
     expect(cached.size).toBe(0);
 
     await itd.notifications.count();
     expect(cached.size).toBe(1);
-    realtime.emit('unreadCount');
+    events.emit('unreadCount');
     expect(cached.size).toBe(0);
 
     await fillNotifications(itd);
     detach();
-    realtime.emit('notification');
+    events.emit('notification');
     expect(cached.size).toBe(2);
   });
 
@@ -826,12 +826,8 @@ describe('realtime', () => {
     expect(cached.size).toBe(4);
 
     const source = a.itd.notifications.events;
-    const realtime = new FakeEvents(
-      source.getAuthScope(),
-      source.getAuthIdentity(),
-      source.baseUrl,
-    );
-    const detach = cached.attachEvents(realtime as unknown as NotificationEvents);
+    const events = new FakeEvents(source.getAuthScope(), source.getAuthIdentity(), source.baseUrl);
+    const detach = cached.attachEvents(events as unknown as NotificationEvents);
     expect(cached.size).toBe(2);
 
     await fillNotifications(a.itd);
@@ -839,7 +835,7 @@ describe('realtime', () => {
     expect(a.calls).toHaveLength(4);
     expect(b.calls).toHaveLength(2);
 
-    realtime.emit('notification');
+    events.emit('notification');
     expect(cached.size).toBe(2);
 
     detach();
@@ -869,7 +865,7 @@ describe('realtime', () => {
     detach();
   });
 
-  it('не сохраняет уведомления, запрошенные до realtime-события', async () => {
+  it('не сохраняет уведомления, запрошенные до события', async () => {
     let release!: (response: Response) => void;
     const oldResponse = new Promise<Response>((resolve) => {
       release = resolve;
@@ -886,13 +882,9 @@ describe('realtime', () => {
     await vi.waitFor(() => expect(calls).toHaveLength(1));
 
     const source = itd.notifications.events;
-    const realtime = new FakeEvents(
-      source.getAuthScope(),
-      source.getAuthIdentity(),
-      source.baseUrl,
-    );
-    const detach = cached.attachEvents(realtime as unknown as NotificationEvents);
-    realtime.emit('notification');
+    const events = new FakeEvents(source.getAuthScope(), source.getAuthIdentity(), source.baseUrl);
+    const detach = cached.attachEvents(events as unknown as NotificationEvents);
+    events.emit('notification');
 
     release(json({ notifications: [], pagination: { total: 0, hasMore: false } }));
     await stale;

@@ -1,8 +1,8 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { ItdConfigError } from '../../src/core/errors.js';
-import { EventComposer, type EventMiddlewareLike } from '../../src/realtime/composer.js';
-import { captureEventMiddleware } from '../../src/realtime/middleware.js';
-import type { EventContext } from '../../src/realtime/updates.js';
+import { EventComposer, type EventMiddlewareLike } from '../../src/events/composer.js';
+import { captureEventMiddleware } from '../../src/events/middleware.js';
+import type { EventContext } from '../../src/events/updates.js';
 
 type TestUpdate =
   | { readonly type: 'message'; readonly text: string }
@@ -392,7 +392,7 @@ describe('EventComposer', () => {
         throw new Error('исходная');
       });
     await expect(execute(duplicate, context({ type: 'unknown' }))).rejects.toThrow(
-      'next() в обработчике realtime error boundary вызван повторно',
+      'next() в обработчике границы ошибок событий вызван повторно',
     );
   });
 

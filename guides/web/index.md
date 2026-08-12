@@ -6,7 +6,7 @@ titleTemplate: false
 hero:
   name: itd-api
   text: API-клиент без лишней магии
-  tagline: Типобезопасная работа с REST и realtime API итд.com в Node.js, браузере, Bun, Deno и React Native.
+  tagline: Типобезопасная работа с REST API и событиями итд.com в Node.js, браузере, Bun, Deno и React Native.
   image:
     light: /logos/itd-api-logo-light.svg
     dark: /logos/itd-api-logo.svg
@@ -34,10 +34,10 @@ features:
     link: /api/
     linkText: Открыть API
   - icon: RT
-    title: Сессии и realtime
+    title: Сессии и события
     details: Обновление токенов, хранилища, несколько аккаунтов, SSE, polling и восстановление соединения уже встроены.
-    link: /realtime/
-    linkText: Настроить realtime
+    link: /events/
+    linkText: Настроить события
   - icon: +
     title: Расширяемая архитектура
     details: Подключайте cache, crypto, proxy и Turnstile или создавайте собственные плагины поверх публичного API.
@@ -94,7 +94,7 @@ console.log(`@${me.username}: ${me.followersCount}`);</code></pre>
       </a>
       <a class="package-card" href="./packages/testing">
         <code>@itd-api/testing</code>
-        <p>Сценарные ответы, сервер API в памяти и управляемый realtime.</p>
+        <p>Сценарные ответы, сервер API в памяти и управляемые события.</p>
       </a>
     </div>
   </section>

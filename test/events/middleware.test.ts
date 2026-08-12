@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { MAX_PENDING_UPDATES } from '../../src/events/middleware.js';
 import {
   EventComposer,
   type EventMiddlewareObject,
@@ -6,10 +7,9 @@ import {
   NotificationUpdateType,
   type UnknownNotificationUpdate,
 } from '../../src/index.js';
-import { MAX_PENDING_UPDATES } from '../../src/realtime/middleware.js';
 import { makeStream, notification, TestTransport, unreadCount } from './helpers.js';
 
-describe('realtime middleware', () => {
+describe('event middleware', () => {
   it('подключает EventComposer к stream как единый feature-модуль', async () => {
     const transport = new TestTransport();
     const stream = makeStream(transport);
@@ -236,7 +236,7 @@ describe('realtime middleware', () => {
   });
 });
 
-describe('realtime handlers и filters', () => {
+describe('event handlers и filters', () => {
   it('сохраняет флейвор контекста после сужения update', async () => {
     type SessionContext = NotificationEventContext & { session: { id: string } };
 
@@ -348,7 +348,7 @@ describe('realtime handlers и filters', () => {
   });
 });
 
-describe('realtime dispatch', () => {
+describe('event dispatch', () => {
   it('по умолчанию обрабатывает updates последовательно', async () => {
     const transport = new TestTransport();
     const stream = makeStream(transport);

@@ -8,7 +8,7 @@
 
 | Категория | Доступ | О чём |
 |---|---|---|
-| [Клиент](./client.md) | `new ItdClient()` | конструктор, `request()`, `use()`, сервисы, события, `realtime()`, `close()`, `dispose()` |
+| [Клиент](./client.md) | `new ItdClient()` | конструктор, `request()`, `use()`, сервисы, события, `close()`, `dispose()` |
 | [Авторизация](./auth.md) | `itd.auth` | вход, регистрация, OTP, пароли, сессии |
 | [Пользователи](./users.md) | `itd.users` | профили, подписки, блокировки, приватность, значки |
 | [Посты](./posts.md) | `itd.posts` | лента, публикация, реакции, репосты, опросы, комментарии к постам |
@@ -21,7 +21,7 @@
 | [Жалобы](./reports.md) | `itd.reports` | жалобы на контент и пользователей |
 | [Платформа](./platform.md) | `itd.platform` | версии приложений, журнал изменений, анонсы, портал, статус сервисов |
 | [Телеметрия](./telemetry.md) | `itd.telemetry` | явная отправка просмотров и взаимодействий |
-| [Realtime](./realtime.md) | `itd.notifications.events` | поток уведомлений, composer/router, транспорт, переподключение |
+| [События](./events.md) | `itd.notifications.events` | поток уведомлений, composer/router, транспорт, переподключение |
 | [Request pipeline](./request-pipeline.md) | `operations` / `attempts` | границы логической операции, сетевой попытки, retry, auth и queue |
 
 ## Несколько аккаунтов

@@ -40,16 +40,11 @@ export {
 } from './core/errors.js';
 export type { ClientHooks, Logger, RuntimeOptions } from './core/options.js';
 export { RuntimeMode } from './core/runtime.js';
-export type { Notification, NotificationSettings } from './models/notifications.js';
-export { type NotificationEvent, normalizeNotification } from './notifications/normalize.js';
-export { formatNotificationText } from './notifications/text.js';
-export { canonicalNotificationType, isKnownNotificationType } from './notifications/type-map.js';
-export { resolveNotificationUrl } from './notifications/url.js';
 export {
   createNotificationEventsClient,
   NotificationEventsClient,
   type NotificationEventsClientOptions,
-} from './realtime/client.js';
+} from './events/client.js';
 export {
   EventComposer,
   type EventErrorBoundary,
@@ -58,7 +53,7 @@ export {
   type EventMiddlewareGroup,
   type EventMiddlewareLike,
   type EventRouteTable,
-} from './realtime/composer.js';
+} from './events/composer.js';
 export {
   EventChannel,
   type EventChannelDeps,
@@ -68,7 +63,7 @@ export {
   type EventSession,
   type EventSyncReason,
   resolveEventChannelOptions,
-} from './realtime/engine.js';
+} from './events/engine.js';
 export {
   type EventHandler,
   type EventMiddleware,
@@ -78,31 +73,31 @@ export {
   type EventSequentializer,
   type EventTypeGuard,
   runEventMiddleware,
-} from './realtime/middleware.js';
-export type { ReconnectOptions } from './realtime/reconnect.js';
+} from './events/middleware.js';
+export type { ReconnectOptions } from './events/reconnect.js';
 export {
   EventRouter,
   type EventRouteSelector,
-} from './realtime/router.js';
+} from './events/router.js';
 export {
   NotificationEvents,
   type NotificationEventsMap,
   type NotificationEventsOptions,
   NotificationEventsTransport,
-} from './realtime/stream.js';
+} from './events/stream.js';
 export {
   type EventTransport,
   type EventTransportContext,
   type EventTransportFrame,
   UnauthorizedStreamError,
-} from './realtime/transports/transport.js';
+} from './events/transports/transport.js';
 export {
   type WebSocketImplementationOptions,
   type WebSocketLike,
   type WebSocketOpenFailureClassifier,
   WebSocketTransport,
   type WebSocketTransportOptions,
-} from './realtime/transports/websocket.js';
+} from './events/transports/websocket.js';
 export {
   type EventContext,
   type NotificationContext,
@@ -118,7 +113,12 @@ export {
   NotificationUpdateType,
   type UnknownNotificationUpdate,
   type UnreadCountUpdate,
-} from './realtime/updates.js';
+} from './events/updates.js';
+export type { Notification, NotificationSettings } from './models/notifications.js';
+export { type NotificationEvent, normalizeNotification } from './notifications/normalize.js';
+export { formatNotificationText } from './notifications/text.js';
+export { canonicalNotificationType, isKnownNotificationType } from './notifications/type-map.js';
+export { resolveNotificationUrl } from './notifications/url.js';
 export type { Loose } from './types/enums.js';
 export {
   EventChannelStatus,

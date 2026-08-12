@@ -6,13 +6,13 @@ import type { Logger } from '../core/options.js';
 import { EventChannelStatus } from '../types/enums.js';
 import {
   deferEventMiddleware,
+  EventDispatcher,
   type EventHandler,
   type EventMiddleware,
   type EventMiddlewareObject,
   type EventPredicate,
   type EventSequentializer,
   MAX_PENDING_UPDATES,
-  RealtimeDispatcher,
 } from './middleware.js';
 import { MAX_RECONNECT_ATTEMPTS, type ReconnectOptions, reconnectDelay } from './reconnect.js';
 import {
@@ -98,6 +98,8 @@ export interface EventChannelDeps<U, C extends EventContext<U, unknown, O>, O = 
   createContext: (update: U, raw: EventTransportFrame | undefined, origin: O) => C;
   /** Доставляет обновление доменным подписчикам после цепочки обработчиков. */
   deliver: (update: U) => void;
+  /** Проверяет право на новый запуск канала, например lifecycle создавшего клиента. */
+  connectGuard?: (() => void) | undefined;
   /** Доменная инициализация одной connection attempt. */
   initialize?:
     | ((reason: EventSyncReason, session: EventSession<U, O>) => Promise<void>)
@@ -205,7 +207,7 @@ export class EventChannel<
 > {
   readonly #deps: EventChannelDeps<U, C, O>;
   readonly #options: Readonly<EventChannelOptions<C>>;
-  readonly #dispatcher: RealtimeDispatcher<C>;
+  readonly #dispatcher: EventDispatcher<C>;
   readonly #emitter: Emitter<E>;
   readonly #clock: ItdClock;
   readonly #maxAttempts: number;
@@ -238,8 +240,8 @@ export class EventChannel<
     this.#options = options;
     this.#clock = deps.clock ?? systemClock;
     this.#maxAttempts = options.maxAttempts ?? MAX_RECONNECT_ATTEMPTS;
-    this.#emitter = new Emitter<E>((error) => reportListenerError(deps.logger, 'realtime', error));
-    this.#dispatcher = new RealtimeDispatcher<C>(
+    this.#emitter = new Emitter<E>((error) => reportListenerError(deps.logger, 'событий', error));
+    this.#dispatcher = new EventDispatcher<C>(
       {
         concurrency: options.concurrency ?? 1,
         ...(options.sequentialize ? { sequentialize: options.sequentialize } : {}),
@@ -311,6 +313,7 @@ export class EventChannel<
    * сразу после запуска: соединение живёт в фоне.
    */
   async connect(): Promise<void> {
+    this.#deps.connectGuard?.();
     if (this.#wanted) return this.#starting;
     this.#wanted = true;
     this.#attachEnvironmentListeners();

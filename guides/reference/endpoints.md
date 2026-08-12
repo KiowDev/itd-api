@@ -98,7 +98,7 @@
 | `GET /api/hashtags/{tag}/posts` | `itd.hashtags.posts()`, `iteratePosts()` | Bearer | query: `limit`, `cursor` | 2026-07-30, `200` |
 | `GET /api/search` | `itd.search.all()` | Bearer | query: `q` → пользователи и хештеги | 2026-07-30, `200` |
 
-## Уведомления и realtime
+## Уведомления и события
 
 | Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|

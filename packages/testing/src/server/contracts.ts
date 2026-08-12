@@ -1,5 +1,5 @@
 import type { ItdClientOptions, ItdClock, MyProfile, Notification } from 'itd-api';
-import type { MockEventTransport } from '../realtime.js';
+import type { MockEventTransport } from '../events.js';
 import type { RecordedRequest } from '../request.js';
 import type { MockHandler } from '../router.js';
 

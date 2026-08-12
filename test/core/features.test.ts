@@ -474,4 +474,35 @@ describe('feature runtime', () => {
     expect(laterFeatureClosed).toHaveBeenCalledOnce();
     await client.dispose().catch(() => {});
   });
+
+  it.each([
+    ['full', () => new ItdClient({ shutdownTimeout: 20, rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ shutdownTimeout: 20, rateLimit: false, retry: false })],
+  ])(
+    'dispose() ограничивает ожидание зависшего feature и продолжает cleanup: %s',
+    async (_name, createClient) => {
+      const client = createClient();
+      const laterDispose = vi.fn();
+      client.install({
+        name: 'later-dispose',
+        operations: {},
+        setup: () => ({ api: undefined, dispose: laterDispose }),
+      });
+      client.install({
+        name: 'hanging-dispose',
+        operations: {},
+        setup: () => ({ api: undefined, dispose: () => new Promise<never>(() => {}) }),
+      });
+
+      const error = (await client.dispose().catch((cause: unknown) => cause)) as AggregateError;
+
+      expect(error).toBeInstanceOf(AggregateError);
+      expect(error.errors).toEqual([
+        expect.objectContaining({
+          message: expect.stringMatching(/подключаемых модулей.*20 мс/),
+        }),
+      ]);
+      expect(laterDispose).toHaveBeenCalledOnce();
+    },
+  );
 });

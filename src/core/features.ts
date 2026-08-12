@@ -77,6 +77,8 @@ export interface FeatureContext {
   connection(name: string): ClientConnection;
   /** Регистрирует активный долгоживущий ресурс до его остановки. */
   manage(resource: ManagedClientResource): () => void;
+  /** Проверяет, что создавший модуль клиент ещё не освобождён терминально. */
+  assertActive(action: string): void;
 }
 
 interface InstalledFeature {
@@ -379,6 +381,12 @@ export class FeatureRegistry {
           }
           return this.#deps.manage(resource);
         },
+        assertActive: (action: string): void => {
+          this.#deps.assertActive(action);
+          if (!committed || controller.signal.aborted) {
+            throw new ItdStateError(`feature «${name}» не активен`);
+          }
+        },
       });
 
       const installation = feature.setup(context);
@@ -430,13 +438,21 @@ export class FeatureRegistry {
     if (this.#disposed) return;
     this.#disposed = true;
     const errors: unknown[] = [];
-    for (const feature of [...this.#features.values()].reverse()) {
+    const disposals: Promise<void>[] = [];
+    const features = [...this.#features.values()].reverse();
+
+    // Все модули переводятся в терминальное состояние до ожидания чужого кода. Один
+    // зависший dispose не должен помешать отмене и очистке остальных модулей.
+    for (const feature of features) {
       feature.controller.abort(new ItdAbortError(`Feature «${feature.name}» освобождён`));
       try {
-        await feature.dispose?.();
+        disposals.push(Promise.resolve(feature.dispose?.()).then(() => undefined));
       } catch (error) {
         errors.push(error);
       }
+    }
+
+    for (const feature of features) {
       for (const cleanup of [...feature.cleanup].reverse()) {
         try {
           cleanup();
@@ -446,6 +462,11 @@ export class FeatureRegistry {
       }
     }
     this.#features.clear();
+
+    const results = await Promise.allSettled(disposals);
+    for (const result of results) {
+      if (result.status === 'rejected') errors.push(result.reason);
+    }
     if (errors.length > 0) throw new AggregateError(errors, 'Не удалось освободить feature');
   }
 }

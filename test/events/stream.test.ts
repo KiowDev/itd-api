@@ -2,19 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
 import { systemClock } from '../../src/core/clock.js';
 import { ItdConfigError } from '../../src/core/errors.js';
-import type { ItdClientOptions } from '../../src/options.js';
 import {
   NotificationEvents,
   type NotificationEventsDeps,
   type NotificationEventsOptions,
-} from '../../src/realtime/stream.js';
-import { PollTransport } from '../../src/realtime/transports/poll.js';
+} from '../../src/events/stream.js';
+import { PollTransport } from '../../src/events/transports/poll.js';
 import {
   type EventTransport,
   type EventTransportContext,
   type EventTransportFrame,
   UnauthorizedStreamError,
-} from '../../src/realtime/transports/transport.js';
+} from '../../src/events/transports/transport.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import { abortError, createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 class TestTransport implements EventTransport {
@@ -455,7 +455,7 @@ describe('поток: опрос через конвейер клиента', ()
   function makePollStream(
     handler: MockHandler,
     options: ItdClientOptions = {},
-    realtime: NotificationEventsOptions = {},
+    eventOptions: NotificationEventsOptions = {},
   ) {
     const mock = createMockFetch(handler);
     const itd = new ItdClient({
@@ -472,7 +472,7 @@ describe('поток: опрос через конвейер клиента', ()
           syncCount: false,
           reconnectOnVisible: false,
           reconnectOnOnline: false,
-          ...realtime,
+          ...eventOptions,
         },
       },
     });
@@ -510,12 +510,15 @@ describe('поток: опрос через конвейер клиента', ()
     await vi.waitFor(() => expect(mock.callCount).toBe(2));
     stream.disconnect();
 
-    expect(attempts).toEqual(['realtime.poll.updates', 'realtime.poll.unread']);
+    expect(attempts).toEqual([
+      'events.notifications.poll.updates',
+      'events.notifications.poll.unread',
+    ]);
     expect(hooks).toEqual([
-      '→ realtime.poll.updates',
-      '← realtime.poll.updates',
-      '→ realtime.poll.unread',
-      '← realtime.poll.unread',
+      '→ events.notifications.poll.updates',
+      '← events.notifications.poll.updates',
+      '→ events.notifications.poll.unread',
+      '← events.notifications.poll.unread',
     ]);
   });
 

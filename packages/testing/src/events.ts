@@ -12,7 +12,7 @@ interface ActiveConnection {
   readonly reject: (error: unknown) => void;
 }
 
-/** Управляемый realtime-транспорт без сетевого соединения. */
+/** Управляемый транспорт событий без сетевого соединения. */
 export class MockEventTransport implements EventTransport {
   readonly name = 'mock';
   #active: ActiveConnection | undefined;
@@ -82,7 +82,7 @@ export class MockEventTransport implements EventTransport {
   }
 
   /** Обрывает соединение ошибкой. Поток применит обычные правила переподключения. */
-  fail(error: unknown = new Error('Тестовый обрыв realtime')): void {
+  fail(error: unknown = new Error('Тестовый обрыв соединения событий')): void {
     const active = this.#requireConnection();
     this.#active = undefined;
     active.reject(error);

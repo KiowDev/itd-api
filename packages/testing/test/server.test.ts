@@ -85,7 +85,7 @@ describe('createMockServer', () => {
     server.assertNoUnsupportedRequests();
   });
 
-  it('доставляет действия сервера в связанный realtime-транспорт', async () => {
+  it('доставляет действия сервера в связанный транспорт событий', async () => {
     const server = makeServer();
     const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
     const transport = server.notificationEvents({ as: 'bob' });

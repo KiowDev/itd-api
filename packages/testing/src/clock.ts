@@ -7,7 +7,7 @@ interface ScheduledTask {
   index: number;
 }
 
-/** Управляемые часы для проверки тайм-аутов, повторов и realtime. */
+/** Управляемые часы для проверки тайм-аутов, повторов и событийных соединений. */
 export interface TestClock extends ItdClock {
   /** Переводит часы вперёд и выполняет все наступившие задачи. */
   advanceBy(milliseconds: number): Promise<void>;

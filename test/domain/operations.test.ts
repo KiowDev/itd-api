@@ -87,8 +87,12 @@ describe('карта серверных счётчиков частоты', () =
   });
 
   it('опрос уведомлений делит счётчик с обычным чтением уведомлений', () => {
-    expect(operationBucket('realtime.poll.updates')).toBe(operationBucket('notifications.list'));
-    expect(operationBucket('realtime.poll.unread')).toBe(operationBucket('notifications.count'));
+    expect(operationBucket('events.notifications.poll.updates')).toBe(
+      operationBucket('notifications.list'),
+    );
+    expect(operationBucket('events.notifications.poll.unread')).toBe(
+      operationBucket('notifications.count'),
+    );
   });
 
   it('не оставляет ни имени без операции, ни операции без ёмкости', () => {

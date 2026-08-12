@@ -75,7 +75,7 @@
 
 ## EventChannelStatus
 
-Состояние realtime-соединения.
+Состояние соединения событийного канала.
 
 `Connecting` · `Connected` · `Error` · `Disconnected`.
 

@@ -1,5 +1,5 @@
 import type { HttpClient } from './core/execution/http.js';
-import type { NotificationEvents } from './realtime/stream.js';
+import type { NotificationEvents } from './events/stream.js';
 import { NotificationsResource } from './resources/notifications.js';
 
 /** Уведомления полного клиента: REST-методы и стабильный канал событий. */

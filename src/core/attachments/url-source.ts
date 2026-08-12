@@ -1,5 +1,5 @@
 import { ItdConfigError, ItdFileError, ItdFileErrorReason } from '../errors.js';
-import { redactUrl } from '../redact.js';
+import { redactErrorCause, redactUrl } from '../redact.js';
 import { boundedFileStream } from './bounded-stream.js';
 import {
   DEFAULT_URL_FILE_MAX_BYTES,
@@ -78,7 +78,7 @@ async function fetchFile(
       reason: ItdFileErrorReason.Network,
       url: safeUrl,
       retryable: true,
-      cause: error,
+      cause: redactErrorCause(error),
     });
   }
 

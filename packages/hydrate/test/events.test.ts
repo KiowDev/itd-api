@@ -31,7 +31,7 @@ const seed = {
   ],
 } as const;
 
-async function realtimeClient() {
+async function eventsClient() {
   const server = createMockServer({ seed });
   const transport = server.notificationEvents({ as: 'bob' });
   const raw = new ItdClient({
@@ -64,7 +64,7 @@ function commentNotification() {
   });
 }
 
-describe('гидратация realtime', () => {
+describe('гидратация событий', () => {
   it('передаёт один гидратированный объект всем обработчикам', async () => {
     const server = createMockServer({ seed });
     const transport = server.notificationEvents({ as: 'bob' });
@@ -125,7 +125,7 @@ describe('гидратация realtime', () => {
   });
 
   it('загружает пост и выполняет действия над комментарием через исходный клиент', async () => {
-    const { server, transport, stream } = await realtimeClient();
+    const { server, transport, stream } = await eventsClient();
     let event: HydratedNotificationEvent | undefined;
     stream.on('notification', (value) => {
       event = value;
@@ -168,7 +168,7 @@ describe('гидратация realtime', () => {
   });
 
   it('выбирает идентификатор поста по типу уведомления', async () => {
-    const { transport, stream } = await realtimeClient();
+    const { transport, stream } = await eventsClient();
     const events: HydratedNotificationEvent[] = [];
     stream.on('notification', (event) => events.push(event));
 

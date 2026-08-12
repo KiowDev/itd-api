@@ -397,7 +397,7 @@ export class AuthManager implements AuthProvider {
     return token;
   }
 
-  /** Меняет fallback и завершает realtime, только если фактически сменился аккаунт. */
+  /** Меняет fallback и завершает событийные соединения, только если сменился аккаунт. */
   #transitionAuth(accessToken: string | undefined, rotateFallback = true): void {
     const knownPrevious = this.#session !== undefined;
     const previous = this.#identityForToken(this.#session?.accessToken);

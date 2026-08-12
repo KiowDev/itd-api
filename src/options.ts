@@ -1,5 +1,5 @@
 import type { RuntimeOptions } from './core/options.js';
-import type { NotificationEventsOptions } from './realtime/stream.js';
+import type { NotificationEventsOptions } from './events/stream.js';
 import type { SessionOptions } from './session/options.js';
 
 /**

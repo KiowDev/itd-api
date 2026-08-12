@@ -7,7 +7,7 @@ import {
 } from '../../src/index.js';
 import { makeStream, notification, TestTransport } from './helpers.js';
 
-describe('realtime updates', () => {
+describe('event updates', () => {
   it('проверяет настройки dispatch и фильтров', () => {
     expect(() => makeStream(new TestTransport(), { concurrency: 0 })).toThrow(
       /concurrency должен быть больше нуля/,

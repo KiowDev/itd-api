@@ -120,7 +120,7 @@ function resolveAuthProvider(auth: NotificationEventsClientOptions['auth']): Aut
  * Связывает поток с собранным конвейером.
  *
  * Начальный счётчик непрочитанных берётся той же операцией, что и при опросе
- * (`realtime.poll.unread`): ресурс уведомлений потоку для этого не нужен.
+ * (`events.notifications.poll.unread`): ресурс уведомлений потоку для этого не нужен.
  */
 function notificationEventsDeps(runtime: ClientRuntime): NotificationEventsDeps {
   const request: NonNullable<NotificationEventsDeps['request']> = ({
@@ -137,7 +137,7 @@ function notificationEventsDeps(runtime: ClientRuntime): NotificationEventsDeps 
     request,
     fetchUnreadCount: async (signal) => {
       const payload = await request({
-        operationId: 'realtime.poll.unread',
+        operationId: 'events.notifications.poll.unread',
         path: '/api/notifications/count',
         signal,
       });

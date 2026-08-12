@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
-import { ItdAccounts, ItdClient } from 'itd-api';
+import { ItdAccounts, ItdClient, ItdStateError } from 'itd-api';
 import type { EventTransport, EventTransportContext, EventTransportFrame } from 'itd-api/events';
 import { ItdRestClient } from 'itd-api/rest';
+import ts from 'typescript';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   type ContractProbeApi,
@@ -64,10 +65,38 @@ type AccountWithContractProbe = ReturnType<ItdAccounts['addAccount']> & {
 describe('публичный контракт подключаемого модуля', () => {
   it('не импортирует внутренние файлы библиотеки', async () => {
     const source = await readFile(new URL('./fixtures/public-feature.ts', import.meta.url), 'utf8');
-    const imports = [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)]
-      .map((match) => match[1])
-      .sort();
+    const sourceFile = ts.createSourceFile(
+      'public-feature.ts',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const imports: string[] = [];
+    let hasComputedDynamicImport = false;
+    const collectImports = (node: ts.Node): void => {
+      if (
+        (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+        node.moduleSpecifier &&
+        ts.isStringLiteralLike(node.moduleSpecifier)
+      ) {
+        imports.push(node.moduleSpecifier.text);
+      } else if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword
+      ) {
+        const specifier = node.arguments[0];
+        if (node.arguments.length === 1 && specifier && ts.isStringLiteralLike(specifier)) {
+          imports.push(specifier.text);
+        } else {
+          hasComputedDynamicImport = true;
+        }
+      }
+      ts.forEachChild(node, collectImports);
+    };
+    collectImports(sourceFile);
+    imports.sort();
 
+    expect(hasComputedDynamicImport).toBe(false);
     expect(imports).toEqual(['itd-api', 'itd-api/events', 'itd-api/rest']);
   });
 
@@ -122,7 +151,14 @@ describe('публичный контракт подключаемого мод�
 
     await client.close();
     expect(transport.stops).toBe(1);
+    await probe.events.connect();
+    expect(transport.connections).toBe(2);
+    probe.events.disconnect();
+    await client.close();
+    expect(transport.stops).toBe(2);
     await client.dispose();
+    await expect(probe.events.connect()).rejects.toBeInstanceOf(ItdStateError);
+    expect(transport.connections).toBe(2);
   });
 
   it('сохраняет локальный rps при установке в минимальный REST-клиент', async () => {

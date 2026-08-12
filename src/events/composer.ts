@@ -27,7 +27,7 @@ export type EventFilter<C extends EventContext = NotificationEventContext> = (
   context: C,
 ) => boolean | Promise<boolean>;
 
-/** Ошибка локальной realtime-ветки вместе с контекстом обрабатываемого обновления. */
+/** Ошибка локальной ветки событий вместе с контекстом обрабатываемого обновления. */
 export interface EventErrorContext<C extends EventContext = NotificationEventContext> {
   /** Исходное исключение middleware. */
   readonly error: unknown;
@@ -89,7 +89,7 @@ function boundaryContinuation(): BoundaryContinuation {
       }
 
       const failure = Promise.reject(
-        new Error('next() в обработчике realtime error boundary вызван повторно'),
+        new Error('next() в обработчике границы ошибок событий вызван повторно'),
       );
       duplicate = Promise.all(duplicate ? [duplicate, failure] : [failure]).then(() => undefined);
       return failure;
@@ -120,7 +120,7 @@ async function runBoundaryStep(
 }
 
 /**
- * Собирает переиспользуемый feature-модуль из realtime middleware.
+ * Собирает переиспользуемый feature-модуль из middleware событий.
  *
  * Composer не открывает соединение и не планирует конкурентность: готовый объект подключается
  * через `stream.use(composer)`, а выполнение остаётся обязанностью существующего dispatcher.

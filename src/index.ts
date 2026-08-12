@@ -1,5 +1,5 @@
 /**
- * `itd-api` — клиент REST и realtime API социальной сети итд.com.
+ * `itd-api` — клиент REST API и событий социальной сети итд.com.
  *
  * @packageDocumentation
  */
@@ -205,6 +205,18 @@ export type {
   UpdatePostInput,
 } from './domain/params.js';
 export { toDate, utcStampToIso } from './domain/time.js';
+export type { ReconnectOptions } from './events/reconnect.js';
+export {
+  type WebSocketImplementationOptions,
+  type WebSocketLike,
+  type WebSocketOpenFailureClassifier,
+  WebSocketTransport,
+  type WebSocketTransportOptions,
+} from './events/transports/websocket.js';
+export type {
+  NotificationEventOfType,
+  NotificationOfType,
+} from './events/updates.js';
 export {
   createNotificationEventsClient,
   EventChannel,
@@ -309,18 +321,6 @@ export { canonicalNotificationType, isKnownNotificationType } from './notificati
 export { resolveNotificationUrl } from './notifications/url.js';
 export type { NotificationsApi } from './notifications-api.js';
 export type { ItdClientOptions } from './options.js';
-export type { ReconnectOptions } from './realtime/reconnect.js';
-export {
-  type WebSocketImplementationOptions,
-  type WebSocketLike,
-  type WebSocketOpenFailureClassifier,
-  WebSocketTransport,
-  type WebSocketTransportOptions,
-} from './realtime/transports/websocket.js';
-export type {
-  NotificationEventOfType,
-  NotificationOfType,
-} from './realtime/updates.js';
 export type {
   AuthResource,
   CaptchaCredentials,

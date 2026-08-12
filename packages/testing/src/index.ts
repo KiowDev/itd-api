@@ -15,6 +15,11 @@ export {
   UnusedMockOperationsError,
 } from './errors.js';
 export {
+  MockEventTransport,
+  type WaitForUpdateOptions,
+  waitForUpdate,
+} from './events.js';
+export {
   type AccessTokenFixtureOptions,
   type AuthorFixtureInput,
   accessTokenFixture,
@@ -55,11 +60,6 @@ export {
   type MockOperations,
   type RecordedOperation,
 } from './operations.js';
-export {
-  MockEventTransport,
-  type WaitForUpdateOptions,
-  waitForUpdate,
-} from './realtime.js';
 export type { MockRequest, RecordedRequest, RouteParams } from './request.js';
 export {
   apiErrorResponse,

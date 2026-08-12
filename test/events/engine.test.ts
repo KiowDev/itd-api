@@ -4,16 +4,16 @@ import {
   type EventChannelDeps,
   type EventChannelEvents,
   type EventChannelOptions,
-} from '../../src/realtime/engine.js';
-import { MAX_PENDING_UPDATES } from '../../src/realtime/middleware.js';
-import { EventRouter } from '../../src/realtime/router.js';
+} from '../../src/events/engine.js';
+import { MAX_PENDING_UPDATES } from '../../src/events/middleware.js';
+import { EventRouter } from '../../src/events/router.js';
 import {
   type EventTransport,
   type EventTransportContext,
   type EventTransportFrame,
   UnauthorizedStreamError,
-} from '../../src/realtime/transports/transport.js';
-import type { EventContext } from '../../src/realtime/updates.js';
+} from '../../src/events/transports/transport.js';
+import type { EventContext } from '../../src/events/updates.js';
 
 interface TestUpdate {
   readonly value: number;
@@ -114,7 +114,7 @@ interface DomainContext extends EventContext<TestUpdate, TestStream, 'ws' | 'cat
   traceId: string;
 }
 
-describe('realtime engine', () => {
+describe('event channel', () => {
   it('проверяет общие настройки самостоятельно', () => {
     const transport = new TestTransport();
     const create = () => makeEngine(transport, {}, { concurrency: 0 });

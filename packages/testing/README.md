@@ -1,6 +1,6 @@
 # @itd-api/testing
 
-Сценарные ответы, сервер API в памяти, заготовки данных и управляемый realtime для
+Сценарные ответы, сервер API в памяти, заготовки данных и управляемые события для
 тестирования [`itd-api`](https://github.com/KiowDev/itd-api) без сетевых запросов.
 
 [Руководство](https://kiowdev.github.io/itd-api/packages/testing) ·
@@ -84,7 +84,7 @@ mock.assertDone();
 Такой mock завершает логическую операцию до retry, auth и transport. Для проверки `401`,
 повторов, заголовков и сериализации по-прежнему используйте `createMockFetch()`.
 
-## Управляемое время и realtime
+## Управляемое время и события
 
 ```ts
 import { createTestClock, MockEventTransport } from '@itd-api/testing';

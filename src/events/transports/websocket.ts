@@ -156,7 +156,7 @@ function eventName(data: unknown): string {
     : 'message';
 }
 
-/** Транспорт исходных realtime-событий поверх стандартного WebSocket. */
+/** Транспорт исходных событий поверх стандартного WebSocket. */
 export class WebSocketTransport implements EventTransport {
   readonly name = 'ws';
 

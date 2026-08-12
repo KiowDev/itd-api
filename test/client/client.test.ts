@@ -7,13 +7,13 @@ import {
   ItdNotFoundError,
   ItdStateError,
 } from '../../src/core/errors.js';
-import type { FileInput } from '../../src/index.js';
-import type { ItdClientOptions } from '../../src/options.js';
 import type {
   EventTransport,
   EventTransportContext,
   EventTransportFrame,
-} from '../../src/realtime/transports/transport.js';
+} from '../../src/events/transports/transport.js';
+import type { FileInput } from '../../src/index.js';
+import type { ItdClientOptions } from '../../src/options.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
 import { makeJwt } from '../helpers/jwt.js';
 import {
@@ -1294,7 +1294,7 @@ describe('жизненный цикл', () => {
     expect(mock.callCount).toBe(0);
   });
 
-  it('сохраняет realtime при смене sid и завершает при смене sub', async () => {
+  it('сохраняет события при смене sid и завершает при смене sub', async () => {
     const transport = new TestStreamTransport();
     const { itd } = makeClient([], {
       auth: makeJwt({ sub: 'user-a', sid: 'session-a' }),
@@ -1315,7 +1315,7 @@ describe('жизненный цикл', () => {
     expect(disconnect).toHaveBeenCalledOnce();
   });
 
-  it('завершает realtime при смене sub во внешнем источнике токена', async () => {
+  it('завершает события при смене sub во внешнем источнике токена', async () => {
     let token = makeJwt({ sub: 'user-a', sid: 'session-a' });
     const transport = new TestStreamTransport();
     const { itd } = makeClient(

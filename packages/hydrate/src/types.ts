@@ -307,7 +307,7 @@ export type HydrateValue<T> = T extends
 /** Событие уведомления с гидратированной моделью. */
 export type HydratedNotificationEvent = HydratedModel<NotificationEvent>;
 
-/** Контекст realtime с гидратированным обновлением и потоком. */
+/** Контекст события с гидратированным обновлением и каналом. */
 export type HydratedEventContext<C extends EventContext = NotificationEventContext> = HydratedModel<
   C,
   {

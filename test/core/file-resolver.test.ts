@@ -113,7 +113,7 @@ describe('resolver файловых источников', () => {
     const requested: string[] = [];
     const resolver = createFileResolver(async (input) => {
       requested.push(String(input));
-      throw new TypeError('network failed');
+      throw new TypeError(`network failed: ${String(input)}`);
     });
     const url = 'https://files.test/photo.png?c=CapabilitySecret&TOKEN=TokenSecret&safe=visible';
 
@@ -126,6 +126,10 @@ describe('resolver файловых источников', () => {
     expect((error as ItdFileError).message).not.toContain('CapabilitySecret');
     expect((error as ItdFileError).url).toContain('safe=visible');
     expect((error as ItdFileError).url).not.toContain('CapabilitySecret');
+    expect((error as ItdFileError).cause).toBeInstanceOf(TypeError);
+    expect(((error as ItdFileError).cause as Error).message).not.toContain('CapabilitySecret');
+    expect(((error as ItdFileError).cause as Error).message).not.toContain('TokenSecret');
+    expect(((error as ItdFileError).cause as Error).message).toContain('safe=visible');
   });
 
   it('отмена URL-источника закрывает сетевой поток ровно один раз', async () => {

@@ -27,7 +27,7 @@ interface ExtendedPost extends Post {
 }
 
 describe('расширяемые типы', () => {
-  it('сохраняет поля и владельца произвольного realtime-контекста', () => {
+  it('сохраняет поля и владельца произвольного контекста события', () => {
     interface CustomContext extends EventContext<{ payload: Post }, { readonly kind: 'custom' }> {
       session: { id: string };
     }
@@ -51,7 +51,7 @@ describe('расширяемые типы', () => {
     >();
   });
 
-  it('выводит гидратированные типы realtime', () => {
+  it('выводит гидратированные типы событий', () => {
     const check = (client: HydrateFlavor<ItdClient>) => {
       const stream = client.notifications.events;
       expectTypeOf(stream).toEqualTypeOf<HydratedNotificationEvents>();

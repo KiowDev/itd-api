@@ -167,8 +167,11 @@ export class PluginRegistry {
     const deadline = createDeadline(this.#options.shutdownTimeout, this.#options.clock);
     const cleanup = this.#trackCleanup(
       (async () => {
-        const expired = await this.#release(entry, deadline);
-        if (expired) throw expired;
+        const expirationErrors = await this.#release(entry, deadline);
+        if (expirationErrors.length === 1) throw expirationErrors[0];
+        if (expirationErrors.length > 1) {
+          throw new AggregateError(expirationErrors, `Не удалось отключить плагин «${name}»`);
+        }
       })(),
     );
     try {
@@ -203,8 +206,7 @@ export class PluginRegistry {
         }
         for (const entry of entries) {
           try {
-            const expired = await this.#release(entry, deadline);
-            if (expired) errors.push(expired);
+            errors.push(...(await this.#release(entry, deadline)));
           } catch (error) {
             errors.push(error);
           } finally {
@@ -283,20 +285,42 @@ export class PluginRegistry {
   /**
    * Дожидается операций плагина и освобождает его ресурсы.
    *
-   * `teardown` выполняется в любом случае, в том числе после истечения срока.
+   * `teardown` запускается в любом случае, в том числе после истечения срока ожидания
+   * операций, но его собственное ожидание также ограничено общим сроком.
    *
-   * @returns ошибка истёкшего срока, если ждать пришлось дольше отведённого
+   * @returns ошибки истёкшего срока для незавершённых стадий
    */
-  async #release(entry: InstalledPlugin, deadline: Deadline): Promise<ItdStateError | undefined> {
-    const finished = await deadline.wait(this.#waitForDrain(entry));
-    await entry.teardown?.();
+  async #release(entry: InstalledPlugin, deadline: Deadline): Promise<ItdStateError[]> {
+    const errors: ItdStateError[] = [];
+    const operationsFinished = await deadline.wait(this.#waitForDrain(entry));
+    if (!operationsFinished) {
+      errors.push(
+        new ItdStateError(
+          `плагин «${entry.plugin.name}» не завершил операции за ${this.#options.shutdownTimeout} мс`,
+        ),
+      );
+    }
 
-    return finished
-      ? undefined
-      : new ItdStateError(
-          `плагин «${entry.plugin.name}» не завершил операции за ${this.#options.shutdownTimeout} мс; ` +
-            'ожидание прекращено, ресурсы плагина освобождены',
-        );
+    let teardownFailed = false;
+    let teardownFailure: unknown;
+    const teardown = Promise.resolve()
+      .then(() => entry.teardown?.())
+      .catch((error: unknown) => {
+        teardownFailed = true;
+        teardownFailure = error;
+      });
+    const teardownFinished = await deadline.wait(teardown);
+    if (!teardownFinished) {
+      errors.push(
+        new ItdStateError(
+          `плагин «${entry.plugin.name}» не завершил teardown за ${this.#options.shutdownTimeout} мс`,
+        ),
+      );
+    } else if (teardownFailed) {
+      throw teardownFailure;
+    }
+
+    return errors;
   }
 
   #waitForDrain(entry: InstalledPlugin): Promise<void> {

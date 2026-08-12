@@ -36,17 +36,17 @@ export type EventSequentializer<C extends EventContext = NotificationEventContex
   context: C,
 ) => PropertyKey | readonly PropertyKey[] | undefined;
 
-const REALTIME_MIDDLEWARE_SNAPSHOT = Symbol('itd-api.events.middlewareSnapshot');
+const EVENT_MIDDLEWARE_SNAPSHOT = Symbol('itd-api.events.middlewareSnapshot');
 
 type SnapshottingEventMiddleware<C extends EventContext> = EventMiddleware<C> & {
-  [REALTIME_MIDDLEWARE_SNAPSHOT]?: () => EventMiddleware<C>;
+  [EVENT_MIDDLEWARE_SNAPSHOT]?: () => EventMiddleware<C>;
 };
 
 /** @internal */
 export function captureEventMiddleware<C extends EventContext>(
   middleware: EventMiddleware<C>,
 ): EventMiddleware<C> {
-  const capture = (middleware as SnapshottingEventMiddleware<C>)[REALTIME_MIDDLEWARE_SNAPSHOT];
+  const capture = (middleware as SnapshottingEventMiddleware<C>)[EVENT_MIDDLEWARE_SNAPSHOT];
   if (!capture) return middleware;
 
   const snapshot = capture();
@@ -61,7 +61,7 @@ export function withEventMiddlewareSnapshot<C extends EventContext>(
   middleware: EventMiddleware<C>,
   capture: () => EventMiddleware<C>,
 ): EventMiddleware<C> {
-  Object.defineProperty(middleware, REALTIME_MIDDLEWARE_SNAPSHOT, { value: capture });
+  Object.defineProperty(middleware, EVENT_MIDDLEWARE_SNAPSHOT, { value: capture });
   return middleware;
 }
 
@@ -72,7 +72,7 @@ export function deferEventMiddleware<C extends EventContext>(
   const capture = (): EventMiddleware<C> => {
     const middleware = source.middleware();
     if (typeof middleware !== 'function') {
-      throw new ItdConfigError('realtime middleware() должен возвращать функцию обработки');
+      throw new ItdConfigError('events middleware() должен возвращать функцию обработки');
     }
     return captureEventMiddleware(middleware);
   };
@@ -98,12 +98,12 @@ interface DispatchWork<C extends EventContext> {
 /** Предел обновлений, ожидающих обработки. @internal */
 export const MAX_PENDING_UPDATES = 256;
 
-export interface RealtimeDispatcherOptions<C extends EventContext = NotificationEventContext> {
+export interface EventDispatcherOptions<C extends EventContext = NotificationEventContext> {
   concurrency: number;
   sequentialize?: EventSequentializer<C> | undefined;
 }
 
-export interface RealtimeDispatcherHooks<C extends EventContext = NotificationEventContext> {
+export interface EventDispatcherHooks<C extends EventContext = NotificationEventContext> {
   deliver: (context: C) => void;
   middlewareError: (error: unknown, context: C) => void;
   handlerError: (error: unknown, context: C) => void;
@@ -168,9 +168,9 @@ export async function runEventMiddleware<C extends EventContext>(
 }
 
 /** Планирует нормализованные обновления и отслеживает незавершённые обработчики. */
-export class RealtimeDispatcher<C extends EventContext = NotificationEventContext> {
-  readonly #options: RealtimeDispatcherOptions<C>;
-  readonly #hooks: RealtimeDispatcherHooks<C>;
+export class EventDispatcher<C extends EventContext = NotificationEventContext> {
+  readonly #options: EventDispatcherOptions<C>;
+  readonly #hooks: EventDispatcherHooks<C>;
   readonly #middleware: EventMiddleware<C>[] = [];
   readonly #handlers: HandlerRegistration<C>[] = [];
   readonly #queue: DispatchWork<C>[] = [];
@@ -179,7 +179,7 @@ export class RealtimeDispatcher<C extends EventContext = NotificationEventContex
 
   #active = 0;
 
-  constructor(options: RealtimeDispatcherOptions<C>, hooks: RealtimeDispatcherHooks<C>) {
+  constructor(options: EventDispatcherOptions<C>, hooks: EventDispatcherHooks<C>) {
     this.#options = options;
     this.#hooks = hooks;
   }

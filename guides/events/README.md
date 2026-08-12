@@ -141,7 +141,7 @@ import { EventComposer, NotificationUpdateType } from 'itd-api';
 
 const notifications = new EventComposer();
 const safe = notifications.errorBoundary(async ({ error, context }, next) => {
-  await reportRealtimeError(error, context);
+  await reportEventError(error, context);
   await next(); // после ошибки продолжить внешнюю цепочку
 });
 
@@ -350,14 +350,14 @@ const stream = itd.notifications.events;
 состояние соединения и корректно завершает активные обработчики по `SIGINT` или `SIGTERM`.
 
 ```bash
-ITD_TOKEN=<токен> node guides/realtime/examples/notifications.mjs
+ITD_TOKEN=<токен> node guides/events/examples/notifications.mjs
 ```
 
-Исходник: [`examples/notifications.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/realtime/examples/notifications.mjs).
+Исходник: [`examples/notifications.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/events/examples/notifications.mjs).
 
 ## Связанные разделы
 
-- [Справочник realtime](../reference/realtime.md)
+- [Справочник событий](../reference/events.md)
 - [Уведомления](../reference/notifications.md)
 - [Авторизация и обновление сессии](../authentication/)
 - [Несколько аккаунтов](../multi-accounts/)

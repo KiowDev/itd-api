@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
-import { SseTransport } from '../../src/realtime/transports/sse.js';
+import { SseTransport } from '../../src/events/transports/sse.js';
 import {
   type EventTransportFrame,
   UnauthorizedStreamError,
-} from '../../src/realtime/transports/transport.js';
+} from '../../src/events/transports/transport.js';
 import { json } from '../helpers/mock-fetch.js';
 
 /** Ответ с телом-потоком: куски отдаются по одному. */

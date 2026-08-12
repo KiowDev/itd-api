@@ -171,14 +171,14 @@ export interface NotificationEventsDeps {
   logger?: Logger | undefined;
 }
 
-const REALTIME_CONNECT_GUARDS = new WeakMap<object, () => void>();
+const EVENT_CONNECT_GUARDS = new WeakMap<object, () => void>();
 
 /** Связывает поток с lifecycle создавшего его клиента. @internal */
 export function setNotificationEventsConnectGuard<C extends NotificationEventContext>(
   stream: NotificationEvents<C>,
   guard: () => void,
 ): void {
-  REALTIME_CONNECT_GUARDS.set(stream, guard);
+  EVENT_CONNECT_GUARDS.set(stream, guard);
 }
 
 /**
@@ -396,7 +396,7 @@ export class NotificationEvents<C extends NotificationEventContext = Notificatio
    * @throws если создавший поток клиент уже освобождён
    */
   async connect(): Promise<void> {
-    REALTIME_CONNECT_GUARDS.get(this)?.();
+    EVENT_CONNECT_GUARDS.get(this)?.();
     if (this.#lifecycleActive) return this.#engine.connect();
 
     this.#lifecycleActive = true;

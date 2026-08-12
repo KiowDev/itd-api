@@ -121,7 +121,7 @@ export const ReportReason = Object.freeze({
 } as const);
 export type ReportReason = (typeof ReportReason)[keyof typeof ReportReason];
 
-/** Состояние realtime-соединения. */
+/** Состояние соединения событийного канала. */
 export const EventChannelStatus = Object.freeze({
   Connecting: 'connecting',
   Connected: 'connected',

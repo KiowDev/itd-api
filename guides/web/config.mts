@@ -25,7 +25,7 @@ const guideSidebar = [
     text: 'Практические сценарии',
     collapsed: true,
     items: [
-      { text: 'Realtime', link: '/realtime/' },
+      { text: 'События', link: '/events/' },
       { text: 'Несколько аккаунтов', link: '/multi-accounts/' },
       { text: 'Разметка текста', link: '/text-markup/' },
       { text: 'Интеграции', link: '/integrations/' },
@@ -58,7 +58,7 @@ const referenceSidebar = [
       { text: 'Уведомления', link: '/reference/notifications' },
       { text: 'Файлы', link: '/reference/files' },
       { text: 'Поиск и обнаружение', link: '/reference/discovery' },
-      { text: 'Realtime', link: '/reference/realtime' },
+      { text: 'События', link: '/reference/events' },
     ],
   },
   {
@@ -159,7 +159,7 @@ const apiSidebar = (
 export default defineConfig({
   lang: 'ru-RU',
   title: 'itd-api',
-  description: 'TypeScript-клиент REST и realtime API социальной сети итд.com',
+  description: 'TypeScript-клиент REST API и событий социальной сети итд.com',
   base: '/itd-api/',
   sitemap: {
     hostname: 'https://kiowdev.github.io/itd-api/',
@@ -231,7 +231,7 @@ export default defineConfig({
         text: 'Руководства',
         link: '/guides/',
         activeMatch:
-          '^/(guides|authentication|configuration|realtime|multi-accounts|text-markup|integrations|plugins|features)/',
+          '^/(guides|authentication|configuration|events|multi-accounts|text-markup|integrations|plugins|features)/',
       },
       { text: 'Справочник', link: '/reference/' },
       { text: 'Пакеты', link: '/packages/' },

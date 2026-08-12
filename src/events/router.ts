@@ -55,7 +55,7 @@ export class EventRouter<
   /** Добавляет промежуточные обработчики к маршруту и возвращает функцию их удаления. */
   route(key: K, ...middleware: readonly EventMiddleware<C>[]): Unsubscribe {
     if (!isPropertyKey(key))
-      throw new ItdConfigError('Ключ realtime route должен быть PropertyKey');
+      throw new ItdConfigError('Ключ маршрута событий должен быть PropertyKey');
     const registration = this.#registration(middleware);
     const registrations = this.#routes.get(key) ?? [];
     registrations.push(registration);

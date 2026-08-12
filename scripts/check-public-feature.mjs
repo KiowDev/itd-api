@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rolldown } from 'rolldown';
+import ts from 'typescript';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE = resolve(ROOT, 'test/fixtures/public-feature.ts');
@@ -22,7 +23,30 @@ const PACKAGE_EXPORT_KEYS = new Map([
 ]);
 
 const source = readFileSync(FIXTURE, 'utf8');
-const imports = [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map((match) => match[1]);
+const sourceFile = ts.createSourceFile(FIXTURE, source, ts.ScriptTarget.Latest, true);
+const imports = [];
+let hasComputedDynamicImport = false;
+function collectImports(node) {
+  if (
+    (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+    node.moduleSpecifier &&
+    ts.isStringLiteralLike(node.moduleSpecifier)
+  ) {
+    imports.push(node.moduleSpecifier.text);
+  } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+    const specifier = node.arguments[0];
+    if (node.arguments.length === 1 && specifier && ts.isStringLiteralLike(specifier)) {
+      imports.push(specifier.text);
+    } else {
+      hasComputedDynamicImport = true;
+    }
+  }
+  ts.forEachChild(node, collectImports);
+}
+collectImports(sourceFile);
+if (hasComputedDynamicImport) {
+  throw new Error('Проверочный модуль содержит динамический импорт с вычисляемым путём');
+}
 const forbidden = imports.filter((specifier) => !ALLOWED_IMPORTS.has(specifier));
 if (forbidden.length > 0) {
   throw new Error(`Проверочный модуль содержит непубличные импорты: ${forbidden.join(', ')}`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RECONNECT_BACKOFF, reconnectDelay } from '../../src/realtime/reconnect.js';
+import { RECONNECT_BACKOFF, reconnectDelay } from '../../src/events/reconnect.js';
 
 describe('расчёт паузы переподключения', () => {
   const middle = () => 0.5;

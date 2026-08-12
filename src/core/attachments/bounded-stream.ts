@@ -1,5 +1,5 @@
 import { ItdConfigError, ItdFileError, ItdFileErrorReason } from '../errors.js';
-import { redactUrl } from '../redact.js';
+import { redactErrorCause, redactUrl } from '../redact.js';
 import { DEFAULT_FILE_STREAM_BUFFER_BYTES } from './contracts.js';
 import { fileTooLarge, optionalBytes } from './limits.js';
 
@@ -103,7 +103,7 @@ export function boundedFileStream(
               reason: ItdFileErrorReason.Read,
               ...(options.url ? { url: redactUrl(options.url) } : {}),
               retryable: options.retryableRead ?? false,
-              cause: error,
+              cause: redactErrorCause(error),
             }),
           );
         }

@@ -11,14 +11,14 @@ import type { PluginRegistry } from './core/plugins/registry.js';
 import type { RateLimitBucketState, RequestQueuePool } from './core/scheduling/rate-limit.js';
 import type { ServiceDefinition } from './core/services.js';
 import { ITD_CATALOG } from './domain/catalog.js';
-import type { UserId } from './models/common.js';
-import { createNotificationsApi, type NotificationsApi } from './notifications-api.js';
-import type { ItdClientOptions } from './options.js';
 import {
   NotificationEvents,
   resolveNotificationEventsOptions,
   setNotificationEventsConnectGuard,
-} from './realtime/stream.js';
+} from './events/stream.js';
+import type { UserId } from './models/common.js';
+import { createNotificationsApi, type NotificationsApi } from './notifications-api.js';
+import type { ItdClientOptions } from './options.js';
 import { AuthResource } from './resources/auth.js';
 import type { CommentsResource } from './resources/comments.js';
 import type { FilesResource } from './resources/files.js';

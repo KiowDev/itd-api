@@ -11,7 +11,7 @@
 
 | Пакет | Назначение |
 |---|---|
-| [`itd-api`](./generated/core/) | основной REST/realtime-клиент, модели, ошибки и билдеры |
+| [`itd-api`](./generated/core/) | основной REST-клиент и события, модели, ошибки и билдеры |
 | [`itd-api/events`](./generated/core/) | облегчённый entry point событий; его публичный API входит в основной набор документации |
 | [`itd-api/node`](./generated/node/) | файловые хранилища и чтение файлов с диска для Node, Bun и Deno |
 | [`itd-api/web`](./generated/web/) | хранилища сессии в `localStorage` и `sessionStorage` |

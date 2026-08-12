@@ -2,7 +2,7 @@ import type { ItdClient, NotificationEvents } from 'itd-api';
 import { createHydrationContext } from '../graph.js';
 import { isObject } from '../runtime/records.js';
 import { HydratableResource, type HydrateFlavor } from '../types.js';
-import { createNotificationEvents } from './realtime.js';
+import { createNotificationEvents } from './events.js';
 import { resourceFacade } from './resource.js';
 
 const HYDRATABLE_RESOURCES = new Set<PropertyKey>(Object.values(HydratableResource));

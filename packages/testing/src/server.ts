@@ -143,7 +143,7 @@ export function createMockServer(options: CreateMockServerOptions = {}): MockSer
     notificationEvents({ as }) {
       const user = state.findUser(as);
       if (!user) throw new Error(`В seed нет пользователя ${as}`);
-      return state.registerRealtime(user);
+      return state.registerEventTransport(user);
     },
     assertNoUnsupportedRequests() {
       if (unsupportedRequests.length > 0) {

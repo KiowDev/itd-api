@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/index.js';
 import { notification, TestTransport } from './helpers.js';
 
-describe('ItdClient realtime lifecycle', () => {
+describe('жизненный цикл событий ItdClient', () => {
   it('параллельные connect используют одно физическое соединение и одну sync', async () => {
     const transport = new TestTransport();
     let syncs = 0;
@@ -29,7 +29,7 @@ describe('ItdClient realtime lifecycle', () => {
     await itd.close();
   });
 
-  it('close ждёт активные realtime handlers', async () => {
+  it('close ждёт активные обработчики событий', async () => {
     const transport = new TestTransport();
     const itd = new ItdClient({
       auth: 'token',

@@ -387,7 +387,7 @@ export class ItdAbortError extends ItdError {
  * Операция невозможна в текущем состоянии объекта.
  *
  * Например, клиент уже окончательно освобождён через `dispose()` и не может выполнять
- * новые запросы или создавать realtime-потоки.
+ * новые запросы или создавать событийные соединения.
  */
 export class ItdStateError extends ItdError {
   constructor(message: string, options?: { cause?: unknown }) {

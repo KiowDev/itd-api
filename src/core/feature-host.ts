@@ -118,7 +118,28 @@ export class ClientFeatureHost {
 
   async dispose(): Promise<void> {
     this.#resources.dispose();
-    await this.#features.dispose();
+    const deadline = createDeadline(
+      this.#runtime.config.shutdownTimeout,
+      this.#runtime.config.clock,
+    );
+    let failed = false;
+    let failure: unknown;
+    const settled = this.#features.dispose().catch((error: unknown) => {
+      failed = true;
+      failure = error;
+    });
+
+    try {
+      if (!(await deadline.wait(settled))) {
+        throw new ItdStateError(
+          `освобождение подключаемых модулей не завершилось за ${this.#runtime.config.shutdownTimeout} мс`,
+        );
+      }
+    } finally {
+      deadline.cancel();
+    }
+
+    if (failed) throw failure;
   }
 }
 

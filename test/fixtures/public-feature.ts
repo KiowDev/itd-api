@@ -58,7 +58,9 @@ export interface ContractProbeFeatureOptions {
 class ManagedContractEvents implements ContractEvents {
   readonly #context: FeatureContext;
   readonly #channel: EventChannel<ContractEvent, ContractEventContext>;
-  #managed = false;
+  #lifecycleActive = false;
+  #lifecycleGeneration = 0;
+  #unregister: (() => void) | undefined;
 
   constructor(context: FeatureContext, transport: EventTransport) {
     this.#context = context;
@@ -75,25 +77,34 @@ class ManagedContractEvents implements ContractEvents {
           origin: ContractEventOrigin.Stream,
         }),
         deliver: () => undefined,
+        connectGuard: () => context.assertActive('подключить события contract-probe'),
       },
       { maxAttempts: 0 },
     );
+    this.#channel.on('giveup', () => this.#closeLifecycle());
   }
 
   async connect(): Promise<void> {
-    if (!this.#managed) {
-      this.#context.manage({
+    if (!this.#lifecycleActive) {
+      this.#lifecycleGeneration += 1;
+      this.#unregister ??= this.#context.manage({
         kind: 'contract-probe events',
-        stop: () => this.#channel.disconnect(),
+        stop: () => this.disconnect(),
         drain: () => this.#channel.drain(),
       });
-      this.#managed = true;
+      this.#lifecycleActive = true;
     }
-    await this.#channel.connect();
+    try {
+      await this.#channel.connect();
+    } catch (error) {
+      this.#closeLifecycle();
+      throw error;
+    }
   }
 
   disconnect(): void {
     this.#channel.disconnect();
+    this.#closeLifecycle();
   }
 
   onEvent(listener: (event: ContractEvent) => void | Promise<void>): Unsubscribe {
@@ -104,9 +115,22 @@ class ManagedContractEvents implements ContractEvents {
   }
 
   async dispose(): Promise<void> {
-    this.#channel.disconnect();
+    this.disconnect();
     await this.#channel.drain();
+    this.#unregister?.();
+    this.#unregister = undefined;
     this.#channel.removeAllListeners();
+  }
+
+  #closeLifecycle(): void {
+    if (!this.#lifecycleActive) return;
+    this.#lifecycleActive = false;
+    const generation = ++this.#lifecycleGeneration;
+    void this.#channel.drain().then(() => {
+      if (this.#lifecycleActive || generation !== this.#lifecycleGeneration) return;
+      this.#unregister?.();
+      this.#unregister = undefined;
+    });
   }
 }
 

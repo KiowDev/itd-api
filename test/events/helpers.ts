@@ -1,3 +1,4 @@
+import type { NotificationEventsDeps } from '../../src/events/stream.js';
 import {
   type EventTransport,
   type EventTransportContext,
@@ -6,7 +7,6 @@ import {
   NotificationEvents,
   type NotificationEventsOptions,
 } from '../../src/index.js';
-import type { NotificationEventsDeps } from '../../src/realtime/stream.js';
 
 export class TestTransport implements EventTransport {
   readonly name = 'test';

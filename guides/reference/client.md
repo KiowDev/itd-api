@@ -101,7 +101,7 @@ hasFeature(name: string): boolean
 readonly notifications: NotificationsApi // notifications.events: NotificationEvents
 ```
 REST-методы и один ленивый стабильный канал уведомлений. Настройки канала задаются через
-`new ItdClient({ events: { notifications: options } })`. См. [события уведомлений](./realtime.md).
+`new ItdClient({ events: { notifications: options } })`. См. [события уведомлений](./events.md).
 
 ```ts
 on<K>(event: K, listener): Unsubscribe
@@ -117,7 +117,7 @@ dispose(): Promise<void>
 снова. Ошибка отправки телеметрии отклоняет `close()`, а неотправленные записи остаются
 доступны для повторного `flush()`. `dispose()` дополнительно отключает плагины, освобождает
 их ресурсы и терминально закрывает клиент. После него новые запросы, `use()`,
-`defineService()`, `realtime()` и повторный `connect()` существующего потока завершаются
+`defineService()` и повторный `connect()` существующего канала событий завершаются
 с `ItdStateError`. Уже накопленную телеметрию `dispose()` всё же отправляет: эта
 финализация проходит через ещё установленные плагины до их teardown и не открывает доступ
 новым пользовательским вызовам. Повторный `dispose()` возвращает тот же результат очистки.

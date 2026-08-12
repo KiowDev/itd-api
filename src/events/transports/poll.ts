@@ -86,7 +86,7 @@ export class PollTransport implements EventTransport {
   async #readUpdates(request: EventRequest, signal: AbortSignal): Promise<unknown> {
     try {
       return await request({
-        operationId: 'realtime.poll.updates',
+        operationId: 'events.notifications.poll.updates',
         path: '/api/notifications/',
         query: { limit: this.#limit, offset: 0 },
         signal,
@@ -101,7 +101,7 @@ export class PollTransport implements EventTransport {
   async #readCount(request: EventRequest, signal: AbortSignal): Promise<number | undefined> {
     try {
       const payload = await request({
-        operationId: 'realtime.poll.unread',
+        operationId: 'events.notifications.poll.unread',
         path: '/api/notifications/count',
         signal,
       });

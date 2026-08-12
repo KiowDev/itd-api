@@ -121,12 +121,16 @@ export const OPERATIONS = freezeOperations({
   // Опрос уведомлений идёт по тем же двум маршрутам, что notifications.list и .count,
   // и делит с ними один серверный счётчик: при интервале 2 секунды фоновый поток
   // съедает три четверти бакета.
-  'realtime.poll.updates': {
+  'events.notifications.poll.updates': {
     method: 'GET',
     retrySafety: RetrySafety.Safe,
     bucket: 'notifications',
   },
-  'realtime.poll.unread': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'notifications' },
+  'events.notifications.poll.unread': {
+    method: 'GET',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'notifications',
+  },
 
   'hashtags.search': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'hashtags' },
   'hashtags.trending': {
