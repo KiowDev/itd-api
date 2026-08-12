@@ -125,6 +125,7 @@
     "lint": "biome check src test packages",
     "lint:fix": "biome check --write src test packages",
     "check:layers": "node scripts/check-imports.mjs",
+    "check:public-feature": "tsc --project test/fixtures/tsconfig.public-feature.json && node scripts/check-public-feature.mjs",
     "measure:size": "node scripts/measure-bundles.mjs",
     "docs": "npm run docs:build",
     "docs:api": "node scripts/build-docs.mjs",
@@ -134,7 +135,7 @@
     "docs:check": "npm run docs:build",
     "check:pack": "publint && attw --pack .",
     "version": "npm run sync-version && git add src/core/version.ts",
-    "prepublishOnly": "npm run typecheck && npm run check:layers && npm run test && npm run build && npm run check:pack"
+    "prepublishOnly": "npm run typecheck && npm run check:layers && npm run test && npm run build && npm run check:public-feature && npm run check:pack"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
