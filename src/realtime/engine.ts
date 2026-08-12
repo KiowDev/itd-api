@@ -117,6 +117,10 @@ interface ActiveEventSession<U, O> {
   readonly resolveOpened: () => void;
   readonly rejectOpened: (error: unknown) => void;
   readonly buffer: EventTransportFrame[];
+  readonly tasks: Set<Promise<unknown>>;
+  readonly drained: Promise<void>;
+  readonly resolveDrained: () => void;
+  retired: boolean;
   ready: boolean;
 }
 
@@ -205,6 +209,10 @@ export class EventChannel<
   readonly #emitter: Emitter<E>;
   readonly #clock: ItdClock;
   readonly #maxAttempts: number;
+  /** Остановленные сессии, чьи подготовка или транспорт ещё освобождают ресурсы. */
+  readonly #retiredSessions = new Set<Promise<void>>();
+  /** Фоновые операции канала вне сессии, например обновление авторизации. */
+  readonly #backgroundTasks = new Set<Promise<unknown>>();
 
   #session: ActiveEventSession<U, O> | undefined;
   /**
@@ -336,9 +344,18 @@ export class EventChannel<
     this.#setStatus(EventChannelStatus.Disconnected);
   }
 
-  /** Ждёт завершения всех принятых обновлений. */
-  drain(): Promise<void> {
-    return this.#dispatcher.drain();
+  /**
+   * Ждёт обработчики и полное завершение уже остановленной сессии соединения.
+   *
+   * Работающий транспорт намеренно не блокирует `drain()`: сначала владелец вызывает
+   * {@link disconnect}, который синхронно отменяет сессию. После этого `drain()` ждёт
+   * завершения подготовки, транспорта и фонового обновления авторизации, включая их
+   * асинхронное освобождение ресурсов.
+   */
+  async drain(): Promise<void> {
+    const sessions = [...this.#retiredSessions];
+    const background = [...this.#backgroundTasks];
+    await Promise.all([this.#dispatcher.drain(), ...sessions, ...background]);
   }
 
   /** Пропускает актуальное обновление через цепочку обработчиков. */
@@ -403,9 +420,11 @@ export class EventChannel<
   }
 
   async #initialize(reason: EventSyncReason, session: ActiveEventSession<U, O>): Promise<void> {
-    if (!this.#deps.initialize) return;
+    const initialize = this.#deps.initialize;
+    if (!initialize) return;
+    const task = this.#runSessionTask(session, () => initialize(reason, session.handle));
     try {
-      await this.#deps.initialize(reason, session.handle);
+      await task;
     } catch (error) {
       if (this.#deps.initializationRequired) throw error;
       this.#deps.logger?.debug(`не удалось синхронизировать поток (${reason})`, error);
@@ -417,26 +436,27 @@ export class EventChannel<
     if (!this.#isCurrentSession(session)) return;
     this.#setStatus(EventChannelStatus.Connecting);
 
-    void this.#deps.transport
-      .connect({
-        ...this.#deps.connection,
-        signal: session.controller.signal,
-        onOpen: () => {
-          if (!this.#isCurrentSession(session)) return;
-          this.#attempt = 0;
-          session.resolveOpened();
-          this.#setStatus(EventChannelStatus.Connected);
-        },
-        onEvent: (event) => {
-          if (this.#isCurrentSession(session)) this.#handleEvent(session, event);
-        },
-        onParseError: (error, raw) => {
-          if (this.#isCurrentSession(session)) {
-            this.#emitEngine('parseError', { error, raw });
-          }
-        },
-      })
-      .then(
+    this.#runSessionTask(session, () =>
+      Promise.resolve(
+        this.#deps.transport.connect({
+          ...this.#deps.connection,
+          signal: session.controller.signal,
+          onOpen: () => {
+            if (!this.#isCurrentSession(session)) return;
+            this.#attempt = 0;
+            session.resolveOpened();
+            this.#setStatus(EventChannelStatus.Connected);
+          },
+          onEvent: (event) => {
+            if (this.#isCurrentSession(session)) this.#handleEvent(session, event);
+          },
+          onParseError: (error, raw) => {
+            if (this.#isCurrentSession(session)) {
+              this.#emitEngine('parseError', { error, raw });
+            }
+          },
+        }),
+      ).then(
         () => {
           // Штатное закрытие потока — тоже повод переподключиться.
           if (this.#isCurrentSession(session)) {
@@ -446,7 +466,8 @@ export class EventChannel<
         (error: unknown) => {
           if (this.#isCurrentSession(session)) this.#handleFailure(error);
         },
-      );
+      ),
+    );
   }
 
   #handleEvent(session: ActiveEventSession<U, O>, event: EventTransportFrame): void {
@@ -494,7 +515,7 @@ export class EventChannel<
     this.#abortSession(error);
 
     if (error instanceof UnauthorizedStreamError) {
-      void this.#refreshAndReconnect(error);
+      this.#runBackgroundTask(() => this.#refreshAndReconnect(error));
       return;
     }
 
@@ -639,9 +660,13 @@ export class EventChannel<
     const controller = new AbortController();
     let resolveOpened!: () => void;
     let rejectOpened!: (error: unknown) => void;
+    let resolveDrained!: () => void;
     const opened = new Promise<void>((resolve, reject) => {
       resolveOpened = resolve;
       rejectOpened = reject;
+    });
+    const drained = new Promise<void>((resolve) => {
+      resolveDrained = resolve;
     });
     void opened.catch(() => {});
 
@@ -661,9 +686,62 @@ export class EventChannel<
       resolveOpened,
       rejectOpened,
       buffer: [],
+      tasks: new Set(),
+      drained,
+      resolveDrained,
+      retired: false,
       ready: false,
     });
     return session;
+  }
+
+  /**
+   * Учитывает работу, принадлежащую одной сессии соединения.
+   *
+   * Маркер добавляется до синхронного входа в операцию: она может повторным вызовом
+   * остановить канал из `onOpen` или подготовки, и такая сессия всё равно должна
+   * остаться в `drain()` до завершения операции.
+   */
+  #runSessionTask<T>(
+    session: ActiveEventSession<U, O>,
+    operation: () => T | PromiseLike<T>,
+  ): Promise<T> {
+    return this.#runTrackedTask(session.tasks, operation, () => {
+      if (session.retired && session.tasks.size === 0) session.resolveDrained();
+    });
+  }
+
+  /** Учитывает работу канала до синхронного входа в операцию вне сессии транспорта. */
+  #runBackgroundTask(operation: () => unknown | PromiseLike<unknown>): void {
+    void this.#runTrackedTask(this.#backgroundTasks, operation);
+  }
+
+  /** Запускает операцию без окна между входом в неё и регистрацией маркера завершения. */
+  #runTrackedTask<T>(
+    tasks: Set<Promise<unknown>>,
+    operation: () => T | PromiseLike<T>,
+    afterFinish?: () => void,
+  ): Promise<T> {
+    let finish!: () => void;
+    const marker = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    tasks.add(marker);
+
+    let task: Promise<T>;
+    try {
+      task = Promise.resolve(operation());
+    } catch (error) {
+      task = Promise.reject(error);
+    }
+
+    const settle = (): void => {
+      tasks.delete(marker);
+      finish();
+      afterFinish?.();
+    };
+    void task.then(settle, settle);
+    return task;
   }
 
   #openGate(session: ActiveEventSession<U, O>): void {
@@ -681,8 +759,12 @@ export class EventChannel<
     if (!session) return;
     this.#session = undefined;
     session.buffer.length = 0;
+    session.retired = true;
+    this.#retiredSessions.add(session.drained);
+    void session.drained.then(() => this.#retiredSessions.delete(session.drained));
     session.rejectOpened(reason);
     session.controller.abort(reason);
+    if (session.tasks.size === 0) session.resolveDrained();
   }
 
   /** Рассылает событие из общей части карты, не теряя доменные события типа `E`. */

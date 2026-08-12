@@ -415,7 +415,7 @@ export class NotificationEvents<C extends NotificationEventContext = Notificatio
     this.#closeLifecycle();
   }
 
-  /** Ждёт завершения всех принятых обновлений. */
+  /** Ждёт завершения принятых обновлений и освобождения ресурсов остановленной сессии. */
   drain(): Promise<void> {
     return this.#engine.drain();
   }

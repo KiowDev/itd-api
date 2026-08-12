@@ -219,7 +219,18 @@ export class ItdClient {
       createNotifications: (http) =>
         createNotificationsApi(http, (notifications) => {
           let events!: NotificationEvents;
+          let lifecycleGeneration = 0;
+          let lifecycleActive = false;
           let unregister: (() => void) | undefined;
+
+          const releaseAfterDrain = (generation: number): void => {
+            void events.drain().then(() => {
+              if (lifecycleActive || generation !== lifecycleGeneration) return;
+              unregister?.();
+              unregister = undefined;
+            });
+          };
+
           events = new NotificationEvents(
             {
               connection: this.#runtime.connection(),
@@ -229,15 +240,19 @@ export class ItdClient {
               getAuthScope: () => this.#runtime.auth.getAuthScope(),
               fetchUnreadCount: (signal) => notifications.count({ signal }),
               onConnect: () => {
+                lifecycleGeneration += 1;
                 unregister ??= this.#features.manage({
                   kind: `notifications:${events.transport}`,
-                  stop: () => events.disconnect(),
+                  stop: () => {
+                    if (lifecycleActive) events.disconnect();
+                  },
                   drain: () => events.drain(),
                 });
+                lifecycleActive = true;
               },
               onClose: () => {
-                unregister?.();
-                unregister = undefined;
+                lifecycleActive = false;
+                releaseAfterDrain(++lifecycleGeneration);
               },
               logger: this.#runtime.config.logger,
               clock: this.#runtime.config.clock,
@@ -464,16 +479,16 @@ export class ItdClient {
    * Освобождает ресурсы клиента: закрывает все потоки уведомлений, отправляет открытые
    * накопители {@link telemetry}, затем останавливает очередь запросов.
    *
-   * Метод дожидается активных обработчиков потока, но не дольше `shutdownTimeout`. После
-   * вызова клиентом можно пользоваться снова; ранее созданный поток можно запустить
-   * повторным `connect()`.
+   * Метод дожидается завершения активных обработчиков и освобождения ресурсов остановленных
+   * событийных соединений, но не дольше `shutdownTimeout`. После вызова клиентом можно
+   * пользоваться снова; ранее созданный поток можно запустить повторным `connect()`.
    *
    * Общая очередь, полученная от {@link ItdAccounts}, не останавливается: её гасит сам
    * контейнер, когда закрывает все аккаунты разом.
    *
    * Терминальное освобождение — это {@link dispose}.
    *
-   * @throws {ItdStateError} если обработчики потока не завершились за отведённый срок
+   * @throws {ItdStateError} если остановка событийного соединения не завершилась за отведённый срок
    */
   async close(): Promise<void> {
     return this.#close(false);
@@ -514,7 +529,8 @@ export class ItdClient {
    * событийных каналов завершаются с {@link ItdStateError}. Повторные вызовы возвращают
    * тот же результат очистки.
    *
-   * Ожидание обработчиков потока и операций плагинов ограничено `shutdownTimeout`.
+   * Ожидание остановки событийных соединений и операций плагинов ограничено
+   * `shutdownTimeout`.
    *
    * @example
    * ```ts

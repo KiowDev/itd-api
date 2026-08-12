@@ -1434,6 +1434,42 @@ describe('жизненный цикл', () => {
     expect(signal?.aborted).toBe(true);
   });
 
+  it('close() ограничивает освобождение ресурсов транспорта общим shutdownTimeout', async () => {
+    let releaseTransportCleanup: (() => void) | undefined;
+    const transport: EventTransport = {
+      name: 'slow-cleanup',
+      connect: (context) => {
+        context.onOpen();
+        return new Promise<void>((resolve) => {
+          context.signal.addEventListener(
+            'abort',
+            () => {
+              releaseTransportCleanup = resolve;
+            },
+            { once: true },
+          );
+        });
+      },
+    };
+    const { itd } = makeClient([], {
+      shutdownTimeout: 20,
+      events: { notifications: { transport, syncCount: false } },
+    });
+    const stream = itd.notifications.events;
+
+    await stream.connect();
+    stream.disconnect();
+    const error = await itd.close().catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ItdStateError);
+    expect((error as Error).message).toMatch(
+      /ресурсы \(notifications:slow-cleanup\) не завершились за 20 мс/,
+    );
+
+    releaseTransportCleanup?.();
+    await stream.drain();
+  });
+
   it('dispose() не ждёт зависший обработчик потока дольше срока и называет поток', async () => {
     const transport = new TestStreamTransport();
     const { itd } = makeClient([], {

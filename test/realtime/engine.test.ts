@@ -7,10 +7,11 @@ import {
 } from '../../src/realtime/engine.js';
 import { MAX_PENDING_UPDATES } from '../../src/realtime/middleware.js';
 import { EventRouter } from '../../src/realtime/router.js';
-import type {
-  EventTransport,
-  EventTransportContext,
-  EventTransportFrame,
+import {
+  type EventTransport,
+  type EventTransportContext,
+  type EventTransportFrame,
+  UnauthorizedStreamError,
 } from '../../src/realtime/transports/transport.js';
 import type { EventContext } from '../../src/realtime/updates.js';
 
@@ -67,7 +68,7 @@ class TestTransport implements EventTransport {
 }
 
 function makeEngine(
-  transport: TestTransport,
+  transport: EventTransport,
   deps: Partial<EventChannelDeps<TestUpdate, TestContext, TestContext['origin']>> = {},
   options: EventChannelOptions<TestContext> = {},
 ): EventChannel<TestUpdate, TestContext, TestEvents, TestContext['origin']> {
@@ -224,6 +225,125 @@ describe('realtime engine', () => {
     expect(delivered).toEqual([2]);
 
     engine.disconnect();
+  });
+
+  it('drain() после disconnect ждёт освобождения ресурсов подготовки и транспорта', async () => {
+    let releaseInitializerCleanup: (() => void) | undefined;
+    let releaseTransportCleanup: (() => void) | undefined;
+    let initializerStarted = false;
+    let transportStarted = false;
+    let initializerCleaned = false;
+    let transportCleaned = false;
+
+    const transport: EventTransport = {
+      name: 'cleanup-test',
+      connect: async (context) => {
+        transportStarted = true;
+        context.onOpen();
+        await new Promise<void>((resolve) => {
+          context.signal.addEventListener(
+            'abort',
+            () => {
+              releaseTransportCleanup = resolve;
+            },
+            { once: true },
+          );
+        });
+        transportCleaned = true;
+      },
+    };
+    const engine = makeEngine(transport, {
+      openBeforeInitialize: true,
+      initialize: async (_reason, session) => {
+        initializerStarted = true;
+        await new Promise<void>((resolve) => {
+          session.signal.addEventListener(
+            'abort',
+            () => {
+              releaseInitializerCleanup = resolve;
+            },
+            { once: true },
+          );
+        });
+        initializerCleaned = true;
+      },
+    });
+
+    const connecting = engine.connect();
+    await vi.waitFor(() => {
+      expect(transportStarted).toBe(true);
+      expect(initializerStarted).toBe(true);
+    });
+
+    engine.disconnect();
+    let drained = false;
+    const draining = engine.drain().then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+
+    releaseInitializerCleanup?.();
+    await connecting;
+    await Promise.resolve();
+    expect(initializerCleaned).toBe(true);
+    expect(drained).toBe(false);
+
+    releaseTransportCleanup?.();
+    await draining;
+    expect(transportCleaned).toBe(true);
+    expect(drained).toBe(true);
+  });
+
+  it('drain() после disconnect ждёт уже начатое обновление авторизации', async () => {
+    let refreshStarted = false;
+    let releaseRefresh: (() => void) | undefined;
+    const transport: EventTransport = {
+      name: 'unauthorized-test',
+      connect: async (context) => {
+        context.onOpen();
+        throw new UnauthorizedStreamError();
+      },
+    };
+    const engine = makeEngine(transport, {
+      connection: {
+        baseUrl: 'https://itd.test',
+        authorize: true,
+        fetch: globalThis.fetch,
+        clock: {
+          now: () => Date.now(),
+          schedule: (callback, delay) => {
+            const timer = setTimeout(callback, delay);
+            return () => clearTimeout(timer);
+          },
+        },
+        logger: undefined,
+        baseHeaders: () => Promise.resolve(new Headers()),
+        getToken: () => Promise.resolve('token'),
+        refreshAuth: async () => {
+          refreshStarted = true;
+          await new Promise<void>((resolve) => {
+            releaseRefresh = resolve;
+          });
+          return true;
+        },
+      },
+    });
+
+    await engine.connect();
+    await vi.waitFor(() => expect(refreshStarted).toBe(true));
+    engine.disconnect();
+
+    let drained = false;
+    const draining = engine.drain().then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+
+    releaseRefresh?.();
+    await draining;
+    expect(drained).toBe(true);
   });
 
   it('открывает transport до initializer и выпускает buffered frames после ready', async () => {
