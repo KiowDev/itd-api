@@ -1,9 +1,16 @@
 import {
   type ClientPlugin,
+  type EventMiddleware,
+  type EventMiddlewareObject,
   ItdClient,
   type ItdClientOptions,
+  type Notification,
+  type NotificationEventContext,
   type NotificationEvents,
+  NotificationUpdateOrigin,
+  NotificationUpdateType,
   RetrySafety,
+  runEventMiddleware,
 } from 'itd-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CacheError, type CachePlugin, cache } from '../src/index.js';
@@ -732,17 +739,17 @@ describe('область экземпляра', () => {
 });
 
 class FakeEvents {
-  readonly #listeners = new Map<string, Set<() => void>>();
+  readonly #middleware: EventMiddleware<NotificationEventContext>[] = [];
   readonly #authIdentity:
     | { userId?: string | undefined; sessionId?: string | undefined }
     | undefined;
   readonly #authScope: string | undefined;
-  readonly baseUrl: string | undefined;
+  readonly baseUrl: string;
 
   constructor(
     authScope?: string,
     authIdentity?: { userId?: string | undefined; sessionId?: string | undefined },
-    baseUrl?: string,
+    baseUrl = 'https://itd.test',
   ) {
     this.#authScope = authScope;
     this.#authIdentity = authIdentity;
@@ -757,15 +764,38 @@ class FakeEvents {
     return this.#authIdentity;
   }
 
-  on(event: string, listener: () => void): () => void {
-    const listeners = this.#listeners.get(event) ?? new Set();
-    listeners.add(listener);
-    this.#listeners.set(event, listeners);
-    return () => listeners.delete(listener);
+  use(
+    middleware:
+      | EventMiddleware<NotificationEventContext>
+      | EventMiddlewareObject<NotificationEventContext>,
+  ): () => void {
+    const resolved = typeof middleware === 'function' ? middleware : middleware.middleware();
+    this.#middleware.push(resolved);
+    return () => {
+      const index = this.#middleware.indexOf(resolved);
+      if (index >= 0) this.#middleware.splice(index, 1);
+    };
   }
 
-  emit(event: string): void {
-    for (const listener of this.#listeners.get(event) ?? []) listener();
+  async emit(type: 'notification' | 'unreadCount'): Promise<void> {
+    const update =
+      type === 'notification'
+        ? {
+            type: NotificationUpdateType.Notification,
+            data: {
+              notification: {} as Notification,
+              unreadCount: undefined,
+              sound: false,
+            },
+          }
+        : { type: NotificationUpdateType.UnreadCount, data: 1 };
+    const context = {
+      update,
+      stream: this,
+      raw: undefined,
+      origin: NotificationUpdateOrigin.Stream,
+    } as unknown as NotificationEventContext;
+    await runEventMiddleware([...this.#middleware], context, async () => {});
   }
 }
 
@@ -790,21 +820,24 @@ describe('события', () => {
     expect(cached.size).toBe(2);
 
     const events = new FakeEvents();
-    const detach = cached.attachEvents(events as unknown as NotificationEvents);
+    const detach = cached.attachNotificationEvents(events as unknown as NotificationEvents);
     expect(cached.size).toBe(0);
 
+    // Инвалидатор подключён раньше прикладного фильтра, поэтому тот не мешает консистентности.
+    const removeFilter = events.use(async () => {});
     await fillNotifications(itd);
-    events.emit('notification');
+    await events.emit('notification');
     expect(cached.size).toBe(0);
 
     await itd.notifications.count();
     expect(cached.size).toBe(1);
-    events.emit('unreadCount');
+    await events.emit('unreadCount');
     expect(cached.size).toBe(0);
 
     await fillNotifications(itd);
+    removeFilter();
     detach();
-    events.emit('notification');
+    await events.emit('notification');
     expect(cached.size).toBe(2);
   });
 
@@ -827,7 +860,7 @@ describe('события', () => {
 
     const source = a.itd.notifications.events;
     const events = new FakeEvents(source.getAuthScope(), source.getAuthIdentity(), source.baseUrl);
-    const detach = cached.attachEvents(events as unknown as NotificationEvents);
+    const detach = cached.attachNotificationEvents(events as unknown as NotificationEvents);
     expect(cached.size).toBe(2);
 
     await fillNotifications(a.itd);
@@ -835,7 +868,7 @@ describe('события', () => {
     expect(a.calls).toHaveLength(4);
     expect(b.calls).toHaveLength(2);
 
-    events.emit('notification');
+    await events.emit('notification');
     expect(cached.size).toBe(2);
 
     detach();
@@ -859,8 +892,8 @@ describe('события', () => {
     await fillNotifications(b.itd);
     expect(cached.size).toBe(4);
 
-    const detach = cached.attachEvents(new FakeEvents() as unknown as NotificationEvents);
-
+    const events = new FakeEvents();
+    const detach = cached.attachNotificationEvents(events as unknown as NotificationEvents);
     expect(cached.size).toBe(0);
     detach();
   });
@@ -883,8 +916,8 @@ describe('события', () => {
 
     const source = itd.notifications.events;
     const events = new FakeEvents(source.getAuthScope(), source.getAuthIdentity(), source.baseUrl);
-    const detach = cached.attachEvents(events as unknown as NotificationEvents);
-    events.emit('notification');
+    const detach = cached.attachNotificationEvents(events as unknown as NotificationEvents);
+    await events.emit('notification');
 
     release(json({ notifications: [], pagination: { total: 0, hasMore: false } }));
     await stale;
@@ -896,8 +929,8 @@ describe('события', () => {
     source.disconnect();
   });
 
-  it('проверяет переданный поток', () => {
+  it('проверяет переданный канал', () => {
     const cached: CachePlugin = cache({ ttl: 1_000, operations: ['notifications.list'] });
-    expect(() => cached.attachEvents({} as NotificationEvents)).toThrow(CacheError);
+    expect(() => cached.attachNotificationEvents({} as NotificationEvents)).toThrow(CacheError);
   });
 });

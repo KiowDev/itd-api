@@ -7,12 +7,13 @@
 [ручной справочник](/reference/): они объясняют API по задачам и не требуют знать
 внутреннюю структуру пакета.
 
-## Основные entry point
+## Основные точки входа
 
 | Пакет | Назначение |
 |---|---|
-| [`itd-api`](./generated/core/) | основной REST-клиент и события, модели, ошибки и билдеры |
-| [`itd-api/events`](./generated/core/) | облегчённый entry point событий; его публичный API входит в основной набор документации |
+| [`itd-api`](./generated/core/) | полный SDK для итд.com |
+| [`itd-api/rest`](./generated/core/) | облегчённый REST-клиент без сессии, событий и контейнера аккаунтов; публичный API входит в основной набор документации |
+| [`itd-api/events`](./generated/core/) | облегчённый клиент событий без остальных ресурсов SDK; публичный API входит в основной набор документации |
 | [`itd-api/node`](./generated/node/) | файловые хранилища и чтение файлов с диска для Node, Bun и Deno |
 | [`itd-api/web`](./generated/web/) | хранилища сессии в `localStorage` и `sessionStorage` |
 
@@ -21,7 +22,7 @@
 | Пакет | Назначение |
 |---|---|
 | [`@itd-api/turnstile`](./generated/turnstile/) | получение Turnstile-токена в локальном браузере |
-| [`@itd-api/proxy`](./generated/proxy/) | HTTP/HTTPS- и SOCKS5-прокси |
+| [`@itd-api/proxy`](./generated/proxy/) | прокси-транспорт для HTTP и WebSocket |
 | [`@itd-api/cache`](./generated/cache/) | кэширование и дедупликация запросов |
 | [`@itd-api/hydrate`](./generated/hydrate/) | методы действий на моделях API |
 | [`@itd-api/crypto`](./generated/crypto/) | скрытые сообщения и шифрование |

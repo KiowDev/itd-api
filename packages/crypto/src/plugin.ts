@@ -1,9 +1,16 @@
-import type { ClientPlugin, OperationRequestOptions, OperationTransformer } from 'itd-api';
+import type {
+  ClientPlugin,
+  EventContext,
+  EventMiddleware,
+  EventMiddlewareObject,
+  OperationRequestOptions,
+  OperationTransformer,
+} from 'itd-api';
 import type { Cipher, EncryptOption, EncryptSpec } from './cipher.js';
 import { BUILT_IN_CIPHERS } from './ciphers/index.js';
 import { CryptError } from './errors.js';
 import { textFields } from './fields.js';
-import { decodeTree } from './walk.js';
+import { decodeEventTree, decodeTree } from './walk.js';
 
 /** Настройки плагина. */
 export interface CryptOptions {
@@ -21,6 +28,9 @@ export interface CryptOptions {
    */
   decrypt?: boolean | undefined;
 }
+
+/** HTTP-плагин и промежуточный обработчик нормализованных событий. */
+export interface CryptPlugin extends ClientPlugin, EventMiddlewareObject<EventContext> {}
 
 /** Настройки одной операции из namespace `extensions.crypto`. */
 interface CryptRequestOptions {
@@ -52,7 +62,7 @@ interface CryptRequestOptions {
  * post.secret?.text;  // 'секрет'
  * ```
  */
-export function crypt(options: CryptOptions = {}): ClientPlugin {
+export function crypt(options: CryptOptions = {}): CryptPlugin {
   const ciphers = options.ciphers ?? BUILT_IN_CIPHERS;
   const decryptByDefault = options.decrypt ?? true;
 
@@ -73,12 +83,18 @@ export function crypt(options: CryptOptions = {}): ClientPlugin {
     return result;
   };
 
+  const eventMiddleware: EventMiddleware<EventContext> = async (context, next) => {
+    if (decryptByDefault) decodeEventTree(context.update, ciphers);
+    await next();
+  };
+
   return {
     name: 'crypt',
     // Кэш должен хранить сырой ответ: тогда расшифровка применяется и к cache hit,
     // а отключение или замена crypt не оставляет в кэше уже обработанные данные.
     before: ['cache'],
     install: ({ operations }) => void operations.use(transformer),
+    middleware: () => eventMiddleware,
   };
 }
 

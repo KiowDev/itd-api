@@ -5,7 +5,7 @@ Turnstile-токенов.
 
 | Пакет | Точка подключения |
 |---|---|
-| [`@itd-api/proxy`](/packages/proxy) | `ItdClientOptions.fetch` |
+| [`@itd-api/proxy`](/packages/proxy) | `ItdClientOptions.fetch`, `WebSocketTransport.webSocketImpl` |
 | [`@itd-api/turnstile`](/packages/turnstile) | `auth.getTurnstileToken` |
 
 ## Браузер и CORS
@@ -49,8 +49,10 @@ try {
 }
 ```
 
-Через этот транспорт идут API-запросы, авторизация, повторы и событийные соединения. Пакет работает
-в Node, Bun и Deno. В браузере исходящий SOCKS/HTTP-прокси таким способом настроить нельзя.
+Через этот транспорт идут API-запросы, авторизация, повторы, SSE и периодический опрос.
+Для WebSocket пакет предоставляет `proxyWebSocket()` и общий `proxyConnection()`; подробный
+пример находится на [странице пакета](/packages/proxy). Пакет работает в Node, Bun и Deno.
+В браузере исходящий SOCKS/HTTP-прокси таким способом настроить нельзя.
 
 Запускаемый пример:
 

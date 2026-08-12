@@ -1,12 +1,14 @@
 import type {
   AuthIdentity,
   ClientPlugin,
+  EventMiddleware,
   NotificationEventContext,
   NotificationEvents,
   OperationRequestOptions,
   OperationTransformer,
   Unsubscribe,
 } from 'itd-api';
+import { NotificationUpdateType } from 'itd-api';
 import { LRUCache } from 'lru-cache';
 import { CacheError } from './errors.js';
 import { buildCacheKey } from './key.js';
@@ -47,11 +49,14 @@ export interface CachePlugin extends ClientPlugin {
   /** Удаляет все варианты названных операций во всех подключённых клиентах. */
   invalidate(...operations: CacheOperationId[]): void;
   /**
-   * Очищает список и счётчик уведомлений по входящим событиям.
+   * Подключает инвалидацию к нормализованным событиям уведомлений.
    *
-   * Сразу удаляет прежние значения и возвращает функцию отписки.
+   * Сразу удаляет ранее сохранённые список и счётчик, затем отслеживает обновления через
+   * событийный middleware. Подключайте до прикладных middleware, способных остановить цепочку.
    */
-  attachEvents<C extends NotificationEventContext>(stream: NotificationEvents<C>): Unsubscribe;
+  attachNotificationEvents<C extends NotificationEventContext>(
+    stream: NotificationEvents<C>,
+  ): Unsubscribe;
 }
 
 interface CacheEntry {
@@ -69,6 +74,11 @@ interface CacheIdentity {
   accountScope: string;
   sessionScope: string;
 }
+
+type NotificationStreamIdentity = Pick<
+  NotificationEvents,
+  'baseUrl' | 'getAuthIdentity' | 'getAuthScope'
+>;
 
 interface PendingEntry {
   accountScope: string;
@@ -227,6 +237,36 @@ export function cache(options: CacheOptions): CachePlugin {
     } else {
       invalidate(...mutation.invalidates);
     }
+  };
+
+  const invalidateNotificationStream = (
+    stream: NotificationStreamIdentity,
+    ...operations: CacheOperationId[]
+  ): void => {
+    const identity = stream.getAuthIdentity();
+    const streamBaseUrl = stream.baseUrl;
+    const legacyScope = stream.getAuthScope();
+    const accountScope = identity?.userId
+      ? JSON.stringify([streamBaseUrl, identity.userId])
+      : legacyScope !== undefined
+        ? JSON.stringify([streamBaseUrl, legacyScope])
+        : undefined;
+
+    if (accountScope === undefined) invalidate(...operations);
+    else invalidateScope(accountScope, operations);
+  };
+
+  const notificationMiddleware: EventMiddleware<NotificationEventContext> = async (
+    context,
+    next,
+  ) => {
+    if (context.update.type === NotificationUpdateType.Notification) {
+      invalidateNotificationStream(context.stream, 'notifications.list', 'notifications.count');
+    } else if (context.update.type === NotificationUpdateType.UnreadCount) {
+      invalidateNotificationStream(context.stream, 'notifications.count');
+    }
+
+    await next();
   };
 
   const createTransformer = (
@@ -400,42 +440,19 @@ export function cache(options: CacheOptions): CachePlugin {
     },
     clear,
     invalidate,
-    attachEvents(stream) {
-      if (!stream || typeof stream.on !== 'function') {
-        throw new CacheError('attachEvents() принимает поток из itd.notifications.events');
+    attachNotificationEvents(stream) {
+      if (
+        !stream ||
+        typeof stream.use !== 'function' ||
+        typeof stream.getAuthIdentity !== 'function' ||
+        typeof stream.getAuthScope !== 'function' ||
+        typeof stream.baseUrl !== 'string'
+      ) {
+        throw new CacheError('attachNotificationEvents() принимает канал itd.notifications.events');
       }
 
-      const invalidateStream = (...operations: CacheOperationId[]): void => {
-        const identity =
-          typeof stream.getAuthIdentity === 'function' ? stream.getAuthIdentity() : undefined;
-        const streamBaseUrl =
-          typeof stream.baseUrl === 'string' && stream.baseUrl.length > 0
-            ? stream.baseUrl
-            : undefined;
-        const legacyScope =
-          typeof stream.getAuthScope === 'function' ? stream.getAuthScope() : undefined;
-        const accountScope =
-          identity?.userId && streamBaseUrl
-            ? JSON.stringify([streamBaseUrl, identity.userId])
-            : legacyScope !== undefined && streamBaseUrl
-              ? JSON.stringify([streamBaseUrl, legacyScope])
-              : undefined;
-        if (accountScope === undefined) invalidate(...operations);
-        else invalidateScope(accountScope, operations);
-      };
-
-      invalidateStream('notifications.list', 'notifications.count');
-      const offNotification = stream.on('notification', () =>
-        invalidateStream('notifications.list', 'notifications.count'),
-      );
-      const offUnreadCount = stream.on('unreadCount', () =>
-        invalidateStream('notifications.count'),
-      );
-
-      return () => {
-        offNotification();
-        offUnreadCount();
-      };
+      invalidateNotificationStream(stream, 'notifications.list', 'notifications.count');
+      return stream.use(notificationMiddleware);
     },
     install({ operations, baseUrl, getAuthIdentity, getAuthScope }) {
       installationSequence += 1;

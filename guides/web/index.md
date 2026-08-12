@@ -1,12 +1,12 @@
 ---
 layout: home
-title: itd-api — TypeScript-клиент API итд.com
+title: itd-api — TypeScript SDK для итд.com
 titleTemplate: false
 
 hero:
   name: itd-api
-  text: API-клиент без лишней магии
-  tagline: Типобезопасная работа с REST API и событиями итд.com в Node.js, браузере, Bun, Deno и React Native.
+  text: Полный SDK без лишней магии
+  tagline: Типобезопасная работа с API итд.com в Node.js, браузере, Bun, Deno и React Native.
   image:
     light: /logos/itd-api-logo-light.svg
     dark: /logos/itd-api-logo.svg
@@ -40,7 +40,7 @@ features:
     linkText: Настроить события
   - icon: +
     title: Расширяемая архитектура
-    details: Подключайте cache, crypto, proxy и Turnstile или создавайте собственные плагины поверх публичного API.
+    details: Подключайте cache, hydrate, crypto, proxy и Turnstile или создавайте собственные расширения поверх публичного API.
     link: /packages/
     linkText: Посмотреть пакеты
 ---
@@ -78,7 +78,7 @@ console.log(`@${me.username}: ${me.followersCount}`);</code></pre>
       </a>
       <a class="package-card" href="./packages/proxy">
         <code>@itd-api/proxy</code>
-        <p>Готовый fetch через HTTP, HTTPS и SOCKS5-прокси.</p>
+        <p>HTTP и WebSocket через HTTP, HTTPS и SOCKS5-прокси.</p>
       </a>
       <a class="package-card" href="./packages/cache">
         <code>@itd-api/cache</code>

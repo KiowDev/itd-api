@@ -57,7 +57,7 @@ export {
 } from './ciphers/index.js';
 export { CryptError } from './errors.js';
 export { SECRET_FIELDS, TEXT_FIELDS, type TextOperationId, textFields } from './fields.js';
-export { type CryptOptions, crypt } from './plugin.js';
+export { type CryptOptions, type CryptPlugin, crypt } from './plugin.js';
 export { decodeTree } from './walk.js';
 
 /**
@@ -98,6 +98,12 @@ declare module 'itd-api' {
   }
 
   interface Actor {
+    secret?: Secret;
+    secrets?: Secret[];
+  }
+
+  interface Notification {
+    /** Скрытое сообщение из `preview`, найденное событийным middleware. */
     secret?: Secret;
     secrets?: Secret[];
   }

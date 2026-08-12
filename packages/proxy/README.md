@@ -5,7 +5,7 @@ HTTP/HTTPS- и SOCKS5-прокси для [`itd-api`](https://www.npmjs.com/pack
 [Руководство](https://kiowdev.github.io/itd-api/packages/proxy) ·
 [API из TSDoc](https://kiowdev.github.io/itd-api/api/generated/proxy/)
 
-Направляет все запросы клиента через прокси: `fetch` из этого пакета передаётся клиенту опцией `fetch`. Только для Node, Bun и Deno.
+Направляет HTTP, SSE, периодический опрос и WebSocket через прокси. Только для Node, Bun и Deno.
 
 ```bash
 npm install @itd-api/proxy
@@ -24,7 +24,32 @@ const itd = new ItdClient({
 await itd.users.me();
 ```
 
-Через тот же `fetch` идёт всё: авторизация, cookie, очередь, повторы и поток уведомлений (`itd.notifications.events`).
+Через тот же `fetch` идут авторизация, cookie, очередь, повторы, SSE и периодический опрос
+уведомлений (`itd.notifications.events`).
+
+## HTTP и WebSocket через один прокси
+
+`proxyConnection()` создаёт общий диспетчер, `fetch` и WebSocket-конструктор без дополнительной
+runtime-зависимости. Это вариант для приложения, которому нужны и обычные запросы, и
+WebSocket-каналы:
+
+```ts
+import { ItdClient, WebSocketTransport } from 'itd-api';
+import { proxyConnection } from '@itd-api/proxy';
+
+const proxy = proxyConnection('socks5://127.0.0.1:1080');
+const itd = new ItdClient({ fetch: proxy.fetch });
+const transport = new WebSocketTransport({ webSocketImpl: proxy.webSocket });
+
+// передайте transport предметному каналу, который использует WebSocket
+
+await itd.close();
+await proxy.close();
+```
+
+Текущий канал уведомлений выбирает SSE либо периодический опрос и уже использует
+`proxy.fetch`. WebSocket-конструктор предназначен для каналов, явно использующих
+`WebSocketTransport`.
 
 ## Схемы адреса
 
@@ -66,6 +91,16 @@ setGlobalDispatcher(createProxyDispatcher('socks5://127.0.0.1:1080'));
 ### `createProxyDispatcher(proxy)`
 
 Возвращает диспетчер undici — для `setGlobalDispatcher` или ручной передачи в `fetch`.
+
+### `proxyWebSocket(proxy)`
+
+Возвращает совместимый с `WebSocketTransport` конструктор WebSocket через прокси. Метод
+`close()` закрывает принадлежащий ему пул соединений.
+
+### `proxyConnection(proxy, options?)`
+
+Возвращает `{ fetch, webSocket, dispatcher, close }`. `fetch` и `webSocket` используют один
+диспетчер, поэтому это предпочтительный способ совместить REST/SSE и WebSocket.
 
 ### `parseProxy(proxy)`
 

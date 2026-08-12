@@ -21,10 +21,11 @@ export type TextOperationId = keyof typeof TEXT_FIELDS;
  * Имена, а не типы объектов: ответ обходится целиком, и одного списка хватает и посту,
  * и комментарию, и профилю, и автору внутри них.
  *
- * Текста уведомления (`preview`) здесь нет намеренно: библиотека пересобирает уведомления
- * в единую форму уже после плагина, и находка до вызывающего кода не доедет.
  */
 export const SECRET_FIELDS: readonly string[] = Object.freeze(['content', 'bio', 'displayName']);
+
+/** Текстовые поля нормализованных событий, которые проверяются на скрытое сообщение. */
+export const EVENT_SECRET_FIELDS: readonly string[] = Object.freeze([...SECRET_FIELDS, 'preview']);
 
 /** Какие поля можно зашифровать в этой операции. */
 export function textFields(operationId: OperationId): readonly string[] | undefined {

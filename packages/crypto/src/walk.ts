@@ -1,5 +1,5 @@
 import type { Cipher, Secret } from './cipher.js';
-import { SECRET_FIELDS } from './fields.js';
+import { EVENT_SECRET_FIELDS, SECRET_FIELDS } from './fields.js';
 
 /**
  * Глубина обхода.
@@ -21,23 +21,38 @@ const MAX_DEPTH = 12;
  * @param value разобранное тело ответа; изменяется на месте
  */
 export function decodeTree(value: unknown, ciphers: readonly Cipher[]): void {
-  if (ciphers.length === 0) return;
-
-  walk(value, ciphers, 0, new WeakSet<object>());
+  decodeFields(value, ciphers, SECRET_FIELDS);
 }
 
-function walk(value: unknown, ciphers: readonly Cipher[], depth: number, seen: WeakSet<object>) {
+/** Ищет скрытые сообщения в нормализованном обновлении событий. @internal */
+export function decodeEventTree(value: unknown, ciphers: readonly Cipher[]): void {
+  decodeFields(value, ciphers, EVENT_SECRET_FIELDS);
+}
+
+function decodeFields(value: unknown, ciphers: readonly Cipher[], fields: readonly string[]): void {
+  if (ciphers.length === 0) return;
+
+  walk(value, ciphers, fields, 0, new WeakSet<object>());
+}
+
+function walk(
+  value: unknown,
+  ciphers: readonly Cipher[],
+  fields: readonly string[],
+  depth: number,
+  seen: WeakSet<object>,
+) {
   if (depth > MAX_DEPTH || typeof value !== 'object' || value === null) return;
   if (seen.has(value)) return;
   seen.add(value);
 
   if (Array.isArray(value)) {
-    for (const item of value) walk(item, ciphers, depth + 1, seen);
+    for (const item of value) walk(item, ciphers, fields, depth + 1, seen);
     return;
   }
 
   const record = value as Record<string, unknown>;
-  const secrets = readSecrets(record, ciphers);
+  const secrets = readSecrets(record, ciphers, fields);
 
   // Список полей снимается до присвоения: заходить внутрь собственных находок незачем.
   const nested = Object.values(record);
@@ -48,13 +63,17 @@ function walk(value: unknown, ciphers: readonly Cipher[], depth: number, seen: W
     record.secrets = secrets;
   }
 
-  for (const item of nested) walk(item, ciphers, depth + 1, seen);
+  for (const item of nested) walk(item, ciphers, fields, depth + 1, seen);
 }
 
-function readSecrets(record: Record<string, unknown>, ciphers: readonly Cipher[]): Secret[] {
+function readSecrets(
+  record: Record<string, unknown>,
+  ciphers: readonly Cipher[],
+  fields: readonly string[],
+): Secret[] {
   const secrets: Secret[] = [];
 
-  for (const field of SECRET_FIELDS) {
+  for (const field of fields) {
     const text = record[field];
     if (typeof text !== 'string' || text === '') continue;
 

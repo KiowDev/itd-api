@@ -131,54 +131,9 @@ stream.onNotification(
 кадр транспорта, включая известные события и подтверждение подключения. Такой слушатель
 выполняется синхронно и не учитывается `drain()`.
 
-## Feature-модули с `EventComposer`
-
-`EventComposer` собирает связанные middleware в один модуль, который можно подключить к
-потоку одной регистрацией:
-
-```ts
-import { EventComposer, NotificationUpdateType } from 'itd-api';
-
-const notifications = new EventComposer();
-const safe = notifications.errorBoundary(async ({ error, context }, next) => {
-  await reportEventError(error, context);
-  await next(); // после ошибки продолжить внешнюю цепочку
-});
-
-safe
-  .filter((context) => context.update.type === NotificationUpdateType.Notification)
-  .use(async (context, next) => {
-    if (context.update.type === NotificationUpdateType.Notification) {
-      await saveNotification(context.update.data.notification);
-    }
-    await next();
-  });
-
-safe.route((context) => context.update.type, {
-  [NotificationUpdateType.UnreadCount]: handleUnreadCount,
-  [NotificationUpdateType.Unknown]: handleUnknown,
-});
-
-const removeNotifications = stream.use(notifications);
-```
-
-`filter()` принимает синхронное или асинхронное условие; функция с type predicate сужает тип
-контекста во всём дочернем composer. `route()` принимает статическую таблицу веток и необязательный
-fallback. Для динамического добавления и удаления маршрутов остаётся `EventRouter`.
-
-`errorBoundary()` возвращает защищённый дочерний composer. Она ловит ошибки только этой ветки,
-не затрагивая middleware, добавленные раньше или позже в родительский composer. Без вызова
-`next()` в обработчике ошибки update останавливается; повторно выброшенная ошибка передаётся
-следующей внешней границе или событию `middlewareError`.
-
-Внешний downstream запускается только после полного завершения защищённой ветки. Поэтому код
-после `await next()` внутри неё выполнится до middleware родительского composer: внешний
-downstream намеренно не входит в защищённую onion-цепочку и его ошибки не перехватываются.
-
-Composer не владеет соединением и не меняет `concurrency`/`sequentialize`. Как и для stream и
-router, на момент получения update фиксируется снимок всей вложенной структуры. Изменения feature
-во время обработки влияют только на следующие updates. `use()` внутри composer возвращает сам
-composer для настройки цепочкой; функцию удаления всего модуля возвращает `stream.use()`.
+Для большой цепочки связанные промежуточные обработчики можно собрать через `EventComposer`.
+Он поддерживает фильтры, статические маршруты и локальные границы ошибок; точный контракт и
+семантика вложенных цепочек описаны в [справочнике событий](../reference/events.md#компоновщик-eventcomposer).
 
 ## Маршрутизация
 
@@ -346,8 +301,8 @@ const stream = itd.notifications.events;
 
 ## Запускаемый пример
 
-Пример загружает последние уведомления, принимает нормализованные обновления, отслеживает
-состояние соединения и корректно завершает активные обработчики по `SIGINT` или `SIGTERM`.
+Пример принимает новые уведомления, отслеживает состояние соединения и корректно завершает
+активные обработчики по `SIGINT` или `SIGTERM`.
 
 ```bash
 ITD_TOKEN=<токен> node guides/events/examples/notifications.mjs

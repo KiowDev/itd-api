@@ -1,4 +1,11 @@
-import { ItdClient } from 'itd-api';
+import {
+  type EventContext,
+  ItdClient,
+  type NotificationUpdate,
+  NotificationUpdateOrigin,
+  NotificationUpdateType,
+  runEventMiddleware,
+} from 'itd-api';
 import { describe, expect, it } from 'vitest';
 import {
   beecrypt,
@@ -311,6 +318,61 @@ describe('расшифровка ответа', () => {
     const post = await itd.posts.get('1', cryptoOptions({ decrypt: true }));
 
     expect(post.secret?.text).toBe('секрет');
+  });
+});
+
+describe('расшифровка событий', () => {
+  const context = (preview: string): EventContext<NotificationUpdate> => ({
+    update: {
+      type: NotificationUpdateType.Notification,
+      data: {
+        notification: {
+          id: 'notification-1',
+          type: 'post_comment',
+          rawType: 'comment',
+          entityId: 'comment-1',
+          parentEntityId: 'post-1',
+          isRead: false,
+          actors: [],
+          count: 1,
+          preview,
+          createdAt: '2026-08-12T00:00:00.000Z',
+          updatedAt: '2026-08-12T00:00:00.000Z',
+          raw: {},
+        },
+        unreadCount: undefined,
+        sound: false,
+      },
+    },
+    stream: {},
+    raw: undefined,
+    origin: NotificationUpdateOrigin.Stream,
+  });
+
+  it('работает как промежуточный обработчик нормализованных событий', async () => {
+    const plugin = crypt();
+    const event = context(`обычный текст${encodeInvisible('секрет')}`);
+    let delivered = false;
+
+    await runEventMiddleware([plugin.middleware()], event, async () => {
+      delivered = true;
+      expect(event.update.data.notification.secret?.text).toBe('секрет');
+    });
+
+    expect(delivered).toBe(true);
+  });
+
+  it('учитывает общую настройку decrypt и всегда продолжает цепочку', async () => {
+    const plugin = crypt({ decrypt: false });
+    const event = context(`текст${encodeInvisible('секрет')}`);
+    let delivered = false;
+
+    await runEventMiddleware([plugin.middleware()], event, async () => {
+      delivered = true;
+    });
+
+    expect(delivered).toBe(true);
+    expect(event.update.data.notification.secret).toBeUndefined();
   });
 });
 

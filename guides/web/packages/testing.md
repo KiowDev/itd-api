@@ -14,7 +14,7 @@ npm install itd-api
 npm install --save-dev @itd-api/testing
 ```
 
-Поддерживается `itd-api >=0.5.0 <1.0.0`.
+Поддерживается `itd-api >=0.8.0 <1.0.0`.
 
 ## Какой режим выбрать
 

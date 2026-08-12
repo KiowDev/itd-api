@@ -1,7 +1,7 @@
 # Плагины
 
-Плагин расширяет клиент обёртками вокруг запросов и ответов. Одна установка действует на
-все ресурсы:
+Плагин расширяет HTTP-конвейер клиента обёртками вокруг запросов и ответов. Одна установка
+действует на все ресурсы:
 
 ```ts
 import { ItdClient } from 'itd-api';
@@ -10,6 +10,10 @@ import { crypt } from '@itd-api/crypto';
 const itd = new ItdClient({ auth: token });
 itd.use(crypt());
 ```
+
+Нормализованные события проходят через отдельную цепочку `stream.use()`. Пакет, которому
+нужно обрабатывать и HTTP, и события, может вернуть один объект с контрактами `ClientPlugin`
+и `EventMiddlewareObject`; подключить его требуется в обе точки явно.
 
 ## Cache
 
@@ -57,7 +61,9 @@ npm install @itd-api/crypto
 ```ts
 import { crypt } from '@itd-api/crypto';
 
-itd.use(crypt());
+const crypto = crypt();
+itd.use(crypto);
+itd.notifications.events.use(crypto);
 
 const created = await itd.posts.create(
   { content: 'секретный текст' },
@@ -69,8 +75,9 @@ console.log(post.content);      // обложка
 console.log(post.secret?.text); // секретный текст
 ```
 
-Плагин обрабатывает посты, комментарии, ответы и текстовые поля профиля. Доступны
-`invisible` и `beecrypt`; подробные ограничения описаны в README пакета.
+Плагин обрабатывает посты, комментарии, ответы и текстовые поля профиля, а событийный
+middleware — поддерживаемые поля нормализованных обновлений. Доступны `invisible` и
+`beecrypt`; подробные ограничения описаны в README пакета.
 
 Запускаемый пример:
 
