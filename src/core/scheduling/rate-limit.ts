@@ -4,13 +4,6 @@ import { ItdAbortError, ItdConfigError } from '../errors.js';
 import type { RateLimitBucketOverride } from '../options.js';
 import { RateLimitPacing } from './pacing.js';
 
-/** Задача, ожидающая своей очереди. */
-interface QueuedTask {
-  run: () => void;
-  /** Снимает задачу, ещё не начавшую выполняться, — используется при остановке очереди. */
-  cancel: (reason: unknown) => void;
-}
-
 /** Ошибка отмены запроса, который ещё не дошёл до транспорта. */
 function queueAbortError(): ItdAbortError {
   return new ItdAbortError('Запрос отменён во время ожидания очереди');
@@ -19,172 +12,6 @@ function queueAbortError(): ItdAbortError {
 /** Ошибка запроса, которого застала остановка очереди. */
 function queueStoppedError(): ItdAbortError {
   return new ItdAbortError('Клиент закрыт, запрос отменён');
-}
-
-/** Что нужно одной очереди. Полные настройки клиента ей избыточны. */
-export interface RequestQueueOptions {
-  concurrency: number;
-  /** Верхняя граница стартов в секунду. `undefined` — без ограничения частоты. */
-  rps?: number | undefined;
-  /**
-   * Синхронный сигнал «задача пошла», вызывается в момент захвата слота.
-   *
-   * Именно синхронность здесь существенна: `#drain` запускает подряд столько задач,
-   * сколько позволяет конкурентность, и учёт темпа должен успеть придержать очередь
-   * до следующей итерации этого цикла.
-   */
-  onDispatch?: (() => void) | undefined;
-}
-
-/**
- * Очередь запросов: ограничивает одновременность и частоту.
- *
- * Нужна прежде всего ботам: без неё цикл по сотне постов уходит в API одним залпом
- * и упирается в `RATE_LIMIT_EXCEEDED`.
- *
- * Частота выдерживается равномерным разносом стартов (`1000 / rps` между запросами),
- * а не окном со счётчиком: так нагрузка ровная, без всплеска в начале каждой секунды.
- *
- * @internal
- */
-export class RequestQueue {
-  readonly #concurrency: number;
-  /** Минимальный промежуток между стартами, мс. `0` — без ограничения частоты. */
-  readonly #minGap: number;
-  readonly #onDispatch: (() => void) | undefined;
-
-  readonly #waiting: QueuedTask[] = [];
-  #active = 0;
-  /** Момент, раньше которого следующий запрос стартовать не должен. */
-  #nextSlot = 0;
-  readonly #clock: ItdClock;
-  #cancelTimer: (() => void) | undefined;
-
-  constructor(options: RequestQueueOptions, clock: ItdClock = systemClock) {
-    this.#concurrency = options.concurrency;
-    this.#minGap = options.rps ? 1000 / options.rps : 0;
-    this.#onDispatch = options.onDispatch;
-    this.#clock = clock;
-  }
-
-  /** Сколько задач выполняется прямо сейчас. */
-  get active(): number {
-    return this.#active;
-  }
-
-  /** Сколько задач ждёт очереди. */
-  get pending(): number {
-    return this.#waiting.length;
-  }
-
-  /**
-   * Ставит задачу в очередь.
-   *
-   * @returns результат задачи; ошибка задачи пробрасывается без изменений
-   */
-  schedule<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    if (signal?.aborted) return Promise.reject(queueAbortError());
-
-    return new Promise<T>((resolve, reject) => {
-      let queued: QueuedTask;
-
-      const detach = () => signal?.removeEventListener('abort', onAbort);
-      const onAbort = () => {
-        const index = this.#waiting.indexOf(queued);
-        if (index < 0) return;
-
-        this.#waiting.splice(index, 1);
-        queued.cancel(queueAbortError());
-        this.#drain();
-      };
-
-      queued = {
-        run: () => {
-          detach();
-          this.#active += 1;
-          this.#onDispatch?.();
-
-          // `task` обычно возвращает промис, но пользовательский middleware может бросить
-          // синхронно. Нормализуем оба пути, чтобы слот всегда освободился.
-          Promise.resolve()
-            .then(task)
-            .then(resolve, reject)
-            .finally(() => {
-              this.#active -= 1;
-              this.#drain();
-            });
-        },
-        cancel: (reason) => {
-          detach();
-          reject(reason);
-        },
-      };
-
-      this.#waiting.push(queued);
-      signal?.addEventListener('abort', onAbort, { once: true });
-
-      // Защищает и от нестандартной реализации AbortSignal, которая могла перейти
-      // в aborted между первой проверкой и установкой обработчика.
-      if (signal?.aborted) onAbort();
-      else this.#drain();
-    });
-  }
-
-  /**
-   * Останавливает очередь: снимает отложенную паузу и отклоняет ещё не начатые задачи
-   * ошибкой `ItdAbortError`. Уже выполняющиеся задачи доводятся до конца.
-   */
-  stop(): void {
-    if (this.#cancelTimer) {
-      this.#cancelTimer();
-      this.#cancelTimer = undefined;
-    }
-
-    const pending = this.#waiting.splice(0, this.#waiting.length);
-    for (const task of pending) task.cancel(queueStoppedError());
-  }
-
-  /** Придерживает очередь на заданное время: ждут все её задачи, а не только одна. */
-  pause(ms: number): void {
-    if (ms <= 0) return;
-    this.#nextSlot = Math.max(this.#nextSlot, this.#clock.now() + ms);
-  }
-
-  /** Запускает столько ожидающих задач, сколько позволяют ограничения. */
-  #drain(): void {
-    if (this.#waiting.length === 0) {
-      // Последний ожидающий запрос мог быть отменён во время длинной паузы. Таймер больше
-      // не нужен и не должен удерживать event loop процесса.
-      if (this.#cancelTimer) {
-        this.#cancelTimer();
-        this.#cancelTimer = undefined;
-      }
-      return;
-    }
-    if (this.#active >= this.#concurrency) return;
-    // Ждём уже запланированного пробуждения, чтобы не плодить таймеры.
-    if (this.#cancelTimer) return;
-
-    const now = this.#clock.now();
-
-    if (this.#nextSlot > now) {
-      this.#cancelTimer = this.#clock.schedule(() => {
-        this.#cancelTimer = undefined;
-        this.#drain();
-      }, this.#nextSlot - now);
-      return;
-    }
-
-    const next = this.#waiting.shift();
-    if (!next) return;
-
-    if (this.#minGap > 0) this.#nextSlot = now + this.#minGap;
-
-    next.run();
-
-    // Следующая задача может стартовать сразу, если позволяет конкурентность.
-    this.#drain();
-  }
 }
 
 /** Длина окна лимита на сервере. */
@@ -214,21 +41,129 @@ export interface RateLimitBucketState {
 }
 
 /**
- * Очередь одного бакета поверх общей очереди направления.
+ * Единый планировщик одного направления.
  *
- * Задача занимает слот бакета, затем общий слот направления, поэтому суммарная
- * одновременность остаётся равной `concurrency`. Пауза бакета удерживает задачу до
- * захвата общего слота: притормозивший счётчик не занимает общую ёмкость.
+ * Он выбирает готовый бакет и только перед фактическим запуском атомарно занимает общий
+ * и локальный слоты. Одно ближайшее пробуждение обслуживает все бакеты направления.
+ */
+class DestinationScheduler {
+  readonly #concurrency: number;
+  readonly #minGap: number;
+  readonly #clock: ItdClock;
+  readonly #buckets: BucketQueue[] = [];
+  #active = 0;
+  #nextSlot = 0;
+  #cursor = 0;
+  #cancelTimer: (() => void) | undefined;
+  #wakeupAt: number | undefined;
+
+  constructor(options: ResolvedRateLimitOptions, clock: ItdClock) {
+    this.#concurrency = options.concurrency;
+    this.#minGap = options.rps ? 1000 / options.rps : 0;
+    this.#clock = clock;
+  }
+
+  register(bucket: BucketQueue): void {
+    this.#buckets.push(bucket);
+  }
+
+  /** Пересчитывает ближайший запуск после изменения очереди или ограничения. */
+  changed(): void {
+    this.#drain();
+  }
+
+  /** Перепланирует пробуждение после изменения времени готовности бакета. */
+  timingChanged(): void {
+    this.#cancelWakeup();
+    this.#drain();
+  }
+
+  /** Отклоняет ожидающие задачи, сохраняя паузы и темп для повторного запуска клиента. */
+  stop(): void {
+    this.#cancelWakeup();
+    for (const bucket of this.#buckets) bucket.cancelWaiting(queueStoppedError(), false);
+  }
+
+  #drain(): void {
+    if (this.#active >= this.#concurrency) return;
+
+    const now = this.#clock.now();
+    let selected: BucketQueue | undefined;
+    let selectedIndex = -1;
+    let earliest = Number.POSITIVE_INFINITY;
+
+    for (let offset = 0; offset < this.#buckets.length; offset += 1) {
+      const index = (this.#cursor + offset) % this.#buckets.length;
+      const bucket = this.#buckets[index];
+      if (!bucket?.canStart) continue;
+
+      const readyAt = Math.max(this.#nextSlot, bucket.readyAt);
+      if (readyAt < earliest) earliest = readyAt;
+      if (readyAt <= now) {
+        selected = bucket;
+        selectedIndex = index;
+        break;
+      }
+    }
+
+    if (!selected) {
+      if (Number.isFinite(earliest)) this.#armWakeup(Math.max(0, earliest - now));
+      else this.#cancelWakeup();
+      return;
+    }
+
+    this.#cursor = (selectedIndex + 1) % this.#buckets.length;
+    this.#active += 1;
+    if (this.#minGap > 0) this.#nextSlot = now + this.#minGap;
+    selected.dispatch(now, () => {
+      this.#active -= 1;
+      this.changed();
+    });
+
+    this.#drain();
+  }
+
+  #armWakeup(delay: number): void {
+    const wakeupAt = this.#clock.now() + delay;
+    if (this.#cancelTimer && (this.#wakeupAt ?? Number.POSITIVE_INFINITY) <= wakeupAt) return;
+    this.#cancelWakeup();
+    this.#wakeupAt = wakeupAt;
+    this.#cancelTimer = this.#clock.schedule(() => {
+      this.#cancelTimer = undefined;
+      this.#wakeupAt = undefined;
+      this.#drain();
+    }, delay);
+  }
+
+  #cancelWakeup(): void {
+    this.#cancelTimer?.();
+    this.#cancelTimer = undefined;
+    this.#wakeupAt = undefined;
+  }
+}
+
+/** Задача, ожидающая окончательного запуска планировщиком направления. */
+interface BucketTask {
+  start: (complete: () => void) => void;
+  cancel: (reason: unknown) => void;
+}
+
+/**
+ * Состояние и очередь одного серверного бакета.
+ *
+ * Класс хранит локальную конкурентность, темп и серверную квоту, а решение о старте
+ * делегирует общему планировщику направления.
  *
  * @internal
  */
 export class BucketQueue {
   readonly #destination: string | undefined;
   readonly #bucket: string;
-  readonly #gate: RequestQueue;
-  readonly #shared: RequestQueue;
+  readonly #scheduler: DestinationScheduler;
   readonly #clock: ItdClock;
   readonly #pacing: RateLimitPacing;
+  readonly #concurrency: number;
+  readonly #minGap: number;
   /** Ровный темп. Требует раздельных бакетов: без них ёмкость счётчика неизвестна. */
   readonly #smooth: boolean;
   /**
@@ -246,6 +181,9 @@ export class BucketQueue {
   /** Последнее, что сказал сервер. Живёт и в режиме `off` — ради `rateLimitState()`. */
   #limit: number | undefined;
   #remaining: number | undefined;
+  #active = 0;
+  #nextSlot = 0;
+  readonly #waiting: BucketTask[] = [];
 
   /**
    * Оценка остатка для режима `smooth`.
@@ -255,23 +193,17 @@ export class BucketQueue {
    */
   #tokens = 1;
   #tokensAt: number | undefined;
-  /**
-   * Номер поколения очереди. `stop()` увеличивает его, отсекая задачи, которые уже взяли
-   * слот бакета, но до общей очереди ещё не дошли.
-   */
-  #generation = 0;
-
   constructor(
     destination: string | undefined,
     bucket: string,
-    shared: RequestQueue,
+    scheduler: DestinationScheduler,
     options: ResolvedRateLimitOptions,
     clock: ItdClock,
     featureDefinition?: RateLimitBucketOverride,
   ) {
     this.#destination = destination;
     this.#bucket = bucket;
-    this.#shared = shared;
+    this.#scheduler = scheduler;
     this.#clock = clock;
     this.#pacing = options.pacing;
     this.#smooth = options.buckets && options.pacing === RateLimitPacing.Smooth;
@@ -279,20 +211,16 @@ export class BucketQueue {
     this.#seedLimit = options.buckets
       ? (featureDefinition?.limit ?? seedLimit(bucket, options))
       : undefined;
-    this.#gate = new RequestQueue(
-      {
-        // Без раздельных бакетов предел шлюза равен общему, поэтому пропускной способности
-        // он не режет. Снять его вовсе нельзя: `#drain` обходит очередь рекурсией и должен
-        // упираться в конечную конкурентность.
-        concurrency: options.buckets
-          ? (featureDefinition?.concurrency ??
-            options.bucketOverrides[bucket]?.concurrency ??
-            options.bucketConcurrency)
-          : options.concurrency,
-        onDispatch: this.#smooth ? () => this.#spend() : undefined,
-      },
-      clock,
-    );
+    this.#concurrency = options.buckets
+      ? (featureDefinition?.concurrency ??
+        options.bucketOverrides[bucket]?.concurrency ??
+        options.bucketConcurrency)
+      : options.concurrency;
+    const rps = options.buckets
+      ? (featureDefinition?.rps ?? options.bucketOverrides[bucket]?.rps)
+      : undefined;
+    this.#minGap = rps ? 1000 / rps : 0;
+    scheduler.register(this);
   }
 
   /** Имя счётчика. При `buckets: false` — всегда `default`, каким бы ни был запрос. */
@@ -302,25 +230,72 @@ export class BucketQueue {
 
   /** Запросов бакета прошло в общую очередь и ещё не завершилось. */
   get active(): number {
-    return this.#gate.active;
+    return this.#active;
   }
 
   /** Запросов бакета ждёт своей очереди. */
   get pending(): number {
-    return this.#gate.pending;
+    return this.#waiting.length;
   }
 
-  /** Ставит запрос в очередь: сначала слот бакета, затем общий слот направления. */
-  schedule<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    const generation = this.#generation;
+  /** Есть ли ожидающая задача, для которой свободен локальный слот. */
+  get canStart(): boolean {
+    return this.#waiting.length > 0 && this.#active < this.#concurrency;
+  }
 
-    return this.#gate.schedule(() => {
-      // Между уровнями запрос успевает побыть нигде: слот бакета уже взят, а в общую
-      // очередь он попадёт следующей микрозадачей. Остановка, пришедшая в этот момент,
-      // не нашла бы его ни в одном из двух списков ожидания.
-      if (generation !== this.#generation) return Promise.reject(queueStoppedError());
-      return this.#shared.schedule(task, signal);
-    }, signal);
+  /** Момент, раньше которого локальное ограничение не разрешает следующий старт. */
+  get readyAt(): number {
+    return this.#nextSlot;
+  }
+
+  /** Ставит запрос в очередь единого планировщика направления. */
+  schedule<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (signal?.aborted) return Promise.reject(queueAbortError());
+
+    return new Promise<T>((resolve, reject) => {
+      let queued: BucketTask;
+      const detach = () => signal?.removeEventListener('abort', onAbort);
+      const onAbort = () => {
+        const index = this.#waiting.indexOf(queued);
+        if (index < 0) return;
+        this.#waiting.splice(index, 1);
+        queued.cancel(queueAbortError());
+        this.#scheduler.timingChanged();
+      };
+
+      queued = {
+        start: (complete) => {
+          detach();
+          Promise.resolve().then(task).then(resolve, reject).finally(complete);
+        },
+        cancel: (reason) => {
+          detach();
+          reject(reason);
+        },
+      };
+
+      this.#waiting.push(queued);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+      else this.#scheduler.changed();
+    });
+  }
+
+  /** Запускает первую задачу; вызывается только планировщиком направления. */
+  dispatch(now: number, complete: () => void): void {
+    const task = this.#waiting.shift();
+    if (!task) {
+      complete();
+      return;
+    }
+
+    this.#active += 1;
+    if (this.#smooth) this.#spend();
+    if (this.#minGap > 0) this.#nextSlot = Math.max(this.#nextSlot, now + this.#minGap);
+    task.start(() => {
+      this.#active -= 1;
+      complete();
+    });
   }
 
   /**
@@ -341,7 +316,7 @@ export class BucketQueue {
 
     if (this.#flatPause !== undefined) {
       if (remaining > 0) return 0;
-      this.#gate.pause(this.#flatPause);
+      this.#hold(this.#flatPause);
       return this.#flatPause;
     }
 
@@ -354,7 +329,9 @@ export class BucketQueue {
       // что столько же можно потратить прямо сейчас. Вверх её двигает лишь `#refill`,
       // по мере того как сервер действительно возвращает квоту.
       if (remaining < this.#tokens) this.#tokens = remaining;
-      return this.#armPause(capacity);
+      const wait = this.#armPause(capacity);
+      this.#scheduler.timingChanged();
+      return wait;
     }
 
     if (remaining > 0) return 0;
@@ -366,7 +343,7 @@ export class BucketQueue {
       capacity === undefined
         ? UNKNOWN_CAPACITY_PAUSE
         : Math.ceil(RATE_LIMIT_WINDOW / Math.max(capacity, 1));
-    this.#gate.pause(wait);
+    this.#hold(wait);
     return wait;
   }
 
@@ -376,7 +353,7 @@ export class BucketQueue {
       this.#tokens = 0;
       this.#tokensAt = this.#clock.now();
     }
-    this.#gate.pause(ms);
+    this.#hold(ms);
   }
 
   /** Снимок для `rateLimitState()`. */
@@ -386,18 +363,21 @@ export class BucketQueue {
       bucket: this.#bucket,
       limit: this.#limit,
       remaining: this.#remaining,
-      active: this.#gate.active,
-      pending: this.#gate.pending,
+      active: this.#active,
+      pending: this.#waiting.length,
     };
   }
 
-  /**
-   * Останавливает уровень бакета. Общая очередь направления гасится пулом.
-   *
-   */
+  /** Отклоняет ещё не начатые задачи этого бакета. */
   stop(): void {
-    this.#generation += 1;
-    this.#gate.stop();
+    this.cancelWaiting(queueStoppedError());
+  }
+
+  /** Отклоняет ожидающие задачи; используется также при остановке всего направления. */
+  cancelWaiting(reason: unknown, notify = true): void {
+    const pending = this.#waiting.splice(0, this.#waiting.length);
+    for (const task of pending) task.cancel(reason);
+    if (notify) this.#scheduler.timingChanged();
   }
 
   /** Лимит бакета: сказанный сервером, иначе табличный. */
@@ -430,8 +410,15 @@ export class BucketQueue {
     if (this.#tokens >= 1) return 0;
 
     const wait = Math.ceil(((1 - this.#tokens) * RATE_LIMIT_WINDOW) / capacity);
-    this.#gate.pause(wait);
+    this.#nextSlot = Math.max(this.#nextSlot, this.#clock.now() + wait);
     return wait;
+  }
+
+  /** Отодвигает ближайший допустимый старт и перепланирует общее пробуждение. */
+  #hold(ms: number): void {
+    if (ms <= 0) return;
+    this.#nextSlot = Math.max(this.#nextSlot, this.#clock.now() + ms);
+    this.#scheduler.timingChanged();
   }
 }
 
@@ -442,9 +429,9 @@ function seedLimit(bucket: string, options: ResolvedRateLimitOptions): number | 
   return options.bucketLimits[bucket];
 }
 
-/** Общая очередь направления и надстроенные над ней очереди его бакетов. */
+/** Планировщик направления и зарегистрированные в нём бакеты. */
 interface DestinationQueues {
-  shared: RequestQueue;
+  scheduler: DestinationScheduler;
   buckets: Map<string, BucketQueue>;
 }
 
@@ -483,12 +470,14 @@ export class RequestQueuePool {
     const normalized = Object.freeze({
       ...(definition.limit === undefined ? {} : { limit: definition.limit }),
       ...(definition.concurrency === undefined ? {} : { concurrency: definition.concurrency }),
+      ...(definition.rps === undefined ? {} : { rps: definition.rps }),
     });
     const existing = this.#featureBuckets.get(name);
     if (existing) {
       if (
         existing.definition.limit !== normalized.limit ||
-        existing.definition.concurrency !== normalized.concurrency
+        existing.definition.concurrency !== normalized.concurrency ||
+        existing.definition.rps !== normalized.rps
       ) {
         throw new ItdConfigError(
           `Бакет feature «${name}» уже зарегистрирован с другими ограничениями`,
@@ -520,7 +509,7 @@ export class RequestQueuePool {
     let entry = this.#destinations.get(destination);
     if (!entry) {
       entry = {
-        shared: new RequestQueue(this.#options, this.#clock),
+        scheduler: new DestinationScheduler(this.#options, this.#clock),
         buckets: new Map(),
       };
       this.#destinations.set(destination, entry);
@@ -531,7 +520,7 @@ export class RequestQueuePool {
       queue = new BucketQueue(
         destination,
         name,
-        entry.shared,
+        entry.scheduler,
         this.#options,
         this.#clock,
         this.#featureBuckets.get(name)?.definition,
@@ -551,13 +540,12 @@ export class RequestQueuePool {
   }
 
   /**
-   * Останавливает оба уровня всех очередей: ожидающие задачи отклоняются, а состояние
-   * счётчиков и отложенные паузы сохраняются до следующего запуска — путь `close()`.
+   * Останавливает планировщики: ожидающие задачи отклоняются, а состояние счётчиков
+   * и отложенные паузы сохраняются до следующего запуска — путь `close()`.
    */
   stop(): void {
     for (const entry of this.#destinations.values()) {
-      for (const queue of entry.buckets.values()) queue.stop();
-      entry.shared.stop();
+      entry.scheduler.stop();
     }
   }
 

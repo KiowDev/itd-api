@@ -66,8 +66,11 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
 
     this.#bucketOwners.set(name, owner);
     if (definition.limit !== undefined) this.#bucketLimits[name] = definition.limit;
-    if (definition.concurrency !== undefined) {
-      this.#bucketOverrides[name] = Object.freeze({ concurrency: definition.concurrency });
+    if (definition.concurrency !== undefined || definition.rps !== undefined) {
+      this.#bucketOverrides[name] = Object.freeze({
+        ...(definition.concurrency === undefined ? {} : { concurrency: definition.concurrency }),
+        ...(definition.rps === undefined ? {} : { rps: definition.rps }),
+      });
     }
 
     return () => {

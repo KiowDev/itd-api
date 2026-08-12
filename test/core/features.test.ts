@@ -34,7 +34,7 @@ function probeFeature(
       },
     ],
     buckets: {
-      read: { limit: 60, concurrency: 1 },
+      read: { limit: 60, concurrency: 1, rps: 4 },
     },
     operations: {
       get: {
@@ -180,6 +180,48 @@ describe('feature runtime', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('применяет rps из manifest без серверных заголовков', async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockFetch(() => json({ data: { ok: true } }));
+      const itd = new ItdClient({
+        auth: 'shared-token',
+        fetch: mock.fetch,
+        mode: 'server',
+        retry: false,
+        rateLimit: { concurrency: 4 },
+      });
+      const probe = itd.install(probeFeature());
+
+      const first = probe.get();
+      const second = probe.get();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mock.callCount).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(249);
+      expect(mock.callCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mock.callCount).toBe(2);
+
+      await Promise.all([first, second]);
+      await itd.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('проверяет локальный rps объявленного бакета', () => {
+    const itd = new ItdClient({ mode: 'server', retry: false });
+    const invalid: ClientFeature<never> = {
+      ...probeFeature(),
+      buckets: { read: { rps: 0 } },
+      setup: () => ({ api: undefined as never }),
+    };
+
+    expect(() => itd.install(invalid)).toThrow(ItdConfigError);
+    expect(() => itd.install(probeFeature())).not.toThrow();
   });
 
   it('использует retrySafety из динамического каталога', async () => {

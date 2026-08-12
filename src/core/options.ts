@@ -43,6 +43,8 @@ export interface RetryDecisionContext {
 export interface RateLimitBucketOverride {
   /** Одновременных запросов внутри бакета. */
   concurrency?: number | undefined;
+  /** Верхняя граница стартов внутри бакета в секунду. */
+  rps?: number | undefined;
   /** Ёмкость бакета до первого ответа, запросов в минуту. */
   limit?: number | undefined;
 }
@@ -70,8 +72,8 @@ export interface RateLimitOptions {
    *
    * `false` — одна очередь на направление: её пауза придерживает все запросы разом.
    * В этом режиме ёмкость отдельного счётчика неизвестна, поэтому `bucketConcurrency`,
-   * `bucketOverrides` и режим `pacing: 'smooth'` не действуют, а исчерпанный остаток
-   * встречается первой ступенью `retryDelays`.
+   * все поля `bucketOverrides` и режим `pacing: 'smooth'` не действуют, а исчерпанный
+   * остаток встречается первой ступенью `retryDelays`. Общий `rps` продолжает действовать.
    */
   buckets?: boolean | undefined;
   /**
@@ -85,7 +87,7 @@ export interface RateLimitOptions {
    *
    * @example
    * ```ts
-   * rateLimit: { bucketOverrides: { 'posts.create': { limit: 10 }, feed: { concurrency: 2 } } }
+   * rateLimit: { bucketOverrides: { 'posts.create': { rps: 2 }, feed: { concurrency: 2 } } }
    * ```
    */
   bucketOverrides?: Record<string, RateLimitBucketOverride> | undefined;

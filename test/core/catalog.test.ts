@@ -5,6 +5,7 @@ import {
   type ClientRuntime,
   createClientRuntime,
 } from '../../src/core/execution/client-runtime.js';
+import { ExtensibleOperationCatalog } from '../../src/core/feature-catalog.js';
 import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
 import { RequestQueuePool } from '../../src/core/scheduling/rate-limit.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
@@ -199,5 +200,23 @@ describe('ёмкости бакетов доходят из каталога д�
       defaultBucket: 'только',
       bucketOverrides: {},
     });
+  });
+});
+
+describe('динамические бакеты каталога', () => {
+  it('сохраняет rps в поправке и удаляет его при откате регистрации', () => {
+    const catalog = new ExtensibleOperationCatalog(ITD_CATALOG);
+    const unregister = catalog.registerBucket('probe', 'feature:probe/read', {
+      limit: 60,
+      concurrency: 2,
+      rps: 4,
+    });
+
+    expect(catalog.bucketLimits['feature:probe/read']).toBe(60);
+    expect(catalog.bucketOverrides['feature:probe/read']).toEqual({ concurrency: 2, rps: 4 });
+
+    unregister();
+    expect(catalog.bucketLimits['feature:probe/read']).toBeUndefined();
+    expect(catalog.bucketOverrides['feature:probe/read']).toBeUndefined();
   });
 });

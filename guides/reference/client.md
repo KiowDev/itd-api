@@ -228,7 +228,7 @@ interface RateLimitOptions {
   // Раздельные счётчики
   buckets?: boolean;                     // очередь на бакет; по умолчанию true
   bucketConcurrency?: number;            // предел внутри бакета; по умолчанию как concurrency
-  bucketOverrides?: Record<string, { concurrency?: number; limit?: number }>;
+  bucketOverrides?: Record<string, { concurrency?: number; rps?: number; limit?: number }>;
   bucket?: (request: RateLimitBucketContext) => string | undefined;
 
   // Реакция на исчерпанный лимит
@@ -247,7 +247,7 @@ interface RateLimitOptions {
 `bucketConcurrency` по умолчанию равен `concurrency`. Единственное встроенное исключение —
 `files.upload` с пределом 1.
 
-`bucketOverrides` правит лимит и одновременность отдельных бакетов; неизвестное имя —
+`bucketOverrides` правит лимит, темп и одновременность отдельных бакетов; неизвестное имя —
 ошибка конфигурации, как и в `rateLimitBucket` у отдельного запроса. `bucket` заменяет
 само правило выбора: верните `undefined`, чтобы отдать запрос встроенной карте. Своё
 правило заводит собственное пространство имён и снимает проверку имён в обеих опциях.
@@ -257,7 +257,7 @@ interface RateLimitOptions {
 ровный темп в пределах лимита бакета. `off` оставляет только паузу после `429`.
 
 `buckets: false` оставляет одну очередь на origin. Ёмкость отдельного счётчика в этом
-режиме неизвестна, поэтому `bucketConcurrency`, `bucketOverrides` и `pacing: 'smooth'`
+режиме неизвестна, поэтому `bucketConcurrency`, все поля `bucketOverrides` и `pacing: 'smooth'`
 не действуют, а исчерпанный остаток встречается первой ступенью `retryDelays`.
 
 Время сброса окна сервер не сообщает, поэтому при `429` клиент идёт по лестнице пауз:
@@ -274,8 +274,8 @@ itd.rateLimitState(): RateLimitBucketState[]
 
 Отдаёт по записи `{ destination, bucket, limit, remaining, active, pending }` на каждый
 бакет, через который уже проходили запросы. `limit` и `remaining` берутся из последнего
-ответа и быстро устаревают. `active` считает запросы, занявшие слот бакета, включая те,
-что ещё ждут общего слота origin и в сеть не ушли; `pending` — ждущие слота самого бакета.
+ответа и быстро устаревают. `active` считает фактически запущенные запросы бакета;
+`pending` — ещё не запущенные запросы, ожидающие общего или локального ограничения.
 Пустой массив, если `rateLimit: false`.
 
 ### Хуки (`ClientHooks`)

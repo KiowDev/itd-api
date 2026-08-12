@@ -147,6 +147,11 @@ function validateBucket(owner: string, localName: string, bucket: FeatureBucketD
       `feature «${owner}»: concurrency бакета «${localName}» должен быть целым числом от 1`,
     );
   }
+  if (bucket.rps !== undefined && (!Number.isFinite(bucket.rps) || bucket.rps <= 0)) {
+    throw new ItdConfigError(
+      `feature «${owner}»: rps бакета «${localName}» должен быть положительным числом`,
+    );
+  }
 }
 
 /** Реестр feature одного facade. @internal */

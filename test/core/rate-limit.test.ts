@@ -1,211 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ResolvedRateLimitOptions, resolveRuntimeConfig } from '../../src/core/config.js';
-import { ItdAbortError } from '../../src/core/errors.js';
+import { ItdAbortError, ItdConfigError } from '../../src/core/errors.js';
 import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
-import {
-  type BucketQueue,
-  RequestQueue,
-  RequestQueuePool,
-} from '../../src/core/scheduling/rate-limit.js';
+import { type BucketQueue, RequestQueuePool } from '../../src/core/scheduling/rate-limit.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
-
-describe('RequestQueue — конкурентность', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it('не запускает больше задач, чем разрешено', async () => {
-    const queue = new RequestQueue({
-      concurrency: 2,
-    });
-    let peak = 0;
-    let running = 0;
-
-    const task = () =>
-      new Promise<void>((resolve) => {
-        running += 1;
-        peak = Math.max(peak, running);
-        setTimeout(() => {
-          running -= 1;
-          resolve();
-        }, 10);
-      });
-
-    const all = Promise.all(Array.from({ length: 6 }, () => queue.schedule(task)));
-    await vi.advanceTimersByTimeAsync(100);
-    await all;
-
-    expect(peak).toBe(2);
-  });
-
-  it('освобождает слот и после ошибки задачи', async () => {
-    const queue = new RequestQueue({
-      concurrency: 1,
-    });
-
-    await expect(queue.schedule(() => Promise.reject(new Error('сбой')))).rejects.toThrow('сбой');
-    await expect(queue.schedule(() => Promise.resolve('готово'))).resolves.toBe('готово');
-    expect(queue.active).toBe(0);
-  });
-
-  it('освобождает слот и после синхронной ошибки задачи', async () => {
-    const queue = new RequestQueue({
-      concurrency: 1,
-    });
-
-    await expect(
-      queue.schedule(() => {
-        throw new Error('синхронный сбой');
-      }),
-    ).rejects.toThrow('синхронный сбой');
-    await expect(queue.schedule(() => Promise.resolve('готово'))).resolves.toBe('готово');
-    expect(queue.active).toBe(0);
-  });
-
-  it('пробрасывает результат и ошибку без изменений', async () => {
-    const queue = new RequestQueue({
-      concurrency: 4,
-    });
-    const error = new Error('исходная');
-
-    await expect(queue.schedule(() => Promise.resolve(42))).resolves.toBe(42);
-    await expect(queue.schedule(() => Promise.reject(error))).rejects.toBe(error);
-  });
-});
-
-describe('RequestQueue — частота', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it('разносит старты во времени', async () => {
-    const queue = new RequestQueue({
-      concurrency: 10,
-      rps: 4,
-    });
-    const starts: number[] = [];
-
-    const task = () => {
-      starts.push(Date.now());
-      return Promise.resolve();
-    };
-
-    const all = Promise.all(Array.from({ length: 3 }, () => queue.schedule(task)));
-    await vi.advanceTimersByTimeAsync(1000);
-    await all;
-
-    // rps: 4 → промежуток 250 мс
-    const [first, second, third] = starts;
-    expect(starts).toHaveLength(3);
-    expect(second ?? 0).toBeGreaterThanOrEqual((first ?? 0) + 250);
-    expect(third ?? 0).toBeGreaterThanOrEqual((second ?? 0) + 250);
-  });
-
-  it('без rps запускает всё сразу', async () => {
-    const queue = new RequestQueue({
-      concurrency: 10,
-    });
-    const starts: number[] = [];
-
-    const all = Promise.all(
-      Array.from({ length: 5 }, () =>
-        queue.schedule(() => {
-          starts.push(Date.now());
-          return Promise.resolve();
-        }),
-      ),
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    await all;
-
-    expect(new Set(starts).size).toBe(1);
-  });
-
-  it('pause придерживает всю очередь', async () => {
-    const queue = new RequestQueue({
-      concurrency: 10,
-    });
-    const starts: number[] = [];
-    const startedAt = Date.now();
-
-    queue.pause(500);
-
-    const promise = queue.schedule(() => {
-      starts.push(Date.now() - startedAt);
-      return Promise.resolve();
-    });
-
-    await vi.advanceTimersByTimeAsync(400);
-    expect(starts).toHaveLength(0);
-
-    await vi.advanceTimersByTimeAsync(200);
-    await promise;
-
-    expect(starts[0]).toBeGreaterThanOrEqual(500);
-  });
-
-  it('pause с неположительным значением ничего не делает', async () => {
-    const queue = new RequestQueue({
-      concurrency: 1,
-    });
-    queue.pause(0);
-    queue.pause(-100);
-
-    await expect(queue.schedule(() => Promise.resolve('ок'))).resolves.toBe('ок');
-  });
-
-  it('снимает отменённый запрос с ожидания и очищает таймер паузы', async () => {
-    const queue = new RequestQueue({
-      concurrency: 1,
-    });
-    const controller = new AbortController();
-    const started = vi.fn(() => Promise.resolve());
-
-    queue.pause(60_000);
-    const promise = queue.schedule(started, controller.signal);
-    controller.abort();
-
-    await expect(promise).rejects.toThrow(ItdAbortError);
-    expect(started).not.toHaveBeenCalled();
-    expect(queue.pending).toBe(0);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('не ставит в очередь запрос с уже отменённым signal', async () => {
-    const queue = new RequestQueue({
-      concurrency: 1,
-    });
-    const controller = new AbortController();
-    const started = vi.fn(() => Promise.resolve());
-    controller.abort();
-
-    await expect(queue.schedule(started, controller.signal)).rejects.toThrow(ItdAbortError);
-    expect(started).not.toHaveBeenCalled();
-    expect(queue.pending).toBe(0);
-  });
-
-  it('stop сохраняет отложенную паузу для следующих задач', async () => {
-    const queue = new RequestQueue({
-      concurrency: 1,
-    });
-    const started = vi.fn();
-
-    queue.pause(60_000);
-    queue.stop();
-
-    const promise = queue.schedule(() => {
-      started();
-      return Promise.resolve('ок');
-    });
-
-    // Пауза отсчитывает восстановление серверного счётчика, а тот от остановки клиента
-    // не сбрасывается: забыв её, очередь выпустила бы запрос в исчерпанный лимит.
-    await vi.advanceTimersByTimeAsync(59_000);
-    expect(started).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1000);
-    await expect(promise).resolves.toBe('ок');
-    expect(started).toHaveBeenCalledOnce();
-  });
-});
 
 describe('RequestQueuePool', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -238,6 +36,17 @@ describe('RequestQueuePool', () => {
       pool.for('https://itd.test', 'posts.create'),
     );
     expect(pool.for('https://itd.test', 'feed')).not.toBe(pool.for('https://other.test', 'feed'));
+  });
+
+  it('отклоняет повторную декларацию общего feature-бакета с другим rps', () => {
+    const pool = new RequestQueuePool(poolOptions());
+    const releaseFirst = pool.defineBucket('feature:probe/read', { rps: 2 });
+    const releaseSecond = pool.defineBucket('feature:probe/read', { rps: 2 });
+
+    expect(() => pool.defineBucket('feature:probe/read', { rps: 3 })).toThrow(ItdConfigError);
+    releaseSecond();
+    releaseFirst();
+    expect(() => pool.defineBucket('feature:probe/read', { rps: 3 })).not.toThrow();
   });
 
   it('при buckets: false складывает направление в один бакет', () => {
@@ -327,6 +136,33 @@ describe('RequestQueuePool', () => {
     expect(peak).toBe(2);
   });
 
+  it('освобождает общий и локальный слоты после синхронной и асинхронной ошибки', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 1 }));
+    const queue = pool.for('https://itd.test', 'feed');
+    const original = new Error('асинхронный сбой');
+
+    await expect(
+      queue.schedule(() => {
+        throw new Error('синхронный сбой');
+      }),
+    ).rejects.toThrow('синхронный сбой');
+    await expect(queue.schedule(() => Promise.reject(original))).rejects.toBe(original);
+    await expect(queue.schedule(() => Promise.resolve(42))).resolves.toBe(42);
+    expect(queue.state()).toMatchObject({ active: 0, pending: 0 });
+  });
+
+  it('не ставит в планировщик запрос с уже отменённым signal', async () => {
+    const pool = new RequestQueuePool(poolOptions());
+    const queue = pool.for('https://itd.test', 'feed');
+    const controller = new AbortController();
+    const started = vi.fn(() => Promise.resolve());
+    controller.abort();
+
+    await expect(queue.schedule(started, controller.signal)).rejects.toThrow(ItdAbortError);
+    expect(started).not.toHaveBeenCalled();
+    expect(queue.pending).toBe(0);
+  });
+
   it('пауза бакета не задерживает соседний', async () => {
     const pool = new RequestQueuePool(poolOptions({ concurrency: 4 }));
     const started: string[] = [];
@@ -348,6 +184,264 @@ describe('RequestQueuePool', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     await paused;
     expect(started).toEqual(['feed', 'posts.create']);
+  });
+
+  it('локальный rps равномерно разносит старты без серверных заголовков', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
+    pool.defineBucket('feature:probe/read', { rps: 4 });
+    const queue = pool.for('https://itd.test', 'feature:probe/read');
+    const begin = Date.now();
+    const starts: number[] = [];
+
+    const all = Promise.all(
+      Array.from({ length: 3 }, () =>
+        queue.schedule(() => {
+          starts.push(Date.now() - begin);
+          return Promise.resolve();
+        }),
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(500);
+    await all;
+    expect(starts).toEqual([0, 250, 500]);
+  });
+
+  it('после общей паузы локальный rps не выпускает накопленные задачи залпом', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
+    pool.defineBucket('feature:probe/read', { rps: 2 });
+    const queue = pool.for('https://itd.test', 'feature:probe/read');
+    const begin = Date.now();
+    const starts: number[] = [];
+
+    queue.pause(1000);
+    const all = Promise.all(
+      Array.from({ length: 3 }, () =>
+        queue.schedule(() => {
+          starts.push(Date.now() - begin);
+          return Promise.resolve();
+        }),
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await all;
+    expect(starts).toEqual([1000, 1500, 2000]);
+  });
+
+  it('после ожидания общей конкурентности локальный rps не создаёт всплеск', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 2 }));
+    pool.defineBucket('feature:probe/read', { rps: 2 });
+    const blocker = pool.for('https://itd.test', 'feed');
+    const limited = pool.for('https://itd.test', 'feature:probe/read');
+    const releases: Array<() => void> = [];
+    const occupied = Array.from({ length: 2 }, () =>
+      blocker.schedule(
+        () =>
+          new Promise<void>((resolve) => {
+            releases.push(resolve);
+          }),
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    const begin = Date.now();
+    const starts: number[] = [];
+    const waiting = Array.from({ length: 3 }, () =>
+      limited.schedule(() => {
+        starts.push(Date.now() - begin);
+        return Promise.resolve();
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(starts).toEqual([]);
+
+    for (const release of releases) release();
+    await Promise.all(occupied);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(starts).toEqual([1000]);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await Promise.all(waiting);
+    expect(starts).toEqual([1000, 1500, 2000]);
+  });
+
+  it('готовый бакет обходит бакет, ожидающий локальный слот темпа', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 4 }));
+    pool.defineBucket('feature:slow/read', { rps: 1 });
+    const slow = pool.for('https://itd.test', 'feature:slow/read');
+    const free = pool.for('https://itd.test', 'feed');
+    const started: string[] = [];
+
+    await slow.schedule(() => Promise.resolve(started.push('slow-1')));
+    const waiting = slow.schedule(() => Promise.resolve(started.push('slow-2')));
+    const bypass = free.schedule(() => Promise.resolve(started.push('feed')));
+    await vi.advanceTimersByTimeAsync(0);
+
+    await bypass;
+    expect(started).toEqual(['slow-1', 'feed']);
+    await vi.advanceTimersByTimeAsync(1000);
+    await waiting;
+    expect(started).toEqual(['slow-1', 'feed', 'slow-2']);
+  });
+
+  it('переносит общее пробуждение на более раннее ограничение соседнего бакета', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 4 }));
+    const late = pool.for('https://itd.test', 'posts.create');
+    const early = pool.for('https://itd.test', 'feed');
+    const begin = Date.now();
+    const starts: number[] = [];
+
+    late.pause(60_000);
+    const lateTask = late.schedule(() => {
+      starts.push(Date.now() - begin);
+      return Promise.resolve();
+    });
+    early.pause(1000);
+    const earlyTask = early.schedule(() => {
+      starts.push(Date.now() - begin);
+      return Promise.resolve();
+    });
+
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    await earlyTask;
+    expect(starts).toEqual([1000]);
+
+    await vi.advanceTimersByTimeAsync(59_000);
+    await lateTask;
+    expect(starts).toEqual([1000, 60_000]);
+  });
+
+  it('при buckets: false игнорирует локальный rps поправки', async () => {
+    const pool = new RequestQueuePool(
+      poolOptions({
+        buckets: false,
+        concurrency: 4,
+        bucketOverrides: { feed: { rps: 1 } },
+      }),
+    );
+    const starts: number[] = [];
+    const queue = pool.for('https://itd.test', 'feed');
+
+    const all = Promise.all(
+      Array.from({ length: 3 }, () =>
+        queue.schedule(() => {
+          starts.push(Date.now());
+          return Promise.resolve();
+        }),
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    await all;
+
+    expect(new Set(starts).size).toBe(1);
+  });
+
+  it('локальные concurrency и rps действуют одновременно', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
+    pool.defineBucket('feature:probe/read', { concurrency: 1, rps: 10 });
+    const queue = pool.for('https://itd.test', 'feature:probe/read');
+    const starts: number[] = [];
+    const begin = Date.now();
+
+    const first = queue.schedule(
+      () =>
+        new Promise<void>((resolve) => {
+          starts.push(Date.now() - begin);
+          setTimeout(resolve, 250);
+        }),
+    );
+    const second = queue.schedule(() => {
+      starts.push(Date.now() - begin);
+      return Promise.resolve();
+    });
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(starts).toEqual([0]);
+    await vi.advanceTimersByTimeAsync(50);
+    await Promise.all([first, second]);
+    expect(starts).toEqual([0, 250]);
+  });
+
+  it('общий и локальный rps применяются по максимальному времени готовности', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 6, rps: 4 }));
+    pool.defineBucket('feature:slow/read', { rps: 2 });
+    const slow = pool.for('https://itd.test', 'feature:slow/read');
+    const free = pool.for('https://itd.test', 'feed');
+    const begin = Date.now();
+    const starts: Array<[string, number]> = [];
+
+    const tasks = [
+      slow.schedule(() => {
+        starts.push(['slow-1', Date.now() - begin]);
+        return Promise.resolve();
+      }),
+      free.schedule(() => {
+        starts.push(['feed-1', Date.now() - begin]);
+        return Promise.resolve();
+      }),
+      slow.schedule(() => {
+        starts.push(['slow-2', Date.now() - begin]);
+        return Promise.resolve();
+      }),
+      free.schedule(() => {
+        starts.push(['feed-2', Date.now() - begin]);
+        return Promise.resolve();
+      }),
+    ];
+
+    await vi.advanceTimersByTimeAsync(750);
+    await Promise.all(tasks);
+    expect(starts).toEqual([
+      ['slow-1', 0],
+      ['feed-1', 250],
+      ['slow-2', 500],
+      ['feed-2', 750],
+    ]);
+  });
+
+  it('направление использует один таймер для ожиданий разных бакетов', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
+    const first = pool.for('https://itd.test', 'feed');
+    const second = pool.for('https://itd.test', 'search');
+
+    first.pause(1000);
+    second.pause(2000);
+    const one = first.schedule(() => Promise.resolve());
+    const two = second.schedule(() => Promise.resolve());
+
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2000);
+    await Promise.all([one, two]);
+  });
+
+  it('stop снимает общее пробуждение и отклоняет ожидающие задачи', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
+    const queue = pool.for('https://itd.test', 'feed');
+    queue.pause(60_000);
+    const pending = queue.schedule(() => Promise.resolve());
+
+    expect(vi.getTimerCount()).toBe(1);
+    pool.stop();
+
+    await expect(pending).rejects.toThrow(ItdAbortError);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('отмена последней ожидающей задачи снимает общее пробуждение', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
+    const queue = pool.for('https://itd.test', 'feed');
+    const controller = new AbortController();
+    queue.pause(60_000);
+    const pending = queue.schedule(() => Promise.resolve(), controller.signal);
+
+    expect(vi.getTimerCount()).toBe(1);
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(ItdAbortError);
+    expect(queue.pending).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('stop гасит задачи направления, но саму очередь сохраняет', async () => {
@@ -394,22 +488,19 @@ describe('RequestQueuePool', () => {
     expect(pool.for('https://itd.test', 'feed').state().remaining).toBeUndefined();
   });
 
-  it('stop отклоняет задачи, ждущие любого из двух уровней', async () => {
+  it('stop отклоняет задачи единого планировщика независимо от причины ожидания', async () => {
     const pool = new RequestQueuePool(poolOptions());
     const started: string[] = [];
 
-    // Общий слот один, и первая задача его занимает. Микрозадача здесь обязательна:
-    // слот бакета берётся сразу, а до общей очереди задача доходит только следующим
-    // тиком — без ожидания обе задачи ниже отсекались бы на уровне бакета, и общий
-    // уровень остался бы непроверенным.
+    // Общий слот один, и первая задача его занимает.
     occupy(pool.for('https://itd.test', 'feed'));
     await vi.advanceTimersByTimeAsync(0);
 
     const shared = pool.for('https://itd.test', 'users');
     const waitingShared = shared.schedule(() => Promise.resolve(started.push('общий')));
     await vi.advanceTimersByTimeAsync(0);
-    // Слот бакета взят, задача стоит в общей очереди и ещё не начиналась.
-    expect([shared.active, shared.pending, started]).toEqual([1, 0, []]);
+    // До фактического старта локальный слот не расходуется.
+    expect([shared.active, shared.pending, started]).toEqual([0, 1, []]);
 
     const bucket = pool.for('https://itd.test', 'search');
     bucket.pause(60_000);
@@ -423,7 +514,7 @@ describe('RequestQueuePool', () => {
     expect(started).toEqual([]);
   });
 
-  it('отмена по signal снимает задачу с любого из двух уровней', async () => {
+  it('отмена по signal снимает задачу при любой причине ожидания', async () => {
     const pool = new RequestQueuePool(poolOptions());
     const bucketLevel = new AbortController();
     const sharedLevel = new AbortController();
