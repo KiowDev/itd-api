@@ -90,6 +90,6 @@ await itd.reports.create(report.post(first.id).reason(ReportReason.Spam));
 // ── Уведомления из REST и из потока имеют одну форму ────────────────────────────
 const feed: Notification[] = (await itd.notifications.list({ limit: 10 })).items;
 
-const stream = itd.realtime();
+const stream = itd.notifications.events;
 stream.on('notification', ({ notification }) => feed.unshift(notification));
 await stream.connect();

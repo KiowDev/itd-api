@@ -10,12 +10,15 @@
 
 import {
   ItdClient,
-  RealtimeUpdateType,
+  NotificationUpdateType,
   formatNotificationText,
   resolveNotificationUrl,
 } from 'itd-api';
 
-const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
+const itd = new ItdClient({
+  auth: process.env.ITD_TOKEN,
+  events: { notifications: { syncCount: false } },
+});
 
 // Сначала — то, что уже накопилось.
 const history = await itd.notifications.list({ limit: 5 });
@@ -32,9 +35,9 @@ for (const notification of history.items) {
 
 // Теперь поток новых.
 // Начальный счётчик уже получен выше, поэтому повторный REST-запрос при connect не нужен.
-const stream = itd.realtime({ syncCount: false });
+const stream = itd.notifications.events;
 
-stream.onUpdate(RealtimeUpdateType.Notification, ({ update }) => {
+stream.onUpdate(NotificationUpdateType.Notification, ({ update }) => {
   const { notification, sound, unreadCount } = update.data;
 
   console.log(`\n${sound ? '🔔' : '🔕'} ${formatNotificationText(notification)}`);

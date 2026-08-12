@@ -3,8 +3,8 @@ import { type AuthProvider, anonymousAuth, bearerToken } from '../core/auth-prov
 import { ItdConfigError, ItdStateError } from '../core/errors.js';
 import { type ClientRuntime, createClientRuntime } from '../core/execution/client-runtime.js';
 import { ExtensibleOperationCatalog } from '../core/feature-catalog.js';
-import { createFeatureHost } from '../core/feature-host.js';
-import type { ClientFeature, FeatureRegistry } from '../core/features.js';
+import { type ClientFeatureHost, createFeatureHost } from '../core/feature-host.js';
+import type { ClientFeature } from '../core/features.js';
 import type { RawRequestOptions, RuntimeOptions } from '../core/options.js';
 import type { ClientPlugin } from '../core/plugins/contracts.js';
 import type { RateLimitBucketState } from '../core/scheduling/rate-limit.js';
@@ -13,7 +13,7 @@ import { ITD_CATALOG } from '../domain/catalog.js';
 import type { CommentsResource } from '../resources/comments.js';
 import type { FilesResource } from '../resources/files.js';
 import type { HashtagsResource } from '../resources/hashtags.js';
-import type { NotificationsResource } from '../resources/notifications.js';
+import { NotificationsResource } from '../resources/notifications.js';
 import type { PlatformResource } from '../resources/platform.js';
 import type { PostsResource } from '../resources/posts.js';
 import type { ReportsResource } from '../resources/reports.js';
@@ -55,7 +55,7 @@ export interface RestClientOptions extends RuntimeOptions {
  */
 export class ItdRestClient {
   readonly #runtime: ClientRuntime;
-  readonly #features: FeatureRegistry;
+  readonly #features: ClientFeatureHost;
   readonly #resources: RestResources;
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
   #disposePromise: Promise<void> | undefined;
@@ -139,6 +139,7 @@ export class ItdRestClient {
       http: this.#runtime.http,
       fetch: this.#runtime.config.fetch,
       status,
+      createNotifications: (http) => new NotificationsResource(http),
     });
   }
 

@@ -140,7 +140,7 @@ export function createMockServer(options: CreateMockServerOptions = {}): MockSer
         if (index >= 0) overrides.splice(index, 1);
       };
     },
-    realtime({ as }) {
+    notificationEvents({ as }) {
       const user = state.findUser(as);
       if (!user) throw new Error(`В seed нет пользователя ${as}`);
       return state.registerRealtime(user);

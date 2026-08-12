@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  ItdRealtime,
-  RealtimeUpdateOrigin,
-  RealtimeUpdateType,
-  type TransportEvent,
+  type EventTransportFrame,
+  NotificationEvents,
+  NotificationUpdateOrigin,
+  NotificationUpdateType,
 } from '../../src/index.js';
 import { makeStream, notification, TestTransport } from './helpers.js';
 
@@ -45,7 +45,7 @@ describe('realtime updates', () => {
     transport.emit({ name: 'custom_event', data: { value: 1 } });
     await stream.drain();
 
-    expect(updates).toEqual([RealtimeUpdateType.Notification, RealtimeUpdateType.Unknown]);
+    expect(updates).toEqual([NotificationUpdateType.Notification, NotificationUpdateType.Unknown]);
     expect(handled).toEqual(updates);
     expect(messages).toEqual(['connected', 'notification', 'custom_event']);
     expect(counts).toEqual([3]);
@@ -68,13 +68,24 @@ describe('realtime updates', () => {
 
   it('передаёт начальную REST-синхронизацию через middleware без raw frame', async () => {
     const transport = new TestTransport();
-    const stream = new ItdRealtime(
+    const stream = new NotificationEvents(
       {
-        baseUrl: 'https://itd.test',
-        fetch: globalThis.fetch,
-        baseHeaders: () => Promise.resolve(new Headers()),
-        getToken: () => Promise.resolve('token'),
-        refresh: () => Promise.resolve(true),
+        connection: {
+          baseUrl: 'https://itd.test',
+          authorize: true,
+          fetch: globalThis.fetch,
+          clock: {
+            now: () => Date.now(),
+            schedule: (callback, delay) => {
+              const timer = setTimeout(callback, delay);
+              return () => clearTimeout(timer);
+            },
+          },
+          logger: undefined,
+          baseHeaders: () => Promise.resolve(new Headers()),
+          getToken: () => Promise.resolve('token'),
+          refreshAuth: () => Promise.resolve(true),
+        },
         fetchUnreadCount: () => Promise.resolve(8),
       },
       {
@@ -84,10 +95,10 @@ describe('realtime updates', () => {
         reconnectOnOnline: false,
       },
     );
-    const origins: RealtimeUpdateOrigin[] = [];
-    let raw: TransportEvent | undefined;
+    const origins: NotificationUpdateOrigin[] = [];
+    let raw: EventTransportFrame | undefined;
 
-    stream.onUpdate(RealtimeUpdateType.UnreadCount, (context) => {
+    stream.onUpdate(NotificationUpdateType.UnreadCount, (context) => {
       origins.push(context.origin);
       raw = context.raw;
     });
@@ -95,7 +106,7 @@ describe('realtime updates', () => {
     await stream.connect();
     await stream.drain();
 
-    expect(origins).toEqual([RealtimeUpdateOrigin.Sync]);
+    expect(origins).toEqual([NotificationUpdateOrigin.Sync]);
     expect(raw).toBeUndefined();
     stream.disconnect();
   });

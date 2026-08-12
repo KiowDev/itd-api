@@ -98,9 +98,10 @@ hasFeature(name: string): boolean
 перечисляют установленные модули и проверяют имя; встроенный `status` также виден в реестре.
 
 ```ts
-realtime(options?: RealtimeOptions): ItdRealtime
+readonly notifications: NotificationsApi // notifications.events: NotificationEvents
 ```
-Создаёт поток уведомлений. Каждый вызов — новый независимый поток. См. [Realtime](./realtime.md).
+REST-методы и один ленивый стабильный канал уведомлений. Настройки канала задаются через
+`new ItdClient({ events: { notifications: options } })`. См. [события уведомлений](./realtime.md).
 
 ```ts
 on<K>(event: K, listener): Unsubscribe

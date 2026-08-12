@@ -1,20 +1,20 @@
 import {
   type Comment,
+  type EventContext,
   type ItdClient,
   NotificationType,
+  NotificationUpdateType,
   type Post,
   type PublicProfile,
-  type RealtimeContextBase,
-  RealtimeUpdateType,
 } from 'itd-api';
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
   HydratedComment,
+  HydratedEventContext,
   HydratedNotification,
+  HydratedNotificationEvents,
   HydratedPost,
   HydratedProfile,
-  HydratedRealtime,
-  HydratedRealtimeContext,
   HydratedUserReference,
   HydrateFlavor,
   HydrateValue,
@@ -28,12 +28,11 @@ interface ExtendedPost extends Post {
 
 describe('расширяемые типы', () => {
   it('сохраняет поля и владельца произвольного realtime-контекста', () => {
-    interface CustomContext
-      extends RealtimeContextBase<{ payload: Post }, { readonly kind: 'custom' }> {
+    interface CustomContext extends EventContext<{ payload: Post }, { readonly kind: 'custom' }> {
       session: { id: string };
     }
 
-    type Result = HydratedRealtimeContext<CustomContext>;
+    type Result = HydratedEventContext<CustomContext>;
 
     expectTypeOf<Result['update']['payload']>().toEqualTypeOf<HydratedPost>();
     expectTypeOf<Result['stream']>().toEqualTypeOf<{ readonly kind: 'custom' }>();
@@ -54,11 +53,11 @@ describe('расширяемые типы', () => {
 
   it('выводит гидратированные типы realtime', () => {
     const check = (client: HydrateFlavor<ItdClient>) => {
-      const stream = client.realtime();
-      expectTypeOf(stream).toEqualTypeOf<HydratedRealtime>();
+      const stream = client.notifications.events;
+      expectTypeOf(stream).toEqualTypeOf<HydratedNotificationEvents>();
 
       stream.use(async (context, next) => {
-        if (context.update.type === RealtimeUpdateType.Notification) {
+        if (context.update.type === NotificationUpdateType.Notification) {
           expectTypeOf(context.update.data.notification).toEqualTypeOf<HydratedNotification>();
           expectTypeOf(context.update.data.notification.getPost()).toEqualTypeOf<
             Promise<HydratedPost | undefined>
@@ -68,7 +67,7 @@ describe('расширяемые типы', () => {
       });
 
       stream.onNotification(NotificationType.PostComment, ({ update, stream: source }) => {
-        expectTypeOf(source).toEqualTypeOf<HydratedRealtime>();
+        expectTypeOf(source).toEqualTypeOf<HydratedNotificationEvents>();
         expectTypeOf(update.data.notification.type).toEqualTypeOf<
           typeof NotificationType.PostComment
         >();

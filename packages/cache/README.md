@@ -103,8 +103,8 @@ cached.clear();
 ## Realtime
 
 ```ts
-const stream = itd.realtime();
-const detachCache = cached.attachRealtime(stream);
+const stream = itd.notifications.events;
+const detachCache = cached.attachEvents(stream);
 
 await stream.connect();
 
@@ -151,7 +151,7 @@ clientB.use(shared);
 копиями не объединяет.
 
 `maxEntries` ограничивает весь экземпляр `shared`, а `clear()` и `invalidate()` управляют
-всеми его разделами. `attachRealtime()` затрагивает аккаунт создавшего поток клиента.
+всеми его разделами. `attachEvents()` затрагивает аккаунт создавшего поток клиента.
 Смена сессии сохраняет общий кэш, смена пользователя автоматически выбирает другой раздел.
 
 ## Ключ

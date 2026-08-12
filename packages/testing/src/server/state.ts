@@ -5,7 +5,7 @@ import {
   postFixture,
   publicProfileFixture,
 } from '../fixtures.js';
-import { MockRealtimeTransport } from '../realtime.js';
+import { MockEventTransport } from '../realtime.js';
 import type { MockRequest } from '../request.js';
 import type { MockServerSeed, MockServerSnapshot } from './contracts.js';
 import type { CommentState, NotificationState, PostState, UserState } from './entities.js';
@@ -31,7 +31,7 @@ export class MockServerState {
   posts = new Map<string, PostState>();
   comments = new Map<string, CommentState>();
   notifications: NotificationState[] = [];
-  readonly realtime = new Map<string, Set<MockRealtimeTransport>>();
+  readonly realtime = new Map<string, Set<MockEventTransport>>();
   readonly clock: ItdClock;
   #postSequence = 1;
   #commentSequence = 1;
@@ -191,8 +191,8 @@ export class MockServerState {
     return id;
   }
 
-  registerRealtime(user: UserState): MockRealtimeTransport {
-    const transport = new MockRealtimeTransport();
+  registerRealtime(user: UserState): MockEventTransport {
+    const transport = new MockEventTransport();
     const transports = this.realtime.get(user.profile.id) ?? new Set();
     transports.add(transport);
     this.realtime.set(user.profile.id, transports);

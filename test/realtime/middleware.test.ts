@@ -1,24 +1,24 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
-  RealtimeComposer,
-  type RealtimeContext,
-  type RealtimeMiddlewareObj,
-  type RealtimeUnknownUpdate,
-  RealtimeUpdateType,
+  EventComposer,
+  type EventMiddlewareObject,
+  type NotificationEventContext,
+  NotificationUpdateType,
+  type UnknownNotificationUpdate,
 } from '../../src/index.js';
 import { MAX_PENDING_UPDATES } from '../../src/realtime/middleware.js';
 import { makeStream, notification, TestTransport, unreadCount } from './helpers.js';
 
 describe('realtime middleware', () => {
-  it('подключает RealtimeComposer к stream как единый feature-модуль', async () => {
+  it('подключает EventComposer к stream как единый feature-модуль', async () => {
     const transport = new TestTransport();
     const stream = makeStream(transport);
-    const feature = new RealtimeComposer<RealtimeContext>();
+    const feature = new EventComposer<NotificationEventContext>();
     const seen: string[] = [];
     feature
-      .filter((context) => context.update.type === RealtimeUpdateType.Notification)
+      .filter((context) => context.update.type === NotificationUpdateType.Notification)
       .use(async (context, next) => {
-        if (context.update.type === RealtimeUpdateType.Notification) {
+        if (context.update.type === NotificationUpdateType.Notification) {
           seen.push(context.update.data.notification.id);
         }
         await next();
@@ -42,7 +42,7 @@ describe('realtime middleware', () => {
     const captured: string[] = [];
     const seen: string[] = [];
     let version = 'first';
-    const feature: RealtimeMiddlewareObj = {
+    const feature: EventMiddlewareObject = {
       middleware() {
         const snapshot = version;
         captured.push(snapshot);
@@ -238,7 +238,7 @@ describe('realtime middleware', () => {
 
 describe('realtime handlers и filters', () => {
   it('сохраняет флейвор контекста после сужения update', async () => {
-    type SessionContext = RealtimeContext & { session: { id: string } };
+    type SessionContext = NotificationEventContext & { session: { id: string } };
 
     const transport = new TestTransport();
     const stream = makeStream<SessionContext>(transport);
@@ -248,7 +248,7 @@ describe('realtime handlers и filters', () => {
       context.session = { id: 'session-1' };
       await next();
     });
-    stream.onUpdate(RealtimeUpdateType.Notification, (context) => {
+    stream.onUpdate(NotificationUpdateType.Notification, (context) => {
       expectTypeOf(context.session.id).toEqualTypeOf<string>();
       expectTypeOf(context.update.type).toEqualTypeOf<'notification'>();
       sessions.push(context.session.id);
@@ -270,7 +270,7 @@ describe('realtime handlers и filters', () => {
     const stream = makeStream(new TestTransport());
 
     stream.onUpdate((context) => {
-      expectTypeOf(context.update).toEqualTypeOf<RealtimeContext['update']>();
+      expectTypeOf(context.update).toEqualTypeOf<NotificationEventContext['update']>();
     });
     stream.onUpdate('unreadCount', (context) => {
       expectTypeOf(context.update.type).toEqualTypeOf<'unreadCount'>();
@@ -287,9 +287,11 @@ describe('realtime handlers и filters', () => {
       >();
     });
 
-    type StructuredUnknown = RealtimeContext<RealtimeUnknownUpdate & { data: { postId: string } }>;
-    const isStructuredUnknown = (context: RealtimeContext): context is StructuredUnknown =>
-      context.update.type === RealtimeUpdateType.Unknown &&
+    type StructuredUnknown = NotificationEventContext<
+      UnknownNotificationUpdate & { data: { postId: string } }
+    >;
+    const isStructuredUnknown = (context: NotificationEventContext): context is StructuredUnknown =>
+      context.update.type === NotificationUpdateType.Unknown &&
       typeof context.update.data === 'object' &&
       context.update.data !== null &&
       'postId' in context.update.data;
@@ -415,14 +417,14 @@ describe('realtime dispatch', () => {
     const stream = makeStream(transport, {
       concurrency: 2,
       sequentialize: ({ update }) =>
-        update.type === RealtimeUpdateType.Unknown
+        update.type === NotificationUpdateType.Unknown
           ? (update.data as { keys: readonly string[] }).keys
           : undefined,
     });
     const started: string[] = [];
     const releases = new Map<string, () => void>();
 
-    stream.onUpdate(RealtimeUpdateType.Unknown, async ({ update }) => {
+    stream.onUpdate(NotificationUpdateType.Unknown, async ({ update }) => {
       started.push(update.name);
       if (update.name === 'first' || update.name === 'multi') {
         await new Promise<void>((resolve) => releases.set(update.name, resolve));
@@ -452,14 +454,14 @@ describe('realtime dispatch', () => {
     const seen: string[] = [];
     let release: (() => void) | undefined;
 
-    stream.onUpdate(RealtimeUpdateType.Notification, async ({ update }) => {
+    stream.onUpdate(NotificationUpdateType.Notification, async ({ update }) => {
       seen.push(update.data.notification.id);
       if (seen.length > 1) return;
       await new Promise<void>((resolve) => {
         release = resolve;
       });
     });
-    stream.onUpdate(RealtimeUpdateType.UnreadCount, ({ update }) => {
+    stream.onUpdate(NotificationUpdateType.UnreadCount, ({ update }) => {
       counts.push(update.data);
     });
 
@@ -487,7 +489,7 @@ describe('realtime dispatch', () => {
     let release: (() => void) | undefined;
 
     stream.on('error', () => {});
-    stream.onUpdate(RealtimeUpdateType.Notification, async ({ update }) => {
+    stream.onUpdate(NotificationUpdateType.Notification, async ({ update }) => {
       seen.push(update.data.notification.id);
       if (seen.length > 1) return;
       await new Promise<void>((resolve) => {

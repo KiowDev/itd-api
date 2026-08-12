@@ -2,7 +2,8 @@
   "$schema": "https://typedoc.org/schema.json",
 
   // Точка входа, tsconfig, имя и каталог задаются scripts/build-docs.mjs
-  // отдельно для каждого публичного npm entry point.
+  // отдельно для каждого документируемого npm entry point. Облегчённые entry points,
+  // полностью входящие в корневой API, второй раз не генерируются.
   "readme": "none",
   "includeVersion": true,
 

@@ -1,19 +1,19 @@
 import type {
+  EventContext,
+  EventTransport,
+  EventTransportContext,
   Notification,
-  RealtimeContext,
-  RealtimeContextBase,
-  RealtimeTransport,
-  TransportContext,
+  NotificationEventContext,
 } from 'itd-api';
 
 interface ActiveConnection {
-  readonly context: TransportContext;
+  readonly context: EventTransportContext;
   readonly resolve: () => void;
   readonly reject: (error: unknown) => void;
 }
 
 /** Управляемый realtime-транспорт без сетевого соединения. */
-export class MockRealtimeTransport implements RealtimeTransport {
+export class MockEventTransport implements EventTransport {
   readonly name = 'mock';
   #active: ActiveConnection | undefined;
   #connections = 0;
@@ -29,7 +29,7 @@ export class MockRealtimeTransport implements RealtimeTransport {
     return this.#active !== undefined;
   }
 
-  connect(context: TransportContext): Promise<void> {
+  connect(context: EventTransportContext): Promise<void> {
     this.#connections += 1;
     context.onOpen();
     for (const waiter of this.#waiters) waiter();
@@ -95,18 +95,18 @@ export class MockRealtimeTransport implements RealtimeTransport {
   }
 
   #requireConnection(): ActiveConnection {
-    if (!this.#active) throw new Error('MockRealtimeTransport не подключён');
+    if (!this.#active) throw new Error('MockEventTransport не подключён');
     return this.#active;
   }
 }
 
-export interface WaitForUpdateOptions<C extends RealtimeContextBase = RealtimeContext> {
+export interface WaitForUpdateOptions<C extends EventContext = NotificationEventContext> {
   signal?: AbortSignal;
   predicate?: (context: C) => boolean;
 }
 
 /** Дожидается одного подходящего обновления без привязки к средству запуска тестов. */
-export function waitForUpdate<C extends RealtimeContextBase = RealtimeContext>(
+export function waitForUpdate<C extends EventContext = NotificationEventContext>(
   stream: { onUpdate(handler: (context: C) => void | Promise<void>): () => void },
   options: WaitForUpdateOptions<C> = {},
 ): Promise<C> {

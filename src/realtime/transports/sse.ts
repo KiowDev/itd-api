@@ -2,8 +2,8 @@ import { createParser } from 'eventsource-parser';
 import { type ItdClock, systemClock } from '../../core/clock.js';
 import { joinUrl } from '../../core/url.js';
 import {
-  type RealtimeTransport,
-  type TransportContext,
+  type EventTransport,
+  type EventTransportContext,
   UnauthorizedStreamError,
 } from './transport.js';
 
@@ -43,7 +43,7 @@ export interface SseTransportOptions {
  * между сетевыми чанками. В разборе на сайте итд.com каждый из этих случаев обрабатывается
  * неверно.
  */
-export class SseTransport implements RealtimeTransport {
+export class SseTransport implements EventTransport {
   readonly name = 'sse';
 
   readonly #idleTimeout: number;
@@ -58,7 +58,7 @@ export class SseTransport implements RealtimeTransport {
     this.#handshakeTimeout = options.handshakeTimeout ?? 20_000;
   }
 
-  async connect(context: TransportContext): Promise<void> {
+  async connect(context: EventTransportContext): Promise<void> {
     const token = context.authorize ? await context.getToken() : null;
     if (context.authorize && !token) throw new UnauthorizedStreamError();
 
@@ -98,7 +98,7 @@ export class SseTransport implements RealtimeTransport {
   async #handshake(
     url: string,
     headers: Headers,
-    context: TransportContext,
+    context: EventTransportContext,
     controller: AbortController,
   ): Promise<Response> {
     let expired = false;
@@ -121,7 +121,7 @@ export class SseTransport implements RealtimeTransport {
     }
   }
 
-  async #read(body: ReadableStream<Uint8Array>, context: TransportContext): Promise<void> {
+  async #read(body: ReadableStream<Uint8Array>, context: EventTransportContext): Promise<void> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
 

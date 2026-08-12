@@ -1,11 +1,10 @@
 import { installAsyncDisposeFallback } from './core/async-dispose.js';
-import { createDeadline } from './core/clock.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdConfigError, ItdStateError } from './core/errors.js';
 import { type ClientRuntime, createClientRuntime } from './core/execution/client-runtime.js';
 import { ExtensibleOperationCatalog } from './core/feature-catalog.js';
-import { createFeatureHost } from './core/feature-host.js';
-import type { ClientFeature, FeatureRegistry } from './core/features.js';
+import { type ClientFeatureHost, createFeatureHost } from './core/feature-host.js';
+import type { ClientFeature } from './core/features.js';
 import type { RawRequestOptions } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import type { PluginRegistry } from './core/plugins/registry.js';
@@ -13,13 +12,17 @@ import type { RateLimitBucketState, RequestQueuePool } from './core/scheduling/r
 import type { ServiceDefinition } from './core/services.js';
 import { ITD_CATALOG } from './domain/catalog.js';
 import type { UserId } from './models/common.js';
+import { createNotificationsApi, type NotificationsApi } from './notifications-api.js';
 import type { ItdClientOptions } from './options.js';
-import { ItdRealtime, type RealtimeOptions, setRealtimeConnectGuard } from './realtime/stream.js';
+import {
+  NotificationEvents,
+  resolveNotificationEventsOptions,
+  setNotificationEventsConnectGuard,
+} from './realtime/stream.js';
 import { AuthResource } from './resources/auth.js';
 import type { CommentsResource } from './resources/comments.js';
 import type { FilesResource } from './resources/files.js';
 import type { HashtagsResource } from './resources/hashtags.js';
-import type { NotificationsResource } from './resources/notifications.js';
 import type { PlatformResource } from './resources/platform.js';
 import type { PostsResource } from './resources/posts.js';
 import type { ReportsResource } from './resources/reports.js';
@@ -113,14 +116,12 @@ export function createManagedClient(
  */
 export class ItdClient {
   readonly #runtime: ClientRuntime<AuthManager>;
-  readonly #features: FeatureRegistry;
-  /** Порождённые потоки уведомлений — чтобы `close()` мог закрыть их разом. */
-  readonly #streams = new Set<ItdRealtime>();
+  readonly #features: ClientFeatureHost;
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
   #disposePromise: Promise<void> | undefined;
 
   /** Ресурсы конвейера запросов; создаются при первом обращении. */
-  readonly #resources: RestResources;
+  readonly #resources: RestResources<NotificationsApi>;
   /** Сессионный ресурс живёт у фасада: он управляет входом и продлением. */
   #auth: AuthResource | undefined;
 
@@ -151,7 +152,7 @@ export class ItdClient {
   }
 
   /** Уведомления: список, счётчик, отметки о прочтении, настройки. */
-  get notifications(): NotificationsResource {
+  get notifications(): NotificationsApi {
     return this.#resources.notifications;
   }
 
@@ -191,8 +192,12 @@ export class ItdClient {
   }
 
   constructor(options: ItdClientOptions = {}) {
+    const notificationEventsOptions = resolveNotificationEventsOptions(
+      options.events?.notifications,
+    );
     const internals = CLIENT_INTERNALS.get(options) ?? {};
     const catalog = new ExtensibleOperationCatalog(ITD_CATALOG);
+    let featureHost: ClientFeatureHost | undefined;
     this.#runtime = createClientRuntime(options, {
       catalog,
       queues: internals.queues,
@@ -200,9 +205,9 @@ export class ItdClient {
       // Полноценную сессию подставляет фасад: ядро о ней не знает, и клиент с готовым
       // токеном не потянет за собой ни хранилище, ни вход по паролю.
       auth: (deps) =>
-        createItdAuth(options, { ...deps, onAccountChange: () => this.#disconnectStreams() }),
+        createItdAuth(options, { ...deps, onAccountChange: () => featureHost?.stop() }),
     });
-    this.#features = createFeatureHost(this.#runtime, {
+    this.#features = featureHost = createFeatureHost(this.#runtime, {
       catalog,
       assertActive: (action) => assertClientActive(this, action),
     });
@@ -211,6 +216,39 @@ export class ItdClient {
       http: this.#runtime.http,
       fetch: this.#runtime.config.fetch,
       status,
+      createNotifications: (http) =>
+        createNotificationsApi(http, (notifications) => {
+          let events!: NotificationEvents;
+          let unregister: (() => void) | undefined;
+          events = new NotificationEvents(
+            {
+              connection: this.#runtime.connection(),
+              request: ({ operationId, path, query, signal }) =>
+                this.#runtime.http.operation(operationId, { path, query, signal }),
+              getAuthIdentity: () => this.#runtime.auth.getCurrentAuthIdentity(),
+              getAuthScope: () => this.#runtime.auth.getAuthScope(),
+              fetchUnreadCount: (signal) => notifications.count({ signal }),
+              onConnect: () => {
+                unregister ??= this.#features.manage({
+                  kind: `notifications:${events.transport}`,
+                  stop: () => events.disconnect(),
+                  drain: () => events.drain(),
+                });
+              },
+              onClose: () => {
+                unregister?.();
+                unregister = undefined;
+              },
+              logger: this.#runtime.config.logger,
+              clock: this.#runtime.config.clock,
+            },
+            notificationEventsOptions,
+          );
+          setNotificationEventsConnectGuard(events, () =>
+            assertClientActive(this, 'подключить канал событий уведомлений'),
+          );
+          return events;
+        }),
     });
     CLIENT_PLUGIN_REGISTRIES.set(this, this.#runtime.plugins);
   }
@@ -423,58 +461,6 @@ export class ItdClient {
   }
 
   /**
-   * Создаёт поток уведомлений в реальном времени.
-   *
-   * Каждый вызов даёт новый независимый поток; обычно он нужен один на приложение.
-   * Соединение поднимается методом `connect()` и держится само. Замена авторизации на токен
-   * другого пользователя завершает все потоки клиента; смена только сессии их не затрагивает.
-   *
-   * @example
-   * ```ts
-   * import { NotificationType } from 'itd-api';
-   *
-   * const stream = itd.realtime();
-   *
-   * stream.onNotification(NotificationType.PostComment, async ({ update }) => {
-   *   await handleComment(update.data.notification);
-   * });
-   * stream.on('unreadCount', (count) => setBadge(count));
-   *
-   * await stream.connect();
-   * ```
-   *
-   * @throws {ItdStateError} если клиент уже освобождён через {@link dispose}
-   */
-  realtime(options: RealtimeOptions = {}): ItdRealtime {
-    assertClientActive(this, 'создать realtime-поток');
-    let stream!: ItdRealtime;
-    stream = new ItdRealtime(
-      {
-        baseUrl: this.#runtime.config.baseUrl,
-        fetch: this.#runtime.config.fetch,
-        request: ({ operationId, path, query, signal }) =>
-          this.#runtime.http.operation(operationId, { path, query, signal }),
-        baseHeaders: (url) => this.#runtime.platformHeaders(url),
-        getAuthIdentity: () => this.#runtime.auth.getCurrentAuthIdentity(),
-        getAuthScope: () => this.#runtime.auth.getAuthScope(),
-        getToken: () => this.#runtime.auth.token(),
-        refresh: () => this.#runtime.auth.onUnauthorized(),
-        fetchUnreadCount: () => this.notifications.count(),
-        onConnect: () => this.#streams.add(stream),
-        onClose: () => this.#streams.delete(stream),
-        logger: this.#runtime.config.logger,
-        clock: this.#runtime.config.clock,
-      },
-      options,
-    );
-    setRealtimeConnectGuard(stream, () => assertClientActive(this, 'подключить realtime-поток'));
-
-    // Регистрируем для `close()`: поток держит открытое соединение и таймер переподключения.
-    this.#streams.add(stream);
-    return stream;
-  }
-
-  /**
    * Освобождает ресурсы клиента: закрывает все потоки уведомлений, отправляет открытые
    * накопители {@link telemetry}, затем останавливает очередь запросов.
    *
@@ -494,26 +480,11 @@ export class ItdClient {
   }
 
   async #close(disposeCleanup: boolean): Promise<void> {
-    const streams = this.#disconnectStreams();
     // Terminal cleanup должен пометить batch до первого await: параллельный обычный close()
     // мог уже начать drain потоков, но ещё не дойти до отправки телеметрии.
     if (disposeCleanup) this.#resources.prepareTelemetryClose();
-    const { shutdownTimeout, clock } = this.#runtime.config;
-    const deadline = createDeadline(shutdownTimeout, clock);
-    let stuck: ItdRealtime[] = [];
     const errors: unknown[] = [];
     try {
-      try {
-        const waited = await Promise.all(
-          streams.map(async (stream) =>
-            (await deadline.wait(stream.drain())) ? undefined : stream,
-          ),
-        );
-        stuck = waited.filter((stream): stream is ItdRealtime => stream !== undefined);
-      } catch (error) {
-        errors.push(error);
-      }
-
       try {
         await this.#features.close();
       } catch (error) {
@@ -528,18 +499,7 @@ export class ItdClient {
         errors.push(error);
       }
     } finally {
-      deadline.cancel();
       this.#runtime.close();
-    }
-
-    // Об истёкшем сроке сообщаем после отправки телеметрии.
-    if (stuck.length > 0) {
-      errors.push(
-        new ItdStateError(
-          `обработчики потоков (${stuck.map((stream) => stream.transport).join(', ')}) ` +
-            `не завершились за ${shutdownTimeout} мс; ожидание прекращено`,
-        ),
-      );
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) throw new AggregateError(errors, 'Не удалось закрыть клиент');
@@ -551,7 +511,7 @@ export class ItdClient {
    *
    * Терминальное состояние устанавливается сразу при первом вызове. После этого новые
    * запросы, подключение плагинов, регистрация сервисов и создание или повторный запуск
-   * realtime-потоков завершаются с {@link ItdStateError}. Повторные вызовы возвращают
+   * событийных каналов завершаются с {@link ItdStateError}. Повторные вызовы возвращают
    * тот же результат очистки.
    *
    * Ожидание обработчиков потока и операций плагинов ограничено `shutdownTimeout`.
@@ -589,14 +549,6 @@ export class ItdClient {
       errors.push(error);
     }
     if (errors.length > 0) throw new AggregateError(errors, 'Не удалось освободить клиент');
-  }
-
-  /** Завершает потоки до того, как запросы начнут использовать другой аккаунт. */
-  #disconnectStreams(): ItdRealtime[] {
-    const streams = [...this.#streams];
-    for (const stream of streams) stream.disconnect();
-    this.#streams.clear();
-    return streams;
   }
 
   /** Позволяет использовать клиент с `await using`. */

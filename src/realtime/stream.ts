@@ -1,46 +1,55 @@
 import type { AuthIdentity } from '../core/auth-provider.js';
 import type { ItdClock } from '../core/clock.js';
+import type { ClientConnection } from '../core/connection.js';
 import type { Listener, Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
 import type { Logger } from '../core/options.js';
 import { supportsStreamingBody } from '../core/runtime.js';
 import { pickString } from '../core/unwrap.js';
 import type { NotificationEvent } from '../notifications/normalize.js';
-import type { NotificationType, RealtimeStatus } from '../types/enums.js';
-import { RealtimeEngine, type RealtimeEngineEvents, type RealtimeSyncReason } from './engine.js';
+import type { EventChannelStatus, NotificationType } from '../types/enums.js';
+import {
+  EventChannel,
+  type EventChannelEvents,
+  type EventSyncReason,
+  resolveEventChannelOptions,
+  setEventChannelGiveUpHook,
+} from './engine.js';
 import type {
-  RealtimeHandler,
-  RealtimeMiddleware,
-  RealtimeMiddlewareObj,
-  RealtimePredicate,
-  RealtimeSequentializer,
-  RealtimeTypeGuard,
+  EventHandler,
+  EventMiddleware,
+  EventMiddlewareObject,
+  EventPredicate,
+  EventSequentializer,
+  EventTypeGuard,
 } from './middleware.js';
 import type { ReconnectOptions } from './reconnect.js';
 import { PollTransport } from './transports/poll.js';
 import { SseTransport } from './transports/sse.js';
-import type { RealtimeRequest, RealtimeTransport, TransportEvent } from './transports/transport.js';
+import type { EventRequest, EventTransport, EventTransportFrame } from './transports/transport.js';
 import {
   isNotificationContext,
   matchesNotification,
-  type RealtimeContext,
-  type RealtimeNotificationContext,
-  type RealtimeNotificationSelector,
-  type RealtimeUpdate,
-  type RealtimeUpdateOfType,
-  RealtimeUpdateType,
-  readRealtimeUpdate,
+  type NotificationContext,
+  type NotificationEventContext,
+  type NotificationEventSelector,
+  type NotificationEventsUpdate,
+  type NotificationUpdateOfType,
+  NotificationUpdateOrigin,
+  NotificationUpdateType,
+  readNotificationEventsUpdate,
   validateNotificationSelector,
 } from './updates.js';
 
 /**
  * События потока уведомлений.
  *
- * Общая часть — {@link RealtimeEngineEvents}: статусы, ошибки и переподключение одинаковы
+ * Общая часть — {@link EventChannelEvents}: статусы, ошибки и переподключение одинаковы
  * у любого потока. Ниже — то, что есть только у уведомлений.
  */
-export interface RealtimeEvents<C extends RealtimeContext = RealtimeContext>
-  extends RealtimeEngineEvents<C> {
+export interface NotificationEventsMap<
+  C extends NotificationEventContext = NotificationEventContext,
+> extends EventChannelEvents<C> {
   /** Пришло новое уведомление. */
   notification: NotificationEvent;
   /**
@@ -60,7 +69,7 @@ export interface RealtimeEvents<C extends RealtimeContext = RealtimeContext>
 }
 
 /** Способ получения событий. */
-export const RealtimeTransportKind = Object.freeze({
+export const NotificationEventsTransport = Object.freeze({
   /** Поток событий, если среда умеет читать тело по частям, иначе опрос. */
   Auto: 'auto',
   /** Поток `text/event-stream`. */
@@ -68,20 +77,21 @@ export const RealtimeTransportKind = Object.freeze({
   /** Периодический опрос REST. */
   Poll: 'poll',
 } as const);
-export type RealtimeTransportKind =
-  (typeof RealtimeTransportKind)[keyof typeof RealtimeTransportKind];
+export type NotificationEventsTransport =
+  (typeof NotificationEventsTransport)[keyof typeof NotificationEventsTransport];
 
 /** Настройки потока уведомлений. */
-export interface RealtimeOptions<C extends RealtimeContext = RealtimeContext>
-  extends ReconnectOptions {
+export interface NotificationEventsOptions<
+  C extends NotificationEventContext = NotificationEventContext,
+> extends ReconnectOptions {
   /**
    * Транспорт. По умолчанию `auto`: поток событий, если среда умеет читать тело ответа
    * по частям, иначе опрос.
    *
-   * Можно передать и свою реализацию {@link RealtimeTransport} — это пригодится, если
+   * Можно передать и свою реализацию {@link EventTransport} — это пригодится, если
    * у платформы появится WebSocket либо нужен нестандартный способ доставки.
    */
-  transport?: RealtimeTransportKind | RealtimeTransport;
+  transport?: NotificationEventsTransport | EventTransport;
   /**
    * Молчание сервера, после которого соединение считается мёртвым, мс. По умолчанию 90 000.
    *
@@ -116,16 +126,19 @@ export interface RealtimeOptions<C extends RealtimeContext = RealtimeContext>
   /** Максимальное число одновременно обрабатываемых обновлений. По умолчанию 1. */
   concurrency?: number;
   /** Возвращает ключи обновлений, которые нельзя обрабатывать одновременно. */
-  sequentialize?: RealtimeSequentializer<C>;
+  sequentialize?: EventSequentializer<C>;
 }
 
 /** Проверяет настройки потока. @throws {ItdConfigError} при некорректных значениях */
-function validateRealtimeOptions<C extends RealtimeContext>(options: RealtimeOptions<C>): void {
+export function resolveNotificationEventsOptions<C extends NotificationEventContext>(
+  options: NotificationEventsOptions<C> = {},
+): Readonly<NotificationEventsOptions<C>> {
+  resolveEventChannelOptions(options);
   const duration = (value: number | undefined, name: string, min: number): void => {
     if (value === undefined) return;
     if (!Number.isFinite(value) || value < min) {
       throw new ItdConfigError(
-        `realtime.${name} должен быть числом не меньше ${min}, получено: ${value}`,
+        `events.notifications.${name} должен быть числом не меньше ${min}, получено: ${value}`,
       );
     }
   };
@@ -133,28 +146,24 @@ function validateRealtimeOptions<C extends RealtimeContext>(options: RealtimeOpt
   duration(options.pollInterval, 'pollInterval', 1);
   duration(options.idleTimeout, 'idleTimeout', 0);
   duration(options.handshakeTimeout, 'handshakeTimeout', 0);
+  return Object.freeze({
+    ...options,
+    ...(options.backoff ? { backoff: Object.freeze([...options.backoff]) } : {}),
+  });
 }
 
 /** Что поток получает от клиента. */
-export interface RealtimeDeps {
-  baseUrl: string;
-  /** Разрешено ли транспорту передавать токен этому сервису. */
-  authorize?: boolean | undefined;
-  fetch: typeof fetch;
-  /** Конвейер клиента — см. {@link TransportContext.request}. */
-  request?: RealtimeRequest | undefined;
+export interface NotificationEventsDeps {
+  connection: ClientConnection;
+  /** Конвейер клиента — см. {@link EventTransportContext.request}. */
+  request?: EventRequest | undefined;
   clock?: ItdClock;
-  /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
-  baseHeaders: (url: string) => Promise<Headers>;
   /** Идентификаторы аккаунта и сессии создавшего поток клиента. */
   getAuthIdentity?: (() => AuthIdentity) | undefined;
   /** Непрозрачная область авторизации создавшего поток клиента. */
   getAuthScope?: (() => string) | undefined;
-  getToken: () => Promise<string | null>;
-  /** Обновляет токен после отказа авторизации. Возвращает `true`, если удалось. */
-  refresh: () => Promise<boolean>;
   /** Загружает начальное число непрочитанных. */
-  fetchUnreadCount: () => Promise<number>;
+  fetchUnreadCount: (signal: AbortSignal) => Promise<number>;
   /** Вызывается при явном закрытии потока. */
   onClose?: (() => void) | undefined;
   /** Вызывается при запуске ранее закрытого потока. */
@@ -165,8 +174,8 @@ export interface RealtimeDeps {
 const REALTIME_CONNECT_GUARDS = new WeakMap<object, () => void>();
 
 /** Связывает поток с lifecycle создавшего его клиента. @internal */
-export function setRealtimeConnectGuard<C extends RealtimeContext>(
-  stream: ItdRealtime<C>,
+export function setNotificationEventsConnectGuard<C extends NotificationEventContext>(
+  stream: NotificationEvents<C>,
   guard: () => void,
 ): void {
   REALTIME_CONNECT_GUARDS.set(stream, guard);
@@ -175,17 +184,17 @@ export function setRealtimeConnectGuard<C extends RealtimeContext>(
 /**
  * Поток уведомлений в реальном времени.
  *
- * Получается вызовом `itd.realtime()`. Соединение поднимается методом {@link connect}
+ * Доступен как стабильное свойство `itd.notifications.events`. Соединение поднимается методом {@link connect}
  * и держится само: обрывы, обновление токена и повторные попытки библиотека берёт на себя.
  *
  * Параметр типа задаёт форму контекста: плагин может расширить её своими полями
- * (`ItdRealtime<RealtimeContext & SessionFlavor<S>>`) и типизировать обработчики.
+ * (`NotificationEvents<NotificationEventContext & SessionFlavor<S>>`) и типизировать обработчики.
  *
  * @example
  * ```ts
  * import { NotificationType } from 'itd-api';
  *
- * const stream = itd.realtime();
+ * const stream = itd.notifications.events;
  *
  * stream.onNotification(NotificationType.PostComment, async ({ update }) => {
  *   await saveCommentNotification(update.data.notification);
@@ -198,33 +207,38 @@ export function setRealtimeConnectGuard<C extends RealtimeContext>(
  * await stream.drain();
  * ```
  */
-export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
-  readonly #deps: RealtimeDeps;
-  readonly #engine: RealtimeEngine<RealtimeUpdate, C, RealtimeEvents<C>>;
+export class NotificationEvents<C extends NotificationEventContext = NotificationEventContext> {
+  readonly #deps: NotificationEventsDeps;
+  readonly #engine: EventChannel<
+    NotificationEventsUpdate,
+    C,
+    NotificationEventsMap<C>,
+    NotificationUpdateOrigin
+  >;
+  #lifecycleActive = false;
 
-  constructor(deps: RealtimeDeps, options: RealtimeOptions<C> = {}) {
-    validateRealtimeOptions(options);
+  /** @internal */
+  constructor(deps: NotificationEventsDeps, options: NotificationEventsOptions<C> = {}) {
+    options = resolveNotificationEventsOptions(options);
 
     this.#deps = deps;
-    this.#engine = new RealtimeEngine<RealtimeUpdate, C, RealtimeEvents<C>>(
+    this.#engine = new EventChannel<
+      NotificationEventsUpdate,
+      C,
+      NotificationEventsMap<C>,
+      NotificationUpdateOrigin
+    >(
       {
-        baseUrl: deps.baseUrl,
-        authorize: deps.authorize ?? true,
-        fetch: deps.fetch,
-        request: deps.request,
+        connection: deps.connection,
         clock: deps.clock,
-        baseHeaders: deps.baseHeaders,
-        getToken: deps.getToken,
-        refresh: deps.refresh,
-        onConnect: deps.onConnect,
-        onClose: deps.onClose,
         logger: deps.logger,
 
         transport: createTransport(deps, options),
+        streamOrigin: NotificationUpdateOrigin.Stream,
         handleFrame: (event) => this.#handleFrame(event),
-        readUpdate: readRealtimeUpdate,
+        readUpdate: readNotificationEventsUpdate,
         coalesceKey: (update) =>
-          update.type === RealtimeUpdateType.UnreadCount ? update.type : undefined,
+          update.type === NotificationUpdateType.UnreadCount ? update.type : undefined,
         createContext: (update, raw, origin) =>
           // Флейворные поля появляются в контексте позже — их присваивают плагины
           // в своих middleware, поэтому здесь собирается базовая форма.
@@ -233,16 +247,19 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
         ...(options.syncCount === false
           ? {}
           : {
-              sync: (reason: RealtimeSyncReason, dispatch: (update: RealtimeUpdate) => void) =>
-                this.#syncUnreadCount(reason, dispatch),
+              initialize: (reason: EventSyncReason, session) =>
+                this.#syncUnreadCount(reason, session.signal, (update) =>
+                  session.enqueue(update, { origin: NotificationUpdateOrigin.Sync }),
+                ),
             }),
       },
       options,
     );
+    setEventChannelGiveUpHook(this.#engine, () => this.#closeLifecycle());
   }
 
   /** Текущее состояние соединения. */
-  get status(): RealtimeStatus {
+  get status(): EventChannelStatus {
     return this.#engine.status;
   }
 
@@ -253,7 +270,7 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
 
   /** Базовый URL клиента, создавшего поток. @internal */
   get baseUrl(): string {
-    return this.#deps.baseUrl;
+    return this.#deps.connection.baseUrl;
   }
 
   /** Идентификаторы аккаунта и сессии клиента, создавшего поток. @internal */
@@ -267,17 +284,17 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
   }
 
   /** Подписывается на событие потока. @returns функция отписки */
-  on<K extends keyof RealtimeEvents<C>>(
+  on<K extends keyof NotificationEventsMap<C>>(
     event: K,
-    listener: Listener<RealtimeEvents<C>[K]>,
+    listener: Listener<NotificationEventsMap<C>[K]>,
   ): Unsubscribe {
     return this.#engine.on(event, listener);
   }
 
   /** Подписывается на одно срабатывание. */
-  once<K extends keyof RealtimeEvents<C>>(
+  once<K extends keyof NotificationEventsMap<C>>(
     event: K,
-    listener: Listener<RealtimeEvents<C>[K]>,
+    listener: Listener<NotificationEventsMap<C>[K]>,
   ): Unsubscribe {
     return this.#engine.once(event, listener);
   }
@@ -290,43 +307,43 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
    *
    * @returns функция удаления обработчика
    */
-  use(middleware: RealtimeMiddleware<C> | RealtimeMiddlewareObj<C>): Unsubscribe {
+  use(middleware: EventMiddleware<C> | EventMiddlewareObject<C>): Unsubscribe {
     return this.#engine.use(middleware);
   }
 
   /** Подписывает асинхронный обработчик на все нормализованные обновления. */
-  onUpdate(handler: RealtimeHandler<C>): Unsubscribe;
+  onUpdate(handler: EventHandler<C>): Unsubscribe;
   /** Подписывает асинхронный обработчик на обновление указанного типа. */
-  onUpdate<T extends RealtimeUpdateType>(
+  onUpdate<T extends NotificationUpdateType>(
     type: T,
-    handler: RealtimeHandler<C & RealtimeContext<RealtimeUpdateOfType<T>>>,
+    handler: EventHandler<C & NotificationEventContext<NotificationUpdateOfType<T>>>,
   ): Unsubscribe;
   /** Подписывает асинхронный обработчик по функции сужения типа. */
-  onUpdate<N extends C>(guard: RealtimeTypeGuard<N, C>, handler: RealtimeHandler<N>): Unsubscribe;
+  onUpdate<N extends C>(guard: EventTypeGuard<N, C>, handler: EventHandler<N>): Unsubscribe;
   /** Подписывает асинхронный обработчик по пользовательскому условию. */
-  onUpdate(predicate: RealtimePredicate<C>, handler: RealtimeHandler<C>): Unsubscribe;
+  onUpdate(predicate: EventPredicate<C>, handler: EventHandler<C>): Unsubscribe;
   onUpdate(
-    selectorOrHandler: RealtimeUpdateType | RealtimePredicate<C> | RealtimeHandler<C>,
-    selectedHandler?: RealtimeHandler<C>,
+    selectorOrHandler: NotificationUpdateType | EventPredicate<C> | EventHandler<C>,
+    selectedHandler?: EventHandler<C>,
   ): Unsubscribe {
     const selectAll = selectedHandler === undefined;
-    const handler = selectAll ? (selectorOrHandler as RealtimeHandler<C>) : selectedHandler;
+    const handler = selectAll ? (selectorOrHandler as EventHandler<C>) : selectedHandler;
     if (typeof handler !== 'function') {
-      throw new ItdConfigError('realtime.onUpdate() принимает функцию обработчика');
+      throw new ItdConfigError('events.onUpdate() принимает функцию обработчика');
     }
     if (
       !selectAll &&
       typeof selectorOrHandler !== 'function' &&
-      !Object.values(RealtimeUpdateType).includes(selectorOrHandler)
+      !Object.values(NotificationUpdateType).includes(selectorOrHandler)
     ) {
       throw new ItdConfigError(`Неизвестный тип обновления потока: ${String(selectorOrHandler)}`);
     }
 
-    let predicate: RealtimePredicate<C>;
+    let predicate: EventPredicate<C>;
     if (selectAll) {
       predicate = () => true;
     } else {
-      const selector = selectorOrHandler as RealtimeUpdateType | RealtimePredicate<C>;
+      const selector = selectorOrHandler as NotificationUpdateType | EventPredicate<C>;
       predicate =
         typeof selector === 'function' ? selector : (context) => context.update.type === selector;
     }
@@ -336,38 +353,36 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
 
   /** Подписывает асинхронный обработчик на уведомления, подходящие под фильтр. */
   onNotification<T extends NotificationType>(
-    selector: RealtimeNotificationSelector<T>,
-    handler: RealtimeHandler<C & RealtimeNotificationContext<T>>,
+    selector: NotificationEventSelector<T>,
+    handler: EventHandler<C & NotificationContext<T>>,
   ): Unsubscribe;
   /** Подписывает асинхронный обработчик по функции сужения типа уведомления. */
-  onNotification<N extends C & RealtimeNotificationContext>(
-    guard: (context: C & RealtimeNotificationContext) => context is N,
-    handler: RealtimeHandler<N>,
+  onNotification<N extends C & NotificationContext>(
+    guard: (context: C & NotificationContext) => context is N,
+    handler: EventHandler<N>,
   ): Unsubscribe;
   /** Подписывает асинхронный обработчик по пользовательскому условию. */
   onNotification(
-    predicate: (context: C & RealtimeNotificationContext) => boolean,
-    handler: RealtimeHandler<C & RealtimeNotificationContext>,
+    predicate: (context: C & NotificationContext) => boolean,
+    handler: EventHandler<C & NotificationContext>,
   ): Unsubscribe;
   onNotification(
-    selector:
-      | RealtimeNotificationSelector
-      | ((context: C & RealtimeNotificationContext) => boolean),
+    selector: NotificationEventSelector | ((context: C & NotificationContext) => boolean),
     handler: (context: never) => unknown | Promise<unknown>,
   ): Unsubscribe {
     if (typeof handler !== 'function') {
-      throw new ItdConfigError('realtime.onNotification() принимает функцию обработчика');
+      throw new ItdConfigError('events.onNotification() принимает функцию обработчика');
     }
     if (typeof selector !== 'function') validateNotificationSelector(selector);
 
-    const predicate: RealtimePredicate<C> = (context) => {
+    const predicate: EventPredicate<C> = (context) => {
       if (!isNotificationContext(context)) return false;
       return typeof selector === 'function'
         ? selector(context)
         : matchesNotification(context, selector);
     };
 
-    return this.#engine.onUpdate(predicate, handler as RealtimeHandler<C>);
+    return this.#engine.onUpdate(predicate, handler as EventHandler<C>);
   }
 
   /**
@@ -382,12 +397,22 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
    */
   async connect(): Promise<void> {
     REALTIME_CONNECT_GUARDS.get(this)?.();
-    return this.#engine.connect();
+    if (this.#lifecycleActive) return this.#engine.connect();
+
+    this.#lifecycleActive = true;
+    try {
+      this.#deps.onConnect?.();
+      await this.#engine.connect();
+    } catch (error) {
+      this.#closeLifecycle();
+      throw error;
+    }
   }
 
   /** Закрывает соединение и отменяет запланированные попытки. */
   disconnect(): void {
     this.#engine.disconnect();
+    this.#closeLifecycle();
   }
 
   /** Ждёт завершения всех принятых обновлений. */
@@ -400,8 +425,14 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
     this.#engine.removeAllListeners();
   }
 
+  #closeLifecycle(): void {
+    if (!this.#lifecycleActive) return;
+    this.#lifecycleActive = false;
+    this.#deps.onClose?.();
+  }
+
   /** Кадр `connected` — не обновление, а подтверждение подключения. */
-  #handleFrame(event: TransportEvent): boolean {
+  #handleFrame(event: EventTransportFrame): boolean {
     if (event.name !== 'connected') return false;
 
     // Строго строка: `String(null)` дал бы подписчику осмысленно выглядящее «null».
@@ -416,17 +447,18 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
    * на каждой попытке переподключения нагружал бы сервер во время недоступности сети.
    */
   async #syncUnreadCount(
-    reason: RealtimeSyncReason,
-    dispatch: (update: RealtimeUpdate) => void,
+    reason: EventSyncReason,
+    signal: AbortSignal,
+    dispatch: (update: NotificationEventsUpdate) => void,
   ): Promise<void> {
     if (reason !== 'initial') return;
 
-    const count = await this.#deps.fetchUnreadCount();
-    dispatch({ type: RealtimeUpdateType.UnreadCount, data: count });
+    const count = await this.#deps.fetchUnreadCount(signal);
+    dispatch({ type: NotificationUpdateType.UnreadCount, data: count });
   }
 
-  #deliver(update: RealtimeUpdate): void {
-    if (update.type === RealtimeUpdateType.Notification) {
+  #deliver(update: NotificationEventsUpdate): void {
+    if (update.type === NotificationUpdateType.Notification) {
       this.#engine.emit('notification', update.data);
       if (update.data.unreadCount !== undefined) {
         this.#engine.emit('unreadCount', update.data.unreadCount);
@@ -434,31 +466,35 @@ export class ItdRealtime<C extends RealtimeContext = RealtimeContext> {
       return;
     }
 
-    if (update.type === RealtimeUpdateType.UnreadCount) {
+    if (update.type === NotificationUpdateType.UnreadCount) {
       this.#engine.emit('unreadCount', update.data);
       return;
     }
 
-    if (update.type === RealtimeUpdateType.Unknown) return;
+    if (update.type === NotificationUpdateType.Unknown) return;
 
     assertNeverUpdate(update);
   }
 }
 
 /** Выбирает транспорт по настройкам и возможностям среды. */
-function createTransport<C extends RealtimeContext>(
-  deps: RealtimeDeps,
-  options: RealtimeOptions<C>,
-): RealtimeTransport {
-  const kind = options.transport ?? RealtimeTransportKind.Auto;
+function createTransport<C extends NotificationEventContext>(
+  deps: NotificationEventsDeps,
+  options: NotificationEventsOptions<C>,
+): EventTransport {
+  const kind = options.transport ?? NotificationEventsTransport.Auto;
 
   if (typeof kind === 'object') return kind;
 
   if (
-    kind === RealtimeTransportKind.Poll ||
-    (kind === RealtimeTransportKind.Auto && !supportsStreamingBody())
+    kind === NotificationEventsTransport.Poll ||
+    (kind === NotificationEventsTransport.Auto && !supportsStreamingBody())
   ) {
+    if (!deps.request) {
+      throw new ItdConfigError('Poll transport requires a notification request adapter');
+    }
     return new PollTransport({
+      request: deps.request,
       ...(deps.clock ? { clock: deps.clock } : {}),
       ...(options.pollInterval !== undefined ? { interval: options.pollInterval } : {}),
     });

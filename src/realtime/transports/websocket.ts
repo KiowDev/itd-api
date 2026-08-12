@@ -3,8 +3,8 @@ import { ItdConfigError } from '../../core/errors.js';
 import { maskSecret, redactUrl } from '../../core/redact.js';
 import { buildQuery, joinUrl } from '../../core/url.js';
 import {
-  type RealtimeTransport,
-  type TransportContext,
+  type EventTransport,
+  type EventTransportContext,
   UnauthorizedStreamError,
 } from './transport.js';
 
@@ -157,7 +157,7 @@ function eventName(data: unknown): string {
 }
 
 /** Транспорт исходных realtime-событий поверх стандартного WebSocket. */
-export class WebSocketTransport implements RealtimeTransport {
+export class WebSocketTransport implements EventTransport {
   readonly name = 'ws';
 
   readonly #path: string;
@@ -214,7 +214,7 @@ export class WebSocketTransport implements RealtimeTransport {
     this.#clock = options.clock ?? systemClock;
   }
 
-  async connect(context: TransportContext): Promise<void> {
+  async connect(context: EventTransportContext): Promise<void> {
     if (context.signal.aborted) throw abortError(context.signal);
 
     const token = context.authorize ? await context.getToken() : null;
@@ -292,7 +292,7 @@ export class WebSocketTransport implements RealtimeTransport {
     socket: WebSocketConnection,
     url: string,
     token: string | null,
-    context: TransportContext,
+    context: EventTransportContext,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       let settled = false;

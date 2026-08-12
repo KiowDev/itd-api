@@ -1,16 +1,16 @@
-# Realtime — `itd.realtime()`
+# События уведомлений — `itd.notifications.events`
 
-Поток уведомлений в реальном времени. Создаётся `itd.realtime(options?)`, соединение
+Стабильный канал уведомлений, принадлежащий `itd.notifications`. Соединение
 поднимается `connect()` и держится само: клиент отслеживает молчание сервера, обновляет
 токен и переподключается после обрыва. Транспорт выбирается автоматически: SSE, а если
 среда не умеет читать тело по частям — опрос REST. Полное руководство —
 [Realtime](../realtime/).
 
 ```ts
-const stream = itd.realtime(options?: RealtimeOptions): ItdRealtime
+const stream: NotificationEvents = itd.notifications.events
 ```
 
-## Методы `ItdRealtime`
+## Методы `NotificationEvents`
 
 ```ts
 connect(): Promise<void>
@@ -34,22 +34,22 @@ removeAllListeners(): void
 `removeAllListeners()` не удаляет промежуточные и асинхронные обработчики.
 
 ```ts
-use(middleware: RealtimeMiddleware): Unsubscribe
+use(middleware: EventMiddleware): Unsubscribe
 ```
 Добавляет промежуточный обработчик нормализованных обновлений. Если не вызвать `next()`,
 обновление не передаётся дальше. Возвращённая функция удаляет регистрацию.
 
 ```ts
-onUpdate(handler: RealtimeHandler): Unsubscribe
+onUpdate(handler: EventHandler): Unsubscribe
 
-onUpdate<T extends RealtimeUpdateType>(
+onUpdate<T extends NotificationUpdateType>(
   type: T,
-  handler: RealtimeHandler<RealtimeContext<RealtimeUpdateOfType<T>>>,
+  handler: EventHandler<NotificationEventContext<NotificationUpdateOfType<T>>>,
 ): Unsubscribe
 
-onUpdate<C extends RealtimeContext>(
-  guard: (context: RealtimeContext) => context is C,
-  handler: RealtimeHandler<C>,
+onUpdate<C extends NotificationEventContext>(
+  guard: (context: NotificationEventContext) => context is C,
+  handler: EventHandler<C>,
 ): Unsubscribe
 ```
 Форма с одним обработчиком подписывает его на все нормализованные обновления. Остальные
@@ -58,8 +58,8 @@ onUpdate<C extends RealtimeContext>(
 
 ```ts
 onNotification<T extends NotificationType>(
-  selector: T | readonly T[] | RealtimeNotificationFilter<T>,
-  handler: RealtimeHandler<RealtimeNotificationContext<T>>,
+  selector: T | readonly T[] | NotificationEventFilter<T>,
+  handler: EventHandler<NotificationContext<T>>,
 ): Unsubscribe
 ```
 Фильтрует уведомления по каноническому типу, `actorId`, `entityId`, `parentEntityId` и
@@ -73,18 +73,18 @@ drain(): Promise<void>
 начатых обновлений очищена, поэтому `drain()` ждёт только активную обработку.
 
 ```ts
-get status: RealtimeStatus              // 'connecting' | 'connected' | 'error' | 'disconnected'
+get status: EventChannelStatus              // 'connecting' | 'connected' | 'error' | 'disconnected'
 get transport: string                   // 'sse' | 'poll'
 ```
 
-## События (`RealtimeEvents`)
+## События (`NotificationEventsMap`)
 
 | Событие | Данные | Когда |
 |---|---|---|
 | `notification` | `NotificationEvent` | пришло новое уведомление |
 | `ready` | `{ userId?: string }` | сервер подтвердил подключение (первый кадр) |
 | `unreadCount` | `number` | получен начальный счётчик через REST или его прислал поток |
-| `status` | `RealtimeStatus` | изменилось состояние соединения |
+| `status` | `EventChannelStatus` | изменилось состояние соединения |
 | `error` | `{ error, willReconnect }` | соединение оборвалось |
 | `reconnect` | `{ attempt, delay }` | запланировано переподключение |
 | `giveup` | — | попытки исчерпаны; нужен ручной `connect()` |
@@ -102,55 +102,55 @@ get transport: string                   // 'sse' | 'poll'
 ## Обновления и контекст
 
 ```ts
-const RealtimeUpdateType = Object.freeze({
+const NotificationUpdateType = Object.freeze({
   Notification: 'notification',
   UnreadCount: 'unreadCount',
   Unknown: 'unknown',
 } as const);
 
-const RealtimeUpdateOrigin = Object.freeze({
+const NotificationUpdateOrigin = Object.freeze({
   Stream: 'stream',
   Sync: 'sync',
 } as const);
 
-type RealtimeUpdate =
-  | { type: typeof RealtimeUpdateType.Notification; data: NotificationEvent }
-  | { type: typeof RealtimeUpdateType.UnreadCount; data: number }
-  | { type: typeof RealtimeUpdateType.Unknown; name: string; data: unknown };
+type NotificationEventsUpdate =
+  | { type: typeof NotificationUpdateType.Notification; data: NotificationEvent }
+  | { type: typeof NotificationUpdateType.UnreadCount; data: number }
+  | { type: typeof NotificationUpdateType.Unknown; name: string; data: unknown };
 
-type RealtimeUpdateType = RealtimeUpdate['type'];
-type RealtimeUpdateOrigin =
-  (typeof RealtimeUpdateOrigin)[keyof typeof RealtimeUpdateOrigin];
+type NotificationUpdateType = NotificationEventsUpdate['type'];
+type NotificationUpdateOrigin =
+  (typeof NotificationUpdateOrigin)[keyof typeof NotificationUpdateOrigin];
 
-interface RealtimeContextBase<U = unknown, S = unknown> {
+interface EventContext<U = unknown, S = unknown> {
   readonly update: U;
   readonly stream: S;
-  readonly raw: TransportEvent | undefined;
-  readonly origin: RealtimeUpdateOrigin;
+  readonly raw: EventTransportFrame | undefined;
+  readonly origin: NotificationUpdateOrigin;
 }
 
-type RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> =
-  RealtimeContextBase<U, ItdRealtime>;
+type NotificationEventContext<U extends NotificationEventsUpdate = NotificationEventsUpdate> =
+  EventContext<U, NotificationEvents>;
 ```
 
 Один транспортный кадр создаёт не более одного нормализованного обновления. Событие
 `message` дополнительно сообщает исходный кадр, но не запускает второй проход промежуточных
 и асинхронных обработчиков. Эти же данные доступны через `context.raw`. У начального
-счётчика непрочитанных `origin` равен `RealtimeUpdateOrigin.Sync`, а `raw` — `undefined`.
+счётчика непрочитанных `origin` равен `NotificationUpdateOrigin.Sync`, а `raw` — `undefined`.
 
-## Компоновщик `RealtimeComposer`
+## Компоновщик `EventComposer`
 
 ```ts
-const composer = new RealtimeComposer<C>(...middleware);
+const composer = new EventComposer<C>(...middleware);
 
-composer.use(...middleware): RealtimeComposer<C>
-composer.filter(predicate, ...middleware): RealtimeComposer<N>
-composer.route(selector, routes, fallback?): RealtimeComposer<C>
-composer.errorBoundary(handler, ...middleware): RealtimeComposer<C>
-composer.middleware(): RealtimeMiddleware<C>
+composer.use(...middleware): EventComposer<C>
+composer.filter(predicate, ...middleware): EventComposer<N>
+composer.route(selector, routes, fallback?): EventComposer<C>
+composer.errorBoundary(handler, ...middleware): EventComposer<C>
+composer.middleware(): EventMiddleware<C>
 ```
 
-Composer реализует `RealtimeMiddlewareObj` и подключается через `stream.use(composer)`. `filter()`
+Composer реализует `EventMiddlewareObject` и подключается через `stream.use(composer)`. `filter()`
 возвращает дочернюю ветку и сохраняет сужение type guard. `route()` принимает синхронный или
 асинхронный selector, статическую таблицу строковых/symbol-веток и необязательный fallback.
 
@@ -160,17 +160,17 @@ middleware. Обработчик получает `{ error, context }` и `next`
 Внешний downstream начинается после полного завершения защищённой onion-цепочки.
 
 Каждый update использует снимок composer на момент получения. Composer не создаёт соединение,
-очередь или собственную конкурентность; это остаётся обязанностью `ItdRealtime`.
+очередь или собственную конкурентность; это остаётся обязанностью `NotificationEvents`.
 
-## Маршрутизатор `RealtimeRouter`
+## Маршрутизатор `EventRouter`
 
 ```ts
-const router = new RealtimeRouter(selector);
+const router = new EventRouter(selector);
 
 stream.use(router): Unsubscribe
 router.route(key, ...middleware): Unsubscribe
 router.otherwise(...middleware): Unsubscribe
-router.middleware(): RealtimeMiddleware
+router.middleware(): EventMiddleware
 ```
 
 Функция выбора возвращает `PropertyKey`, `null` или `undefined` и может быть асинхронной.
@@ -180,11 +180,11 @@ router.middleware(): RealtimeMiddleware
 удаления действуют только на следующие обновления. `middleware()` нужен для ручной композиции;
 потоку маршрутизатор передаётся напрямую.
 
-## Опции (`RealtimeOptions`)
+## Опции (`NotificationEventsOptions`)
 
 ```ts
-interface RealtimeOptions {
-  transport?: RealtimeTransportKind | RealtimeTransport; // по умолчанию Auto
+interface NotificationEventsOptions {
+  transport?: NotificationEventsTransport | EventTransport; // по умолчанию Auto
   idleTimeout?: number;                  // молчание сервера = мёртвое соединение; 90000
   handshakeTimeout?: number;             // ожидание ответа SSE; 20000; 0 отключает
   pollInterval?: number;                 // период опроса для запасного транспорта
@@ -192,7 +192,7 @@ interface RealtimeOptions {
   reconnectOnVisible?: boolean;          // переподключаться при возврате вкладки; true (браузер)
   reconnectOnOnline?: boolean;           // переподключаться при восстановлении сети; true (браузер)
   concurrency?: number;                  // одновременно обрабатываемые обновления; 1
-  sequentialize?: (context: RealtimeContext) =>
+  sequentialize?: (context: NotificationEventContext) =>
     PropertyKey | readonly PropertyKey[] | undefined;
   // из ReconnectOptions:
   maxAttempts?: number;
@@ -200,14 +200,17 @@ interface RealtimeOptions {
   jitter?: number;                       // доля случайного разброса, 0…1
 }
 
-const RealtimeTransportKind = Object.freeze({ Auto: 'auto', Sse: 'sse', Poll: 'poll' } as const);
-const RealtimeStatus = Object.freeze({
+const NotificationEventsTransport = Object.freeze({ Auto: 'auto', Sse: 'sse', Poll: 'poll' } as const);
+const EventChannelStatus = Object.freeze({
   Connecting: 'connecting', Connected: 'connected', Error: 'error', Disconnected: 'disconnected',
 } as const);
 ```
 
+Настройки передаются один раз в `new ItdClient({ events: { notifications: options } })` и
+не меняются в течение lifetime клиента.
+
 При `concurrency: 1` обновления завершаются в порядке получения. При большем значении
 `sequentialize` сохраняет порядок обновлений с общими ключами.
 
-Смена авторизации на другого пользователя завершает все потоки клиента; обновление
+Смена авторизации на другого пользователя останавливает канал клиента; обновление
 токена той же сессии — нет.

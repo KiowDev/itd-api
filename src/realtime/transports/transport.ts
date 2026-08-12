@@ -1,14 +1,15 @@
+import type { ClientConnection } from '../../core/connection.js';
 import type { QueryParams } from '../../core/url.js';
 import type { BuiltInOperationId } from '../../domain/operations.js';
 
 /** Запрос транспорта к конвейеру клиента. */
-export interface RealtimeRequestInput {
+export interface EventRequestInput {
   operationId: BuiltInOperationId;
   path: string;
   query?: QueryParams | undefined;
   /**
-   * Отмена запроса. Опрос передаёт сигнал своего соединения; разовое чтение счётчика
-   * непрочитанных отменять нечем — оно живёт вне цикла соединения.
+   * Отмена запроса. Transport и доменная синхронизация передают сигнал текущей попытки
+   * соединения, поэтому disconnect не оставляет фоновые REST-запросы.
    */
   signal?: AbortSignal | undefined;
 }
@@ -19,10 +20,10 @@ export interface RealtimeRequestInput {
  * Ответ приходит уже разобранным и без обёртки `{ data: … }`, а неудача — типизированной
  * ошибкой библиотеки.
  */
-export type RealtimeRequest = (input: RealtimeRequestInput) => Promise<unknown>;
+export type EventRequest = (input: EventRequestInput) => Promise<unknown>;
 
 /** Событие, пришедшее по каналу реального времени. */
-export interface TransportEvent {
+export interface EventTransportFrame {
   /** Имя события: `notification`, `unread_count` и другие. */
   name: string;
   /** Полезная нагрузка, уже разобранная из JSON. */
@@ -30,30 +31,12 @@ export interface TransportEvent {
 }
 
 /** Что транспорт получает от клиента при подключении. */
-export interface TransportContext {
-  /** Базовый URL API. */
-  baseUrl: string;
-  /** Разрешено ли передавать токен этому сервису. */
-  authorize: boolean;
-  /** Реализация `fetch`. */
-  fetch: typeof fetch;
-  /**
-   * Выполнение обычных HTTP-запросов транспорта через конвейер клиента.
-   *
-   * Есть только у потока, созданного клиентом: конвейер принадлежит ему.
-   */
-  request?: RealtimeRequest | undefined;
-  /**
-   * Общие заголовки клиента: `User-Agent`, `X-Device-Id`, заголовки конфигурации
-   * и cookie для указанного адреса.
-   */
-  baseHeaders: (url: string) => Promise<Headers>;
-  /** Текущий токен доступа. */
-  getToken: () => Promise<string | null>;
+export interface EventTransportContext
+  extends Pick<ClientConnection, 'baseUrl' | 'authorize' | 'fetch' | 'baseHeaders' | 'getToken'> {
   /** Отмена подключения. */
   signal: AbortSignal;
   /** Сообщает о полученном событии. */
-  onEvent: (event: TransportEvent) => void;
+  onEvent: (event: EventTransportFrame) => void;
   /** Сообщает о разобранном, но некорректном сообщении. Соединение при этом живёт. */
   onParseError: (error: unknown, raw: string) => void;
   /** Вызывается, когда соединение установлено. */
@@ -61,7 +44,7 @@ export interface TransportContext {
 }
 
 /** Канал получения исходных событий в реальном времени. */
-export interface RealtimeTransport {
+export interface EventTransport {
   /** Понятное имя для логов и диагностики. */
   readonly name: string;
 
@@ -71,7 +54,7 @@ export interface RealtimeTransport {
    * Должен завершиться, когда поток закрылся, и бросить исключение при ошибке.
    * Отмена через `context.signal` должна приводить к `AbortError`.
    */
-  connect(context: TransportContext): Promise<void>;
+  connect(context: EventTransportContext): Promise<void>;
 }
 
 /** Ошибка, по которой видно, что сервер отверг авторизацию потока. */

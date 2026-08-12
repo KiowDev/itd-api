@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { redactUrl } from '../../src/core/redact.js';
 import {
+  type EventTransportContext,
+  type EventTransportFrame,
   ItdConfigError,
-  type TransportContext,
-  type TransportEvent,
   UnauthorizedStreamError,
   type WebSocketImplementationOptions,
   type WebSocketLike,
@@ -80,9 +80,9 @@ class FakeWebSocket {
 }
 
 interface TestConnection {
-  readonly context: TransportContext;
+  readonly context: EventTransportContext;
   readonly controller: AbortController;
-  readonly events: TransportEvent[];
+  readonly events: EventTransportFrame[];
   readonly parseErrors: string[];
   readonly opened: { count: number };
   readonly baseHeaderUrls: string[];
@@ -98,7 +98,7 @@ function makeContext(
   } = {},
 ): TestConnection {
   const controller = new AbortController();
-  const events: TransportEvent[] = [];
+  const events: EventTransportFrame[] = [];
   const parseErrors: string[] = [];
   const opened = { count: 0 };
   const baseHeaderUrls: string[] = [];

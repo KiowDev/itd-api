@@ -25,7 +25,7 @@ const itd = new ItdClient({
 await itd.users.me();
 ```
 
-Через тот же `fetch` идёт всё: авторизация, cookie, очередь, повторы и поток уведомлений (`itd.realtime()`).
+Через тот же `fetch` идёт всё: авторизация, cookie, очередь, повторы и поток уведомлений (`itd.notifications.events`).
 
 ## Схемы адреса
 

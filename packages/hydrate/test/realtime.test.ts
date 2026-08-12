@@ -1,17 +1,17 @@
 import { crypt } from '@itd-api/crypto';
 import { createMockServer, notificationFixture } from '@itd-api/testing';
 import {
+  EventRouter,
+  type EventTransportFrame,
   ItdClient,
-  ItdRealtime,
+  NotificationEvents,
   NotificationType,
-  RealtimeRouter,
-  RealtimeUpdateType,
-  type TransportEvent,
+  NotificationUpdateType,
 } from 'itd-api';
 import { describe, expect, it } from 'vitest';
 import {
+  type HydratedEventContext,
   type HydratedNotificationEvent,
-  type HydratedRealtimeContext,
   hydrateClient,
 } from '../src/index.js';
 
@@ -33,11 +33,14 @@ const seed = {
 
 async function realtimeClient() {
   const server = createMockServer({ seed });
-  const transport = server.realtime({ as: 'bob' });
-  const raw = new ItdClient(server.clientOptions({ as: 'bob' }));
+  const transport = server.notificationEvents({ as: 'bob' });
+  const raw = new ItdClient({
+    ...server.clientOptions({ as: 'bob' }),
+    events: { notifications: { transport, syncCount: false } },
+  });
   raw.use(crypt());
   const itd = hydrateClient(raw);
-  const stream = itd.realtime({ transport, syncCount: false });
+  const stream = itd.notifications.events;
   await stream.connect();
   await transport.waitForConnection();
   return { server, transport, raw, itd, stream };
@@ -64,41 +67,35 @@ function commentNotification() {
 describe('гидратация realtime', () => {
   it('передаёт один гидратированный объект всем обработчикам', async () => {
     const server = createMockServer({ seed });
-    const transport = server.realtime({ as: 'bob' });
-    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
-    const sequentialized: unknown[] = [];
-    const stream = itd.realtime({
-      transport,
-      syncCount: false,
-      sequentialize(context) {
-        sequentialized.push(context.update);
-        if (context.update.type !== RealtimeUpdateType.Notification) return undefined;
-        expect(typeof context.update.data.notification.actors[0]?.follow).toBe('function');
-        expect(context.stream).toBe(stream);
-        return context.update.data.notification.id;
-      },
-    });
-    expect(stream).toBeInstanceOf(ItdRealtime);
+    const transport = server.notificationEvents({ as: 'bob' });
+    const itd = hydrateClient(
+      new ItdClient({
+        ...server.clientOptions({ as: 'bob' }),
+        events: { notifications: { transport, syncCount: false } },
+      }),
+    );
+    const stream = itd.notifications.events;
+    expect(stream).toBeInstanceOf(NotificationEvents);
 
     const contexts: unknown[] = [];
     const events: HydratedNotificationEvent[] = [];
-    const messages: TransportEvent[] = [];
+    const messages: EventTransportFrame[] = [];
 
     stream.use(async (context, next) => {
       contexts.push(context);
       expect(typeof context.update.type === 'string').toBe(true);
       await next();
     });
-    stream.onUpdate(RealtimeUpdateType.Notification, (context) => contexts.push(context));
+    stream.onUpdate(NotificationUpdateType.Notification, (context) => contexts.push(context));
     stream.onNotification(NotificationType.PostComment, (context) => contexts.push(context));
     stream.on('notification', (event) => events.push(event));
     stream.once('notification', (event) => events.push(event));
     stream.on('message', (message) => messages.push(message));
 
-    const router = new RealtimeRouter((context: HydratedRealtimeContext) => context.update.type);
-    router.route(RealtimeUpdateType.Notification, async (context, next) => {
+    const router = new EventRouter((context: HydratedEventContext) => context.update.type);
+    router.route(NotificationUpdateType.Notification, async (context, next) => {
       contexts.push(context);
-      if (context.update.type === RealtimeUpdateType.Notification) {
+      if (context.update.type === NotificationUpdateType.Notification) {
         expect(typeof context.update.data.notification.actors[0]?.get).toBe('function');
       }
       await next();
@@ -111,7 +108,6 @@ describe('гидратация realtime', () => {
     transport.message('notification', payload);
     await stream.drain();
 
-    expect(sequentialized).toHaveLength(1);
     expect(contexts).toHaveLength(4);
     expect(new Set(contexts).size).toBe(1);
     expect(events).toHaveLength(2);

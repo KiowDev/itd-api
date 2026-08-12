@@ -1,11 +1,13 @@
 import { type ItdClock, systemClock } from '../../core/clock.js';
-import { ItdConfigError, isItdAuthError } from '../../core/errors.js';
+import { isItdAuthError } from '../../core/errors.js';
 import { pickArray, pickNumber } from '../../core/unwrap.js';
-import type { RealtimeRequest, RealtimeTransport, TransportContext } from './transport.js';
+import type { EventRequest, EventTransport, EventTransportContext } from './transport.js';
 import { UnauthorizedStreamError } from './transport.js';
 
 /** Настройки опроса. */
 export interface PollTransportOptions {
+  /** Доменный adapter notification REST-операций. */
+  request: EventRequest;
   /** Часы опроса. Обычно подменяются только в тестах. */
   clock?: ItdClock;
   /** Как часто опрашивать сервер, мс. По умолчанию 15 000. */
@@ -24,33 +26,28 @@ export interface PollTransportOptions {
  * Новыми считаются уведомления, которых не было в предыдущем ответе; чтобы список
  * известных не рос бесконечно, он ограничен последними двумя страницами.
  */
-export class PollTransport implements RealtimeTransport {
+export class PollTransport implements EventTransport {
   readonly name = 'poll';
 
   readonly #interval: number;
   readonly #limit: number;
   readonly #clock: ItdClock;
+  readonly #request: EventRequest;
 
-  constructor(options: PollTransportOptions = {}) {
+  constructor(options: PollTransportOptions) {
+    this.#request = options.request;
     this.#clock = options.clock ?? systemClock;
     this.#interval = options.interval ?? 15_000;
     this.#limit = options.limit ?? 20;
   }
 
-  async connect(context: TransportContext): Promise<void> {
-    const request = context.request;
-    if (!request) {
-      throw new ItdConfigError(
-        'опрос уведомлений выполняется через конвейер клиента; создайте поток вызовом itd.realtime()',
-      );
-    }
-
+  async connect(context: EventTransportContext): Promise<void> {
     const seen = new Set<string>();
     let firstRun = true;
     let lastUnreadCount: number | undefined;
 
     while (!context.signal.aborted) {
-      const payload = await this.#readUpdates(request, context.signal);
+      const payload = await this.#readUpdates(this.#request, context.signal);
 
       // Соединение считается установленным только после первого успешного ответа: иначе
       // при постоянно недоступной сети каждая попытка обнуляла бы счётчик и maxAttempts
@@ -75,7 +72,7 @@ export class PollTransport implements RealtimeTransport {
         for (const id of excess) seen.delete(id);
       }
 
-      const count = await this.#readCount(request, context.signal);
+      const count = await this.#readCount(this.#request, context.signal);
       if (count !== undefined && count !== lastUnreadCount) {
         lastUnreadCount = count;
         context.onEvent({ name: 'unread_count', data: { payload: { count } } });
@@ -86,7 +83,7 @@ export class PollTransport implements RealtimeTransport {
     }
   }
 
-  async #readUpdates(request: RealtimeRequest, signal: AbortSignal): Promise<unknown> {
+  async #readUpdates(request: EventRequest, signal: AbortSignal): Promise<unknown> {
     try {
       return await request({
         operationId: 'realtime.poll.updates',
@@ -101,7 +98,7 @@ export class PollTransport implements RealtimeTransport {
     }
   }
 
-  async #readCount(request: RealtimeRequest, signal: AbortSignal): Promise<number | undefined> {
+  async #readCount(request: EventRequest, signal: AbortSignal): Promise<number | undefined> {
     try {
       const payload = await request({
         operationId: 'realtime.poll.unread',

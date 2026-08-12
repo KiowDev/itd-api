@@ -1,23 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ItdStateError } from '../../src/core/errors.js';
 import {
-  createRealtimeClient,
-  type RealtimeClientOptions,
-  type RealtimeTransport,
-  type TransportContext,
-  type TransportEvent,
-} from '../../src/realtime.js';
+  createNotificationEventsClient,
+  type EventTransport,
+  type EventTransportContext,
+  type EventTransportFrame,
+  type NotificationEventsClientOptions,
+} from '../../src/events.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 /** Транспорт-заглушка: отдаёт контекст наружу и шлёт события по команде. */
-class TestTransport implements RealtimeTransport {
+class TestTransport implements EventTransport {
   readonly name = 'test';
   connects = 0;
 
-  #context: TransportContext | undefined;
+  #context: EventTransportContext | undefined;
   #settle: (() => void) | undefined;
 
-  connect(context: TransportContext): Promise<void> {
+  connect(context: EventTransportContext): Promise<void> {
     this.connects += 1;
     this.#context = context;
     context.onOpen();
@@ -28,11 +28,11 @@ class TestTransport implements RealtimeTransport {
     });
   }
 
-  get context(): TransportContext | undefined {
+  get context(): EventTransportContext | undefined {
     return this.#context;
   }
 
-  emit(event: TransportEvent): void {
+  emit(event: EventTransportFrame): void {
     this.#context?.onEvent(event);
   }
 
@@ -43,11 +43,11 @@ class TestTransport implements RealtimeTransport {
 
 function makeStream(
   handler: MockHandler | Response[],
-  options: RealtimeClientOptions = {},
-  transport: RealtimeTransport = new TestTransport(),
+  options: NotificationEventsClientOptions = {},
+  transport: EventTransport = new TestTransport(),
 ) {
   const mock = createMockFetch(handler);
-  const stream = createRealtimeClient({
+  const stream = createNotificationEventsClient({
     baseUrl: 'https://itd.test',
     fetch: mock.fetch,
     mode: 'server',
@@ -61,7 +61,7 @@ function makeStream(
   return { stream, mock, transport: transport as TestTransport };
 }
 
-describe('createRealtimeClient — подключение', () => {
+describe('createNotificationEventsClient — подключение', () => {
   it('доставляет уведомление из потока', async () => {
     const { stream, transport } = makeStream([], { auth: 'token' });
     const seen: string[] = [];
@@ -105,7 +105,7 @@ describe('createRealtimeClient — подключение', () => {
   });
 });
 
-describe('createRealtimeClient — счётчик непрочитанных', () => {
+describe('createNotificationEventsClient — счётчик непрочитанных', () => {
   it('берёт начальное значение своей операцией, а не ресурсом', async () => {
     const { stream, mock } = makeStream([json({ data: { count: 7 } })], {
       auth: 'token',
@@ -124,7 +124,7 @@ describe('createRealtimeClient — счётчик непрочитанных', (
   });
 });
 
-describe('createRealtimeClient — жизненный цикл', () => {
+describe('createNotificationEventsClient — жизненный цикл', () => {
   it('dispose отключает поток и запрещает повторное подключение', async () => {
     const { stream, transport } = makeStream([], { auth: 'token' });
 

@@ -1,18 +1,18 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
-  RealtimeEngine,
-  type RealtimeEngineDeps,
-  type RealtimeEngineEvents,
-  type RealtimeEngineOptions,
+  EventChannel,
+  type EventChannelDeps,
+  type EventChannelEvents,
+  type EventChannelOptions,
 } from '../../src/realtime/engine.js';
 import { MAX_PENDING_UPDATES } from '../../src/realtime/middleware.js';
-import { RealtimeRouter } from '../../src/realtime/router.js';
+import { EventRouter } from '../../src/realtime/router.js';
 import type {
-  RealtimeTransport,
-  TransportContext,
-  TransportEvent,
+  EventTransport,
+  EventTransportContext,
+  EventTransportFrame,
 } from '../../src/realtime/transports/transport.js';
-import type { RealtimeContextBase } from '../../src/realtime/updates.js';
+import type { EventContext } from '../../src/realtime/updates.js';
 
 interface TestUpdate {
   readonly value: number;
@@ -22,55 +22,75 @@ interface TestStream {
   readonly name: 'test-stream';
 }
 
-interface TestContext extends RealtimeContextBase<TestUpdate, TestStream> {
+interface TestContext extends EventContext<TestUpdate, TestStream, 'stream' | 'sync'> {
   traceId: string;
 }
 
-interface TestEvents extends RealtimeEngineEvents<TestContext> {
+interface TestEvents extends EventChannelEvents<TestContext> {
   domain: number;
 }
 
 const owner: TestStream = { name: 'test-stream' };
 
-class TestTransport implements RealtimeTransport {
+class TestTransport implements EventTransport {
   readonly name = 'engine-test';
-  readonly contexts: TransportContext[] = [];
+  readonly contexts: EventTransportContext[] = [];
   connects = 0;
-  #context: TransportContext | undefined;
+  #context: EventTransportContext | undefined;
+  readonly #autoOpen: boolean;
 
-  connect(context: TransportContext): Promise<void> {
+  constructor(autoOpen = true) {
+    this.#autoOpen = autoOpen;
+  }
+
+  connect(context: EventTransportContext): Promise<void> {
     this.connects += 1;
     this.contexts.push(context);
     this.#context = context;
-    context.onOpen();
+    if (this.#autoOpen) context.onOpen();
     return new Promise<void>((resolve) => {
       context.signal.addEventListener('abort', () => resolve(), { once: true });
     });
   }
 
-  emit(event: TransportEvent): void {
+  emit(event: EventTransportFrame): void {
     this.#context?.onEvent(event);
   }
 
-  emitFrom(connection: number, event: TransportEvent): void {
+  emitFrom(connection: number, event: EventTransportFrame): void {
     this.contexts[connection]?.onEvent(event);
+  }
+
+  open(connection = this.contexts.length - 1): void {
+    this.contexts[connection]?.onOpen();
   }
 }
 
 function makeEngine(
   transport: TestTransport,
-  deps: Partial<RealtimeEngineDeps<TestUpdate, TestContext>> = {},
-  options: RealtimeEngineOptions<TestContext> = {},
-): RealtimeEngine<TestUpdate, TestContext, TestEvents> {
-  return new RealtimeEngine<TestUpdate, TestContext, TestEvents>(
+  deps: Partial<EventChannelDeps<TestUpdate, TestContext, TestContext['origin']>> = {},
+  options: EventChannelOptions<TestContext> = {},
+): EventChannel<TestUpdate, TestContext, TestEvents, TestContext['origin']> {
+  return new EventChannel<TestUpdate, TestContext, TestEvents, TestContext['origin']>(
     {
-      baseUrl: 'https://itd.test',
-      authorize: true,
-      fetch: globalThis.fetch,
-      baseHeaders: () => Promise.resolve(new Headers()),
-      getToken: () => Promise.resolve('token'),
-      refresh: () => Promise.resolve(true),
+      connection: {
+        baseUrl: 'https://itd.test',
+        authorize: true,
+        fetch: globalThis.fetch,
+        clock: {
+          now: () => Date.now(),
+          schedule: (callback, delay) => {
+            const timer = setTimeout(callback, delay);
+            return () => clearTimeout(timer);
+          },
+        },
+        logger: undefined,
+        baseHeaders: () => Promise.resolve(new Headers()),
+        getToken: () => Promise.resolve('token'),
+        refreshAuth: () => Promise.resolve(true),
+      },
       transport,
+      streamOrigin: 'stream',
       readUpdate: (event) =>
         event.name === 'value' && typeof event.data === 'number'
           ? { value: event.data }
@@ -87,6 +107,10 @@ function makeEngine(
     },
     { reconnectOnOnline: false, reconnectOnVisible: false, ...options },
   );
+}
+
+interface DomainContext extends EventContext<TestUpdate, TestStream, 'ws' | 'catchup'> {
+  traceId: string;
 }
 
 describe('realtime engine', () => {
@@ -112,7 +136,7 @@ describe('realtime engine', () => {
       context.traceId = `update-${context.update.value}`;
       await next();
     });
-    const router = new RealtimeRouter<'value', TestContext>(() => 'value');
+    const router = new EventRouter<'value', TestContext>(() => 'value');
     router.route('value', async (context, next) => {
       expectTypeOf(context.update).toEqualTypeOf<TestUpdate>();
       await next();
@@ -147,11 +171,11 @@ describe('realtime engine', () => {
     let release: (() => void) | undefined;
     const engine = makeEngine(transport, {
       deliver: (update) => delivered.push(update.value),
-      sync: async (_reason, dispatch) => {
+      initialize: async (_reason, session) => {
         await new Promise<void>((resolve) => {
           release = resolve;
         });
-        dispatch({ value: 1 });
+        session.enqueue({ value: 1 }, { origin: 'sync' });
       },
     });
 
@@ -172,11 +196,11 @@ describe('realtime engine', () => {
 
     const engine = makeEngine(transport, {
       deliver: (update) => delivered.push(update.value),
-      sync: (_reason, dispatch) => {
+      initialize: (_reason, session) => {
         const value = ++syncSequence;
         return new Promise<void>((resolve) => {
           releases.push(() => {
-            dispatch({ value });
+            session.enqueue({ value }, { origin: 'sync' });
             resolve();
           });
         });
@@ -202,6 +226,167 @@ describe('realtime engine', () => {
     engine.disconnect();
   });
 
+  it('открывает transport до initializer и выпускает buffered frames после ready', async () => {
+    const transport = new TestTransport(false);
+    const delivered: Array<{ value: number; origin: string }> = [];
+    let initializerEntered = false;
+    let releaseInitializer: (() => void) | undefined;
+    const engine = makeEngine(transport, {
+      openBeforeInitialize: true,
+      initialize: async (_reason, session) => {
+        initializerEntered = true;
+        await session.opened;
+        session.enqueue({ value: 1 }, { origin: 'sync' });
+        await new Promise<void>((resolve) => {
+          releaseInitializer = resolve;
+        });
+      },
+      deliver: () => {},
+    });
+    engine.onUpdate(
+      () => true,
+      ({ update, origin }) => delivered.push({ value: update.value, origin }),
+    );
+
+    const connecting = engine.connect();
+    await Promise.resolve();
+    expect(initializerEntered).toBe(false);
+
+    transport.open();
+    await vi.waitFor(() => expect(initializerEntered).toBe(true));
+    transport.emit({ name: 'value', data: 2 });
+    await engine.drain();
+    expect(delivered).toEqual([{ value: 1, origin: 'sync' }]);
+
+    releaseInitializer?.();
+    await connecting;
+    await engine.drain();
+    expect(delivered).toEqual([
+      { value: 1, origin: 'sync' },
+      { value: 2, origin: 'stream' },
+    ]);
+    engine.disconnect();
+  });
+
+  it('ограничивает кадры, ожидающие открытия ready-gate', async () => {
+    const transport = new TestTransport(false);
+    let initializerStarted = false;
+    const engine = makeEngine(
+      transport,
+      {
+        openBeforeInitialize: true,
+        initialize: async (_reason, session) => {
+          await session.opened;
+          initializerStarted = true;
+          await new Promise<void>((resolve) => {
+            if (session.signal.aborted) {
+              resolve();
+              return;
+            }
+            session.signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+        },
+      },
+      { maxAttempts: 0 },
+    );
+    engine.on('error', () => {});
+    const connecting = engine.connect();
+    transport.open();
+    await vi.waitFor(() => expect(initializerStarted).toBe(true));
+
+    for (let value = 0; value <= MAX_PENDING_UPDATES; value += 1) {
+      transport.emit({ name: 'value', data: value });
+    }
+
+    await vi.waitFor(() => expect(transport.contexts[0]?.signal.aborted).toBe(true));
+    await connecting;
+    expect(engine.status).toBe('error');
+    engine.disconnect();
+  });
+
+  it('отклоняет обязательный initial barrier и инвалидирует его session', async () => {
+    const transport = new TestTransport();
+    const delivered: number[] = [];
+    let signal: AbortSignal | undefined;
+    const failure = new Error('snapshot failed');
+    const engine = makeEngine(transport, {
+      openBeforeInitialize: true,
+      initializationRequired: true,
+      initialize: async (_reason, session) => {
+        signal = session.signal;
+        transport.emit({ name: 'value', data: 1 });
+        throw failure;
+      },
+      deliver: (update) => delivered.push(update.value),
+    });
+
+    await expect(engine.connect()).rejects.toBe(failure);
+    await engine.drain();
+    expect(signal?.aborted).toBe(true);
+    expect(transport.contexts[0]?.signal.aborted).toBe(true);
+    expect(delivered).toEqual([]);
+    expect(engine.status).toBe('disconnected');
+  });
+
+  it('generic channel сохраняет собственные origins домена', async () => {
+    const transport = new TestTransport();
+    const origins: Array<DomainContext['origin']> = [];
+    const engine = new EventChannel<
+      TestUpdate,
+      DomainContext,
+      EventChannelEvents<DomainContext>,
+      DomainContext['origin']
+    >(
+      {
+        connection: {
+          baseUrl: 'https://chat.test',
+          authorize: true,
+          fetch: globalThis.fetch,
+          clock: {
+            now: () => Date.now(),
+            schedule: (callback, delay) => {
+              const timer = setTimeout(callback, delay);
+              return () => clearTimeout(timer);
+            },
+          },
+          logger: undefined,
+          baseHeaders: () => Promise.resolve(new Headers()),
+          getToken: () => Promise.resolve('token'),
+          refreshAuth: () => Promise.resolve(true),
+        },
+        transport,
+        streamOrigin: 'ws',
+        initialize: async (_reason, session) => {
+          session.enqueue({ value: 1 }, { origin: 'catchup' });
+        },
+        readUpdate: (event) =>
+          event.name === 'value' && typeof event.data === 'number'
+            ? { value: event.data }
+            : undefined,
+        createContext: (update, raw, origin) => ({
+          update,
+          stream: owner,
+          raw,
+          origin,
+          traceId: '',
+        }),
+        deliver: () => {},
+      },
+      { reconnectOnOnline: false, reconnectOnVisible: false },
+    );
+    engine.onUpdate(
+      () => true,
+      ({ origin }) => origins.push(origin),
+    );
+
+    await engine.connect();
+    transport.emit({ name: 'value', data: 2 });
+    await engine.drain();
+
+    expect(origins).toEqual(['catchup', 'ws']);
+    engine.disconnect();
+  });
+
   it('переполнение очереди рвёт соединение и переподключается с догоном', async () => {
     const transport = new TestTransport();
     const delivered: number[] = [];
@@ -213,7 +398,7 @@ describe('realtime engine', () => {
       transport,
       {
         deliver: (update) => delivered.push(update.value),
-        sync: (reason) => {
+        initialize: (reason) => {
           syncReasons.push(reason);
           return Promise.resolve();
         },

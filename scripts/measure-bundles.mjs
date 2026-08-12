@@ -43,11 +43,11 @@ const FIXTURES = [
     `,
   },
   {
-    name: 'realtime',
-    hint: "import { createRealtimeClient } from 'itd-api/realtime'",
+    name: 'events',
+    hint: "import { createNotificationEventsClient } from 'itd-api/events'",
     source: `
-      import { createRealtimeClient } from ${JSON.stringify(join(DIST, 'realtime/index.js'))};
-      export const run = (token) => createRealtimeClient({ auth: token }).connect();
+      import { createNotificationEventsClient } from ${JSON.stringify(join(DIST, 'events/index.js'))};
+      export const run = (token) => createNotificationEventsClient({ auth: token }).connect();
     `,
   },
 ];

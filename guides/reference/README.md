@@ -21,7 +21,7 @@
 | [Жалобы](./reports.md) | `itd.reports` | жалобы на контент и пользователей |
 | [Платформа](./platform.md) | `itd.platform` | версии приложений, журнал изменений, анонсы, портал, статус сервисов |
 | [Телеметрия](./telemetry.md) | `itd.telemetry` | явная отправка просмотров и взаимодействий |
-| [Realtime](./realtime.md) | `itd.realtime()` | поток уведомлений, composer/router, транспорт, переподключение |
+| [Realtime](./realtime.md) | `itd.notifications.events` | поток уведомлений, composer/router, транспорт, переподключение |
 | [Request pipeline](./request-pipeline.md) | `operations` / `attempts` | границы логической операции, сетевой попытки, retry, auth и queue |
 
 ## Несколько аккаунтов

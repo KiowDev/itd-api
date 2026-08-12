@@ -1,6 +1,7 @@
 import type { AuthProvider, AuthProviderDeps } from '../auth-provider.js';
 import type { OperationCatalog } from '../catalog.js';
 import { assertKnownBucket, type ResolvedRuntimeConfig, resolveRuntimeConfig } from '../config.js';
+import type { ClientConnection } from '../connection.js';
 import { CookieJar } from '../cookies.js';
 import { ItdAbortError } from '../errors.js';
 import type { RateLimitBucketOverride, RuntimeOptions } from '../options.js';
@@ -87,6 +88,8 @@ export interface ClientRuntime<A extends AuthProvider = AuthProvider> {
   readonly services: ServiceRegistry;
   /** Фактический порядок стадий; используется contract-тестом и диагностикой. */
   readonly stageOrder: readonly ClientRuntimeStage[];
+  /** Разрешает окружение основного API либо именованного сервиса. */
+  connection(serviceName?: string): ClientConnection;
   platformHeaders(url: string): Promise<Headers>;
   /** Снимок известных бакетов. Пустой, когда очередь отключена. */
   rateLimitState(): RateLimitBucketState[];
@@ -301,6 +304,27 @@ export function createClientRuntime<A extends AuthProvider>(
     plugins,
     services,
     stageOrder,
+    connection: (serviceName) => {
+      const service = serviceName === undefined ? undefined : services.require(serviceName);
+      const baseUrl = service?.baseUrl ?? config.baseUrl;
+
+      return Object.freeze({
+        baseUrl,
+        authorize: service?.auth ?? true,
+        fetch: config.fetch,
+        clock: config.clock,
+        logger: config.logger,
+        baseHeaders: async (url: string) => {
+          const headers = await transport.platformHeaders(url);
+          for (const [name, value] of Object.entries(service?.headers ?? {})) {
+            headers.set(name, value);
+          }
+          return headers;
+        },
+        getToken: () => auth.token(),
+        refreshAuth: () => auth.recover(),
+      });
+    },
     platformHeaders: (url) => transport.platformHeaders(url),
     rateLimitState: () => queues?.states() ?? [],
     registerRateLimitBucket: (name, definition) => queues?.defineBucket(name, definition),

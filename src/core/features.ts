@@ -1,7 +1,9 @@
 import type { ItdClock } from './clock.js';
+import type { ClientConnection } from './connection.js';
 import { ItdAbortError, ItdConfigError, ItdStateError } from './errors.js';
 import type { HttpClient } from './execution/http.js';
 import type { ExtensibleOperationCatalog } from './feature-catalog.js';
+import type { ManagedClientResource } from './managed-resources.js';
 import { type FeatureOperationId, type OperationMethod, RetrySafety } from './operation.js';
 import type { Logger, RateLimitBucketOverride, RawRequestOptions } from './options.js';
 import { mergeService, type ServiceDefinition, type ServiceRegistry } from './services.js';
@@ -62,6 +64,10 @@ export interface FeatureContext {
   request<T = unknown>(operation: string, options: FeatureRequestOptions): Promise<T>;
   /** Возвращает фактический URL объявленного сервиса с учётом настроек клиента. */
   serviceBaseUrl(name: string): string;
+  /** Окружение долговременного соединения объявленного feature-сервиса. */
+  connection(name: string): ClientConnection;
+  /** Регистрирует активный долгоживущий ресурс до его остановки. */
+  manage(resource: ManagedClientResource): () => void;
 }
 
 interface InstalledFeature {
@@ -83,6 +89,8 @@ export interface FeatureRegistryDeps {
   readonly clock: ItdClock;
   readonly logger: Logger | undefined;
   readonly assertActive: (action: string) => void;
+  readonly connection: (serviceName?: string) => ClientConnection;
+  readonly manage: (resource: ManagedClientResource) => () => void;
   readonly registerBucket: (
     name: string,
     definition: FeatureBucketDefinition,
@@ -326,6 +334,19 @@ export class FeatureRegistry {
           }
           return this.#deps.services.resolveBaseUrl(serviceName);
         },
+        connection: (serviceName: string): ClientConnection => {
+          if (!services.has(serviceName)) {
+            throw new ItdConfigError(`feature «${name}» не объявляет сервис «${serviceName}»`);
+          }
+          return this.#deps.connection(serviceName);
+        },
+        manage: (resource: ManagedClientResource): (() => void) => {
+          this.#deps.assertActive(`зарегистрировать ресурс feature «${name}»`);
+          if (!committed || controller.signal.aborted) {
+            throw new ItdStateError(`feature «${name}» не активен`);
+          }
+          return this.#deps.manage(resource);
+        },
       });
 
       const installation = feature.setup(context);
@@ -364,14 +385,12 @@ export class FeatureRegistry {
   }
 
   async close(): Promise<void> {
-    const errors: unknown[] = [];
-    for (const feature of [...this.#features.values()].reverse()) {
-      try {
-        await feature.close?.();
-      } catch (error) {
-        errors.push(error);
-      }
-    }
+    const results = await Promise.allSettled(
+      [...this.#features.values()].reverse().map(async (feature) => feature.close?.()),
+    );
+    const errors = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason);
     if (errors.length > 0) throw new AggregateError(errors, 'Не удалось закрыть feature');
   }
 

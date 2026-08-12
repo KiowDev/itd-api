@@ -1,19 +1,21 @@
 import {
-  ItdRealtime,
-  type RealtimeContext,
-  type RealtimeOptions,
-  type RealtimeTransport,
-  type TransportContext,
-  type TransportEvent,
+  type EventTransport,
+  type EventTransportContext,
+  type EventTransportFrame,
+  type NotificationEventContext,
+  NotificationEvents,
+  type NotificationEventsOptions,
 } from '../../src/index.js';
-import type { RealtimeDeps } from '../../src/realtime/stream.js';
+import type { NotificationEventsDeps } from '../../src/realtime/stream.js';
 
-export class TestTransport implements RealtimeTransport {
+export class TestTransport implements EventTransport {
   readonly name = 'test';
+  connects = 0;
 
-  #context: TransportContext | undefined;
+  #context: EventTransportContext | undefined;
 
-  connect(context: TransportContext): Promise<void> {
+  connect(context: EventTransportContext): Promise<void> {
+    this.connects += 1;
     this.#context = context;
     context.onOpen();
     return new Promise<void>((resolve) => {
@@ -21,25 +23,36 @@ export class TestTransport implements RealtimeTransport {
     });
   }
 
-  emit(event: TransportEvent): void {
+  emit(event: EventTransportFrame): void {
     this.#context?.onEvent(event);
   }
 }
 
-export function makeStream<C extends RealtimeContext = RealtimeContext>(
+export function makeStream<C extends NotificationEventContext = NotificationEventContext>(
   transport: TestTransport,
-  options: RealtimeOptions<C> = {},
-): ItdRealtime<C> {
-  const deps: RealtimeDeps = {
-    baseUrl: 'https://itd.test',
-    fetch: (() => Promise.reject(new Error('не должна вызываться'))) as unknown as typeof fetch,
-    baseHeaders: () => Promise.resolve(new Headers()),
-    getToken: () => Promise.resolve('token'),
-    refresh: () => Promise.resolve(true),
+  options: NotificationEventsOptions<C> = {},
+): NotificationEvents<C> {
+  const deps: NotificationEventsDeps = {
+    connection: {
+      baseUrl: 'https://itd.test',
+      authorize: true,
+      fetch: (() => Promise.reject(new Error('не должна вызываться'))) as unknown as typeof fetch,
+      clock: {
+        now: () => Date.now(),
+        schedule: (callback, delay) => {
+          const timer = setTimeout(callback, delay);
+          return () => clearTimeout(timer);
+        },
+      },
+      logger: undefined,
+      baseHeaders: () => Promise.resolve(new Headers()),
+      getToken: () => Promise.resolve('token'),
+      refreshAuth: () => Promise.resolve(true),
+    },
     fetchUnreadCount: () => Promise.resolve(0),
   };
 
-  return new ItdRealtime<C>(deps, {
+  return new NotificationEvents<C>(deps, {
     transport,
     syncCount: false,
     reconnectOnVisible: false,
@@ -48,11 +61,15 @@ export function makeStream<C extends RealtimeContext = RealtimeContext>(
   });
 }
 
-export function unreadCount(count: number): TransportEvent {
+export function unreadCount(count: number): EventTransportFrame {
   return { name: 'unread_count', data: { payload: { count } } };
 }
 
-export function notification(id: string, type = 'comment', actorId = 'actor-1'): TransportEvent {
+export function notification(
+  id: string,
+  type = 'comment',
+  actorId = 'actor-1',
+): EventTransportFrame {
   return {
     name: 'notification',
     data: {

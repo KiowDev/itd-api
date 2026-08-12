@@ -1,10 +1,10 @@
 import type {
   AuthIdentity,
   ClientPlugin,
-  ItdRealtime,
+  NotificationEventContext,
+  NotificationEvents,
   OperationRequestOptions,
   OperationTransformer,
-  RealtimeContext,
   Unsubscribe,
 } from 'itd-api';
 import { LRUCache } from 'lru-cache';
@@ -51,7 +51,7 @@ export interface CachePlugin extends ClientPlugin {
    *
    * Сразу удаляет прежние значения и возвращает функцию отписки.
    */
-  attachRealtime<C extends RealtimeContext>(stream: ItdRealtime<C>): Unsubscribe;
+  attachEvents<C extends NotificationEventContext>(stream: NotificationEvents<C>): Unsubscribe;
 }
 
 interface CacheEntry {
@@ -400,9 +400,9 @@ export function cache(options: CacheOptions): CachePlugin {
     },
     clear,
     invalidate,
-    attachRealtime(stream) {
+    attachEvents(stream) {
       if (!stream || typeof stream.on !== 'function') {
-        throw new CacheError('attachRealtime() принимает поток из itd.realtime()');
+        throw new CacheError('attachEvents() принимает поток из itd.notifications.events');
       }
 
       const invalidateStream = (...operations: CacheOperationId[]): void => {

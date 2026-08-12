@@ -72,7 +72,7 @@ for await (const post of itd.posts.iterate({ limit: 20 })) {
 ```ts
 import { NotificationType } from 'itd-api';
 
-const stream = itd.realtime();
+const stream = itd.notifications.events;
 
 stream.onNotification(
   [

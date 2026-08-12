@@ -110,7 +110,7 @@ await posts[0]?.comment('Первый комментарий');
 ```ts
 import { NotificationType } from 'itd-api';
 
-const stream = itd.realtime();
+const stream = itd.notifications.events;
 
 stream.onNotification(
   [
@@ -151,15 +151,15 @@ await stream.connect();
 Для маршрутизатора укажите тип гидратированного контекста:
 
 ```ts
-import { RealtimeRouter, RealtimeUpdateType } from 'itd-api';
-import type { HydratedRealtimeContext } from '@itd-api/hydrate';
+import { EventRouter, NotificationUpdateType } from 'itd-api';
+import type { HydratedEventContext } from '@itd-api/hydrate';
 
-const router = new RealtimeRouter(
-  (context: HydratedRealtimeContext) => context.update.type,
+const router = new EventRouter(
+  (context: HydratedEventContext) => context.update.type,
 );
 
-router.route(RealtimeUpdateType.Notification, async (context, next) => {
-  if (context.update.type === RealtimeUpdateType.Notification) {
+router.route(NotificationUpdateType.Notification, async (context, next) => {
+  if (context.update.type === NotificationUpdateType.Notification) {
     await context.update.data.notification.actors[0]?.follow();
   }
   await next();

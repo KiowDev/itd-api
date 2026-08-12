@@ -1,22 +1,22 @@
 import type { Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
 import {
-  captureRealtimeMiddleware,
-  type RealtimeMiddleware,
-  type RealtimeMiddlewareObj,
-  runRealtimeMiddleware,
-  withRealtimeMiddlewareSnapshot,
+  captureEventMiddleware,
+  type EventMiddleware,
+  type EventMiddlewareObject,
+  runEventMiddleware,
+  withEventMiddlewareSnapshot,
 } from './middleware.js';
-import type { RealtimeContext, RealtimeContextBase } from './updates.js';
+import type { EventContext, NotificationEventContext } from './updates.js';
 
 /** Выбирает маршрут обновления. `undefined` и `null` означают отсутствие маршрута. */
-export type RealtimeRouteSelector<
+export type EventRouteSelector<
   K extends PropertyKey,
-  C extends RealtimeContextBase = RealtimeContext,
+  C extends EventContext = NotificationEventContext,
 > = (context: C) => K | null | undefined | Promise<K | null | undefined>;
 
-interface RouteRegistration<C extends RealtimeContextBase> {
-  readonly middleware: readonly RealtimeMiddleware<C>[];
+interface RouteRegistration<C extends EventContext> {
+  readonly middleware: readonly EventMiddleware<C>[];
 }
 
 /**
@@ -24,11 +24,11 @@ interface RouteRegistration<C extends RealtimeContextBase> {
  *
  * @example
  * ```ts
- * import { RealtimeRouter, RealtimeUpdateType } from 'itd-api';
+ * import { EventRouter, NotificationUpdateType } from 'itd-api/events';
  *
- * const router = new RealtimeRouter((context) => context.update.type);
- * router.route(RealtimeUpdateType.Notification, async (context, next) => {
- *   if (context.update.type === RealtimeUpdateType.Notification) {
+ * const router = new EventRouter((context) => context.update.type);
+ * router.route(NotificationUpdateType.Notification, async (context, next) => {
+ *   if (context.update.type === NotificationUpdateType.Notification) {
  *     await handleNotification(context.update.data.notification);
  *   }
  *   await next();
@@ -36,24 +36,24 @@ interface RouteRegistration<C extends RealtimeContextBase> {
  * stream.use(router);
  * ```
  */
-export class RealtimeRouter<
+export class EventRouter<
   K extends PropertyKey = PropertyKey,
-  C extends RealtimeContextBase = RealtimeContext,
-> implements RealtimeMiddlewareObj<C>
+  C extends EventContext = NotificationEventContext,
+> implements EventMiddlewareObject<C>
 {
-  readonly #selector: RealtimeRouteSelector<K, C>;
+  readonly #selector: EventRouteSelector<K, C>;
   readonly #routes = new Map<K, RouteRegistration<C>[]>();
   readonly #fallback: RouteRegistration<C>[] = [];
 
-  constructor(selector: RealtimeRouteSelector<K, C>) {
+  constructor(selector: EventRouteSelector<K, C>) {
     if (typeof selector !== 'function') {
-      throw new ItdConfigError('RealtimeRouter принимает функцию выбора маршрута');
+      throw new ItdConfigError('EventRouter принимает функцию выбора маршрута');
     }
     this.#selector = selector;
   }
 
   /** Добавляет промежуточные обработчики к маршруту и возвращает функцию их удаления. */
-  route(key: K, ...middleware: readonly RealtimeMiddleware<C>[]): Unsubscribe {
+  route(key: K, ...middleware: readonly EventMiddleware<C>[]): Unsubscribe {
     if (!isPropertyKey(key))
       throw new ItdConfigError('Ключ realtime route должен быть PropertyKey');
     const registration = this.#registration(middleware);
@@ -71,7 +71,7 @@ export class RealtimeRouter<
   }
 
   /** Добавляет промежуточные обработчики для обновлений без зарегистрированного маршрута. */
-  otherwise(...middleware: readonly RealtimeMiddleware<C>[]): Unsubscribe {
+  otherwise(...middleware: readonly EventMiddleware<C>[]): Unsubscribe {
     const registration = this.#registration(middleware);
     this.#fallback.push(registration);
 
@@ -82,23 +82,23 @@ export class RealtimeRouter<
   }
 
   /** Возвращает снимок маршрутов для `stream.use(router)` или ручной композиции. */
-  middleware(): RealtimeMiddleware<C> {
-    const middleware: RealtimeMiddleware<C> = (context, next) =>
+  middleware(): EventMiddleware<C> {
+    const middleware: EventMiddleware<C> = (context, next) =>
       this.#captureMiddleware()(context, next);
-    return withRealtimeMiddlewareSnapshot(middleware, () => this.#captureMiddleware());
+    return withEventMiddlewareSnapshot(middleware, () => this.#captureMiddleware());
   }
 
-  #captureMiddleware(): RealtimeMiddleware<C> {
-    const routes = new Map<K, readonly RealtimeMiddleware<C>[]>();
+  #captureMiddleware(): EventMiddleware<C> {
+    const routes = new Map<K, readonly EventMiddleware<C>[]>();
     for (const [key, registrations] of this.#routes) {
       routes.set(
         key,
-        registrations.flatMap(({ middleware }) => middleware).map(captureRealtimeMiddleware),
+        registrations.flatMap(({ middleware }) => middleware).map(captureEventMiddleware),
       );
     }
     const fallback = this.#fallback
       .flatMap(({ middleware }) => middleware)
-      .map(captureRealtimeMiddleware);
+      .map(captureEventMiddleware);
 
     return async (context, next) => {
       const key = await this.#selector(context);
@@ -115,11 +115,11 @@ export class RealtimeRouter<
         return;
       }
 
-      await runRealtimeMiddleware(chain, context, next);
+      await runEventMiddleware(chain, context, next);
     };
   }
 
-  #registration(middleware: readonly RealtimeMiddleware<C>[]): RouteRegistration<C> {
+  #registration(middleware: readonly EventMiddleware<C>[]): RouteRegistration<C> {
     if (middleware.length === 0) {
       throw new ItdConfigError('Маршрут должен содержать хотя бы один обработчик');
     }

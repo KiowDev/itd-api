@@ -11,6 +11,7 @@ import { createMockFetch, json } from '../helpers/mock-fetch.js';
 interface ProbeApi {
   get(): Promise<{ ok: boolean; marked?: boolean }>;
   serviceBaseUrl(): string;
+  connection(): Promise<{ baseUrl: string; authorize: boolean; serviceHeader: string | null }>;
   signal: AbortSignal;
 }
 
@@ -44,10 +45,16 @@ function probeFeature(
       },
     },
     setup(context): FeatureInstallation<ProbeApi> {
+      const connection = context.connection('probe-api');
       return {
         api: {
           get: () => context.request('get', { path: '/api/probe' }),
           serviceBaseUrl: () => context.serviceBaseUrl('probe-api'),
+          connection: async () => ({
+            baseUrl: connection.baseUrl,
+            authorize: connection.authorize,
+            serviceHeader: (await connection.baseHeaders('/api/probe')).get('x-service'),
+          }),
           signal: context.signal,
         },
         close: () => {
@@ -98,6 +105,11 @@ describe('feature runtime', () => {
 
     await expect(probe.get()).resolves.toEqual({ ok: true, marked: true });
     expect(probe.serviceBaseUrl()).toBe('https://mirror.test/root');
+    await expect(probe.connection()).resolves.toEqual({
+      baseUrl: 'https://mirror.test/root',
+      authorize: true,
+      serviceHeader: 'probe',
+    });
     expect(seen).toEqual(['probe.get']);
     expect(mock.calls[0]?.url).toBe('https://mirror.test/root/api/probe');
     expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer shared-token');
@@ -322,5 +334,78 @@ describe('feature runtime', () => {
     expectTypeOf(extended.probe).toEqualTypeOf<ProbeApi>();
     await expect(extended.probe.get()).resolves.toEqual({ ok: true });
     expect(rest.featureNames()).toEqual(['status', 'probe']);
+  });
+
+  it.each([
+    ['full', () => new ItdClient({ rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
+  ])('managed resource feature проходит общий lifecycle: %s', async (_name, createClient) => {
+    const client = createClient();
+    const stop = vi.fn();
+    const drain = vi.fn(() => Promise.resolve());
+    const feature: ClientFeature<{ start(): void }> = {
+      name: 'runner',
+      operations: {},
+      setup: (context) => ({
+        api: {
+          start: () => {
+            context.manage({ kind: 'runner', stop, drain });
+          },
+        },
+      }),
+    };
+
+    client.install(feature).start();
+    await client.close();
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(drain).toHaveBeenCalledOnce();
+    await client.dispose();
+  });
+
+  it.each([
+    ['full', () => new ItdClient({ rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
+  ])('close() продолжает cleanup после синхронных исключений: %s', async (_name, createClient) => {
+    const client = createClient();
+    const featureClosed = vi.fn();
+    const laterFeatureClosed = vi.fn();
+    client.install({
+      name: 'closes-after-failure',
+      operations: {},
+      setup: () => ({ api: undefined, close: laterFeatureClosed }),
+    });
+    client.install({
+      name: 'throws-on-close',
+      operations: {},
+      setup: () => ({
+        api: undefined,
+        close: () => {
+          featureClosed();
+          throw new Error('feature close failed');
+        },
+      }),
+    });
+    client.install({
+      name: 'throwing-resource',
+      operations: {},
+      setup: (context) => ({
+        api: () =>
+          context.manage({
+            kind: 'throwing-resource',
+            stop() {},
+            drain() {
+              throw new Error('resource drain failed');
+            },
+          }),
+      }),
+    })();
+
+    const failure = await client.close().catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(featureClosed).toHaveBeenCalledOnce();
+    expect(laterFeatureClosed).toHaveBeenCalledOnce();
+    await client.dispose().catch(() => {});
   });
 });

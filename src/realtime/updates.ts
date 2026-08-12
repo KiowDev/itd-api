@@ -3,22 +3,23 @@ import type { Notification } from '../models/notifications.js';
 import type { NotificationEvent } from '../notifications/normalize.js';
 import { readNotificationEvent, readUnreadCountEvent } from '../notifications/normalize.js';
 import type { NotificationType } from '../types/enums.js';
-import type { ItdRealtime } from './stream.js';
-import type { TransportEvent } from './transports/transport.js';
+import type { NotificationEvents } from './stream.js';
+import type { EventTransportFrame } from './transports/transport.js';
 
 /** Типы нормализованных обновлений потока. */
-export const RealtimeUpdateType = Object.freeze({
+export const NotificationUpdateType = Object.freeze({
   Notification: 'notification',
   UnreadCount: 'unreadCount',
   Unknown: 'unknown',
 } as const);
 
 /** Источники нормализованных обновлений потока. */
-export const RealtimeUpdateOrigin = Object.freeze({
+export const NotificationUpdateOrigin = Object.freeze({
   Stream: 'stream',
   Sync: 'sync',
 } as const);
-export type RealtimeUpdateOrigin = (typeof RealtimeUpdateOrigin)[keyof typeof RealtimeUpdateOrigin];
+export type NotificationUpdateOrigin =
+  (typeof NotificationUpdateOrigin)[keyof typeof NotificationUpdateOrigin];
 
 /** Уведомление с типом, суженным фильтром потока. */
 export type NotificationOfType<T extends NotificationType> = Omit<Notification, 'type'> & {
@@ -34,36 +35,36 @@ export type NotificationEventOfType<T extends NotificationType> = Omit<
 };
 
 /** Нормализованное уведомление из потока. */
-export interface RealtimeNotificationUpdate<T extends NotificationType = NotificationType> {
-  readonly type: typeof RealtimeUpdateType.Notification;
+export interface NotificationUpdate<T extends NotificationType = NotificationType> {
+  readonly type: typeof NotificationUpdateType.Notification;
   readonly data: NotificationEventOfType<T>;
 }
 
 /** Актуальное число непрочитанных уведомлений. */
-export interface RealtimeUnreadCountUpdate {
-  readonly type: typeof RealtimeUpdateType.UnreadCount;
+export interface UnreadCountUpdate {
+  readonly type: typeof NotificationUpdateType.UnreadCount;
   readonly data: number;
 }
 
 /** Неизвестное библиотеке событие потока. */
-export interface RealtimeUnknownUpdate {
-  readonly type: typeof RealtimeUpdateType.Unknown;
+export interface UnknownNotificationUpdate {
+  readonly type: typeof NotificationUpdateType.Unknown;
   readonly name: string;
   readonly data: unknown;
 }
 
 /** Данные, проходящие через промежуточные обработчики потока. */
-export type RealtimeUpdate =
-  | RealtimeNotificationUpdate
-  | RealtimeUnreadCountUpdate
-  | RealtimeUnknownUpdate;
+export type NotificationEventsUpdate =
+  | NotificationUpdate
+  | UnreadCountUpdate
+  | UnknownNotificationUpdate;
 
 /** Тип нормализованного обновления потока. */
-export type RealtimeUpdateType = RealtimeUpdate['type'];
+export type NotificationUpdateType = NotificationEventsUpdate['type'];
 
 /** Обновление потока указанного типа. */
-export type RealtimeUpdateOfType<T extends RealtimeUpdateType> = Extract<
-  RealtimeUpdate,
+export type NotificationUpdateOfType<T extends NotificationUpdateType> = Extract<
+  NotificationEventsUpdate,
   { type: T }
 >;
 
@@ -77,29 +78,28 @@ export type RealtimeUpdateOfType<T extends RealtimeUpdateType> = Extract<
  * @typeParam U нормализованное обновление домена
  * @typeParam S поток, который его получил
  */
-export interface RealtimeContextBase<U = unknown, S = unknown> {
+export interface EventContext<U = unknown, S = unknown, O = unknown> {
   /** Нормализованные данные обновления. */
   readonly update: U;
   /** Поток, который получил обновление. */
   readonly stream: S;
   /** Исходный кадр транспорта. Для начальной REST-синхронизации равен `undefined`. */
-  readonly raw: TransportEvent | undefined;
+  readonly raw: EventTransportFrame | undefined;
   /** Откуда получены данные. */
-  readonly origin: RealtimeUpdateOrigin;
+  readonly origin: O;
 }
 
 /** Контекст обработки одного обновления потока уведомлений. */
-export type RealtimeContext<U extends RealtimeUpdate = RealtimeUpdate> = RealtimeContextBase<
-  U,
-  ItdRealtime
->;
+export type NotificationEventContext<
+  U extends NotificationEventsUpdate = NotificationEventsUpdate,
+> = EventContext<U, NotificationEvents, NotificationUpdateOrigin>;
 
 /** Контекст уведомления с типом, суженным фильтром. */
-export type RealtimeNotificationContext<T extends NotificationType = NotificationType> =
-  RealtimeContext<RealtimeNotificationUpdate<T>>;
+export type NotificationContext<T extends NotificationType = NotificationType> =
+  NotificationEventContext<NotificationUpdate<T>>;
 
 /** Условия отбора уведомлений. Все указанные поля объединяются через логическое И. */
-export interface RealtimeNotificationFilter<T extends NotificationType = NotificationType> {
+export interface NotificationEventFilter<T extends NotificationType = NotificationType> {
   /** Один или несколько канонических типов уведомления. */
   type?: T | readonly T[];
   /** Идентификатор хотя бы одного участника уведомления. */
@@ -109,14 +109,14 @@ export interface RealtimeNotificationFilter<T extends NotificationType = Notific
   /** Идентификатор родительского объекта. */
   parentEntityId?: string | null;
   /** Дополнительная проверка после сопоставления полей. */
-  predicate?: (context: RealtimeNotificationContext<T>) => boolean;
+  predicate?: (context: NotificationContext<T>) => boolean;
 }
 
 /** Краткая или объектная форма фильтра уведомлений. */
-export type RealtimeNotificationSelector<T extends NotificationType = NotificationType> =
+export type NotificationEventSelector<T extends NotificationType = NotificationType> =
   | T
   | readonly T[]
-  | RealtimeNotificationFilter<T>;
+  | NotificationEventFilter<T>;
 
 /** Проверяет форму фильтра уведомлений. */
 export function validateNotificationSelector(selector: unknown): void {
@@ -153,33 +153,37 @@ export function validateNotificationSelector(selector: unknown): void {
 }
 
 /** Преобразует транспортный кадр в одно логическое обновление. */
-export function readRealtimeUpdate(event: TransportEvent): RealtimeUpdate | undefined {
+export function readNotificationEventsUpdate(
+  event: EventTransportFrame,
+): NotificationEventsUpdate | undefined {
   if (event.name === 'notification') {
     return {
-      type: RealtimeUpdateType.Notification,
+      type: NotificationUpdateType.Notification,
       data: readNotificationEvent(event.data),
     };
   }
 
   if (event.name === 'unread_count') {
     const count = readUnreadCountEvent(event.data);
-    return count === undefined ? undefined : { type: RealtimeUpdateType.UnreadCount, data: count };
+    return count === undefined
+      ? undefined
+      : { type: NotificationUpdateType.UnreadCount, data: count };
   }
 
-  return { type: RealtimeUpdateType.Unknown, name: event.name, data: event.data };
+  return { type: NotificationUpdateType.Unknown, name: event.name, data: event.data };
 }
 
 /** Проверяет объектный или краткий фильтр уведомления. */
 export function matchesNotification<T extends NotificationType>(
-  context: RealtimeNotificationContext,
-  selector: RealtimeNotificationSelector<T>,
-): context is RealtimeNotificationContext<T> {
+  context: NotificationContext,
+  selector: NotificationEventSelector<T>,
+): context is NotificationContext<T> {
   const notification = context.update.data.notification;
 
   if (typeof selector === 'string') return notification.type === selector;
   if (Array.isArray(selector)) return selector.includes(notification.type as T);
 
-  const filter = selector as RealtimeNotificationFilter<T>;
+  const filter = selector as NotificationEventFilter<T>;
   const types = filter.type === undefined ? undefined : [filter.type].flat();
 
   if (types && !types.includes(notification.type as T)) return false;
@@ -197,12 +201,12 @@ export function matchesNotification<T extends NotificationType>(
     return false;
   }
 
-  return filter.predicate?.(context as RealtimeNotificationContext<T>) ?? true;
+  return filter.predicate?.(context as NotificationContext<T>) ?? true;
 }
 
 /** Сужает произвольный контекст потока до контекста уведомления. */
 export function isNotificationContext(
-  context: RealtimeContext,
-): context is RealtimeNotificationContext {
-  return context.update.type === RealtimeUpdateType.Notification;
+  context: NotificationEventContext,
+): context is NotificationContext {
+  return context.update.type === NotificationUpdateType.Notification;
 }

@@ -32,9 +32,10 @@ const LAYERS = [
   ['client.ts', 'sdk'],
   ['accounts.ts', 'sdk'],
   ['options.ts', 'sdk'],
+  ['notifications-api.ts', 'sdk'],
   ['index.ts', 'entry'],
   ['rest.ts', 'entry'],
-  ['realtime.ts', 'entry'],
+  ['events.ts', 'entry'],
   ['node.ts', 'entry'],
   ['web.ts', 'entry'],
 ];
@@ -87,11 +88,11 @@ const FORBIDDEN = {
 const FORBIDDEN_EDGES = [
   {
     from: 'rest.ts',
-    to: ['client.ts', 'accounts.ts', 'options.ts', 'index.ts', 'session/', 'realtime.ts', 'realtime/'],
+    to: ['client.ts', 'accounts.ts', 'options.ts', 'index.ts', 'session/', 'events.ts', 'realtime/'],
     reason: 'минимальный REST-клиент не должен затягивать полный SDK, сессию или realtime',
   },
   {
-    from: 'realtime.ts',
+    from: 'events.ts',
     to: [
       'client.ts',
       'accounts.ts',
@@ -115,7 +116,7 @@ const FORBIDDEN_EDGES = [
       'index.ts',
       'rest.ts',
       'rest/',
-      'realtime.ts',
+      'events.ts',
       'realtime/',
       'resources/',
       'builders/',
@@ -131,7 +132,7 @@ const FORBIDDEN_EDGES = [
       'index.ts',
       'rest.ts',
       'rest/',
-      'realtime.ts',
+      'events.ts',
       'realtime/',
       'resources/',
       'builders/',

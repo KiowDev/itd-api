@@ -87,13 +87,17 @@ mock.assertDone();
 ## Управляемое время и realtime
 
 ```ts
-import { createTestClock, MockRealtimeTransport } from '@itd-api/testing';
+import { createTestClock, MockEventTransport } from '@itd-api/testing';
 
 const clock = createTestClock('2026-08-01T10:00:00Z');
-const transport = new MockRealtimeTransport();
+const transport = new MockEventTransport();
 
-const itd = new ItdClient({ auth: 'test-token', clock });
-const stream = itd.realtime({ transport, syncCount: false, jitter: 0 });
+const itd = new ItdClient({
+  auth: 'test-token',
+  clock,
+  events: { notifications: { transport, syncCount: false, jitter: 0 } },
+});
+const stream = itd.notifications.events;
 await stream.connect();
 await transport.waitForConnection(0);
 

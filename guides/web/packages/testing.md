@@ -25,7 +25,7 @@ npm install --save-dev @itd-api/testing
 | полный сценарий с несколькими клиентами и общими данными | `createMockServer()` |
 | устойчивые модели для ответов и исходных данных | функции `*Fixture()` |
 | проверка пауз, тайм-аутов и переподключения без ожидания | `createTestClock()` |
-| доставка уведомлений и произвольных кадров realtime | `MockRealtimeTransport` |
+| доставка уведомлений и произвольных кадров realtime | `MockEventTransport` |
 
 ## Моки логических операций
 
@@ -255,8 +255,12 @@ await pending;
 ## Realtime
 
 ```ts
-const transport = server.realtime({ as: 'alice' });
-const stream = alice.realtime({ transport, syncCount: false, jitter: 0 });
+const transport = server.notificationEvents({ as: 'alice' });
+const alice = new ItdClient({
+  ...server.clientOptions({ as: 'alice' }),
+  events: { notifications: { transport, syncCount: false, jitter: 0 } },
+});
+const stream = alice.notifications.events;
 
 await stream.connect();
 await transport.waitForConnection(0);
@@ -269,7 +273,7 @@ await stream.drain();
 ```
 
 Связанный с сервером транспорт получает уведомления от поддерживаемых действий. Отдельный
-`MockRealtimeTransport` позволяет вручную вызвать `ready()`, `notification()`,
+`MockEventTransport` позволяет вручную вызвать `ready()`, `notification()`,
 `unreadCount()`, `message()`, `parseError()`, `fail()` и `close()`. После `fail()` часы
 клиента управляют обычным переподключением потока. Если требуется проверить именно SSE,
 зарегистрируйте `sseResponse()` в `createMockFetch()`; для тайм-аута рукопожатия используйте

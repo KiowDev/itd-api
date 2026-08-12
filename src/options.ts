@@ -1,4 +1,5 @@
 import type { RuntimeOptions } from './core/options.js';
+import type { NotificationEventsOptions } from './realtime/stream.js';
 import type { SessionOptions } from './session/options.js';
 
 /**
@@ -17,4 +18,12 @@ import type { SessionOptions } from './session/options.js';
  * });
  * ```
  */
-export interface ItdClientOptions extends RuntimeOptions, SessionOptions {}
+export interface ItdClientOptions extends RuntimeOptions, SessionOptions {
+  /** Неизменяемые настройки предметных каналов событий клиента. */
+  events?:
+    | {
+        /** Настройки канала уведомлений на всё время жизни клиента. */
+        notifications?: NotificationEventsOptions | undefined;
+      }
+    | undefined;
+}

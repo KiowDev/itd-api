@@ -5,33 +5,31 @@ import type {
   Comment,
   CommentReplyTo,
   CommentsResource,
+  EventContext,
+  EventHandler,
+  EventMiddleware,
+  EventMiddlewareObject,
+  EventNext,
   ItdClient,
-  ItdRealtime,
   Listener,
   MyProfile,
   Notification,
+  NotificationContext,
   NotificationEvent,
+  NotificationEventContext,
+  NotificationEventFilter,
+  NotificationEvents,
+  NotificationEventsMap,
   NotificationType,
+  NotificationUpdate,
+  NotificationUpdateOfType,
+  NotificationUpdateType,
   Page,
   Paginator,
   Post,
   PostsResource,
   Profile,
   PublicProfile,
-  RealtimeContext,
-  RealtimeContextBase,
-  RealtimeEvents,
-  RealtimeHandler,
-  RealtimeMiddleware,
-  RealtimeMiddlewareObj,
-  RealtimeNext,
-  RealtimeNotificationContext,
-  RealtimeNotificationFilter,
-  RealtimeNotificationUpdate,
-  RealtimeOptions,
-  RealtimeSequentializer,
-  RealtimeUpdateOfType,
-  RealtimeUpdateType,
   Unsubscribe,
   UserSummary,
   UsersResource,
@@ -310,102 +308,107 @@ export type HydrateValue<T> = T extends
 export type HydratedNotificationEvent = HydratedModel<NotificationEvent>;
 
 /** Контекст realtime с гидратированным обновлением и потоком. */
-export type HydratedRealtimeContext<C extends RealtimeContextBase = RealtimeContext> =
-  HydratedModel<
-    C,
-    {
-      readonly update: HydrateValue<C['update']>;
-      readonly stream: C extends RealtimeContext ? HydratedRealtime : C['stream'];
-      readonly raw: C['raw'];
-    }
-  >;
+export type HydratedEventContext<C extends EventContext = NotificationEventContext> = HydratedModel<
+  C,
+  {
+    readonly update: HydrateValue<C['update']>;
+    readonly stream: C extends NotificationEventContext ? HydratedNotificationEvents : C['stream'];
+    readonly raw: C['raw'];
+  }
+>;
 
 /** Контекст уведомления с типом, суженным селектором. */
-export type HydratedRealtimeNotificationContext<T extends NotificationType = NotificationType> =
-  HydratedRealtimeContext<RealtimeNotificationContext<T>>;
+export type HydratedNotificationContext<T extends NotificationType = NotificationType> =
+  HydratedEventContext<NotificationContext<T>>;
 
 /** Асинхронный обработчик гидратированного обновления. */
-export type HydratedRealtimeHandler<C extends RealtimeContextBase = RealtimeContext> = (
-  context: HydratedRealtimeContext<C>,
-) => ReturnType<RealtimeHandler<C>>;
+export type HydratedEventHandler<C extends EventContext = NotificationEventContext> = (
+  context: HydratedEventContext<C>,
+) => ReturnType<EventHandler<C>>;
 
 /** Промежуточный обработчик гидратированных обновлений. */
-export type HydratedRealtimeMiddleware<C extends RealtimeContextBase = RealtimeContext> = (
-  context: HydratedRealtimeContext<C>,
-  next: RealtimeNext,
-) => ReturnType<RealtimeMiddleware<C>>;
+export type HydratedEventMiddleware<C extends EventContext = NotificationEventContext> = (
+  context: HydratedEventContext<C>,
+  next: EventNext,
+) => ReturnType<EventMiddleware<C>>;
 
 /** Условия отбора гидратированных уведомлений. */
-export type HydratedRealtimeNotificationFilter<T extends NotificationType = NotificationType> =
-  Omit<RealtimeNotificationFilter<T>, 'predicate'> & {
-    predicate?: (context: HydratedRealtimeNotificationContext<T>) => boolean;
-  };
-
-/** Краткая или объектная форма фильтра гидратированных уведомлений. */
-export type HydratedRealtimeNotificationSelector<T extends NotificationType = NotificationType> =
-  | T
-  | readonly T[]
-  | HydratedRealtimeNotificationFilter<T>;
-
-/** Значение события гидратированного потока. */
-export type HydratedRealtimeEvent<K extends keyof RealtimeEvents> = K extends 'notification'
-  ? HydratedNotificationEvent
-  : K extends 'middlewareError' | 'handlerError'
-    ? RealtimeEvents[K] extends infer Event extends { context: RealtimeContext }
-      ? Omit<Event, 'context'> & { context: HydratedRealtimeContext<Event['context']> }
-      : never
-    : RealtimeEvents[K];
-
-/** Настройки realtime с гидратированным контекстом функции последовательности. */
-export type HydratedRealtimeOptions = Omit<RealtimeOptions, 'sequentialize'> & {
-  sequentialize?: (context: HydratedRealtimeContext) => ReturnType<RealtimeSequentializer>;
+export type HydratedNotificationFilter<T extends NotificationType = NotificationType> = Omit<
+  NotificationEventFilter<T>,
+  'predicate'
+> & {
+  predicate?: (context: HydratedNotificationContext<T>) => boolean;
 };
 
+/** Краткая или объектная форма фильтра гидратированных уведомлений. */
+export type HydratedNotificationSelector<T extends NotificationType = NotificationType> =
+  | T
+  | readonly T[]
+  | HydratedNotificationFilter<T>;
+
+/** Значение события гидратированного потока. */
+export type HydratedNotificationEventsEvent<K extends keyof NotificationEventsMap> =
+  K extends 'notification'
+    ? HydratedNotificationEvent
+    : K extends 'middlewareError' | 'handlerError'
+      ? NotificationEventsMap[K] extends infer Event extends { context: NotificationEventContext }
+        ? Omit<Event, 'context'> & { context: HydratedEventContext<Event['context']> }
+        : never
+      : NotificationEventsMap[K];
+
 /** Поток, передающий гидратированные уведомления и контексты. */
-export type HydratedRealtime = {
-  on<K extends keyof RealtimeEvents>(
+export type HydratedNotificationEvents = {
+  on<K extends keyof NotificationEventsMap>(
     event: K,
-    listener: Listener<HydratedRealtimeEvent<K>>,
+    listener: Listener<HydratedNotificationEventsEvent<K>>,
   ): Unsubscribe;
-  once<K extends keyof RealtimeEvents>(
+  once<K extends keyof NotificationEventsMap>(
     event: K,
-    listener: Listener<HydratedRealtimeEvent<K>>,
+    listener: Listener<HydratedNotificationEventsEvent<K>>,
   ): Unsubscribe;
   use(
-    middleware: HydratedRealtimeMiddleware | RealtimeMiddlewareObj<HydratedRealtimeContext>,
+    middleware: HydratedEventMiddleware | EventMiddlewareObject<HydratedEventContext>,
   ): Unsubscribe;
-  onUpdate(handler: HydratedRealtimeHandler): Unsubscribe;
-  onUpdate<T extends RealtimeUpdateType>(
+  onUpdate(handler: HydratedEventHandler): Unsubscribe;
+  onUpdate<T extends NotificationUpdateType>(
     type: T,
-    handler: HydratedRealtimeHandler<RealtimeContext<RealtimeUpdateOfType<T>>>,
+    handler: HydratedEventHandler<NotificationEventContext<NotificationUpdateOfType<T>>>,
   ): Unsubscribe;
-  onUpdate<C extends RealtimeContext>(
-    guard: (context: HydratedRealtimeContext) => context is HydratedRealtimeContext<C>,
-    handler: HydratedRealtimeHandler<C>,
+  onUpdate<C extends NotificationEventContext>(
+    guard: (context: HydratedEventContext) => context is HydratedEventContext<C>,
+    handler: HydratedEventHandler<C>,
   ): Unsubscribe;
   onUpdate(
-    predicate: (context: HydratedRealtimeContext) => boolean,
-    handler: HydratedRealtimeHandler,
+    predicate: (context: HydratedEventContext) => boolean,
+    handler: HydratedEventHandler,
   ): Unsubscribe;
   onNotification<T extends NotificationType>(
-    selector: HydratedRealtimeNotificationSelector<T>,
-    handler: HydratedRealtimeHandler<RealtimeContext<RealtimeNotificationUpdate<T>>>,
+    selector: HydratedNotificationSelector<T>,
+    handler: HydratedEventHandler<NotificationEventContext<NotificationUpdate<T>>>,
   ): Unsubscribe;
-  onNotification<C extends RealtimeNotificationContext>(
-    guard: (context: HydratedRealtimeNotificationContext) => context is HydratedRealtimeContext<C>,
-    handler: HydratedRealtimeHandler<C>,
+  onNotification<C extends NotificationContext>(
+    guard: (context: HydratedNotificationContext) => context is HydratedEventContext<C>,
+    handler: HydratedEventHandler<C>,
   ): Unsubscribe;
   onNotification(
-    predicate: (context: HydratedRealtimeNotificationContext) => boolean,
-    handler: HydratedRealtimeHandler<RealtimeNotificationContext>,
+    predicate: (context: HydratedNotificationContext) => boolean,
+    handler: HydratedEventHandler<NotificationContext>,
   ): Unsubscribe;
-} & ItdRealtime;
+} & NotificationEvents;
 
 /** Ресурс клиента, методы которого возвращают гидратированные результаты. */
 export type HydratedResource<Resource> = {
   [Key in keyof Resource]: Resource[Key] extends (...args: infer Args) => infer Result
     ? (...args: Args) => HydrateValue<Result>
     : HydrateValue<Resource[Key]>;
+};
+
+/** API уведомлений с гидратированными REST-методами и стабильным каналом событий. */
+export type HydratedNotificationsResource<Resource extends ItdClient['notifications']> = Omit<
+  HydratedResource<Resource>,
+  'events'
+> & {
+  readonly events: HydratedNotificationEvents;
 };
 
 /**
@@ -418,9 +421,11 @@ export type HydratedResource<Resource> = {
  */
 export type HydrateFlavor<Client extends ItdClient = ItdClient> = Omit<
   Client,
-  HydratableResource | keyof Pick<ItdClient, 'realtime'>
+  HydratableResource
 > & {
-  readonly [Key in Extract<keyof Client, HydratableResource>]: HydratedResource<Client[Key]>;
-} & {
-  realtime(options?: HydratedRealtimeOptions): HydratedRealtime;
+  readonly [Key in Extract<keyof Client, HydratableResource>]: Key extends 'notifications'
+    ? Client[Key] extends ItdClient['notifications']
+      ? HydratedNotificationsResource<Client[Key]>
+      : never
+    : HydratedResource<Client[Key]>;
 };

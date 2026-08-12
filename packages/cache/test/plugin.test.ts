@@ -2,7 +2,7 @@ import {
   type ClientPlugin,
   ItdClient,
   type ItdClientOptions,
-  type ItdRealtime,
+  type NotificationEvents,
   RetrySafety,
 } from 'itd-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -731,7 +731,7 @@ describe('область экземпляра', () => {
   });
 });
 
-class FakeRealtime {
+class FakeEvents {
   readonly #listeners = new Map<string, Set<() => void>>();
   readonly #authIdentity:
     | { userId?: string | undefined; sessionId?: string | undefined }
@@ -789,8 +789,8 @@ describe('realtime', () => {
     await fillNotifications(itd);
     expect(cached.size).toBe(2);
 
-    const realtime = new FakeRealtime();
-    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
+    const realtime = new FakeEvents();
+    const detach = cached.attachEvents(realtime as unknown as NotificationEvents);
     expect(cached.size).toBe(0);
 
     await fillNotifications(itd);
@@ -825,13 +825,13 @@ describe('realtime', () => {
     await fillNotifications(b.itd);
     expect(cached.size).toBe(4);
 
-    const source = a.itd.realtime({ syncCount: false });
-    const realtime = new FakeRealtime(
+    const source = a.itd.notifications.events;
+    const realtime = new FakeEvents(
       source.getAuthScope(),
       source.getAuthIdentity(),
       source.baseUrl,
     );
-    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
+    const detach = cached.attachEvents(realtime as unknown as NotificationEvents);
     expect(cached.size).toBe(2);
 
     await fillNotifications(a.itd);
@@ -863,7 +863,7 @@ describe('realtime', () => {
     await fillNotifications(b.itd);
     expect(cached.size).toBe(4);
 
-    const detach = cached.attachRealtime(new FakeRealtime() as unknown as ItdRealtime);
+    const detach = cached.attachEvents(new FakeEvents() as unknown as NotificationEvents);
 
     expect(cached.size).toBe(0);
     detach();
@@ -885,13 +885,13 @@ describe('realtime', () => {
     const stale = itd.notifications.list();
     await vi.waitFor(() => expect(calls).toHaveLength(1));
 
-    const source = itd.realtime({ syncCount: false });
-    const realtime = new FakeRealtime(
+    const source = itd.notifications.events;
+    const realtime = new FakeEvents(
       source.getAuthScope(),
       source.getAuthIdentity(),
       source.baseUrl,
     );
-    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
+    const detach = cached.attachEvents(realtime as unknown as NotificationEvents);
     realtime.emit('notification');
 
     release(json({ notifications: [], pagination: { total: 0, hasMore: false } }));
@@ -906,6 +906,6 @@ describe('realtime', () => {
 
   it('проверяет переданный поток', () => {
     const cached: CachePlugin = cache({ ttl: 1_000, operations: ['notifications.list'] });
-    expect(() => cached.attachRealtime({} as ItdRealtime)).toThrow(CacheError);
+    expect(() => cached.attachEvents({} as NotificationEvents)).toThrow(CacheError);
   });
 });

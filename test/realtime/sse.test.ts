@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
 import { SseTransport } from '../../src/realtime/transports/sse.js';
 import {
-  type TransportEvent,
+  type EventTransportFrame,
   UnauthorizedStreamError,
 } from '../../src/realtime/transports/transport.js';
 import { json } from '../helpers/mock-fetch.js';
@@ -27,11 +27,11 @@ function streamingResponse(chunks: string[], status = 200): Response {
 
 /** Прогоняет SSE-транспорт по заданным кускам потока и собирает результат. */
 async function runTransport(chunks: string[]): Promise<{
-  events: TransportEvent[];
+  events: EventTransportFrame[];
   parseErrors: string[];
   headers: Headers;
 }> {
-  const events: TransportEvent[] = [];
+  const events: EventTransportFrame[] = [];
   const parseErrors: string[] = [];
   let headers = new Headers();
 
@@ -143,8 +143,11 @@ describe('SSE-транспорт: подключение', () => {
       retry: false,
       rateLimit: false,
       mode: 'server',
+      events: {
+        notifications: { syncCount: false, transport: 'sse', maxAttempts: 0 },
+      },
     });
-    const stream = itd.realtime({ syncCount: false, transport: 'sse', maxAttempts: 0 });
+    const stream = itd.notifications.events;
 
     await new Promise<void>((resolve) => {
       stream.once('giveup', resolve);

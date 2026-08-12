@@ -1,11 +1,11 @@
 # Уведомления в реальном времени
 
-`itd.realtime()` открывает поток новых уведомлений:
+`itd.notifications.events` возвращает стабильный канал новых уведомлений:
 
 ```ts
 import { formatNotificationText, resolveNotificationUrl } from 'itd-api';
 
-const stream = itd.realtime();
+const stream = itd.notifications.events;
 
 stream.on('notification', ({ notification, sound }) => {
   console.log(sound ? '🔔' : '🔕');
@@ -22,25 +22,25 @@ await stream.connect();
 из одного транспортного кадра:
 
 ```ts
-import { type NotificationEvent, RealtimeUpdateType } from 'itd-api';
+import { type NotificationEvent, NotificationUpdateType } from 'itd-api';
 
-type RealtimeUpdate =
-  | { type: typeof RealtimeUpdateType.Notification; data: NotificationEvent }
-  | { type: typeof RealtimeUpdateType.UnreadCount; data: number }
-  | { type: typeof RealtimeUpdateType.Unknown; name: string; data: unknown };
+type NotificationEventsUpdate =
+  | { type: typeof NotificationUpdateType.Notification; data: NotificationEvent }
+  | { type: typeof NotificationUpdateType.UnreadCount; data: number }
+  | { type: typeof NotificationUpdateType.Unknown; name: string; data: unknown };
 ```
 
-Обновление с типом `RealtimeUpdateType.Notification` содержит нормализованное уведомление.
-Тип `RealtimeUpdateType.UnreadCount` создаётся для отдельного серверного события или
-начальной REST-синхронизации. `RealtimeUpdateType.Unknown` используется только для
+Обновление с типом `NotificationUpdateType.Notification` содержит нормализованное уведомление.
+Тип `NotificationUpdateType.UnreadCount` создаётся для отдельного серверного события или
+начальной REST-синхронизации. `NotificationUpdateType.Unknown` используется только для
 неизвестных библиотеке событий.
 
 Контекст обработчика содержит:
 
 - `update` — нормализованные данные обновления;
-- `stream` — текущий поток `ItdRealtime`;
+- `stream` — текущий поток `NotificationEvents`;
 - `raw` — исходный транспортный кадр или `undefined` для REST-синхронизации;
-- `origin` — источник из `RealtimeUpdateOrigin`: поток или начальная синхронизация.
+- `origin` — источник из `NotificationUpdateOrigin`: поток или начальная синхронизация.
 
 ## Промежуточные обработчики
 
@@ -61,7 +61,7 @@ const removeLogging = stream.use(async (context, next) => {
 ```ts
 stream.use(async (context, next) => {
   if (
-    context.update.type === RealtimeUpdateType.Notification &&
+    context.update.type === NotificationUpdateType.Notification &&
     context.update.data.notification.isRead
   ) {
     return;
@@ -70,7 +70,7 @@ stream.use(async (context, next) => {
 });
 ```
 
-`use()` принимает функцию либо объект с методом `middleware()`, например `RealtimeRouter`.
+`use()` принимает функцию либо объект с методом `middleware()`, например `EventRouter`.
 Функция, возвращённая `use()`, снимает обработчик. Для каждого обновления используется
 снимок цепочки и маршрутов на момент получения, поэтому изменение подписок через `use()`,
 `route()` или `otherwise()` влияет только на следующие обновления.
@@ -83,7 +83,7 @@ stream.use(async (context, next) => {
 `onUpdate()` подписывает обработчик на определённый тип обновления и сужает тип контекста:
 
 ```ts
-const off = stream.onUpdate(RealtimeUpdateType.UnreadCount, async ({ update }) => {
+const off = stream.onUpdate(NotificationUpdateType.UnreadCount, async ({ update }) => {
   await saveBadge(update.data); // number
 });
 ```
@@ -92,7 +92,7 @@ const off = stream.onUpdate(RealtimeUpdateType.UnreadCount, async ({ update }) =
 
 ```ts
 stream.onUpdate(async ({ update }) => {
-  await saveRealtimeUpdate(update);
+  await saveNotificationEventsUpdate(update);
 });
 ```
 
@@ -131,32 +131,32 @@ stream.onNotification(
 кадр транспорта, включая известные события и подтверждение подключения. Такой слушатель
 выполняется синхронно и не учитывается `drain()`.
 
-## Feature-модули с `RealtimeComposer`
+## Feature-модули с `EventComposer`
 
-`RealtimeComposer` собирает связанные middleware в один модуль, который можно подключить к
+`EventComposer` собирает связанные middleware в один модуль, который можно подключить к
 потоку одной регистрацией:
 
 ```ts
-import { RealtimeComposer, RealtimeUpdateType } from 'itd-api';
+import { EventComposer, NotificationUpdateType } from 'itd-api';
 
-const notifications = new RealtimeComposer();
+const notifications = new EventComposer();
 const safe = notifications.errorBoundary(async ({ error, context }, next) => {
   await reportRealtimeError(error, context);
   await next(); // после ошибки продолжить внешнюю цепочку
 });
 
 safe
-  .filter((context) => context.update.type === RealtimeUpdateType.Notification)
+  .filter((context) => context.update.type === NotificationUpdateType.Notification)
   .use(async (context, next) => {
-    if (context.update.type === RealtimeUpdateType.Notification) {
+    if (context.update.type === NotificationUpdateType.Notification) {
       await saveNotification(context.update.data.notification);
     }
     await next();
   });
 
 safe.route((context) => context.update.type, {
-  [RealtimeUpdateType.UnreadCount]: handleUnreadCount,
-  [RealtimeUpdateType.Unknown]: handleUnknown,
+  [NotificationUpdateType.UnreadCount]: handleUnreadCount,
+  [NotificationUpdateType.Unknown]: handleUnknown,
 });
 
 const removeNotifications = stream.use(notifications);
@@ -164,7 +164,7 @@ const removeNotifications = stream.use(notifications);
 
 `filter()` принимает синхронное или асинхронное условие; функция с type predicate сужает тип
 контекста во всём дочернем composer. `route()` принимает статическую таблицу веток и необязательный
-fallback. Для динамического добавления и удаления маршрутов остаётся `RealtimeRouter`.
+fallback. Для динамического добавления и удаления маршрутов остаётся `EventRouter`.
 
 `errorBoundary()` возвращает защищённый дочерний composer. Она ловит ошибки только этой ветки,
 не затрагивая middleware, добавленные раньше или позже в родительский composer. Без вызова
@@ -182,18 +182,18 @@ composer для настройки цепочкой; функцию удален
 
 ## Маршрутизация
 
-`RealtimeRouter` выбирает цепочку промежуточных обработчиков по ключу:
+`EventRouter` выбирает цепочку промежуточных обработчиков по ключу:
 
 ```ts
-import { NotificationType, RealtimeRouter, RealtimeUpdateType } from 'itd-api';
+import { NotificationType, EventRouter, NotificationUpdateType } from 'itd-api';
 
-const router = new RealtimeRouter((context) => {
-  if (context.update.type !== RealtimeUpdateType.Notification) return 'other';
+const router = new EventRouter((context) => {
+  if (context.update.type !== NotificationUpdateType.Notification) return 'other';
   return context.update.data.notification.type;
 });
 
 const removeCommentRoute = router.route(NotificationType.PostComment, async (context, next) => {
-  if (context.update.type === RealtimeUpdateType.Notification) {
+  if (context.update.type === NotificationUpdateType.Notification) {
     await handleComment(context.update.data.notification);
   }
   await next();
@@ -216,15 +216,20 @@ const removeRouter = stream.use(router);
 этом продолжает принимать данные и складывает их во внутреннюю очередь.
 
 ```ts
-import { RealtimeUpdateType } from 'itd-api';
+import { NotificationUpdateType } from 'itd-api';
 
-const stream = itd.realtime({
-  concurrency: 4,
-  sequentialize: (context) => {
-    if (context.update.type !== RealtimeUpdateType.Notification) return undefined;
-    return context.update.data.notification.parentEntityId ?? undefined;
+const itd = new ItdClient({
+  events: {
+    notifications: {
+      concurrency: 4,
+      sequentialize: (context) => {
+        if (context.update.type !== NotificationUpdateType.Notification) return undefined;
+        return context.update.data.notification.parentEntityId ?? undefined;
+      },
+    },
   },
 });
+const stream = itd.notifications.events;
 ```
 
 `concurrency` задаёт общий предел одновременно обрабатываемых обновлений. `sequentialize()`
@@ -321,18 +326,23 @@ await stream.connect();
 Можно выбрать транспорт явно:
 
 ```ts
-import { RealtimeTransportKind } from 'itd-api';
+import { NotificationEventsTransport } from 'itd-api';
 
-const stream = itd.realtime({
-  transport: RealtimeTransportKind.Poll,
-  pollInterval: 5_000,
+const itd = new ItdClient({
+  events: {
+    notifications: {
+      transport: NotificationEventsTransport.Poll,
+      pollInterval: 5_000,
+    },
+  },
 });
+const stream = itd.notifications.events;
 ```
 
 ## Несколько аккаунтов
 
-Каждый вызов `itd.realtime()` держит собственное соединение. Для десяти аккаунтов это десять
-SSE-соединений, поэтому открывайте поток только там, где он действительно нужен.
+У каждого клиента один стабильный `itd.notifications.events`. Для десяти аккаунтов это не более
+десяти SSE-соединений, поэтому подключайте канал только там, где он действительно нужен.
 
 ## Запускаемый пример
 

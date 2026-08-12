@@ -48,8 +48,8 @@
       "rest": [
         "./dist/rest/index.d.ts"
       ],
-      "realtime": [
-        "./dist/realtime/index.d.ts"
+      "events": [
+        "./dist/events/index.d.ts"
       ],
       "node": [
         "./dist/node/index.d.ts"
@@ -80,14 +80,14 @@
         "default": "./dist/rest/index.cjs"
       }
     },
-    "./realtime": {
+    "./events": {
       "import": {
-        "types": "./dist/realtime/index.d.ts",
-        "default": "./dist/realtime/index.js"
+        "types": "./dist/events/index.d.ts",
+        "default": "./dist/events/index.js"
       },
       "require": {
-        "types": "./dist/realtime/index.d.cts",
-        "default": "./dist/realtime/index.cjs"
+        "types": "./dist/events/index.d.cts",
+        "default": "./dist/events/index.cjs"
       }
     },
     "./node": {

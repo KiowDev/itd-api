@@ -1,8 +1,8 @@
-import type { ItdClient, ItdRealtime } from 'itd-api';
+import type { ItdClient, NotificationEvents } from 'itd-api';
 import { createHydrationContext } from '../graph.js';
 import { isObject } from '../runtime/records.js';
-import { HydratableResource, type HydratedRealtimeOptions, type HydrateFlavor } from '../types.js';
-import { createRealtime } from './realtime.js';
+import { HydratableResource, type HydrateFlavor } from '../types.js';
+import { createNotificationEvents } from './realtime.js';
 import { resourceFacade } from './resource.js';
 
 const HYDRATABLE_RESOURCES = new Set<PropertyKey>(Object.values(HydratableResource));
@@ -29,7 +29,20 @@ export function createClientFacade<Client extends ItdClient>(
       if (HYDRATABLE_RESOURCES.has(key) && isObject(member)) {
         const cached = resources.get(key);
         if (cached !== undefined) return cached;
-        const wrapped = resourceFacade(member, context);
+        let wrapped = resourceFacade(member, context);
+        if (key === HydratableResource.Notifications) {
+          let eventFacade: unknown;
+          wrapped = new Proxy(wrapped, {
+            get(target, property, receiver) {
+              if (property !== 'events') return Reflect.get(target, property, receiver) as unknown;
+              eventFacade ??= createNotificationEvents(
+                context,
+                (member as { readonly events: NotificationEvents }).events,
+              );
+              return eventFacade;
+            },
+          });
+        }
         resources.set(key, wrapped);
         return wrapped;
       }
@@ -38,18 +51,10 @@ export function createClientFacade<Client extends ItdClient>(
       const cached = methods.get(key);
       if (cached !== undefined) return cached;
 
-      const wrapped =
-        key === 'realtime'
-          ? (...args: unknown[]) =>
-              createRealtime(
-                context,
-                member as (...args: never[]) => ItdRealtime,
-                args[0] as HydratedRealtimeOptions | undefined,
-              )
-          : (...args: unknown[]) => {
-              const result = Reflect.apply(member, target, args) as unknown;
-              return result === target ? facade : result;
-            };
+      const wrapped = (...args: unknown[]) => {
+        const result = Reflect.apply(member, target, args) as unknown;
+        return result === target ? facade : result;
+      };
       methods.set(key, wrapped);
       return wrapped;
     },

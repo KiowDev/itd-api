@@ -1,9 +1,9 @@
 import {
   type ClientPlugin,
   ItdClient,
-  type ItdRealtime,
-  type RealtimeContext,
-  RealtimeUpdateType,
+  type NotificationEventContext,
+  type NotificationEvents,
+  NotificationUpdateType,
 } from 'itd-api';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
@@ -39,7 +39,7 @@ function makeServer() {
 
 describe('createMockServer', () => {
   it('сохраняет флейвор контекста в waitForUpdate()', () => {
-    const check = <C extends RealtimeContext>(stream: ItdRealtime<C>) => {
+    const check = <C extends NotificationEventContext>(stream: NotificationEvents<C>) => {
       expectTypeOf(waitForUpdate(stream)).toEqualTypeOf<Promise<C>>();
     };
 
@@ -88,9 +88,12 @@ describe('createMockServer', () => {
   it('доставляет действия сервера в связанный realtime-транспорт', async () => {
     const server = makeServer();
     const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
-    const bob = new ItdClient(server.clientOptions({ as: 'bob' }));
-    const transport = server.realtime({ as: 'bob' });
-    const stream = bob.realtime({ transport, syncCount: false, jitter: 0 });
+    const transport = server.notificationEvents({ as: 'bob' });
+    const bob = new ItdClient({
+      ...server.clientOptions({ as: 'bob' }),
+      events: { notifications: { transport, syncCount: false, jitter: 0 } },
+    });
+    const stream = bob.notifications.events;
 
     await stream.connect();
     await transport.waitForConnection(0);
@@ -98,7 +101,7 @@ describe('createMockServer', () => {
     await alice.users.follow('bob');
 
     await expect(update).resolves.toMatchObject({
-      update: { type: RealtimeUpdateType.Notification },
+      update: { type: NotificationUpdateType.Notification },
     });
     await stream.drain();
     stream.disconnect();
@@ -120,8 +123,11 @@ describe('createMockServer', () => {
       retry: false,
       rateLimit: false,
       userAgent: false,
+      events: {
+        notifications: { transport: 'sse', syncCount: false, maxAttempts: 0 },
+      },
     });
-    const stream = client.realtime({ transport: 'sse', syncCount: false, maxAttempts: 0 });
+    const stream = client.notifications.events;
     const parseError = new Promise<{ raw: string }>((resolve) =>
       stream.once('parseError', resolve),
     );
@@ -130,7 +136,7 @@ describe('createMockServer', () => {
     await stream.connect();
     await expect(parseError).resolves.toMatchObject({ raw: '{' });
     await expect(update).resolves.toMatchObject({
-      update: { type: RealtimeUpdateType.UnreadCount, data: 4 },
+      update: { type: NotificationUpdateType.UnreadCount, data: 4 },
     });
     await stream.drain();
     stream.disconnect();
@@ -143,14 +149,14 @@ describe('createMockServer', () => {
       clock,
       seed: { users: [{ id: ALICE, username: 'alice' }] },
     });
-    const client = new ItdClient(server.clientOptions({ as: 'alice' }));
-    const transport = server.realtime({ as: 'alice' });
-    const stream = client.realtime({
-      transport,
-      syncCount: false,
-      backoff: [100],
-      jitter: 0,
+    const transport = server.notificationEvents({ as: 'alice' });
+    const client = new ItdClient({
+      ...server.clientOptions({ as: 'alice' }),
+      events: {
+        notifications: { transport, syncCount: false, backoff: [100], jitter: 0 },
+      },
     });
+    const stream = client.notifications.events;
 
     await stream.connect();
     await transport.waitForConnection(0);

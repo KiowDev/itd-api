@@ -122,13 +122,13 @@ export const ReportReason = Object.freeze({
 export type ReportReason = (typeof ReportReason)[keyof typeof ReportReason];
 
 /** Состояние realtime-соединения. */
-export const RealtimeStatus = Object.freeze({
+export const EventChannelStatus = Object.freeze({
   Connecting: 'connecting',
   Connected: 'connected',
   Error: 'error',
   Disconnected: 'disconnected',
 } as const);
-export type RealtimeStatus = (typeof RealtimeStatus)[keyof typeof RealtimeStatus];
+export type EventChannelStatus = (typeof EventChannelStatus)[keyof typeof EventChannelStatus];
 
 /** Состояние сервиса платформы. Тип открытый. */
 export const ServiceState = Object.freeze({

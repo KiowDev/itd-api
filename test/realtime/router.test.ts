@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { RealtimeRouter, RealtimeUpdateType } from '../../src/index.js';
+import { EventRouter, NotificationUpdateType } from '../../src/index.js';
 import { makeStream, notification, TestTransport } from './helpers.js';
 
-describe('RealtimeRouter', () => {
+describe('EventRouter', () => {
   it('выбирает маршрут, выполняет fallback и снимает регистрацию', async () => {
     const transport = new TestTransport();
     const stream = makeStream(transport);
-    const router = new RealtimeRouter((context) => {
+    const router = new EventRouter((context) => {
       if (context.update.type !== 'notification') return 'other';
       return context.update.data.notification.type;
     });
@@ -51,8 +51,8 @@ describe('RealtimeRouter', () => {
   it('сохраняет снимок маршрутов на момент получения update', async () => {
     const transport = new TestTransport();
     const stream = makeStream(transport);
-    const router = new RealtimeRouter((context) => {
-      if (context.update.type !== RealtimeUpdateType.Notification) return undefined;
+    const router = new EventRouter((context) => {
+      if (context.update.type !== NotificationUpdateType.Notification) return undefined;
       return context.update.data.notification.type;
     });
     const seen: string[] = [];
@@ -60,14 +60,14 @@ describe('RealtimeRouter', () => {
 
     const recordRoute = (label: string) =>
       router.route('post_comment', async (context, next) => {
-        if (context.update.type === RealtimeUpdateType.Notification) {
+        if (context.update.type === NotificationUpdateType.Notification) {
           seen.push(`${label}:${context.update.data.notification.id}`);
         }
         await next();
       });
     const recordFallback = (label: string) =>
       router.otherwise(async (context, next) => {
-        if (context.update.type === RealtimeUpdateType.Notification) {
+        if (context.update.type === NotificationUpdateType.Notification) {
           seen.push(`${label}:${context.update.data.notification.id}`);
         }
         await next();
@@ -76,7 +76,7 @@ describe('RealtimeRouter', () => {
     const removeOldRoute = recordRoute('old');
     const removeOldFallback = recordFallback('old-fallback');
     stream.use(router);
-    stream.onUpdate(RealtimeUpdateType.Notification, async ({ update }) => {
+    stream.onUpdate(NotificationUpdateType.Notification, async ({ update }) => {
       if (update.data.notification.id === 'n1') {
         await new Promise<void>((resolve) => {
           release = resolve;

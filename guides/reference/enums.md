@@ -73,7 +73,7 @@
 
 `Nobody` `'nobody'` · `Mutual` `'mutual'` (взаимные) · `Followers` `'followers'` · `Everyone` `'everyone'`.
 
-## RealtimeStatus
+## EventChannelStatus
 
 Состояние realtime-соединения.
 

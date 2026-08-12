@@ -4,7 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     'rest/index': 'src/rest.ts',
-    'realtime/index': 'src/realtime.ts',
+    'events/index': 'src/events.ts',
     'node/index': 'src/node.ts',
     'web/index': 'src/web.ts',
   },

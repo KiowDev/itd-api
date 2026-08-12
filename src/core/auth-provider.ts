@@ -20,7 +20,7 @@ export interface AuthIdentity {
  * токеном не тянет за собой сессионную машинерию — она подставляется вызывающим кодом.
  *
  * Каждый метод соответствует ровно одной стадии конвейера. Готовые реализации —
- * {@link bearerToken}, {@link tokenProvider} и {@link anonymousAuth}.
+ * `bearerToken()`, `tokenProvider()` и `anonymousAuth()`.
  */
 export interface AuthProvider {
   /**

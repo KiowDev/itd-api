@@ -109,7 +109,7 @@
 | `POST /api/notifications/read-all` | `itd.notifications.markAllRead()` | Bearer | ответ: `markedCount` | — |
 | `GET /api/notifications/settings` | `itd.notifications.getSettings()` | Bearer | ответ: настройки уведомлений | 2026-07-30, `200` |
 | `PUT /api/notifications/settings` | `itd.notifications.updateSettings()` | Bearer | изменяемые настройки уведомлений | — |
-| `GET /api/notifications/stream` | `itd.realtime()` | Bearer | SSE-поток уведомлений | 2026-07-30, `200` |
+| `GET /api/notifications/stream` | `itd.notifications.events` | Bearer | SSE-поток уведомлений | 2026-07-30, `200` |
 
 ## Файлы
 

@@ -1,34 +1,34 @@
 import { ItdConfigError } from '../core/errors.js';
 import {
-  captureRealtimeMiddleware,
-  deferRealtimeMiddleware,
-  type RealtimeMiddleware,
-  type RealtimeMiddlewareObj,
-  type RealtimeNext,
-  type RealtimeTypeGuard,
-  runRealtimeMiddleware,
-  withRealtimeMiddlewareSnapshot,
+  captureEventMiddleware,
+  deferEventMiddleware,
+  type EventMiddleware,
+  type EventMiddlewareObject,
+  type EventNext,
+  type EventTypeGuard,
+  runEventMiddleware,
+  withEventMiddlewareSnapshot,
 } from './middleware.js';
-import { RealtimeRouter, type RealtimeRouteSelector } from './router.js';
-import type { RealtimeContext, RealtimeContextBase } from './updates.js';
+import { EventRouter, type EventRouteSelector } from './router.js';
+import type { EventContext, NotificationEventContext } from './updates.js';
 
-/** Функция или объектный middleware, который можно добавить в {@link RealtimeComposer}. */
-export type RealtimeMiddlewareLike<C extends RealtimeContextBase = RealtimeContext> =
-  | RealtimeMiddleware<C>
-  | RealtimeMiddlewareObj<C>;
+/** Функция или объектный middleware, который можно добавить в {@link EventComposer}. */
+export type EventMiddlewareLike<C extends EventContext = NotificationEventContext> =
+  | EventMiddleware<C>
+  | EventMiddlewareObject<C>;
 
 /** Один middleware или последовательность middleware для ветки composer. */
-export type RealtimeMiddlewareGroup<C extends RealtimeContextBase = RealtimeContext> =
-  | RealtimeMiddlewareLike<C>
-  | readonly RealtimeMiddlewareLike<C>[];
+export type EventMiddlewareGroup<C extends EventContext = NotificationEventContext> =
+  | EventMiddlewareLike<C>
+  | readonly EventMiddlewareLike<C>[];
 
 /** Синхронное или асинхронное условие ветвления composer. */
-export type RealtimeFilter<C extends RealtimeContextBase = RealtimeContext> = (
+export type EventFilter<C extends EventContext = NotificationEventContext> = (
   context: C,
 ) => boolean | Promise<boolean>;
 
 /** Ошибка локальной realtime-ветки вместе с контекстом обрабатываемого обновления. */
-export interface RealtimeErrorContext<C extends RealtimeContextBase = RealtimeContext> {
+export interface EventErrorContext<C extends EventContext = NotificationEventContext> {
   /** Исходное исключение middleware. */
   readonly error: unknown;
   /** Контекст обновления, на котором завершилась ветка. */
@@ -36,45 +36,43 @@ export interface RealtimeErrorContext<C extends RealtimeContextBase = RealtimeCo
 }
 
 /** Обработчик локальной границы ошибок composer. */
-export type RealtimeErrorBoundary<C extends RealtimeContextBase = RealtimeContext> = (
-  failure: RealtimeErrorContext<C>,
-  next: RealtimeNext,
+export type EventErrorBoundary<C extends EventContext = NotificationEventContext> = (
+  failure: EventErrorContext<C>,
+  next: EventNext,
 ) => unknown | Promise<unknown>;
 
-/** Именованные ветки для {@link RealtimeComposer.route}. */
-export type RealtimeRouteTable<
+/** Именованные ветки для `EventComposer.route()`. */
+export type EventRouteTable<
   K extends string | symbol,
-  C extends RealtimeContextBase = RealtimeContext,
-> = Partial<Record<K, RealtimeMiddlewareGroup<C>>>;
+  C extends EventContext = NotificationEventContext,
+> = Partial<Record<K, EventMiddlewareGroup<C>>>;
 
-function middlewareFunction<C extends RealtimeContextBase>(
-  middleware: RealtimeMiddlewareLike<C>,
-): RealtimeMiddleware<C> {
+function middlewareFunction<C extends EventContext>(
+  middleware: EventMiddlewareLike<C>,
+): EventMiddleware<C> {
   if (typeof middleware === 'function') return middleware;
   if (
     typeof middleware !== 'object' ||
     middleware === null ||
     typeof middleware.middleware !== 'function'
   ) {
-    throw new ItdConfigError(
-      'RealtimeComposer принимает функцию обработки или объект с middleware()',
-    );
+    throw new ItdConfigError('EventComposer принимает функцию обработки или объект с middleware()');
   }
-  return deferRealtimeMiddleware(middleware);
+  return deferEventMiddleware(middleware);
 }
 
-function middlewareGroup<C extends RealtimeContextBase>(
-  group: RealtimeMiddlewareGroup<C>,
-): RealtimeMiddleware<C>[] {
+function middlewareGroup<C extends EventContext>(
+  group: EventMiddlewareGroup<C>,
+): EventMiddleware<C>[] {
   const middleware = Array.isArray(group) ? group : [group];
   if (middleware.length === 0) {
-    throw new ItdConfigError('Ветка RealtimeComposer должна содержать хотя бы один middleware');
+    throw new ItdConfigError('Ветка EventComposer должна содержать хотя бы один middleware');
   }
   return middleware.map((item) => middlewareFunction(item));
 }
 
 interface BoundaryContinuation {
-  readonly next: RealtimeNext;
+  readonly next: EventNext;
   readonly called: () => boolean;
   readonly settled: () => Promise<void>;
 }
@@ -130,23 +128,23 @@ async function runBoundaryStep(
  *
  * @example
  * ```ts
- * const feature = new RealtimeComposer<AppRealtimeContext>();
+ * const feature = new EventComposer<AppEventContext>();
  * const safe = feature.errorBoundary(reportFeatureError);
  * safe.filter(isPostUpdate).use(handlePost);
  * stream.use(feature);
  * ```
  */
-export class RealtimeComposer<C extends RealtimeContextBase = RealtimeContext>
-  implements RealtimeMiddlewareObj<C>
+export class EventComposer<C extends EventContext = NotificationEventContext>
+  implements EventMiddlewareObject<C>
 {
-  readonly #middleware: RealtimeMiddleware<C>[] = [];
+  readonly #middleware: EventMiddleware<C>[] = [];
 
-  constructor(...middleware: readonly RealtimeMiddlewareLike<C>[]) {
+  constructor(...middleware: readonly EventMiddlewareLike<C>[]) {
     this.use(...middleware);
   }
 
   /** Добавляет middleware в конец текущей onion-цепочки. */
-  use(...middleware: readonly RealtimeMiddlewareLike<C>[]): this {
+  use(...middleware: readonly EventMiddlewareLike<C>[]): this {
     const normalized = middleware.map(middlewareFunction);
     this.#middleware.push(...normalized);
     return this;
@@ -154,33 +152,33 @@ export class RealtimeComposer<C extends RealtimeContextBase = RealtimeContext>
 
   /** Создаёт дочернюю ветку, выполняемую только когда type guard принимает контекст. */
   filter<N extends C>(
-    predicate: RealtimeTypeGuard<N, C>,
-    ...middleware: readonly RealtimeMiddlewareLike<N>[]
-  ): RealtimeComposer<N>;
+    predicate: EventTypeGuard<N, C>,
+    ...middleware: readonly EventMiddlewareLike<N>[]
+  ): EventComposer<N>;
   /** Создаёт дочернюю ветку по синхронному или асинхронному условию. */
   filter(
-    predicate: RealtimeFilter<C>,
-    ...middleware: readonly RealtimeMiddlewareLike<C>[]
-  ): RealtimeComposer<C>;
+    predicate: EventFilter<C>,
+    ...middleware: readonly EventMiddlewareLike<C>[]
+  ): EventComposer<C>;
   filter<N extends C>(
-    predicate: RealtimeFilter<C>,
-    ...middleware: readonly RealtimeMiddlewareLike<N>[]
-  ): RealtimeComposer<N> {
+    predicate: EventFilter<C>,
+    ...middleware: readonly EventMiddlewareLike<N>[]
+  ): EventComposer<N> {
     if (typeof predicate !== 'function') {
-      throw new ItdConfigError('RealtimeComposer.filter() принимает функцию условия');
+      throw new ItdConfigError('EventComposer.filter() принимает функцию условия');
     }
 
-    const child = new RealtimeComposer<N>(...middleware);
-    const source: RealtimeMiddlewareObj<C> = {
+    const child = new EventComposer<N>(...middleware);
+    const source: EventMiddlewareObject<C> = {
       middleware: () => {
-        const nested = captureRealtimeMiddleware(child.middleware());
+        const nested = captureEventMiddleware(child.middleware());
         return async (context, next) => {
           if (await predicate(context)) await nested(context as N, next);
           else await next();
         };
       },
     };
-    this.#middleware.push(deferRealtimeMiddleware(source));
+    this.#middleware.push(deferEventMiddleware(source));
     return child;
   }
 
@@ -188,18 +186,18 @@ export class RealtimeComposer<C extends RealtimeContextBase = RealtimeContext>
    * Направляет контекст в одну именованную ветку.
    *
    * Неизвестный ключ без fallback пропускает update следующему внешнему middleware. Для
-   * динамической регистрации и числовых ключей используйте {@link RealtimeRouter} напрямую.
+   * динамической регистрации и числовых ключей используйте {@link EventRouter} напрямую.
    */
   route<K extends string | symbol>(
-    selector: RealtimeRouteSelector<K, C>,
-    routes: RealtimeRouteTable<K, C>,
-    fallback?: RealtimeMiddlewareGroup<C>,
+    selector: EventRouteSelector<K, C>,
+    routes: EventRouteTable<K, C>,
+    fallback?: EventMiddlewareGroup<C>,
   ): this {
     if (typeof routes !== 'object' || routes === null || Array.isArray(routes)) {
-      throw new ItdConfigError('RealtimeComposer.route() принимает объект именованных веток');
+      throw new ItdConfigError('EventComposer.route() принимает объект именованных веток');
     }
 
-    const router = new RealtimeRouter<K, C>(selector);
+    const router = new EventRouter<K, C>(selector);
     let registrations = 0;
     for (const key of Reflect.ownKeys(routes)) {
       const group = routes[key as K];
@@ -212,7 +210,7 @@ export class RealtimeComposer<C extends RealtimeContextBase = RealtimeContext>
       registrations += 1;
     }
     if (registrations === 0) {
-      throw new ItdConfigError('RealtimeComposer.route() требует хотя бы одну ветку или fallback');
+      throw new ItdConfigError('EventComposer.route() требует хотя бы одну ветку или fallback');
     }
 
     return this.use(router);
@@ -227,17 +225,17 @@ export class RealtimeComposer<C extends RealtimeContextBase = RealtimeContext>
    * цепочка начинается после полного завершения защищённой ветки, а не входит в её onion-вызов.
    */
   errorBoundary(
-    handler: RealtimeErrorBoundary<C>,
-    ...middleware: readonly RealtimeMiddlewareLike<C>[]
-  ): RealtimeComposer<C> {
+    handler: EventErrorBoundary<C>,
+    ...middleware: readonly EventMiddlewareLike<C>[]
+  ): EventComposer<C> {
     if (typeof handler !== 'function') {
-      throw new ItdConfigError('RealtimeComposer.errorBoundary() принимает обработчик ошибки');
+      throw new ItdConfigError('EventComposer.errorBoundary() принимает обработчик ошибки');
     }
 
-    const child = new RealtimeComposer<C>(...middleware);
-    const source: RealtimeMiddlewareObj<C> = {
+    const child = new EventComposer<C>(...middleware);
+    const source: EventMiddlewareObject<C> = {
       middleware: () => {
-        const nested = captureRealtimeMiddleware(child.middleware());
+        const nested = captureEventMiddleware(child.middleware());
         return async (context, next) => {
           let continuation = boundaryContinuation();
           try {
@@ -254,19 +252,19 @@ export class RealtimeComposer<C extends RealtimeContextBase = RealtimeContext>
         };
       },
     };
-    this.#middleware.push(deferRealtimeMiddleware(source));
+    this.#middleware.push(deferEventMiddleware(source));
     return child;
   }
 
   /** Возвращает snapshot-aware middleware для `stream.use()` или вложенного composer. */
-  middleware(): RealtimeMiddleware<C> {
-    const middleware: RealtimeMiddleware<C> = (context, next) =>
+  middleware(): EventMiddleware<C> {
+    const middleware: EventMiddleware<C> = (context, next) =>
       this.#captureMiddleware()(context, next);
-    return withRealtimeMiddlewareSnapshot(middleware, () => this.#captureMiddleware());
+    return withEventMiddlewareSnapshot(middleware, () => this.#captureMiddleware());
   }
 
-  #captureMiddleware(): RealtimeMiddleware<C> {
-    const snapshot = this.#middleware.map(captureRealtimeMiddleware);
-    return (context, next) => runRealtimeMiddleware(snapshot, context, next);
+  #captureMiddleware(): EventMiddleware<C> {
+    const snapshot = this.#middleware.map(captureEventMiddleware);
+    return (context, next) => runEventMiddleware(snapshot, context, next);
   }
 }

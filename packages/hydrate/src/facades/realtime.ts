@@ -1,14 +1,10 @@
-import type { ItdRealtime, RealtimeContext, RealtimeOptions } from 'itd-api';
+import type { NotificationEventContext, NotificationEvents } from 'itd-api';
 import { hydrateResolved } from '../graph.js';
 import type { HydrationContext } from '../runtime/context.js';
 import type { AnyRecord } from '../runtime/records.js';
-import type {
-  HydratedRealtime,
-  HydratedRealtimeContext,
-  HydratedRealtimeOptions,
-} from '../types.js';
+import type { HydratedEventContext, HydratedNotificationEvents } from '../types.js';
 
-const REALTIME_FACADES = new WeakMap<ItdRealtime, ItdRealtime>();
+const EVENT_FACADES = new WeakMap<NotificationEvents, NotificationEvents>();
 
 function replaceValue(target: AnyRecord, key: PropertyKey, value: unknown): void {
   const descriptor = Object.getOwnPropertyDescriptor(target, key);
@@ -18,27 +14,27 @@ function replaceValue(target: AnyRecord, key: PropertyKey, value: unknown): void
   Object.defineProperty(target, key, { ...descriptor, value });
 }
 
-function hydrateRealtimeContext(
-  realtimeContext: RealtimeContext,
+function hydrateNotificationEventContext(
+  realtimeContext: NotificationEventContext,
   context: HydrationContext,
-  stream: () => ItdRealtime,
+  stream: () => NotificationEvents,
   seen: WeakMap<object, unknown>,
-): HydratedRealtimeContext {
+): HydratedEventContext {
   const target = realtimeContext as unknown as AnyRecord;
   replaceValue(target, 'update', hydrateResolved(realtimeContext.update, context, seen));
   replaceValue(target, 'stream', stream());
-  return realtimeContext as unknown as HydratedRealtimeContext;
+  return realtimeContext as unknown as HydratedEventContext;
 }
 
-function realtimeFacade(
-  stream: ItdRealtime,
-  hydrateContext: (context: RealtimeContext) => HydratedRealtimeContext,
-): ItdRealtime {
-  const existing = REALTIME_FACADES.get(stream);
+function notificationEventsFacade(
+  stream: NotificationEvents,
+  hydrateContext: (context: NotificationEventContext) => HydratedEventContext,
+): NotificationEvents {
+  const existing = EVENT_FACADES.get(stream);
   if (existing) return existing;
 
   const methods = new Map<PropertyKey, unknown>();
-  let facade: ItdRealtime;
+  let facade: NotificationEvents;
   facade = new Proxy(stream, {
     get(target, key) {
       const member = Reflect.get(target, key, target) as unknown;
@@ -55,7 +51,7 @@ function realtimeFacade(
       return wrapped;
     },
   });
-  REALTIME_FACADES.set(stream, facade);
+  EVENT_FACADES.set(stream, facade);
 
   stream.use(async (realtimeContext, next) => {
     hydrateContext(realtimeContext);
@@ -64,30 +60,16 @@ function realtimeFacade(
   return facade;
 }
 
-/** Создаёт realtime-поток, гидратирующий middleware context до пользовательской цепочки. */
-export function createRealtime(
+/** Оборачивает стабильный канал уведомлений и гидратирует контексты до пользовательских middleware. */
+export function createNotificationEvents(
   context: HydrationContext,
-  method: (...args: never[]) => ItdRealtime,
-  options: HydratedRealtimeOptions | undefined,
-): HydratedRealtime {
+  raw: NotificationEvents,
+): HydratedNotificationEvents {
   const seen = new WeakMap<object, unknown>();
-  let facade!: ItdRealtime;
-  const hydrateContext = (realtimeContext: RealtimeContext) =>
-    hydrateRealtimeContext(realtimeContext, context, () => facade, seen);
+  let facade!: NotificationEvents;
+  const hydrateContext = (realtimeContext: NotificationEventContext) =>
+    hydrateNotificationEventContext(realtimeContext, context, () => facade, seen);
 
-  let rawOptions: RealtimeOptions | undefined;
-  if (options) {
-    const { sequentialize, ...rest } = options;
-    rawOptions = sequentialize
-      ? {
-          ...rest,
-          sequentialize: (realtimeContext) => sequentialize(hydrateContext(realtimeContext)),
-        }
-      : rest;
-  }
-
-  const args = rawOptions === undefined ? [] : [rawOptions];
-  const raw = Reflect.apply(method, context.client, args) as ItdRealtime;
-  facade = realtimeFacade(raw, hydrateContext);
-  return facade as unknown as HydratedRealtime;
+  facade = notificationEventsFacade(raw, hydrateContext);
+  return facade as unknown as HydratedNotificationEvents;
 }

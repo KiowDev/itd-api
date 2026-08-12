@@ -1,31 +1,44 @@
 import { type ItdClock, systemClock } from '../core/clock.js';
+import type { ClientConnection } from '../core/connection.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from '../core/emitter.js';
-import { ItdConfigError } from '../core/errors.js';
+import { ItdAbortError, ItdConfigError } from '../core/errors.js';
 import type { Logger } from '../core/options.js';
-import { RealtimeStatus } from '../types/enums.js';
+import { EventChannelStatus } from '../types/enums.js';
 import {
-  deferRealtimeMiddleware,
+  deferEventMiddleware,
+  type EventHandler,
+  type EventMiddleware,
+  type EventMiddlewareObject,
+  type EventPredicate,
+  type EventSequentializer,
+  MAX_PENDING_UPDATES,
   RealtimeDispatcher,
-  type RealtimeHandler,
-  type RealtimeMiddleware,
-  type RealtimeMiddlewareObj,
-  type RealtimePredicate,
-  type RealtimeSequentializer,
 } from './middleware.js';
 import { MAX_RECONNECT_ATTEMPTS, type ReconnectOptions, reconnectDelay } from './reconnect.js';
 import {
-  type RealtimeRequest,
-  type RealtimeTransport,
-  type TransportEvent,
+  type EventTransport,
+  type EventTransportFrame,
   UnauthorizedStreamError,
 } from './transports/transport.js';
-import { type RealtimeContextBase, RealtimeUpdateOrigin } from './updates.js';
+import type { EventContext } from './updates.js';
 
 /** Зачем движок просит домен синхронизироваться. */
-export type RealtimeSyncReason = 'initial' | 'reconnect';
+export type EventSyncReason = 'initial' | 'reconnect';
 
-/** Доставляет обновление, полученное во время синхронизации, если её запуск ещё актуален. */
-type RealtimeSyncDispatch<U> = (update: U) => void;
+/** Параметры постановки доменного события из REST или другого внешнего источника. */
+export interface EventEnqueueOptions<O = unknown> {
+  readonly origin: O;
+  readonly raw?: EventTransportFrame | undefined;
+}
+
+/** Контекст одной попытки подключения, теряющий актуальность после её завершения. */
+export interface EventSession<U, O = unknown> {
+  readonly signal: AbortSignal;
+  /** Завершается только после фактического `EventTransportContext.onOpen` этой попытки. */
+  readonly opened: Promise<void>;
+  /** Ставит нормализованное событие только пока эта попытка актуальна. */
+  enqueue(update: U, options: EventEnqueueOptions<O>): void;
+}
 
 /**
  * События, которые движок рассылает сам.
@@ -33,9 +46,9 @@ type RealtimeSyncDispatch<U> = (update: U) => void;
  * Ни одно из них не зависит от домена, поэтому они одинаковы у любого потока.
  * Домен расширяет эту карту своими событиями.
  */
-export interface RealtimeEngineEvents<C extends RealtimeContextBase = RealtimeContextBase> {
+export interface EventChannelEvents<C extends EventContext = EventContext> {
   /** Изменилось состояние соединения. */
-  status: RealtimeStatus;
+  status: EventChannelStatus;
   /** Соединение оборвалось; будет предпринята попытка переподключения. */
   error: { error: unknown; willReconnect: boolean };
   /** Сообщение не удалось разобрать. Соединение при этом продолжает работать. */
@@ -45,7 +58,7 @@ export interface RealtimeEngineEvents<C extends RealtimeContextBase = RealtimeCo
   /** Попытки исчерпаны — соединение восстановится только ручным `connect()`. */
   giveup: undefined;
   /** Любой исходный кадр транспорта. Отправляется до нормализации и обработчиков. */
-  message: TransportEvent;
+  message: EventTransportFrame;
   /** Промежуточный обработчик потока завершился исключением. */
   middlewareError: { error: unknown; context: C };
   /** Обработчик обновления завершился исключением. */
@@ -58,66 +71,69 @@ export interface RealtimeEngineEvents<C extends RealtimeContextBase = RealtimeCo
  * @typeParam U нормализованное обновление домена
  * @typeParam C контекст обработки, который домен собирает вокруг обновления
  *
- * @internal
  */
-export interface RealtimeEngineDeps<U, C extends RealtimeContextBase<U, unknown>> {
-  baseUrl: string;
-  /** Разрешено ли транспорту передавать токен этому сервису. */
-  authorize: boolean;
-  fetch: typeof fetch;
-  /** Конвейер клиента — см. {@link TransportContext.request}. */
-  request?: RealtimeRequest | undefined;
+export interface EventChannelDeps<U, C extends EventContext<U, unknown, O>, O = unknown> {
+  connection: ClientConnection;
   clock?: ItdClock | undefined;
-  /** Общие заголовки клиента для адреса — см. {@link TransportContext.baseHeaders}. */
-  baseHeaders: (url: string) => Promise<Headers>;
-  getToken: () => Promise<string | null>;
-  /** Обновляет токен после отказа авторизации. Возвращает `true`, если удалось. */
-  refresh: () => Promise<boolean>;
-  /** Вызывается при запуске ранее закрытого потока. */
-  onConnect?: (() => void) | undefined;
-  /** Вызывается при явном закрытии потока. */
-  onClose?: (() => void) | undefined;
   logger?: Logger | undefined;
 
-  transport: RealtimeTransport;
+  transport: EventTransport;
+  /** Источник, который домен назначает нормализованным кадрам транспорта. */
+  streamOrigin: O;
 
   /**
    * Доменная обработка сырого кадра до нормализации. `true` — кадр поглощён и дальше
    * не идёт. Нужна там, где кадр не является обновлением: у уведомлений так приходит
    * `connected`.
    */
-  handleFrame?: ((event: TransportEvent) => boolean) | undefined;
+  handleFrame?: ((event: EventTransportFrame) => boolean) | undefined;
   /** Превращает кадр в доменное обновление; `undefined` — кадр игнорируется. */
-  readUpdate: (event: TransportEvent) => U | undefined;
+  readUpdate: (event: EventTransportFrame) => U | undefined;
   /**
    * Ключ коалесцирования: ожидающее обновление с тем же ключом заменяется новым.
    * `undefined` — обновление не коалесцируется.
    */
   coalesceKey?: ((update: U) => PropertyKey | undefined) | undefined;
   /** Собирает контекст. Точка, куда домен добавляет свои поля и действия. */
-  createContext: (update: U, raw: TransportEvent | undefined, origin: RealtimeUpdateOrigin) => C;
+  createContext: (update: U, raw: EventTransportFrame | undefined, origin: O) => C;
   /** Доставляет обновление доменным подписчикам после цепочки обработчиков. */
   deliver: (update: U) => void;
-  /**
-   * Снимок и догон: до первого подключения и перед каждым переподключением.
-   *
-   * Идёт через обычный конвейер клиента, поэтому заодно обновляет протухший токен.
-   * Полученные обновления передаются в `dispatch`: движок отбросит их, если за время
-   * запроса поток успели закрыть или запустить заново. Исключение не отменяет подключение —
-   * оно уходит в логгер.
-   */
-  sync?:
-    | ((reason: RealtimeSyncReason, dispatch: RealtimeSyncDispatch<U>) => Promise<void>)
+  /** Доменная инициализация одной connection attempt. */
+  initialize?:
+    | ((reason: EventSyncReason, session: EventSession<U, O>) => Promise<void>)
     | undefined;
+  /** Открыть transport до initializer и удерживать выбранные кадры до его завершения. */
+  openBeforeInitialize?: boolean | undefined;
+  /** Ошибка initializer отклоняет initial connect вместо best-effort продолжения. */
+  initializationRequired?: boolean | undefined;
+  /** Какие transport-кадры удерживать закрытым ready-gate. По умолчанию все. */
+  bufferFrame?: ((event: EventTransportFrame) => boolean) | undefined;
+}
+
+interface ActiveEventSession<U, O> {
+  readonly generation: number;
+  readonly controller: AbortController;
+  readonly handle: EventSession<U, O>;
+  readonly resolveOpened: () => void;
+  readonly rejectOpened: (error: unknown) => void;
+  readonly buffer: EventTransportFrame[];
+  ready: boolean;
+}
+
+const EVENT_CHANNEL_GIVEUP_HOOKS = new WeakMap<object, () => void>();
+
+/** Связывает предметный facade с terminal-событием общего канала, не публикуя lifecycle hook. @internal */
+export function setEventChannelGiveUpHook(channel: object, hook: () => void): void {
+  EVENT_CHANNEL_GIVEUP_HOOKS.set(channel, hook);
 }
 
 /** Настройки движка: переподключение, параллелизм и реакция на среду. */
-export interface RealtimeEngineOptions<C extends RealtimeContextBase = RealtimeContextBase>
+export interface EventChannelOptions<C extends EventContext = EventContext>
   extends ReconnectOptions {
   /** Максимальное число одновременно обрабатываемых обновлений. По умолчанию 1. */
   concurrency?: number | undefined;
   /** Возвращает ключи обновлений, которые нельзя обрабатывать одновременно. */
-  sequentialize?: RealtimeSequentializer<C> | undefined;
+  sequentialize?: EventSequentializer<C> | undefined;
   /** Переподключаться, когда вкладка снова становится видимой. По умолчанию `true`. */
   reconnectOnVisible?: boolean | undefined;
   /** Переподключаться при восстановлении сети. По умолчанию `true`. */
@@ -125,44 +141,47 @@ export interface RealtimeEngineOptions<C extends RealtimeContextBase = RealtimeC
 }
 
 /** Проверяет настройки общей механики потока. */
-function validateRealtimeEngineOptions<C extends RealtimeContextBase>(
-  options: RealtimeEngineOptions<C>,
-): void {
+export function resolveEventChannelOptions<C extends EventContext>(
+  options: EventChannelOptions<C> = {},
+): Readonly<EventChannelOptions<C>> {
   const positiveInteger = (value: number | undefined, name: string): void => {
     if (value === undefined) return;
     if (!Number.isInteger(value) || value < 0) {
       throw new ItdConfigError(
-        `realtime.${name} должен быть целым неотрицательным числом, получено: ${value}`,
+        `events.${name} должен быть целым неотрицательным числом, получено: ${value}`,
       );
     }
   };
   const duration = (value: number, name: string): void => {
     if (!Number.isFinite(value) || value < 0) {
-      throw new ItdConfigError(
-        `realtime.${name} должен быть числом не меньше 0, получено: ${value}`,
-      );
+      throw new ItdConfigError(`events.${name} должен быть числом не меньше 0, получено: ${value}`);
     }
   };
 
   positiveInteger(options.maxAttempts, 'maxAttempts');
   positiveInteger(options.concurrency, 'concurrency');
   if (options.concurrency === 0) {
-    throw new ItdConfigError('realtime.concurrency должен быть больше нуля');
+    throw new ItdConfigError('events.concurrency должен быть больше нуля');
   }
   if (options.jitter !== undefined && !(options.jitter >= 0 && options.jitter <= 1)) {
     throw new ItdConfigError(
-      `realtime.jitter должен быть в диапазоне 0…1, получено: ${options.jitter}`,
+      `events.jitter должен быть в диапазоне 0…1, получено: ${options.jitter}`,
     );
   }
   if (options.backoff !== undefined) {
     if (!Array.isArray(options.backoff) || options.backoff.length === 0) {
-      throw new ItdConfigError('realtime.backoff должен быть непустым списком пауз');
+      throw new ItdConfigError('events.backoff должен быть непустым списком пауз');
     }
     for (const delay of options.backoff) duration(delay, 'backoff');
   }
   if (options.sequentialize !== undefined && typeof options.sequentialize !== 'function') {
-    throw new ItdConfigError('realtime.sequentialize должен быть функцией');
+    throw new ItdConfigError('events.sequentialize должен быть функцией');
   }
+
+  return Object.freeze({
+    ...options,
+    ...(options.backoff ? { backoff: Object.freeze([...options.backoff]) } : {}),
+  });
 }
 
 /**
@@ -170,24 +189,24 @@ function validateRealtimeEngineOptions<C extends RealtimeContextBase>(
  * токена, реакция на среду, статусы и очередь обработчиков.
  *
  * Ничего не знает о домене: что считать обновлением, как собрать контекст и кому его
- * доставить, решают {@link RealtimeEngineDeps}. Поэтому один и тот же движок несёт
+ * доставить, решают {@link EventChannelDeps}. Поэтому один и тот же движок несёт
  * и поток уведомлений, и любой другой.
  *
- * @internal
  */
-export class RealtimeEngine<
+export class EventChannel<
   U,
-  C extends RealtimeContextBase<U, unknown>,
-  E extends RealtimeEngineEvents<C> = RealtimeEngineEvents<C>,
+  C extends EventContext<U, unknown, O>,
+  E extends EventChannelEvents<C> = EventChannelEvents<C>,
+  O = unknown,
 > {
-  readonly #deps: RealtimeEngineDeps<U, C>;
-  readonly #options: RealtimeEngineOptions<C>;
+  readonly #deps: EventChannelDeps<U, C, O>;
+  readonly #options: Readonly<EventChannelOptions<C>>;
   readonly #dispatcher: RealtimeDispatcher<C>;
   readonly #emitter: Emitter<E>;
   readonly #clock: ItdClock;
   readonly #maxAttempts: number;
 
-  #controller: AbortController | undefined;
+  #session: ActiveEventSession<U, O> | undefined;
   /**
    * Хочет ли вызывающий код, чтобы соединение было живо.
    *
@@ -197,15 +216,15 @@ export class RealtimeEngine<
    * и соединение поднялось бы уже после отмены.
    */
   #wanted = false;
-  #status: RealtimeStatus = RealtimeStatus.Disconnected;
+  #status: EventChannelStatus = EventChannelStatus.Disconnected;
   #attempt = 0;
   #generation = 0;
-  #starting: object | undefined;
+  #starting: Promise<void> | undefined;
   #cancelTimer: (() => void) | undefined;
   #detachEnvironment: (() => void) | undefined;
 
-  constructor(deps: RealtimeEngineDeps<U, C>, options: RealtimeEngineOptions<C> = {}) {
-    validateRealtimeEngineOptions(options);
+  constructor(deps: EventChannelDeps<U, C, O>, options: EventChannelOptions<C> = {}) {
+    options = resolveEventChannelOptions(options);
 
     this.#deps = deps;
     this.#options = options;
@@ -228,7 +247,7 @@ export class RealtimeEngine<
   }
 
   /** Текущее состояние соединения. */
-  get status(): RealtimeStatus {
+  get status(): EventChannelStatus {
     return this.#status;
   }
 
@@ -258,7 +277,7 @@ export class RealtimeEngine<
   }
 
   /** Добавляет промежуточный обработчик. @returns функция его удаления */
-  use(middleware: RealtimeMiddleware<C> | RealtimeMiddlewareObj<C>): Unsubscribe {
+  use(middleware: EventMiddleware<C> | EventMiddlewareObject<C>): Unsubscribe {
     if (typeof middleware === 'function') return this.#dispatcher.use(middleware);
     if (
       typeof middleware !== 'object' ||
@@ -266,14 +285,14 @@ export class RealtimeEngine<
       typeof middleware.middleware !== 'function'
     ) {
       throw new ItdConfigError(
-        'realtime.use() принимает функцию обработки или объект с middleware()',
+        'events.use() принимает функцию обработки или объект с middleware()',
       );
     }
-    return this.#dispatcher.use(deferRealtimeMiddleware(middleware));
+    return this.#dispatcher.use(deferEventMiddleware(middleware));
   }
 
   /** Подписывает обработчик обновлений, подходящих под условие. */
-  onUpdate(predicate: RealtimePredicate<C>, handler: RealtimeHandler<C>): Unsubscribe {
+  onUpdate(predicate: EventPredicate<C>, handler: EventHandler<C>): Unsubscribe {
     return this.#dispatcher.on(predicate, handler);
   }
 
@@ -284,20 +303,16 @@ export class RealtimeEngine<
    * сразу после запуска: соединение живёт в фоне.
    */
   async connect(): Promise<void> {
-    if (this.#wanted) return;
+    if (this.#wanted) return this.#starting;
     this.#wanted = true;
-    const generation = ++this.#generation;
-    const starting = {};
-    this.#starting = starting;
-    this.#deps.onConnect?.();
-
     this.#attachEnvironmentListeners();
-    await this.#sync('initial', generation, starting);
-
-    // Пока шла синхронизация, поток могли закрыть и даже запустить заново.
-    if (this.#starting !== starting) return;
-    this.#starting = undefined;
-    if (this.#isCurrentGeneration(generation)) this.#run(generation);
+    const starting = this.#startAttempt('initial');
+    this.#starting = starting;
+    try {
+      await starting;
+    } finally {
+      if (this.#starting === starting) this.#starting = undefined;
+    }
   }
 
   /** Закрывает соединение и отменяет запланированные попытки. */
@@ -314,13 +329,11 @@ export class RealtimeEngine<
     this.#detachEnvironment?.();
     this.#detachEnvironment = undefined;
 
-    this.#controller?.abort();
-    this.#controller = undefined;
+    this.#abortSession(new ItdAbortError('Событийное соединение остановлено'));
     this.#attempt = 0;
     this.#dispatcher.clearPending();
 
-    this.#setStatus(RealtimeStatus.Disconnected);
-    this.#deps.onClose?.();
+    this.#setStatus(EventChannelStatus.Disconnected);
   }
 
   /** Ждёт завершения всех принятых обновлений. */
@@ -329,7 +342,7 @@ export class RealtimeEngine<
   }
 
   /** Пропускает актуальное обновление через цепочку обработчиков. */
-  #dispatch(update: U, raw: TransportEvent | undefined, origin: RealtimeUpdateOrigin): void {
+  #dispatch(update: U, raw: EventTransportFrame | undefined, origin: O): void {
     if (!this.#wanted) return;
     this.#dispatcher.dispatch(
       this.#deps.createContext(update, raw, origin),
@@ -342,67 +355,83 @@ export class RealtimeEngine<
    * когда обработчики разберут очередь.
    */
   #handleOverflow(): void {
-    const controller = this.#controller;
-    if (!this.#wanted || !controller) return;
+    const session = this.#session;
+    if (!this.#wanted || !session) return;
 
-    const generation = this.#generation;
-    controller.abort();
-    this.#controller = undefined;
-    this.#setStatus(RealtimeStatus.Error);
+    const generation = session.generation;
+    this.#abortSession(new ItdAbortError('Очередь событий переполнена'));
+    this.#setStatus(EventChannelStatus.Error);
 
     const error = new Error('Обработчики не успевают за потоком: очередь обновлений переполнена');
     void this.#dispatcher.drain().then(() => {
-      if (this.#isCurrentGeneration(generation) && !this.#controller) {
+      if (this.#isCurrentGeneration(generation) && !this.#session) {
         this.#scheduleReconnect(error);
       }
     });
   }
 
-  /** Выполняет доменную синхронизацию, не роняя подключение из-за её ошибки. */
-  async #sync(reason: RealtimeSyncReason, generation: number, starting: object): Promise<void> {
-    if (!this.#deps.sync) return;
+  /** Создаёт отдельный generation и выполняет выбранный доменом порядок orchestration. */
+  async #startAttempt(reason: EventSyncReason): Promise<void> {
+    if (!this.#wanted) return;
+    this.#abortSession(new ItdAbortError('Событийное соединение заменено новой попыткой'));
+    const session = this.#createSession(++this.#generation);
+    this.#session = session;
 
     try {
-      await this.#deps.sync(reason, (update) => {
-        if (this.#starting !== starting || !this.#isCurrentGeneration(generation)) return;
-        this.#dispatch(update, undefined, RealtimeUpdateOrigin.Sync);
-      });
+      if (this.#deps.openBeforeInitialize) {
+        this.#runTransport(session);
+        await session.handle.opened;
+        await this.#initialize(reason, session);
+        this.#openGate(session);
+      } else {
+        await this.#initialize(reason, session);
+        this.#openGate(session);
+        if (this.#isCurrentSession(session)) this.#runTransport(session);
+      }
     } catch (error) {
+      if (!this.#isCurrentSession(session)) return;
+      this.#abortSession(error);
+      if (reason === 'initial' && this.#deps.initializationRequired) {
+        this.#wanted = false;
+        this.#detachEnvironment?.();
+        this.#detachEnvironment = undefined;
+        this.#setStatus(EventChannelStatus.Disconnected);
+        throw error;
+      }
+      this.#handleFailure(error);
+    }
+  }
+
+  async #initialize(reason: EventSyncReason, session: ActiveEventSession<U, O>): Promise<void> {
+    if (!this.#deps.initialize) return;
+    try {
+      await this.#deps.initialize(reason, session.handle);
+    } catch (error) {
+      if (this.#deps.initializationRequired) throw error;
       this.#deps.logger?.debug(`не удалось синхронизировать поток (${reason})`, error);
     }
   }
 
-  /** Запускает попытку подключения; повторы планирует сам. */
-  #run(generation = this.#generation): void {
-    if (!this.#isCurrentGeneration(generation)) return;
-
-    // Страховка от потерянного соединения: если предыдущее ещё живо, закрываем его,
-    // иначе его AbortController остался бы недостижимым и поток — незакрытым.
-    this.#controller?.abort();
-
-    const controller = new AbortController();
-    this.#controller = controller;
-    this.#setStatus(RealtimeStatus.Connecting);
+  /** Запускает transport одной попытки; повторы планирует engine. */
+  #runTransport(session: ActiveEventSession<U, O>): void {
+    if (!this.#isCurrentSession(session)) return;
+    this.#setStatus(EventChannelStatus.Connecting);
 
     void this.#deps.transport
       .connect({
-        baseUrl: this.#deps.baseUrl,
-        authorize: this.#deps.authorize,
-        fetch: this.#deps.fetch,
-        request: this.#deps.request,
-        baseHeaders: this.#deps.baseHeaders,
-        getToken: this.#deps.getToken,
-        signal: controller.signal,
+        ...this.#deps.connection,
+        signal: session.controller.signal,
         onOpen: () => {
-          if (!this.#isCurrentConnection(controller, generation)) return;
+          if (!this.#isCurrentSession(session)) return;
           this.#attempt = 0;
-          this.#setStatus(RealtimeStatus.Connected);
+          session.resolveOpened();
+          this.#setStatus(EventChannelStatus.Connected);
         },
         onEvent: (event) => {
-          if (this.#isCurrentConnection(controller, generation)) this.#handleEvent(event);
+          if (this.#isCurrentSession(session)) this.#handleEvent(session, event);
         },
         onParseError: (error, raw) => {
-          if (this.#isCurrentConnection(controller, generation)) {
+          if (this.#isCurrentSession(session)) {
             this.#emitEngine('parseError', { error, raw });
           }
         },
@@ -410,24 +439,37 @@ export class RealtimeEngine<
       .then(
         () => {
           // Штатное закрытие потока — тоже повод переподключиться.
-          if (this.#isCurrentConnection(controller, generation)) {
+          if (this.#isCurrentSession(session)) {
             this.#handleFailure(new Error('Соединение с потоком событий закрыто'));
           }
         },
         (error: unknown) => {
-          if (this.#isCurrentConnection(controller, generation)) this.#handleFailure(error);
+          if (this.#isCurrentSession(session)) this.#handleFailure(error);
         },
       );
   }
 
-  #handleEvent(event: TransportEvent): void {
+  #handleEvent(session: ActiveEventSession<U, O>, event: EventTransportFrame): void {
     if (!this.#wanted) return;
     this.#emitEngine('message', event);
 
+    if (!session.ready && (this.#deps.bufferFrame?.(event) ?? true)) {
+      if (session.buffer.length >= MAX_PENDING_UPDATES) {
+        this.#handleOverflow();
+        return;
+      }
+      session.buffer.push(event);
+      return;
+    }
+
+    this.#dispatchFrame(event);
+  }
+
+  #dispatchFrame(event: EventTransportFrame): void {
     if (this.#deps.handleFrame?.(event)) return;
 
     const update = this.#deps.readUpdate(event);
-    if (update !== undefined) this.#dispatch(update, event, RealtimeUpdateOrigin.Stream);
+    if (update !== undefined) this.#dispatch(update, event, this.#deps.streamOrigin);
   }
 
   #reportDispatchError(
@@ -449,28 +491,25 @@ export class RealtimeEngine<
   }
 
   #handleFailure(error: unknown): void {
-    this.#controller = undefined;
+    this.#abortSession(error);
 
     if (error instanceof UnauthorizedStreamError) {
       void this.#refreshAndReconnect(error);
       return;
     }
 
-    this.#setStatus(RealtimeStatus.Error);
+    this.#setStatus(EventChannelStatus.Error);
     this.#scheduleReconnect(error);
   }
 
   /** Обновляет токен и переподключается; при неудаче прекращает попытки. */
   async #refreshAndReconnect(error: unknown): Promise<void> {
     const generation = this.#generation;
-    const starting = {};
-    this.#starting = starting;
-    this.#setStatus(RealtimeStatus.Error);
+    this.#setStatus(EventChannelStatus.Error);
 
-    const refreshed = await this.#deps.refresh().catch(() => false);
+    const refreshed = await this.#deps.connection.refreshAuth().catch(() => false);
 
-    if (this.#starting !== starting || !this.#isCurrentGeneration(generation)) return;
-    this.#starting = undefined;
+    if (!this.#isCurrentGeneration(generation)) return;
 
     if (!refreshed) {
       this.#giveUp(error);
@@ -503,34 +542,31 @@ export class RealtimeEngine<
   /** Догон через REST идёт до сокета: он же обновляет протухший токен. */
   async #reconnect(): Promise<void> {
     if (!this.#wanted || this.#starting) return;
-
-    const generation = this.#generation;
-    const starting = {};
+    const starting = this.#startAttempt('reconnect');
     this.#starting = starting;
-    await this.#sync('reconnect', generation, starting);
-
-    if (this.#starting !== starting) return;
-    this.#starting = undefined;
-    if (this.#isCurrentGeneration(generation)) this.#run(generation);
+    try {
+      await starting;
+    } finally {
+      if (this.#starting === starting) this.#starting = undefined;
+    }
   }
 
   /**
    * Завершает автоматические попытки переподключения.
    *
-   * Владелец узнаёт об этом так же, как при {@link disconnect}. `onClose` вызывается
-   * до событий: обработчик `giveup` может тут же вызвать `connect()`.
+   * Владелец узнаёт об этом через `giveup` и может тут же вызвать `connect()`.
    */
   #giveUp(error: unknown): void {
     this.#wanted = false;
     this.#generation += 1;
     this.#starting = undefined;
     this.#attempt = 0;
+    this.#abortSession(error);
 
     this.#detachEnvironment?.();
     this.#detachEnvironment = undefined;
 
-    this.#deps.onClose?.();
-
+    EVENT_CHANNEL_GIVEUP_HOOKS.get(this)?.();
     this.#emitEngine('error', { error, willReconnect: false });
     this.#emitEngine('giveup', undefined);
   }
@@ -554,8 +590,8 @@ export class RealtimeEngine<
 
     const wake = () => {
       // Реагируем, только если соединения сейчас нет и попытка не запланирована.
-      if (this.#controller || this.#cancelTimer || this.#starting) return;
-      if (this.#status === RealtimeStatus.Disconnected) return;
+      if (this.#session || this.#cancelTimer || this.#starting) return;
+      if (this.#status === EventChannelStatus.Disconnected) return;
 
       this.#attempt = 0;
       void this.#reconnect();
@@ -581,7 +617,7 @@ export class RealtimeEngine<
     };
   }
 
-  #setStatus(status: RealtimeStatus): void {
+  #setStatus(status: EventChannelStatus): void {
     if (this.#status === status) return;
     this.#status = status;
     this.#emitEngine('status', status);
@@ -591,21 +627,71 @@ export class RealtimeEngine<
     return this.#wanted && this.#generation === generation;
   }
 
-  #isCurrentConnection(controller: AbortController, generation: number): boolean {
+  #isCurrentSession(session: ActiveEventSession<U, O>): boolean {
     return (
-      this.#isCurrentGeneration(generation) &&
-      this.#controller === controller &&
-      !controller.signal.aborted
+      this.#isCurrentGeneration(session.generation) &&
+      this.#session === session &&
+      !session.controller.signal.aborted
     );
   }
 
+  #createSession(generation: number): ActiveEventSession<U, O> {
+    const controller = new AbortController();
+    let resolveOpened!: () => void;
+    let rejectOpened!: (error: unknown) => void;
+    const opened = new Promise<void>((resolve, reject) => {
+      resolveOpened = resolve;
+      rejectOpened = reject;
+    });
+    void opened.catch(() => {});
+
+    const session = {} as ActiveEventSession<U, O>;
+    const handle: EventSession<U, O> = Object.freeze({
+      signal: controller.signal,
+      opened,
+      enqueue: (update: U, options: EventEnqueueOptions<O>) => {
+        if (!this.#isCurrentSession(session)) return;
+        this.#dispatch(update, options.raw, options.origin);
+      },
+    });
+    Object.assign(session, {
+      generation,
+      controller,
+      handle,
+      resolveOpened,
+      rejectOpened,
+      buffer: [],
+      ready: false,
+    });
+    return session;
+  }
+
+  #openGate(session: ActiveEventSession<U, O>): void {
+    if (!this.#isCurrentSession(session) || session.ready) return;
+    session.ready = true;
+    const buffered = session.buffer.splice(0);
+    for (const event of buffered) {
+      if (!this.#isCurrentSession(session)) break;
+      this.#dispatchFrame(event);
+    }
+  }
+
+  #abortSession(reason: unknown): void {
+    const session = this.#session;
+    if (!session) return;
+    this.#session = undefined;
+    session.buffer.length = 0;
+    session.rejectOpened(reason);
+    session.controller.abort(reason);
+  }
+
   /** Рассылает событие из общей части карты, не теряя доменные события типа `E`. */
-  #emitEngine<K extends keyof RealtimeEngineEvents<C>>(
+  #emitEngine<K extends keyof EventChannelEvents<C>>(
     event: K,
-    payload: RealtimeEngineEvents<C>[K],
+    payload: EventChannelEvents<C>[K],
   ): void {
     // `E` гарантированно содержит общую карту. Приведение нужно только потому, что
     // TypeScript допускает теоретическое сужение унаследованного поля в подтипе `E`.
-    (this.#emitter as unknown as Emitter<RealtimeEngineEvents<C>>).emit(event, payload);
+    (this.#emitter as unknown as Emitter<EventChannelEvents<C>>).emit(event, payload);
   }
 }

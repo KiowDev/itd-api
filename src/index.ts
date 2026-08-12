@@ -56,9 +56,10 @@ export {
   type UrlFileOptions,
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
-export type { AuthIdentity } from './core/auth-provider.js';
+export type { AuthIdentity, AuthProvider } from './core/auth-provider.js';
 export { type ItdClock, systemClock } from './core/clock.js';
 export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';
+export type { ClientConnection } from './core/connection.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';
 export {
   ItdAbortError,
@@ -117,6 +118,7 @@ export {
   withCodec,
   withNamespace,
 } from './core/key-value-store.js';
+export type { ManagedClientResource } from './core/managed-resources.js';
 export { type FeatureOperationId, type OperationMethod, RetrySafety } from './core/operation.js';
 // Опции разделены по слоям: RuntimeOptions нужны generic-ядру, SessionOptions — сессии,
 // а ItdClientOptions объединяет их для полного SDK. Подробности — в core/options.ts.
@@ -194,6 +196,56 @@ export type {
   UpdatePostInput,
 } from './domain/params.js';
 export { toDate, utcStampToIso } from './domain/time.js';
+export {
+  createNotificationEventsClient,
+  EventChannel,
+  type EventChannelDeps,
+  type EventChannelEvents,
+  type EventChannelOptions,
+  EventChannelStatus,
+  EventComposer,
+  type EventContext,
+  type EventEnqueueOptions,
+  type EventErrorBoundary,
+  type EventErrorContext,
+  type EventFilter,
+  type EventHandler,
+  type EventMiddleware,
+  type EventMiddlewareGroup,
+  type EventMiddlewareLike,
+  type EventMiddlewareObject,
+  type EventNext,
+  type EventPredicate,
+  EventRouter,
+  type EventRouteSelector,
+  type EventRouteTable,
+  type EventSequentializer,
+  type EventSession,
+  type EventSyncReason,
+  type EventTransport,
+  type EventTransportContext,
+  type EventTransportFrame,
+  type EventTypeGuard,
+  type NotificationContext,
+  type NotificationEventContext,
+  type NotificationEventFilter,
+  type NotificationEventSelector,
+  NotificationEvents,
+  NotificationEventsClient,
+  type NotificationEventsClientOptions,
+  type NotificationEventsMap,
+  type NotificationEventsOptions,
+  NotificationEventsTransport,
+  type NotificationEventsUpdate,
+  type NotificationUpdate,
+  type NotificationUpdateOfType,
+  NotificationUpdateOrigin,
+  NotificationUpdateType,
+  runEventMiddleware,
+  UnauthorizedStreamError,
+  type UnknownNotificationUpdate,
+  type UnreadCountUpdate,
+} from './events.js';
 export type { PaymentMethod, Session, Subscription } from './models/account.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
@@ -246,45 +298,9 @@ export { type NotificationEvent, normalizeNotification } from './notifications/n
 export { formatNotificationText } from './notifications/text.js';
 export { canonicalNotificationType, isKnownNotificationType } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
+export type { NotificationsApi } from './notifications-api.js';
 export type { ItdClientOptions } from './options.js';
-export {
-  RealtimeComposer,
-  type RealtimeErrorBoundary,
-  type RealtimeErrorContext,
-  type RealtimeFilter,
-  type RealtimeMiddlewareGroup,
-  type RealtimeMiddlewareLike,
-  type RealtimeRouteTable,
-} from './realtime/composer.js';
-export type { RealtimeEngineEvents } from './realtime/engine.js';
-export {
-  type RealtimeHandler,
-  type RealtimeMiddleware,
-  type RealtimeMiddlewareObj,
-  type RealtimeNext,
-  type RealtimePredicate,
-  type RealtimeSequentializer,
-  type RealtimeTypeGuard,
-  runRealtimeMiddleware,
-} from './realtime/middleware.js';
 export type { ReconnectOptions } from './realtime/reconnect.js';
-export { RealtimeRouter, type RealtimeRouteSelector } from './realtime/router.js';
-export {
-  ItdRealtime,
-  type RealtimeEvents,
-  type RealtimeOptions,
-  RealtimeTransportKind,
-} from './realtime/stream.js';
-export type {
-  RealtimeRequest,
-  RealtimeRequestInput,
-  RealtimeTransport,
-  TransportContext,
-  TransportEvent,
-} from './realtime/transports/transport.js';
-// Нужен тем, кто пишет свой транспорт: только этой ошибкой он сообщает потоку,
-// что токен пора обновить.
-export { UnauthorizedStreamError } from './realtime/transports/transport.js';
 export {
   type WebSocketImplementationOptions,
   type WebSocketLike,
@@ -292,21 +308,9 @@ export {
   WebSocketTransport,
   type WebSocketTransportOptions,
 } from './realtime/transports/websocket.js';
-export {
-  type NotificationEventOfType,
-  type NotificationOfType,
-  type RealtimeContext,
-  type RealtimeContextBase,
-  type RealtimeNotificationContext,
-  type RealtimeNotificationFilter,
-  type RealtimeNotificationSelector,
-  type RealtimeNotificationUpdate,
-  type RealtimeUnknownUpdate,
-  type RealtimeUnreadCountUpdate,
-  type RealtimeUpdate,
-  type RealtimeUpdateOfType,
-  RealtimeUpdateOrigin,
-  RealtimeUpdateType,
+export type {
+  NotificationEventOfType,
+  NotificationOfType,
 } from './realtime/updates.js';
 export type {
   AuthResource,
@@ -410,7 +414,6 @@ export {
   ItdErrorCode,
   LikesVisibility,
   NotificationType,
-  RealtimeStatus,
   ReportReason,
   ReportTargetType,
   ServiceState,

@@ -1,25 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
+import { systemClock } from '../../src/core/clock.js';
 import { ItdConfigError } from '../../src/core/errors.js';
 import type { ItdClientOptions } from '../../src/options.js';
-import { ItdRealtime, type RealtimeDeps, type RealtimeOptions } from '../../src/realtime/stream.js';
+import {
+  NotificationEvents,
+  type NotificationEventsDeps,
+  type NotificationEventsOptions,
+} from '../../src/realtime/stream.js';
 import { PollTransport } from '../../src/realtime/transports/poll.js';
 import {
-  type RealtimeTransport,
-  type TransportContext,
-  type TransportEvent,
+  type EventTransport,
+  type EventTransportContext,
+  type EventTransportFrame,
   UnauthorizedStreamError,
 } from '../../src/realtime/transports/transport.js';
 import { abortError, createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
-class TestTransport implements RealtimeTransport {
+class TestTransport implements EventTransport {
   readonly name = 'test';
   connects = 0;
 
-  #context: TransportContext | undefined;
+  #context: EventTransportContext | undefined;
   #settle: { resolve: () => void; reject: (error: unknown) => void } | undefined;
 
-  connect(context: TransportContext): Promise<void> {
+  connect(context: EventTransportContext): Promise<void> {
     this.connects += 1;
     this.#context = context;
     context.onOpen();
@@ -31,12 +36,12 @@ class TestTransport implements RealtimeTransport {
   }
 
   /** Ссылка на контекст последнего подключения — для проверок. */
-  get context(): TransportContext | undefined {
+  get context(): EventTransportContext | undefined {
     return this.#context;
   }
 
   /** Отправляет событие так, будто оно пришло от сервера. */
-  emit(event: TransportEvent): void {
+  emit(event: EventTransportFrame): void {
     this.#context?.onEvent(event);
   }
 
@@ -57,7 +62,7 @@ class TestTransport implements RealtimeTransport {
  * Нужен для проверки лимита попыток: счётчик обнуляется при успешном подключении,
  * поэтому лимит считает именно **подряд идущие** неудачи.
  */
-class FailingTransport implements RealtimeTransport {
+class FailingTransport implements EventTransport {
   readonly name = 'failing';
   connects = 0;
 
@@ -68,19 +73,27 @@ class FailingTransport implements RealtimeTransport {
 }
 
 function makeStream(
-  transport: RealtimeTransport,
-  deps: Partial<RealtimeDeps> = {},
-  options: RealtimeOptions = {},
-): ItdRealtime {
-  return new ItdRealtime(
+  transport: EventTransport,
+  deps: Omit<Partial<NotificationEventsDeps>, 'connection'> & {
+    refreshAuth?: (() => Promise<boolean>) | undefined;
+  } = {},
+  options: NotificationEventsOptions = {},
+): NotificationEvents {
+  const { refreshAuth, ...rest } = deps;
+  return new NotificationEvents(
     {
-      baseUrl: 'https://itd.test',
-      fetch: (() => Promise.reject(new Error('не должно вызываться'))) as unknown as typeof fetch,
-      baseHeaders: () => Promise.resolve(new Headers()),
-      getToken: () => Promise.resolve('t'),
-      refresh: () => Promise.resolve(true),
+      connection: {
+        baseUrl: 'https://itd.test',
+        authorize: true,
+        fetch: (() => Promise.reject(new Error('не должно вызываться'))) as unknown as typeof fetch,
+        clock: systemClock,
+        logger: undefined,
+        baseHeaders: () => Promise.resolve(new Headers()),
+        getToken: () => Promise.resolve('t'),
+        refreshAuth: refreshAuth ?? (() => Promise.resolve(true)),
+      },
       fetchUnreadCount: () => Promise.resolve(0),
-      ...deps,
+      ...rest,
     },
     {
       transport,
@@ -257,7 +270,7 @@ describe('поток: жизненный цикл', () => {
   it('обновляет токен при отказе авторизации и переподключается', async () => {
     const transport = new TestTransport();
     const refresh = vi.fn(() => Promise.resolve(true));
-    const stream = makeStream(transport, { refresh });
+    const stream = makeStream(transport, { refreshAuth: refresh });
 
     await stream.connect();
     transport.fail(new UnauthorizedStreamError());
@@ -280,7 +293,7 @@ describe('поток: жизненный цикл', () => {
       return Promise.reject(new Error('нет сети'));
     };
 
-    const transport = new PollTransport();
+    const transport = new PollTransport({ request: failingRequest });
     const stream = makeStream(transport, { request: failingRequest }, { maxAttempts: 1 });
 
     const giveup = vi.fn();
@@ -299,7 +312,7 @@ describe('поток: жизненный цикл', () => {
 
   it('прекращает попытки, если обновить токен не удалось', async () => {
     const transport = new TestTransport();
-    const stream = makeStream(transport, { refresh: () => Promise.resolve(false) });
+    const stream = makeStream(transport, { refreshAuth: () => Promise.resolve(false) });
 
     const giveup = vi.fn();
     stream.on('giveup', giveup);
@@ -384,6 +397,18 @@ describe('поток: жизненный цикл', () => {
     expect(onConnect).toHaveBeenCalledTimes(2);
   });
 
+  it('removeAllListeners() не отключает lifecycle при giveup', async () => {
+    const transport = new TestTransport();
+    const onClose = vi.fn();
+    const stream = makeStream(transport, { onClose }, { maxAttempts: 0 });
+
+    await stream.connect();
+    stream.removeAllListeners();
+    transport.fail(new Error('closed'));
+
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  });
+
   it('connect() после giveup запускает новую попытку', async () => {
     const transport = new FailingTransport();
     const stream = makeStream(transport, {}, { maxAttempts: 0 });
@@ -407,7 +432,7 @@ describe('поток: жизненный цикл', () => {
     const transport = new TestTransport();
     let releaseRefresh: (() => void) | undefined;
     const stream = makeStream(transport, {
-      refresh: () =>
+      refreshAuth: () =>
         new Promise<boolean>((resolve) => {
           releaseRefresh = () => resolve(true);
         }),
@@ -430,7 +455,7 @@ describe('поток: опрос через конвейер клиента', ()
   function makePollStream(
     handler: MockHandler,
     options: ItdClientOptions = {},
-    realtime: RealtimeOptions = {},
+    realtime: NotificationEventsOptions = {},
   ) {
     const mock = createMockFetch(handler);
     const itd = new ItdClient({
@@ -441,14 +466,17 @@ describe('поток: опрос через конвейер клиента', ()
       rateLimit: false,
       mode: 'server',
       ...options,
+      events: {
+        notifications: {
+          transport: 'poll',
+          syncCount: false,
+          reconnectOnVisible: false,
+          reconnectOnOnline: false,
+          ...realtime,
+        },
+      },
     });
-    const stream = itd.realtime({
-      transport: 'poll',
-      syncCount: false,
-      reconnectOnVisible: false,
-      reconnectOnOnline: false,
-      ...realtime,
-    });
+    const stream = itd.notifications.events;
 
     return { itd, mock, stream };
   }
@@ -649,12 +677,17 @@ describe('поток: защита от двойного подключения'
 
 describe('выбор транспорта', () => {
   it('по умолчанию берёт поток событий там, где среда его поддерживает', () => {
-    const stream = new ItdRealtime({
-      baseUrl: 'https://itd.test',
-      fetch: globalThis.fetch,
-      baseHeaders: () => Promise.resolve(new Headers()),
-      getToken: () => Promise.resolve('t'),
-      refresh: () => Promise.resolve(true),
+    const stream = new NotificationEvents({
+      connection: {
+        baseUrl: 'https://itd.test',
+        authorize: true,
+        fetch: globalThis.fetch,
+        clock: systemClock,
+        logger: undefined,
+        baseHeaders: () => Promise.resolve(new Headers()),
+        getToken: () => Promise.resolve('t'),
+        refreshAuth: () => Promise.resolve(true),
+      },
       fetchUnreadCount: () => Promise.resolve(0),
     });
 
@@ -662,13 +695,19 @@ describe('выбор транспорта', () => {
   });
 
   it('переключается на опрос по запросу', () => {
-    const stream = new ItdRealtime(
+    const stream = new NotificationEvents(
       {
-        baseUrl: 'https://itd.test',
-        fetch: globalThis.fetch,
-        baseHeaders: () => Promise.resolve(new Headers()),
-        getToken: () => Promise.resolve('t'),
-        refresh: () => Promise.resolve(true),
+        connection: {
+          baseUrl: 'https://itd.test',
+          authorize: true,
+          fetch: globalThis.fetch,
+          clock: systemClock,
+          logger: undefined,
+          baseHeaders: () => Promise.resolve(new Headers()),
+          getToken: () => Promise.resolve('t'),
+          refreshAuth: () => Promise.resolve(true),
+        },
+        request: () => Promise.resolve({ notifications: [], count: 0 }),
         fetchUnreadCount: () => Promise.resolve(0),
       },
       { transport: 'poll' },

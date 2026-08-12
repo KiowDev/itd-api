@@ -88,7 +88,7 @@ for (const post of page.items) {
 | [Конфигурация](https://kiowdev.github.io/itd-api/configuration/) | таймауты, повторы, очереди, сервисы, хуки и жизненный цикл |
 | [Несколько аккаунтов](https://kiowdev.github.io/itd-api/multi-accounts/) | `ItdAccounts`, общее хранилище и отдельные сессии |
 | [Разметка текста](https://kiowdev.github.io/itd-api/text-markup/) | spans, автоматическая разметка и отображение |
-| [Realtime](https://kiowdev.github.io/itd-api/realtime/) | обновления, обработчики, фильтры, маршрутизация и переподключение |
+| [События](https://kiowdev.github.io/itd-api/realtime/) | обновления, обработчики, фильтры, маршрутизация и переподключение |
 | [Интеграции](https://kiowdev.github.io/itd-api/integrations/) | browser proxy и Turnstile |
 | [Плагины](https://kiowdev.github.io/itd-api/plugins/) | cache, crypto и создание плагина |
 | [Справочник API](https://kiowdev.github.io/itd-api/reference/) | ресурсы, методы, типы, ошибки и билдеры |

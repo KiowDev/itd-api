@@ -56,7 +56,7 @@ export {
   type RecordedOperation,
 } from './operations.js';
 export {
-  MockRealtimeTransport,
+  MockEventTransport,
   type WaitForUpdateOptions,
   waitForUpdate,
 } from './realtime.js';

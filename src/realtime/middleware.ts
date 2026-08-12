@@ -1,52 +1,52 @@
 import type { Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
-import type { RealtimeContext, RealtimeContextBase } from './updates.js';
+import type { EventContext, NotificationEventContext } from './updates.js';
 
 /** Продолжает цепочку промежуточных обработчиков потока. */
-export type RealtimeNext = () => Promise<void>;
+export type EventNext = () => Promise<void>;
 
 /** Обрабатывает обновление потока до его передачи подписчикам. */
-export type RealtimeMiddleware<C extends RealtimeContextBase = RealtimeContext> = (
+export type EventMiddleware<C extends EventContext = NotificationEventContext> = (
   context: C,
-  next: RealtimeNext,
+  next: EventNext,
 ) => void | Promise<void>;
 
 /** Объект, предоставляющий снимок промежуточного обработчика потока. */
-export interface RealtimeMiddlewareObj<C extends RealtimeContextBase = RealtimeContext> {
-  middleware(): RealtimeMiddleware<C>;
+export interface EventMiddlewareObject<C extends EventContext = NotificationEventContext> {
+  middleware(): EventMiddleware<C>;
 }
 
 /** Асинхронный обработчик нормализованного обновления потока. */
-export type RealtimeHandler<C extends RealtimeContextBase = RealtimeContext> = (
+export type EventHandler<C extends EventContext = NotificationEventContext> = (
   context: C,
 ) => unknown | Promise<unknown>;
 
 /** Условие отбора контекста потока. */
-export type RealtimePredicate<C extends RealtimeContextBase = RealtimeContext> = (
+export type EventPredicate<C extends EventContext = NotificationEventContext> = (
   context: C,
 ) => boolean;
 
 /** Проверка, сужающая тип контекста потока. */
-export type RealtimeTypeGuard<C extends B, B extends RealtimeContextBase = RealtimeContext> = (
+export type EventTypeGuard<C extends B, B extends EventContext = NotificationEventContext> = (
   context: B,
 ) => context is C;
 
 /** Ключи, по которым обновления нельзя обрабатывать одновременно. */
-export type RealtimeSequentializer<C extends RealtimeContextBase = RealtimeContext> = (
+export type EventSequentializer<C extends EventContext = NotificationEventContext> = (
   context: C,
 ) => PropertyKey | readonly PropertyKey[] | undefined;
 
-const REALTIME_MIDDLEWARE_SNAPSHOT = Symbol('itd-api.realtime.middlewareSnapshot');
+const REALTIME_MIDDLEWARE_SNAPSHOT = Symbol('itd-api.events.middlewareSnapshot');
 
-type SnapshottingRealtimeMiddleware<C extends RealtimeContextBase> = RealtimeMiddleware<C> & {
-  [REALTIME_MIDDLEWARE_SNAPSHOT]?: () => RealtimeMiddleware<C>;
+type SnapshottingEventMiddleware<C extends EventContext> = EventMiddleware<C> & {
+  [REALTIME_MIDDLEWARE_SNAPSHOT]?: () => EventMiddleware<C>;
 };
 
 /** @internal */
-export function captureRealtimeMiddleware<C extends RealtimeContextBase>(
-  middleware: RealtimeMiddleware<C>,
-): RealtimeMiddleware<C> {
-  const capture = (middleware as SnapshottingRealtimeMiddleware<C>)[REALTIME_MIDDLEWARE_SNAPSHOT];
+export function captureEventMiddleware<C extends EventContext>(
+  middleware: EventMiddleware<C>,
+): EventMiddleware<C> {
+  const capture = (middleware as SnapshottingEventMiddleware<C>)[REALTIME_MIDDLEWARE_SNAPSHOT];
   if (!capture) return middleware;
 
   const snapshot = capture();
@@ -57,38 +57,38 @@ export function captureRealtimeMiddleware<C extends RealtimeContextBase>(
 }
 
 /** @internal */
-export function withRealtimeMiddlewareSnapshot<C extends RealtimeContextBase>(
-  middleware: RealtimeMiddleware<C>,
-  capture: () => RealtimeMiddleware<C>,
-): RealtimeMiddleware<C> {
+export function withEventMiddlewareSnapshot<C extends EventContext>(
+  middleware: EventMiddleware<C>,
+  capture: () => EventMiddleware<C>,
+): EventMiddleware<C> {
   Object.defineProperty(middleware, REALTIME_MIDDLEWARE_SNAPSHOT, { value: capture });
   return middleware;
 }
 
 /** Создаёт отложенный промежуточный обработчик для объекта. @internal */
-export function deferRealtimeMiddleware<C extends RealtimeContextBase>(
-  source: RealtimeMiddlewareObj<C>,
-): RealtimeMiddleware<C> {
-  const capture = (): RealtimeMiddleware<C> => {
+export function deferEventMiddleware<C extends EventContext>(
+  source: EventMiddlewareObject<C>,
+): EventMiddleware<C> {
+  const capture = (): EventMiddleware<C> => {
     const middleware = source.middleware();
     if (typeof middleware !== 'function') {
       throw new ItdConfigError('realtime middleware() должен возвращать функцию обработки');
     }
-    return captureRealtimeMiddleware(middleware);
+    return captureEventMiddleware(middleware);
   };
 
-  const deferred: RealtimeMiddleware<C> = (context, next) => capture()(context, next);
-  return withRealtimeMiddlewareSnapshot(deferred, capture);
+  const deferred: EventMiddleware<C> = (context, next) => capture()(context, next);
+  return withEventMiddlewareSnapshot(deferred, capture);
 }
 
-interface HandlerRegistration<C extends RealtimeContextBase> {
-  readonly predicate: RealtimePredicate<C>;
-  readonly handler: RealtimeHandler<C>;
+interface HandlerRegistration<C extends EventContext> {
+  readonly predicate: EventPredicate<C>;
+  readonly handler: EventHandler<C>;
 }
 
-interface DispatchWork<C extends RealtimeContextBase> {
+interface DispatchWork<C extends EventContext> {
   readonly context: C;
-  readonly middleware: readonly RealtimeMiddleware<C>[];
+  readonly middleware: readonly EventMiddleware<C>[];
   readonly handlers: readonly HandlerRegistration<C>[];
   readonly keys: readonly PropertyKey[];
   /** Ключ снимка: ожидающая работа с тем же ключом заменяется новой. */
@@ -98,12 +98,12 @@ interface DispatchWork<C extends RealtimeContextBase> {
 /** Предел обновлений, ожидающих обработки. @internal */
 export const MAX_PENDING_UPDATES = 256;
 
-export interface RealtimeDispatcherOptions<C extends RealtimeContextBase = RealtimeContext> {
+export interface RealtimeDispatcherOptions<C extends EventContext = NotificationEventContext> {
   concurrency: number;
-  sequentialize?: RealtimeSequentializer<C> | undefined;
+  sequentialize?: EventSequentializer<C> | undefined;
 }
 
-export interface RealtimeDispatcherHooks<C extends RealtimeContextBase = RealtimeContext> {
+export interface RealtimeDispatcherHooks<C extends EventContext = NotificationEventContext> {
   deliver: (context: C) => void;
   middlewareError: (error: unknown, context: C) => void;
   handlerError: (error: unknown, context: C) => void;
@@ -112,10 +112,10 @@ export interface RealtimeDispatcherHooks<C extends RealtimeContextBase = Realtim
 }
 
 /** Выполняет промежуточные обработчики по порядку и запрещает повторный вызов `next()`. */
-export async function runRealtimeMiddleware<C extends RealtimeContextBase>(
-  middleware: readonly RealtimeMiddleware<C>[],
+export async function runEventMiddleware<C extends EventContext>(
+  middleware: readonly EventMiddleware<C>[],
   context: C,
-  terminal: RealtimeNext,
+  terminal: EventNext,
 ): Promise<void> {
   let lastIndex = -1;
 
@@ -133,7 +133,7 @@ export async function runRealtimeMiddleware<C extends RealtimeContextBase>(
     let duplicateCalls: Promise<void> | undefined;
     let failure: { error: unknown } | undefined;
 
-    const next: RealtimeNext = () => {
+    const next: EventNext = () => {
       if (!downstream) {
         downstream = dispatch(index + 1);
         return downstream;
@@ -168,10 +168,10 @@ export async function runRealtimeMiddleware<C extends RealtimeContextBase>(
 }
 
 /** Планирует нормализованные обновления и отслеживает незавершённые обработчики. */
-export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext> {
+export class RealtimeDispatcher<C extends EventContext = NotificationEventContext> {
   readonly #options: RealtimeDispatcherOptions<C>;
   readonly #hooks: RealtimeDispatcherHooks<C>;
-  readonly #middleware: RealtimeMiddleware<C>[] = [];
+  readonly #middleware: EventMiddleware<C>[] = [];
   readonly #handlers: HandlerRegistration<C>[] = [];
   readonly #queue: DispatchWork<C>[] = [];
   readonly #activeKeys = new Set<PropertyKey>();
@@ -184,7 +184,7 @@ export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext>
     this.#hooks = hooks;
   }
 
-  use(middleware: RealtimeMiddleware<C>): Unsubscribe {
+  use(middleware: EventMiddleware<C>): Unsubscribe {
     this.#middleware.push(middleware);
     return () => {
       const index = this.#middleware.indexOf(middleware);
@@ -192,7 +192,7 @@ export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext>
     };
   }
 
-  on(predicate: RealtimePredicate<C>, handler: RealtimeHandler<C>): Unsubscribe {
+  on(predicate: EventPredicate<C>, handler: EventHandler<C>): Unsubscribe {
     const registration = { predicate, handler };
     this.#handlers.push(registration);
 
@@ -209,10 +209,10 @@ export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext>
    */
   dispatch(context: C, coalesceKey?: PropertyKey): void {
     let keys: readonly PropertyKey[];
-    let middleware: readonly RealtimeMiddleware<C>[];
+    let middleware: readonly EventMiddleware<C>[];
     try {
       keys = this.#keysFor(context);
-      middleware = this.#middleware.map(captureRealtimeMiddleware);
+      middleware = this.#middleware.map(captureEventMiddleware);
     } catch (error) {
       this.#hooks.middlewareError(error, context);
       return;
@@ -290,7 +290,7 @@ export class RealtimeDispatcher<C extends RealtimeContextBase = RealtimeContext>
 
   async #run(work: DispatchWork<C>): Promise<void> {
     try {
-      await runRealtimeMiddleware(work.middleware, work.context, async () => {
+      await runEventMiddleware(work.middleware, work.context, async () => {
         for (const { predicate, handler } of work.handlers) {
           try {
             if (predicate(work.context)) await handler(work.context);
