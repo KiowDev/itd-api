@@ -1,5 +1,5 @@
 import type { Cipher, Secret } from './cipher.js';
-import { EVENT_SECRET_FIELDS, SECRET_FIELDS } from './fields.js';
+import { SECRET_FIELDS } from './fields.js';
 
 /**
  * Глубина обхода.
@@ -22,11 +22,6 @@ const MAX_DEPTH = 12;
  */
 export function decodeTree(value: unknown, ciphers: readonly Cipher[]): void {
   decodeFields(value, ciphers, SECRET_FIELDS);
-}
-
-/** Ищет скрытые сообщения в нормализованном обновлении событий. @internal */
-export function decodeEventTree(value: unknown, ciphers: readonly Cipher[]): void {
-  decodeFields(value, ciphers, EVENT_SECRET_FIELDS);
 }
 
 function decodeFields(value: unknown, ciphers: readonly Cipher[], fields: readonly string[]): void {

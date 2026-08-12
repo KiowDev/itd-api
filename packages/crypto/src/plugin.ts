@@ -10,7 +10,7 @@ import type { Cipher, EncryptOption, EncryptSpec } from './cipher.js';
 import { BUILT_IN_CIPHERS } from './ciphers/index.js';
 import { CryptError } from './errors.js';
 import { textFields } from './fields.js';
-import { decodeEventTree, decodeTree } from './walk.js';
+import { decodeTree } from './walk.js';
 
 /** Настройки плагина. */
 export interface CryptOptions {
@@ -70,30 +70,32 @@ export function crypt(options: CryptOptions = {}): CryptPlugin {
     throw new CryptError('Плагину нужен хотя бы один шифр');
   }
 
-  const transformer: OperationTransformer = async (request, next) => {
-    const current: CryptRequestOptions = request.extensions?.crypto ?? {};
-
-    const prepared =
-      current.encrypt === undefined ? request : encryptRequest(request, current.encrypt, ciphers);
-
-    const result = await next(prepared);
-
-    if (current.decrypt ?? decryptByDefault) decodeTree(result, ciphers);
-
-    return result;
-  };
-
   const eventMiddleware: EventMiddleware<EventContext> = async (context, next) => {
-    if (decryptByDefault) decodeEventTree(context.update, ciphers);
+    if (decryptByDefault) decodeTree(context.update, ciphers);
     await next();
   };
 
   return {
     name: 'crypt',
-    // Кэш должен хранить сырой ответ: тогда расшифровка применяется и к cache hit,
-    // а отключение или замена crypt не оставляет в кэше уже обработанные данные.
+    // Кэш хранит нормализованный, но ещё не расшифрованный результат. Поэтому расшифровка
+    // одинаково применяется к сетевому ответу и cache hit, не загрязняя содержимое кэша.
     before: ['cache'],
-    install: ({ operations }) => void operations.use(transformer),
+    install: ({ operations }) => {
+      const transformer: OperationTransformer = async (request, next) => {
+        const current: CryptRequestOptions = request.extensions?.crypto ?? {};
+        let prepared = request;
+        if (current.encrypt !== undefined) {
+          const fields =
+            operations.get(request.operationId)?.annotations?.crypto?.requestFields ??
+            textFields(request.operationId);
+          prepared = encryptRequest(request, current.encrypt, ciphers, fields);
+        }
+        const result = await next(prepared);
+        if (current.decrypt ?? decryptByDefault) decodeTree(result, ciphers);
+        return result;
+      };
+      operations.use(transformer);
+    },
     middleware: () => eventMiddleware,
   };
 }
@@ -110,12 +112,12 @@ function encryptRequest(
   request: OperationRequestOptions,
   encrypt: EncryptOption,
   ciphers: readonly Cipher[],
+  available: readonly string[] | undefined,
 ): OperationRequestOptions {
   const spec: EncryptSpec = typeof encrypt === 'string' ? { cipher: encrypt } : encrypt;
   const cipher = pickCipher(spec.cipher, ciphers);
   const where = `${request.operationId} (${request.method.toUpperCase()} ${request.path})`;
 
-  const available = textFields(request.operationId);
   if (!available) {
     throw new CryptError(`Запрос ${where} не принимает текста — шифровать нечего`);
   }

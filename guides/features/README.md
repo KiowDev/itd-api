@@ -38,6 +38,7 @@ const pixelBattleFeature: ClientFeature<PixelBattleApi> = {
       method: 'GET',
       retrySafety: RetrySafety.Safe,
       service: 'pixel-battle-api',
+      read: (body) => body as PixelInfo,
     },
   },
 
@@ -84,6 +85,30 @@ const pixel = await itd.pixelBattle.pixelInfo(10, 20);
 идентификатор получают плагины; подменить его в описании или отдельном вызове нельзя.
 Поэтому два разных модуля могут использовать одинаковое локальное имя операции без
 конфликта: например, `status.get` и `chats.get`.
+
+`read` также принадлежит описанию операции: все вызовы одного `operationId` возвращают одну
+форму данных. `context.request()` принимает только имя и параметры запроса, поэтому resource
+не может подменить нормализацию отдельного вызова. Плагины функцию `read` не получают — для них
+важны запрос, метаданные операции и готовый результат.
+
+Пакеты плагинов могут расширять `OperationAnnotations` своим namespace. Например, feature чатов
+может объявить политику кэша и шифруемые поля, не импортируя реализацию плагинов:
+
+```ts
+import { CachePolicyKind } from '@itd-api/cache';
+
+sendMessage: {
+  method: 'POST',
+  retrySafety: RetrySafety.Unsafe,
+  annotations: {
+    cache: { kind: CachePolicyKind.Mutation, invalidates: ['chats.messages'] },
+    crypto: { requestFields: ['message'] },
+  },
+},
+```
+
+Неизвестные annotations ядро сохраняет без интерпретации; каждое поле читает только владеющий
+им плагин.
 
 Собственные бакеты объявляются при необходимости:
 

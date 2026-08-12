@@ -16,7 +16,6 @@ import {
   createAuthHeadersMiddleware,
   createAuthPreparationMiddleware,
   createAuthRecoveryMiddleware,
-  createPluginsMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
   createServicesMiddleware,
@@ -133,6 +132,7 @@ export function createClientRuntime<A extends AuthProvider>(
   const plugins = new PluginRegistry({
     shutdownTimeout: config.shutdownTimeout,
     clock: config.clock,
+    operationMetadata: (operationId) => catalog.definitionOf(operationId),
   });
   const services = createServiceRegistry(config);
 
@@ -214,10 +214,6 @@ export function createClientRuntime<A extends AuthProvider>(
 
   const stages: PipelineStage[] = [
     {
-      name: ClientRuntimeStage.OperationPlugins,
-      middleware: createPluginsMiddleware(plugins),
-    },
-    {
       name: ClientRuntimeStage.Services,
       middleware: createServicesMiddleware(services),
     },
@@ -287,11 +283,16 @@ export function createClientRuntime<A extends AuthProvider>(
     return handler(request);
   };
 
-  // Auth использует тот же handler: sign-in и refresh объявляют skip-флаги точечно,
+  const http = new HttpClient({
+    handler: clientHandler,
+    plugins,
+    baseUrl: config.baseUrl,
+  });
+  // Auth использует тот же executor: sign-in и refresh объявляют skip-флаги точечно,
   // вместо отдельного pipeline с постепенно расходящимся порядком стадий.
-  auth = internals.auth({ config, handler: clientHandler, cookies: jar });
-  const http = new HttpClient({ handler: clientHandler, baseUrl: config.baseUrl, catalog });
+  auth = internals.auth({ config, http, cookies: jar });
   const stageOrder = Object.freeze([
+    ClientRuntimeStage.OperationPlugins,
     ...stages.map(({ name }) => name),
     ClientRuntimeStage.Transport,
   ]);

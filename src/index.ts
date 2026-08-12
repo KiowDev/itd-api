@@ -128,7 +128,13 @@ export {
   withNamespace,
 } from './core/key-value-store.js';
 export type { ManagedClientResource } from './core/managed-resources.js';
-export { type FeatureOperationId, type OperationMethod, RetrySafety } from './core/operation.js';
+export {
+  type FeatureOperationId,
+  type OperationAnnotations,
+  type OperationMetadata,
+  type OperationMethod,
+  RetrySafety,
+} from './core/operation.js';
 // Опции разделены по слоям: RuntimeOptions нужны generic-ядру, SessionOptions — сессии,
 // а ItdClientOptions объединяет их для полного SDK. Подробности — в core/options.ts.
 export type {

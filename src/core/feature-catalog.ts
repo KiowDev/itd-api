@@ -42,6 +42,10 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
     return this.#base.defaultBucket;
   }
 
+  definitionOf(id: string) {
+    return this.#operations.get(id) ?? this.#base.definitionOf(id);
+  }
+
   retrySafetyOf(id: string) {
     return this.#operations.get(id)?.retrySafety ?? this.#base.retrySafetyOf(id);
   }

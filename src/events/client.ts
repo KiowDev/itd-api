@@ -5,6 +5,7 @@ import { type ClientRuntime, createClientRuntime } from '../core/execution/clien
 import type { RuntimeOptions } from '../core/options.js';
 import { pickNumber } from '../core/unwrap.js';
 import { ITD_CATALOG } from '../domain/catalog.js';
+import { EVENT_OPERATIONS } from '../operations/events.js';
 import {
   NotificationEvents,
   type NotificationEventsDeps,
@@ -128,7 +129,7 @@ function notificationEventsDeps(runtime: ClientRuntime): NotificationEventsDeps 
     path,
     query,
     signal,
-  }) => runtime.http.operation(operationId, { path, query, signal });
+  }) => runtime.http.execute(EVENT_OPERATIONS[operationId], { path, query, signal });
 
   return {
     connection: runtime.connection(),

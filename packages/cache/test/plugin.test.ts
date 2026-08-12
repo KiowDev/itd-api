@@ -13,7 +13,7 @@ import {
   runEventMiddleware,
 } from 'itd-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CacheError, type CachePlugin, cache } from '../src/index.js';
+import { CacheError, type CachePlugin, CachePolicyKind, cache } from '../src/index.js';
 
 type FetchHandler = (url: string, init: RequestInit, call: number) => Response | Promise<Response>;
 
@@ -95,6 +95,45 @@ describe('настройки', () => {
 });
 
 describe('TTL/LRU-кэш', () => {
+  it('поддерживает query и mutation подключаемого feature через метаданные операций', async () => {
+    const { itd, calls } = makeClient((_url, init, call) =>
+      json(init.method === 'POST' ? { sent: true } : { id: `chat-${call}` }),
+    );
+    itd.use(cache({ ttl: 60_000, operations: ['chats.get'] }));
+    const chats = itd.install({
+      name: 'chats',
+      operations: {
+        get: {
+          method: 'GET',
+          retrySafety: RetrySafety.Safe,
+          annotations: { cache: { kind: CachePolicyKind.Query } },
+        },
+        send: {
+          method: 'POST',
+          retrySafety: RetrySafety.Unsafe,
+          annotations: {
+            cache: { kind: CachePolicyKind.Mutation, invalidates: ['chats.get'] },
+          },
+        },
+      },
+      setup: (context) => ({
+        api: {
+          get: () => context.request<{ id: string }>('get', { path: '/api/chats/1' }),
+          send: () => context.request('send', { path: '/api/chats/1/messages', body: {} }),
+        },
+      }),
+    });
+
+    const first = await chats.get();
+    const cached = await chats.get();
+    await chats.send();
+    const refreshed = await chats.get();
+
+    expect(cached).toEqual(first);
+    expect(refreshed).not.toEqual(first);
+    expect(calls).toHaveLength(3);
+  });
+
   it('кэширует встроенный status feature по custom ID', async () => {
     const { itd, calls } = makeClient(() => json({ overall_status: 'operational', services: [] }));
     itd.use(cache({ ttl: 60_000, operations: ['status.get'] }));
@@ -205,6 +244,38 @@ describe('TTL/LRU-кэш', () => {
 
     expect(second.content).toBe('исходный');
     expect(second).not.toBe(first);
+  });
+
+  it('сохраняет нормализованный результат списочного метода', async () => {
+    const { itd, calls } = makeClient(() =>
+      json({
+        notifications: [
+          {
+            id: 'n1',
+            type: 'comment',
+            targetId: 'p1',
+            subjectId: 'c1',
+            subjectType: 'comment',
+            entityPreview: 'комментарий',
+          },
+        ],
+        hasMore: false,
+      }),
+    );
+    itd.use(cache({ ttl: 60_000, operations: ['notifications.list'] }));
+
+    const first = await itd.notifications.list();
+    const second = await itd.notifications.list();
+
+    expect(calls).toHaveLength(1);
+    expect(second).not.toBe(first);
+    expect(second.items[0]).toMatchObject({
+      type: 'post_comment',
+      entityId: 'c1',
+      parentEntityId: 'p1',
+      preview: 'комментарий',
+    });
+    expect(second.raw).toHaveProperty('notifications');
   });
 
   it('пропускает несериализуемый ответ без поломки запроса', async () => {

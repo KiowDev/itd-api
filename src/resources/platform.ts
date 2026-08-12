@@ -1,9 +1,21 @@
 import type { RequestOptions } from '../core/options.js';
 import { pickArray } from '../core/unwrap.js';
+import { defineBuiltInOperation } from '../domain/operations.js';
 import type { Announcement, ChangelogEntry, Portal } from '../models/platform.js';
 import type { PlatformStatus } from '../models/status.js';
+import { passthroughOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
 import type { StatusResource } from './status.js';
+
+const PLATFORM_CHANGELOG = defineBuiltInOperation<ChangelogEntry[]>('platform.changelog', (body) =>
+  Array.isArray(body) ? (body as ChangelogEntry[]) : [],
+);
+const PLATFORM_ANNOUNCEMENTS = defineBuiltInOperation<Announcement[]>(
+  'platform.announcements',
+  (body) => pickArray<Announcement>(body, 'announcements'),
+);
+const PLATFORM_VERSION = passthroughOperation<PlatformVersions>('platform.version');
+const PLATFORM_PORTAL = passthroughOperation<Portal>('platform.portal');
 
 /** Требования к версии одного приложения платформы. */
 export interface PlatformClientVersion {
@@ -48,7 +60,7 @@ export class PlatformResource extends BaseResource {
    * ```
    */
   version(options: RequestOptions = {}): Promise<PlatformVersions> {
-    return this.http.operation<PlatformVersions>('platform.version', {
+    return this.http.execute(PLATFORM_VERSION, {
       path: '/api/platform/version',
       skipAuth: true,
       ...options,
@@ -56,28 +68,24 @@ export class PlatformResource extends BaseResource {
   }
 
   /** Загружает журнал изменений. */
-  async changelog(options: RequestOptions = {}): Promise<ChangelogEntry[]> {
-    const body = await this.http.operation('platform.changelog', {
+  changelog(options: RequestOptions = {}): Promise<ChangelogEntry[]> {
+    return this.http.execute(PLATFORM_CHANGELOG, {
       path: '/api/platform/changelog',
       ...options,
     });
-
-    return Array.isArray(body) ? (body as ChangelogEntry[]) : [];
   }
 
   /** Загружает анонсы платформы. */
-  async announcements(options: RequestOptions = {}): Promise<Announcement[]> {
-    const body = await this.http.operation('platform.announcements', {
+  announcements(options: RequestOptions = {}): Promise<Announcement[]> {
+    return this.http.execute(PLATFORM_ANNOUNCEMENTS, {
       path: '/api/platform/announcements',
       ...options,
     });
-
-    return pickArray<Announcement>(body, 'announcements');
   }
 
   /** Загружает баннер текущего события — виджет «портал». */
   portal(options: RequestOptions = {}): Promise<Portal> {
-    return this.http.operation<Portal>('platform.portal', {
+    return this.http.execute(PLATFORM_PORTAL, {
       path: '/api/v1/portal',
       ...options,
     });

@@ -1,9 +1,26 @@
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
+import { defineBuiltInOperation } from '../domain/operations.js';
 import type { Hashtag, Post } from '../models/content.js';
 import { BaseResource } from './base.js';
-import { type Page, PaginationMode, type Paginator, readCursorPage } from './pagination.js';
+import {
+  type Page,
+  PaginationMode,
+  type Paginator,
+  pageOperation,
+  readCursorPage,
+} from './pagination.js';
+
+const HASHTAG_POSTS = pageOperation<Post>('hashtags.posts', (body) =>
+  readCursorPage<Post>(body, 'posts'),
+);
+const HASHTAGS_SEARCH = defineBuiltInOperation<Hashtag[]>('hashtags.search', (body) =>
+  pickArray<Hashtag>(body, 'hashtags'),
+);
+const HASHTAGS_TRENDING = defineBuiltInOperation<Hashtag[]>('hashtags.trending', (body) =>
+  pickArray<Hashtag>(body, 'hashtags'),
+);
 
 /** Параметры запроса постов по хэштегу. */
 export interface HashtagPostsParams {
@@ -19,11 +36,10 @@ export interface HashtagPostsParams {
 export class HashtagsResource extends BaseResource {
   /** Посты по хэштегу: `/api/hashtags/{tag}/posts`, курсорная пагинация. */
   readonly #posts = this.paginated<Post, HashtagPostsParams & { tag: string }>({
-    operationId: 'hashtags.posts',
+    operation: HASHTAG_POSTS,
     path: (p) => `/api/hashtags/${encodePathSegment(p.tag, 'tag')}/posts`,
     query: (p) => ({ limit: p.limit }),
     start: (p) => (p.cursor ? { cursor: p.cursor } : {}),
-    read: (body) => readCursorPage<Post>(body, 'posts'),
     mode: PaginationMode.Cursor,
   });
 
@@ -32,32 +48,25 @@ export class HashtagsResource extends BaseResource {
    *
    * Без строки запроса возвращает общий список.
    */
-  async search(
+  search(
     query?: string,
     params: { limit?: number } = {},
     options: RequestOptions = {},
   ): Promise<Hashtag[]> {
-    const body = await this.http.operation('hashtags.search', {
+    return this.http.execute(HASHTAGS_SEARCH, {
       path: '/api/hashtags',
       query: { q: query, limit: params.limit },
       ...options,
     });
-
-    return pickArray<Hashtag>(body, 'hashtags');
   }
 
   /** Загружает трендовые хэштеги. */
-  async trending(
-    params: { limit?: number } = {},
-    options: RequestOptions = {},
-  ): Promise<Hashtag[]> {
-    const body = await this.http.operation('hashtags.trending', {
+  trending(params: { limit?: number } = {}, options: RequestOptions = {}): Promise<Hashtag[]> {
+    return this.http.execute(HASHTAGS_TRENDING, {
       path: '/api/hashtags/trending',
       query: { limit: params.limit },
       ...options,
     });
-
-    return pickArray<Hashtag>(body, 'hashtags');
   }
 
   /**

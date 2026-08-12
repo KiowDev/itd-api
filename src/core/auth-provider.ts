@@ -1,7 +1,7 @@
 import type { UserId } from '../models/common.js';
 import type { ResolvedRuntimeConfig } from './config.js';
 import type { CookieJar } from './cookies.js';
-import type { RequestHandler } from './execution/pipeline.js';
+import type { HttpClient } from './execution/http.js';
 import { createDeviceId } from './runtime.js';
 
 /** Области аккаунта и конкретной сессии для локального состояния плагинов. */
@@ -59,7 +59,7 @@ export interface AuthProvider {
 /**
  * Что фабрика авторизации получает от собранного runtime.
  *
- * `handler` — тот же обработчик, которым пользуются ресурсы: вход и продление проходят
+ * `http` — тот же исполнитель, которым пользуются ресурсы: вход и продление проходят
  * через общий конвейер с точечными skip-флагами, а не через второй, независимо
  * эволюционирующий путь.
  *
@@ -67,7 +67,7 @@ export interface AuthProvider {
  */
 export interface AuthProviderDeps {
   config: ResolvedRuntimeConfig;
-  handler: RequestHandler;
+  http: HttpClient;
   cookies: CookieJar;
   /** Вызывается синхронно перед сменой владельца авторизации. */
   onAccountChange?: (() => void) | undefined;

@@ -117,6 +117,47 @@ describe('feature runtime', () => {
     expect(mock.calls[0]?.headers.get('x-plugin')).toBe('yes');
   });
 
+  it('передаёт operation-плагину предметный результат feature', async () => {
+    const mock = createMockFetch(() => json({ data: { available: 1 } }));
+    const itd = new ItdClient({
+      auth: 'shared-token',
+      fetch: mock.fetch,
+      mode: 'server',
+      retry: false,
+      rateLimit: false,
+    });
+    let seen: unknown;
+    itd.use(
+      plugin(async (request, next) => {
+        const result = await next(request);
+        seen = result;
+        return result;
+      }),
+    );
+    const feature: ClientFeature<{ get(): Promise<{ available: boolean }> }> = {
+      name: 'normalized-probe',
+      operations: {
+        get: {
+          method: 'GET',
+          retrySafety: RetrySafety.Safe,
+          read: (body) => ({
+            available: (body as { available?: unknown }).available === 1,
+          }),
+        },
+      },
+      setup: (context) => ({
+        api: {
+          get: () => context.request('get', { path: '/api/probe' }),
+        },
+      }),
+    };
+
+    const result = await itd.install(feature).get();
+
+    expect(result).toEqual({ available: true });
+    expect(seen).toBe(result);
+  });
+
   it('не позволяет отдельному вызову подменить metadata из manifest', async () => {
     const mock = createMockFetch(() => json({ data: { ok: true } }));
     const itd = new ItdClient({

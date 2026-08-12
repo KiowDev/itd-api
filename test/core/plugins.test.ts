@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ItdClient } from '../../src/client.js';
 import { ItdConfigError } from '../../src/core/errors.js';
+import { RetrySafety } from '../../src/core/operation.js';
 import type { ClientPlugin, OperationTransformer } from '../../src/core/plugins/contracts.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
@@ -67,6 +68,21 @@ describe('подключение плагинов', () => {
 
     expect(seen).toBe('https://itd.test');
   });
+
+  it('открывает плагину метаданные операции без функции нормализации', () => {
+    const { itd } = makeClient([]);
+    let metadata: Record<string, unknown> | undefined;
+
+    itd.use({
+      name: 'operation-metadata',
+      install({ operations }) {
+        metadata = operations.get('posts.get') as unknown as Record<string, unknown>;
+      },
+    });
+
+    expect(metadata).toMatchObject({ method: 'GET', retrySafety: RetrySafety.Safe });
+    expect(metadata).not.toHaveProperty('read');
+  });
 });
 
 describe('обёртки запроса', () => {
@@ -115,6 +131,34 @@ describe('обёртки запроса', () => {
     expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toMatchObject({ content: 'ПРИВЕТ' });
   });
 
+  it('не даёт transformer подменить контракт операции', async () => {
+    const { itd, mock } = makeClient([json({ data: { id: '1' } })]);
+
+    itd.use(
+      plugin('invalid-contract', (request, next) =>
+        next({ ...request, operationId: 'custom:other', method: 'POST' }),
+      ),
+    );
+
+    await expect(itd.posts.get('1')).rejects.toThrow(/operationId/);
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('защищает контракт при мутации исходного объекта запроса', async () => {
+    const { itd, mock } = makeClient([json({ data: { id: '1' } })]);
+
+    itd.use(
+      plugin('invalid-contract-mutation', (request, next) => {
+        request.operationId = 'custom:other';
+        request.method = 'POST';
+        return next(request);
+      }),
+    );
+
+    await expect(itd.posts.get('1')).rejects.toThrow(/operationId/);
+    expect(mock.callCount).toBe(0);
+  });
+
   it('правит разобранный ответ', async () => {
     const { itd } = makeClient([json({ data: { id: '1', content: 'пост' } })]);
 
@@ -129,6 +173,86 @@ describe('обёртки запроса', () => {
     const post = await itd.posts.get('1');
 
     expect(post).toMatchObject({ id: '1', marked: true });
+  });
+
+  it('получает нормализованный результат метода, а не форму ответа сервера', async () => {
+    const { itd } = makeClient([
+      json({
+        notifications: [
+          {
+            id: 'n1',
+            type: 'comment',
+            targetId: 'p1',
+            subjectId: 'c1',
+            subjectType: 'comment',
+            entityPreview: 'текст комментария',
+          },
+        ],
+        hasMore: false,
+      }),
+    ]);
+    let seen: unknown;
+
+    itd.use(
+      plugin('observe-public-result', async (request, next) => {
+        const result = await next({
+          operationId: request.operationId,
+          method: request.method,
+          path: request.path,
+        });
+        seen = result;
+        return result;
+      }),
+    );
+
+    const page = await itd.notifications.list();
+
+    expect(seen).toBe(page);
+    expect(page).toMatchObject({
+      items: [
+        {
+          id: 'n1',
+          type: 'post_comment',
+          entityId: 'c1',
+          parentEntityId: 'p1',
+          preview: 'текст комментария',
+        },
+      ],
+      hasMore: false,
+      nextOffset: 1,
+    });
+    expect(page).not.toHaveProperty('notifications');
+  });
+
+  it('считает локальный ответ плагина уже готовым публичным результатом', async () => {
+    const { itd, mock } = makeClient([]);
+    const cached = {
+      items: [],
+      hasMore: false,
+      nextOffset: 40,
+      raw: { source: 'cache' },
+    };
+
+    itd.use(plugin('cache', async () => cached));
+
+    await expect(itd.notifications.list({ offset: 40 })).resolves.toBe(cached);
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('не передаёт плагину служебное тело операции без результата', async () => {
+    const { itd } = makeClient([json({ removed: true })]);
+    let seen: unknown = 'не вызван';
+
+    itd.use(
+      plugin('observe-void', async (request, next) => {
+        const result = await next(request);
+        seen = result;
+        return result;
+      }),
+    );
+
+    await expect(itd.posts.remove('p1')).resolves.toBeUndefined();
+    expect(seen).toBeUndefined();
   });
 
   it('может ответить сам, не ходя в сеть', async () => {

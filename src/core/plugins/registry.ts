@@ -1,5 +1,6 @@
 import { createDeadline, type Deadline, type ItdClock } from '../clock.js';
 import { ItdConfigError, ItdStateError } from '../errors.js';
+import type { OperationMetadata } from '../operation.js';
 import type { OperationRequestOptions } from '../options.js';
 import { type RegisteredAttemptInterceptor, withAttemptInterceptorScope } from './attempts.js';
 import type {
@@ -30,6 +31,10 @@ export interface PluginRegistryOptions {
   /** Срок ожидания операций плагина при его отключении, мс. `0` — ждать без ограничения. */
   shutdownTimeout: number;
   clock: ItdClock;
+  /** Возвращает публичные метаданные встроенной или feature-операции. */
+  operationMetadata: (
+    operationId: OperationRequestOptions['operationId'],
+  ) => OperationMetadata | undefined;
 }
 
 /**
@@ -117,6 +122,7 @@ export class PluginRegistry {
     const installed = plugin.install({
       ...context,
       operations: {
+        get: this.#options.operationMetadata,
         use: (transformer) => register(transformers, transformer, 'operations'),
       },
       attempts: {
@@ -240,13 +246,39 @@ export class PluginRegistry {
     request: OperationRequestOptions,
     execute: (request: OperationRequestOptions) => Promise<unknown>,
   ): Promise<unknown> {
-    const entries = [...this.#ordered];
+    const ordered = this.#ordered;
+    if (ordered.length === 0) return execute(request);
+    const entries = [...ordered];
     for (const entry of entries) entry.activeRequests += 1;
     const interceptorScope: RegisteredAttemptInterceptor[] = entries.flatMap((entry) =>
       entry.interceptors.map((interceptor) => ({ plugin: entry.plugin.name, interceptor })),
     );
-    const scoped = (current: OperationRequestOptions): OperationRequestOptions =>
-      withAttemptInterceptorScope(current, interceptorScope);
+    const operationId = request.operationId;
+    const method = request.method.toUpperCase();
+    const retrySafety = request.retrySafety;
+    const scoped = (current: OperationRequestOptions): OperationRequestOptions => {
+      const prepared = current.retrySafety === undefined ? { ...current, retrySafety } : current;
+      return interceptorScope.length === 0
+        ? prepared
+        : withAttemptInterceptorScope(prepared, interceptorScope);
+    };
+    const validateContract = (prepared: OperationRequestOptions): void => {
+      if (prepared.operationId !== operationId) {
+        throw new ItdConfigError(
+          `operation transformer не может заменить operationId «${operationId}» на «${prepared.operationId}»`,
+        );
+      }
+      if (prepared.method.toUpperCase() !== method) {
+        throw new ItdConfigError(
+          `operation transformer не может заменить метод «${method}» операции «${operationId}» на «${prepared.method}»`,
+        );
+      }
+      if (prepared.retrySafety !== undefined && prepared.retrySafety !== retrySafety) {
+        throw new ItdConfigError(
+          `operation transformer не может заменить retrySafety операции «${operationId}»`,
+        );
+      }
+    };
     const chain = entries
       .flatMap((entry) =>
         entry.transformers.map((transformer) => ({ plugin: entry.plugin.name, transformer })),
@@ -262,10 +294,14 @@ export class PluginRegistry {
                 );
               }
               called = true;
+              validateContract(prepared);
               return next(scoped(prepared));
             });
           },
-        (current) => execute(scoped(current)),
+        (current) => {
+          validateContract(current);
+          return execute(scoped(current));
+        },
       );
 
     try {

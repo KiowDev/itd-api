@@ -18,6 +18,7 @@ import {
 } from './events/stream.js';
 import type { UserId } from './models/common.js';
 import { createNotificationsApi, type NotificationsApi } from './notifications-api.js';
+import { EVENT_OPERATIONS } from './operations/events.js';
 import type { ItdClientOptions } from './options.js';
 import { AuthResource } from './resources/auth.js';
 import type { CommentsResource } from './resources/comments.js';
@@ -235,7 +236,11 @@ export class ItdClient {
             {
               connection: this.#runtime.connection(),
               request: ({ operationId, path, query, signal }) =>
-                this.#runtime.http.operation(operationId, { path, query, signal }),
+                this.#runtime.http.execute(EVENT_OPERATIONS[operationId], {
+                  path,
+                  query,
+                  signal,
+                }),
               getAuthIdentity: () => this.#runtime.auth.getCurrentAuthIdentity(),
               getAuthScope: () => this.#runtime.auth.getAuthScope(),
               fetchUnreadCount: (signal) => notifications.count({ signal }),

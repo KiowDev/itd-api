@@ -33,6 +33,10 @@ const first = await itd.posts.get(postId);  // запрос к API
 const second = await itd.posts.get(postId); // ответ из кэша
 ```
 
+Feature-операции тоже можно кэшировать. Feature задаёт `CachePolicyKind.Query` или
+`CachePolicyKind.Mutation` в `annotations.cache`, а пользователь добавляет полный `operationId`
+в `operations`. Ядро не интерпретирует эту политику и только передаёт метаданные плагину.
+
 Кэшируются только перечисленные операции. Query, path и body входят в ключ, поэтому
 разные страницы ленты, профили и наборы идентификаторов хранятся отдельно. Одинаковые
 запросы, запущенные одновременно, выполняют один сетевой вызов.

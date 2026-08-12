@@ -4,6 +4,7 @@ import {
   type NotificationUpdate,
   NotificationUpdateOrigin,
   NotificationUpdateType,
+  RetrySafety,
   runEventMiddleware,
 } from 'itd-api';
 import { describe, expect, it } from 'vitest';
@@ -69,6 +70,37 @@ describe('порядок плагинов', () => {
 });
 
 describe('шифрование запроса', () => {
+  it('шифрует поля подключаемого feature из метаданных операции', async () => {
+    const { itd, calls } = makeClient([{ id: 'm1' }]);
+    itd.use(crypt());
+    const chats = itd.install({
+      name: 'chats',
+      operations: {
+        send: {
+          method: 'POST',
+          retrySafety: RetrySafety.Unsafe,
+          annotations: { crypto: { requestFields: ['message'] } },
+        },
+      },
+      setup: (context) => ({
+        api: {
+          send: (message: string) =>
+            context.request('send', {
+              path: '/api/chats/1/messages',
+              body: { message },
+              ...cryptoOptions({ encrypt: 'invisible' }),
+            }),
+        },
+      }),
+    });
+
+    await chats.send('секрет');
+
+    const sent = String(calls[0]?.body.message);
+    expect(stripInvisible(sent)).toBe('');
+    expect(invisible.decode(sent)).toBe('секрет');
+  });
+
   it('прячет текст поста', async () => {
     const { itd, calls } = makeClient([{ id: '1' }]);
     itd.use(crypt());
@@ -272,6 +304,35 @@ describe('расшифровка ответа', () => {
       cipher: 'invisible',
       field: 'displayName',
       text: 'автор',
+    });
+  });
+
+  it('расшифровывает preview нормализованного REST-уведомления', async () => {
+    const preview = hidden('обычный текст', 'секрет уведомления');
+    const { itd } = makeClient([
+      {
+        notifications: [
+          {
+            id: 'n1',
+            type: 'comment',
+            targetId: 'p1',
+            subjectId: 'c1',
+            subjectType: 'comment',
+            entityPreview: preview,
+          },
+        ],
+        hasMore: false,
+      },
+    ]);
+    itd.use(crypt());
+
+    const notification = (await itd.notifications.list()).items[0];
+
+    expect(notification?.preview).toBe(preview);
+    expect(notification?.secret).toEqual({
+      cipher: 'invisible',
+      field: 'preview',
+      text: 'секрет уведомления',
     });
   });
 

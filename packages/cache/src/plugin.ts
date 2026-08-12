@@ -4,16 +4,19 @@ import type {
   EventMiddleware,
   NotificationEventContext,
   NotificationEvents,
+  OperationId,
+  OperationMetadata,
   OperationRequestOptions,
   OperationTransformer,
   Unsubscribe,
 } from 'itd-api';
-import { NotificationUpdateType } from 'itd-api';
+import { isBuiltInOperationId, NotificationUpdateType } from 'itd-api';
 import { LRUCache } from 'lru-cache';
 import { CacheError } from './errors.js';
 import { buildCacheKey } from './key.js';
 import { type CacheMutation, cacheMutation } from './mutations.js';
-import { type CacheOperationId, cacheOperation, isCacheOperationId } from './operations.js';
+import { cacheOperation, isCacheOperationId } from './operations.js';
+import { CacheInvalidation, CachePolicyKind, CachePolicyScope } from './policy.js';
 
 /** Режимы кэширования отдельного запроса. */
 export const CacheModes = Object.freeze({
@@ -33,7 +36,7 @@ export interface CacheOptions {
   /** Сколько миллисекунд хранить успешный ответ. */
   ttl: number;
   /** Какие операции itd-api кэшировать. */
-  operations: readonly CacheOperationId[];
+  operations: readonly OperationId[];
   /** Максимальное количество ответов. По умолчанию 500. */
   maxEntries?: number | undefined;
   /** Объединять ли одновременные одинаковые запросы. По умолчанию `true`. */
@@ -47,7 +50,7 @@ export interface CachePlugin extends ClientPlugin {
   /** Удаляет все ответы и не даёт выполняющимся запросам вернуть устаревший результат. */
   clear(): void;
   /** Удаляет все варианты названных операций во всех подключённых клиентах. */
-  invalidate(...operations: CacheOperationId[]): void;
+  invalidate(...operations: OperationId[]): void;
   /**
    * Подключает инвалидацию к нормализованным событиям уведомлений.
    *
@@ -61,7 +64,7 @@ export interface CachePlugin extends ClientPlugin {
 
 interface CacheEntry {
   accountScope: string;
-  operation: CacheOperationId;
+  operation: OperationId;
   value: unknown;
 }
 
@@ -82,7 +85,7 @@ type NotificationStreamIdentity = Pick<
 
 interface PendingEntry {
   accountScope: string;
-  operation: CacheOperationId;
+  operation: OperationId;
   promise: Promise<LoadedValue>;
 }
 
@@ -104,7 +107,7 @@ function assertPositive(value: number, name: string, integer = false): void {
 
 function resolveOptions(options: CacheOptions): {
   ttl: number;
-  operations: ReadonlySet<CacheOperationId>;
+  operations: ReadonlySet<OperationId>;
   maxEntries: number;
   deduplicate: boolean;
 } {
@@ -118,12 +121,15 @@ function resolveOptions(options: CacheOptions): {
     throw new CacheError('cache.operations должен содержать хотя бы одну операцию');
   }
 
-  const operations = new Set<CacheOperationId>();
+  const operations = new Set<OperationId>();
   for (const operation of options.operations as readonly string[]) {
-    if (typeof operation !== 'string' || !isCacheOperationId(operation)) {
+    if (
+      typeof operation !== 'string' ||
+      (isBuiltInOperationId(operation) && !isCacheOperationId(operation))
+    ) {
       throw new CacheError(`Неизвестная операция кэша: ${JSON.stringify(operation)}`);
     }
-    operations.add(operation);
+    operations.add(operation as OperationId);
   }
 
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
@@ -155,7 +161,7 @@ function cacheMode(request: OperationRequestOptions): CacheMode {
   return mode;
 }
 
-/** Создаёт TTL/LRU-кэш разобранных ответов itd-api. */
+/** Создаёт TTL/LRU-кэш нормализованных результатов itd-api. */
 export function cache(options: CacheOptions): CachePlugin {
   const config = resolveOptions(options);
   const values = new LRUCache<string, CacheEntry>({
@@ -165,14 +171,14 @@ export function cache(options: CacheOptions): CachePlugin {
     allowStale: false,
   });
   const pending = new Map<string, PendingEntry>();
-  const operationGenerations = new Map<CacheOperationId, number>();
+  const operationGenerations = new Map<OperationId, number>();
   const scopeGenerations = new Map<string, number>();
   const scopeOperationGenerations = new Map<string, number>();
   const keyStates = new Map<string, KeyState>();
   let generation = 0;
   let installationSequence = 0;
 
-  const scopeOperationKey = (accountScope: string, operation: CacheOperationId): string =>
+  const scopeOperationKey = (accountScope: string, operation: OperationId): string =>
     JSON.stringify([accountScope, operation]);
 
   const clear = (): void => {
@@ -181,16 +187,17 @@ export function cache(options: CacheOptions): CachePlugin {
     pending.clear();
   };
 
-  const invalidate = (...operations: CacheOperationId[]): void => {
+  const invalidate = (...operations: OperationId[]): void => {
     if (operations.length === 0) return;
 
-    const selected = new Set<CacheOperationId>();
+    const selected = new Set<OperationId>();
     for (const operation of operations as readonly string[]) {
-      if (!isCacheOperationId(operation)) {
+      if (typeof operation !== 'string') {
         throw new CacheError(`Неизвестная операция кэша: ${JSON.stringify(operation)}`);
       }
-      selected.add(operation);
-      operationGenerations.set(operation, (operationGenerations.get(operation) ?? 0) + 1);
+      const operationId = operation as OperationId;
+      selected.add(operationId);
+      operationGenerations.set(operationId, (operationGenerations.get(operationId) ?? 0) + 1);
     }
 
     for (const [key, entry] of values.entries()) {
@@ -212,7 +219,7 @@ export function cache(options: CacheOptions): CachePlugin {
     }
   };
 
-  const invalidateScope = (accountScope: string, operations: readonly CacheOperationId[]): void => {
+  const invalidateScope = (accountScope: string, operations: readonly OperationId[]): void => {
     if (operations.length === 0) return;
 
     const selected = new Set(operations);
@@ -230,9 +237,9 @@ export function cache(options: CacheOptions): CachePlugin {
   };
 
   const applyMutation = (accountScope: string, mutation: CacheMutation): void => {
-    if (mutation.invalidates === 'all') {
+    if (mutation.invalidates === CacheInvalidation.All) {
       clearScope(accountScope);
-    } else if (mutation.scope === 'account') {
+    } else if (mutation.scope === CachePolicyScope.Account) {
       invalidateScope(accountScope, mutation.invalidates);
     } else {
       invalidate(...mutation.invalidates);
@@ -241,7 +248,7 @@ export function cache(options: CacheOptions): CachePlugin {
 
   const invalidateNotificationStream = (
     stream: NotificationStreamIdentity,
-    ...operations: CacheOperationId[]
+    ...operations: OperationId[]
   ): void => {
     const identity = stream.getAuthIdentity();
     const streamBaseUrl = stream.baseUrl;
@@ -274,6 +281,7 @@ export function cache(options: CacheOptions): CachePlugin {
     baseUrl: string,
     getAuthIdentity: (() => Promise<AuthIdentity>) | undefined,
     getAuthScope: (() => string) | undefined,
+    getOperation: (operationId: OperationId) => OperationMetadata | undefined,
   ): OperationTransformer => {
     const fallbackAuthScope = JSON.stringify([baseUrl, `installation:${installation}`]);
 
@@ -295,12 +303,29 @@ export function cache(options: CacheOptions): CachePlugin {
     };
 
     return async (request, next) => {
-      const operation = cacheOperation(request.operationId);
+      const policy = getOperation(request.operationId)?.annotations?.cache;
+      const builtInOperation = cacheOperation(request.operationId);
+      const operation =
+        builtInOperation ??
+        (policy?.kind === CachePolicyKind.Query
+          ? { id: request.operationId, category: request.operationId.split('.', 1)[0] ?? 'feature' }
+          : undefined);
       const method = request.method.toUpperCase();
-      const isRead = operation !== undefined || method === 'GET' || method === 'HEAD';
+      const isRead =
+        policy !== undefined
+          ? policy.kind === CachePolicyKind.Query
+          : operation !== undefined || method === 'GET' || method === 'HEAD';
 
       if (!isRead) {
-        const mutation = cacheMutation(request.operationId);
+        const mutation =
+          cacheMutation(request.operationId) ??
+          (policy?.kind === CachePolicyKind.Mutation
+            ? {
+                operationId: request.operationId,
+                invalidates: policy.invalidates,
+                ...(policy.scope === undefined ? {} : { scope: policy.scope }),
+              }
+            : undefined);
         const startedIdentity = mutation ? await resolveIdentity() : undefined;
         const result = await next(request);
         if (mutation && startedIdentity) {
@@ -308,7 +333,8 @@ export function cache(options: CacheOptions): CachePlugin {
           const currentIdentity = await resolveIdentity();
           if (
             currentIdentity.accountScope !== startedIdentity.accountScope &&
-            (mutation.invalidates === 'all' || mutation.scope === 'account')
+            (mutation.invalidates === CacheInvalidation.All ||
+              mutation.scope === CachePolicyScope.Account)
           ) {
             applyMutation(currentIdentity.accountScope, mutation);
           }
@@ -328,7 +354,10 @@ export function cache(options: CacheOptions): CachePlugin {
 
       const identity = await resolveIdentity();
       const scope =
-        operation.id === 'auth.sessions' ? identity.sessionScope : identity.accountScope;
+        operation.id === 'auth.sessions' ||
+        (policy?.kind === CachePolicyKind.Query && policy.scope === CachePolicyScope.Session)
+          ? identity.sessionScope
+          : identity.accountScope;
       const key = JSON.stringify([scope, unscopedKey]);
 
       if (mode === CacheModes.Reload) {
@@ -382,7 +411,8 @@ export function cache(options: CacheOptions): CachePlugin {
           const stored = cloneValue(result);
           const currentIdentity = await resolveIdentity();
           const currentScope =
-            operation.id === 'auth.sessions'
+            operation.id === 'auth.sessions' ||
+            (policy?.kind === CachePolicyKind.Query && policy.scope === CachePolicyScope.Session)
               ? currentIdentity.sessionScope
               : currentIdentity.accountScope;
 
@@ -457,7 +487,13 @@ export function cache(options: CacheOptions): CachePlugin {
     install({ operations, baseUrl, getAuthIdentity, getAuthScope }) {
       installationSequence += 1;
       operations.use(
-        createTransformer(installationSequence, baseUrl, getAuthIdentity, getAuthScope),
+        createTransformer(
+          installationSequence,
+          baseUrl,
+          getAuthIdentity,
+          getAuthScope,
+          operations.get,
+        ),
       );
     },
   };

@@ -70,6 +70,11 @@ export { decodeTree } from './walk.js';
  * Читать `secret` можно и без этого — помощником {@link secretOf}.
  */
 declare module 'itd-api' {
+  interface OperationAnnotations {
+    /** Поля тела запроса, которые операция разрешает шифровать. */
+    crypto?: { requestFields: readonly string[] } | undefined;
+  }
+
   interface RequestExtensions {
     /** Настройки скрытых сообщений для этой операции. */
     crypto?: CryptRequestOptions | undefined;
@@ -103,7 +108,7 @@ declare module 'itd-api' {
   }
 
   interface Notification {
-    /** Скрытое сообщение из `preview`, найденное событийным middleware. */
+    /** Скрытое сообщение из `preview`, найденное в REST-ответе или событии. */
     secret?: Secret;
     secrets?: Secret[];
   }

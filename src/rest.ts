@@ -119,7 +119,13 @@ export type {
   FeatureRequestOptions,
 } from './core/features.js';
 export type { ManagedClientResource } from './core/managed-resources.js';
-export { type FeatureOperationId, type OperationMethod, RetrySafety } from './core/operation.js';
+export {
+  type FeatureOperationId,
+  type OperationAnnotations,
+  type OperationMetadata,
+  type OperationMethod,
+  RetrySafety,
+} from './core/operation.js';
 export type {
   ClientHooks,
   ErrorContextHook,

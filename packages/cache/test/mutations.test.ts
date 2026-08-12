@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cacheMutation } from '../src/mutations.js';
+import { CacheInvalidation } from '../src/policy.js';
 
 describe('каталог мутаций', () => {
   it.each([
@@ -12,7 +13,7 @@ describe('каталог мутаций', () => {
   ] as const)('%s инвалидирует %s', (operationId, operation) => {
     const mutation = cacheMutation(operationId);
     expect(mutation).toBeDefined();
-    expect(mutation?.invalidates).not.toBe('all');
+    expect(mutation?.invalidates).not.toBe(CacheInvalidation.All);
     expect(mutation?.invalidates).toContain(operation);
   });
 
@@ -27,8 +28,8 @@ describe('каталог мутаций', () => {
   });
 
   it('полностью очищает раздел при смене авторизации', () => {
-    expect(cacheMutation('auth.signIn')?.invalidates).toBe('all');
-    expect(cacheMutation('auth.logout')?.invalidates).toBe('all');
+    expect(cacheMutation('auth.signIn')?.invalidates).toBe(CacheInvalidation.All);
+    expect(cacheMutation('auth.logout')?.invalidates).toBe(CacheInvalidation.All);
   });
 
   it('оставляет неизвестную мутацию для безопасного fallback', () => {

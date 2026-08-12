@@ -1,13 +1,14 @@
-import type { BuiltInOperationId, OperationId } from 'itd-api';
+import type { OperationId } from 'itd-api';
 import type { CacheOperationId } from './operations.js';
+import { CacheInvalidation, CachePolicyScope } from './policy.js';
 
-export type MutationInvalidation = readonly CacheOperationId[] | 'all';
+export type MutationInvalidation = readonly OperationId[] | CacheInvalidation;
 
 export interface CacheMutation {
-  operationId: BuiltInOperationId;
+  operationId: OperationId;
   invalidates: MutationInvalidation;
   /** По умолчанию зависимые операции удаляются у всех аккаунтов общего экземпляра. */
-  scope?: 'account' | undefined;
+  scope?: typeof CachePolicyScope.Account | undefined;
 }
 
 const POST_CONTENT = [
@@ -128,21 +129,21 @@ const CACHE_MUTATIONS = Object.freeze([
   { operationId: 'auth.refresh', invalidates: NOTHING },
   { operationId: 'auth.resendOtp', invalidates: NOTHING },
   { operationId: 'auth.forgotPassword', invalidates: NOTHING },
-  { operationId: 'auth.signUp', invalidates: 'all' },
-  { operationId: 'auth.signIn', invalidates: 'all' },
-  { operationId: 'auth.verifyOtp', invalidates: 'all' },
-  { operationId: 'auth.logout', invalidates: 'all' },
-  { operationId: 'auth.resetPassword', invalidates: 'all' },
-  { operationId: 'auth.changePassword', invalidates: 'all' },
+  { operationId: 'auth.signUp', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.signIn', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.verifyOtp', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.logout', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.resetPassword', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.changePassword', invalidates: CacheInvalidation.All },
   {
     operationId: 'auth.revokeSession',
     invalidates: ['auth.sessions'],
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'auth.revokeOtherSessions',
     invalidates: ['auth.sessions'],
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
 
   // Посты и комментарии.
@@ -185,22 +186,22 @@ const CACHE_MUTATIONS = Object.freeze([
   {
     operationId: 'notifications.markRead',
     invalidates: NOTIFICATIONS,
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'notifications.markReadBatch',
     invalidates: NOTIFICATIONS,
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'notifications.markAllRead',
     invalidates: NOTIFICATIONS,
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'notifications.updateSettings',
     invalidates: ['notifications.getSettings'],
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
 
   // Файлы и настройки аккаунта.
@@ -212,32 +213,32 @@ const CACHE_MUTATIONS = Object.freeze([
   {
     operationId: 'verification.submit',
     invalidates: ['verification.status'],
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'subscription.pay',
     invalidates: SUBSCRIPTION,
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'subscription.setAutoRenewal',
     invalidates: SUBSCRIPTION,
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'subscription.bindCard',
     invalidates: SUBSCRIPTION,
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'subscription.setDefaultMethod',
     invalidates: SUBSCRIPTION,
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
   {
     operationId: 'subscription.removeMethod',
     invalidates: SUBSCRIPTION,
-    scope: 'account',
+    scope: CachePolicyScope.Account,
   },
 
   // Эти запросы не меняют ни один доступный для кэширования ответ.

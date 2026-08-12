@@ -1,10 +1,14 @@
 import type { ClientConnection } from '../../core/connection.js';
 import type { QueryParams } from '../../core/url.js';
-import type { BuiltInOperationId } from '../../domain/operations.js';
+
+/** Operation IDs emitted by notification transports. */
+export type EventOperationId =
+  | 'events.notifications.poll.updates'
+  | 'events.notifications.poll.unread';
 
 /** Запрос транспорта к конвейеру клиента. */
 export interface EventRequestInput {
-  operationId: BuiltInOperationId;
+  operationId: EventOperationId;
   path: string;
   query?: QueryParams | undefined;
   /**

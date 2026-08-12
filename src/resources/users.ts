@@ -1,9 +1,11 @@
 import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/execution/http.js';
+import type { OperationContract } from '../core/operation.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { pickArray, pickBoolean, pickString } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
 import type { BuiltInOperationId } from '../domain/operations.js';
+import { defineBuiltInOperation } from '../domain/operations.js';
 import type { UserId, UserRef } from '../models/common.js';
 import type { Clan } from '../models/platform.js';
 import type {
@@ -14,9 +16,60 @@ import type {
   PublicProfile,
   UserSummary,
 } from '../models/users.js';
+import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
 import type { UploadedFile, UploadOptions } from './files.js';
-import { type Page, PaginationMode, type Paginator, readPagedPage } from './pagination.js';
+import {
+  type Page,
+  PaginationMode,
+  type Paginator,
+  pageOperation,
+  readPagedPage,
+} from './pagination.js';
+
+const userListOperation = <TId extends BuiltInOperationId>(id: TId) =>
+  pageOperation<UserSummary, TId>(id, (body) =>
+    readPagedPage<UserSummary>(body, 'users', 'followers', 'following', 'blocked'),
+  );
+const USERS_FOLLOWERS = userListOperation('users.followers');
+const USERS_FOLLOWING = userListOperation('users.following');
+const USERS_BLOCKED = userListOperation('users.blocked');
+const USER_LIST_OPERATIONS = {
+  'users.followers': USERS_FOLLOWERS,
+  'users.following': USERS_FOLLOWING,
+  'users.blocked': USERS_BLOCKED,
+} as const;
+const USERS_CHECK_USERNAME = defineBuiltInOperation<boolean>('users.checkUsername', (body) =>
+  pickBoolean(body, 'available'),
+);
+const USERS_SEARCH = defineBuiltInOperation<UserSummary[]>('users.search', (body) =>
+  pickArray<UserSummary>(body, 'users'),
+);
+const USERS_WHO_TO_FOLLOW = defineBuiltInOperation<UserSummary[]>('users.whoToFollow', (body) =>
+  pickArray<UserSummary>(body, 'users'),
+);
+const USERS_TOP_CLANS = defineBuiltInOperation<Clan[]>('users.topClans', (body) =>
+  pickArray<Clan>(body, 'clans'),
+);
+const USERS_PINS = defineBuiltInOperation<PinsResult>('users.pins', (body) => ({
+  pins: pickArray(body, 'pins'),
+  activePin: pickString(body, 'activePin') ?? null,
+}));
+const USERS_ME = passthroughOperation<MyProfile>('users.me');
+const USERS_UPDATE_ME = passthroughOperation<MyProfile>('users.updateMe');
+const USERS_CREATE_PROFILE = passthroughOperation<MyProfile>('users.createProfile');
+const USERS_GET = passthroughOperation<PublicProfile>('users.get');
+const USERS_FOLLOW = passthroughOperation<FollowResult>('users.follow');
+const USERS_FOLLOW_STATUS = passthroughOperation<Record<string, boolean>>('users.followStatus');
+const USERS_GET_PRIVACY = passthroughOperation<PrivacySettings>('users.getPrivacy');
+const USERS_UPDATE_PRIVACY = passthroughOperation<PrivacySettings>('users.updatePrivacy');
+const USERS_DEACTIVATE = voidOperation('users.deactivate');
+const USERS_RESTORE = voidOperation('users.restore');
+const USERS_UNFOLLOW = voidOperation('users.unfollow');
+const USERS_BLOCK = voidOperation('users.block');
+const USERS_UNBLOCK = voidOperation('users.unblock');
+const USERS_SET_PIN = voidOperation('users.setPin');
+const USERS_REMOVE_PIN = voidOperation('users.removePin');
 
 /**
  * Параметры списков пользователей.
@@ -81,19 +134,21 @@ export class UsersResource extends BaseResource {
    */
   readonly #userList = this.paginated<
     UserSummary,
-    UserListParams & { path: string; operationId: BuiltInOperationId }
+    UserListParams & {
+      path: string;
+      operation: OperationContract<Page<UserSummary>, BuiltInOperationId>;
+    }
   >({
-    operationId: (p) => p.operationId,
+    operation: (p) => p.operation,
     path: (p) => p.path,
     query: (p) => ({ limit: p.limit }),
     start: (p) => (p.page !== undefined ? { page: p.page } : {}),
-    read: (body) => readPagedPage<UserSummary>(body, 'users', 'followers', 'following', 'blocked'),
     mode: PaginationMode.Page,
   });
 
   /** Загружает свой профиль — с подпиской и признаком подтверждённого телефона. */
   me(options: RequestOptions = {}): Promise<MyProfile> {
-    return this.http.operation<MyProfile>('users.me', {
+    return this.http.execute(USERS_ME, {
       path: '/api/users/me',
       ...options,
     });
@@ -101,7 +156,7 @@ export class UsersResource extends BaseResource {
 
   /** Обновляет свой профиль. Передавайте только изменяемые поля. */
   updateMe(input: UpdateProfileInput, options: RequestOptions = {}): Promise<MyProfile> {
-    return this.http.operation<MyProfile>('users.updateMe', {
+    return this.http.execute(USERS_UPDATE_ME, {
       path: '/api/users/me',
       body: input,
       ...options,
@@ -135,7 +190,7 @@ export class UsersResource extends BaseResource {
 
   /** Деактивирует аккаунт. Вернуть его можно через {@link restore}. */
   deactivate(options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('users.deactivate', {
+    return this.voidOperation(USERS_DEACTIVATE, {
       path: '/api/users/me',
       ...options,
     });
@@ -143,7 +198,7 @@ export class UsersResource extends BaseResource {
 
   /** Восстанавливает деактивированный аккаунт. */
   restore(options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('users.restore', {
+    return this.voidOperation(USERS_RESTORE, {
       path: '/api/users/me/restore',
       ...options,
     });
@@ -154,7 +209,7 @@ export class UsersResource extends BaseResource {
     input: { username: string; displayName: string; avatar?: string },
     options: RequestOptions = {},
   ): Promise<MyProfile> {
-    return this.http.operation<MyProfile>('users.createProfile', {
+    return this.http.execute(USERS_CREATE_PROFILE, {
       path: '/api/users/profile',
       body: input,
       ...options,
@@ -173,56 +228,48 @@ export class UsersResource extends BaseResource {
    * ```
    */
   get(user: UserRef, options: RequestOptions = {}): Promise<PublicProfile> {
-    return this.http.operation<PublicProfile>('users.get', {
+    return this.http.execute(USERS_GET, {
       path: `/api/users/${encodePathSegment(user, 'user')}`,
       ...options,
     });
   }
 
   /** Проверяет, свободно ли имя пользователя. */
-  async checkUsername(username: string, options: RequestOptions = {}): Promise<boolean> {
-    const body = await this.http.operation('users.checkUsername', {
+  checkUsername(username: string, options: RequestOptions = {}): Promise<boolean> {
+    return this.http.execute(USERS_CHECK_USERNAME, {
       path: '/api/users/check-username',
       query: { username },
       ...options,
     });
-
-    return pickBoolean(body, 'available');
   }
 
   /** Ищет пользователей по строке запроса. */
-  async search(
+  search(
     query: string,
     params: { limit?: number } = {},
     options: RequestOptions = {},
   ): Promise<UserSummary[]> {
-    const body = await this.http.operation('users.search', {
+    return this.http.execute(USERS_SEARCH, {
       path: '/api/users/search',
       query: { q: query, limit: params.limit },
       ...options,
     });
-
-    return pickArray<UserSummary>(body, 'users');
   }
 
   /** Загружает рекомендации, на кого подписаться. */
-  async whoToFollow(options: RequestOptions = {}): Promise<UserSummary[]> {
-    const body = await this.http.operation('users.whoToFollow', {
+  whoToFollow(options: RequestOptions = {}): Promise<UserSummary[]> {
+    return this.http.execute(USERS_WHO_TO_FOLLOW, {
       path: '/api/users/suggestions/who-to-follow',
       ...options,
     });
-
-    return pickArray<UserSummary>(body, 'users');
   }
 
   /** Загружает рейтинг кланов. */
-  async topClans(options: RequestOptions = {}): Promise<Clan[]> {
-    const body = await this.http.operation('users.topClans', {
+  topClans(options: RequestOptions = {}): Promise<Clan[]> {
+    return this.http.execute(USERS_TOP_CLANS, {
       path: '/api/users/stats/top-clans',
       ...options,
     });
-
-    return pickArray<Clan>(body, 'clans');
   }
 
   /**
@@ -231,7 +278,7 @@ export class UsersResource extends BaseResource {
    * У закрытого профиля вместо подписки отправляется заявка — это видно по полю `status`.
    */
   follow(user: UserRef, options: RequestOptions = {}): Promise<FollowResult> {
-    return this.http.operation<FollowResult>('users.follow', {
+    return this.http.execute(USERS_FOLLOW, {
       path: `/api/users/${encodePathSegment(user, 'user')}/follow`,
       body: {},
       ...options,
@@ -240,7 +287,7 @@ export class UsersResource extends BaseResource {
 
   /** Отписывается от пользователя. */
   unfollow(user: UserRef, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('users.unfollow', {
+    return this.voidOperation(USERS_UNFOLLOW, {
       path: `/api/users/${encodePathSegment(user, 'user')}/follow`,
       ...options,
     });
@@ -329,7 +376,7 @@ export class UsersResource extends BaseResource {
    * ```
    */
   followStatus(userIds: UserId[], options: RequestOptions = {}): Promise<Record<string, boolean>> {
-    return this.http.operation<Record<string, boolean>>('users.followStatus', {
+    return this.http.execute(USERS_FOLLOW_STATUS, {
       path: '/api/users/follow-status',
       body: { userIds },
       ...options,
@@ -338,7 +385,7 @@ export class UsersResource extends BaseResource {
 
   /** Блокирует пользователя. */
   block(user: UserRef, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('users.block', {
+    return this.voidOperation(USERS_BLOCK, {
       path: `/api/users/${encodePathSegment(user, 'user')}/block`,
       body: {},
       ...options,
@@ -347,7 +394,7 @@ export class UsersResource extends BaseResource {
 
   /** Снимает блокировку. */
   unblock(user: UserRef, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('users.unblock', {
+    return this.voidOperation(USERS_UNBLOCK, {
       path: `/api/users/${encodePathSegment(user, 'user')}/block`,
       ...options,
     });
@@ -368,7 +415,7 @@ export class UsersResource extends BaseResource {
 
   /** Загружает настройки приватности. */
   getPrivacy(options: RequestOptions = {}): Promise<PrivacySettings> {
-    return this.http.operation<PrivacySettings>('users.getPrivacy', {
+    return this.http.execute(USERS_GET_PRIVACY, {
       path: '/api/users/me/privacy',
       ...options,
     });
@@ -376,7 +423,7 @@ export class UsersResource extends BaseResource {
 
   /** Обновляет настройки приватности. Передавайте только изменяемые поля. */
   updatePrivacy(input: UpdatePrivacyInput, options: RequestOptions = {}): Promise<PrivacySettings> {
-    return this.http.operation<PrivacySettings>('users.updatePrivacy', {
+    return this.http.execute(USERS_UPDATE_PRIVACY, {
       path: '/api/users/me/privacy',
       body: input,
       ...options,
@@ -388,22 +435,16 @@ export class UsersResource extends BaseResource {
    *
    * `activePin` — строка-идентификатор, а не объект.
    */
-  async pins(options: RequestOptions = {}): Promise<PinsResult> {
-    const body = await this.http.operation('users.pins', {
+  pins(options: RequestOptions = {}): Promise<PinsResult> {
+    return this.http.execute(USERS_PINS, {
       path: '/api/users/me/pins',
       ...options,
     });
-
-    return {
-      pins: pickArray(body, 'pins'),
-      // Сервер отдаёт здесь строку-идентификатор, а не объект значка.
-      activePin: pickString(body, 'activePin') ?? null,
-    };
   }
 
   /** Выбирает активный значок профиля. */
   setPin(slug: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('users.setPin', {
+    return this.voidOperation(USERS_SET_PIN, {
       path: '/api/users/me/pin',
       body: { slug },
       ...options,
@@ -412,27 +453,33 @@ export class UsersResource extends BaseResource {
 
   /** Снимает активный значок. */
   removePin(options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('users.removePin', {
+    return this.voidOperation(USERS_REMOVE_PIN, {
       path: '/api/users/me/pin',
       ...options,
     });
   }
 
   #userPage(
-    operationId: BuiltInOperationId,
+    operationId: keyof typeof USER_LIST_OPERATIONS,
     path: string,
     params: UserListParams,
     options: RequestOptions,
   ): Promise<Page<UserSummary>> {
-    return this.#userList.list({ ...params, operationId, path }, options);
+    return this.#userList.list(
+      { ...params, operation: USER_LIST_OPERATIONS[operationId], path },
+      options,
+    );
   }
 
   #userPaginator(
-    operationId: BuiltInOperationId,
+    operationId: keyof typeof USER_LIST_OPERATIONS,
     path: string,
     params: UserListParams,
     options: PaginationOptions,
   ): Paginator<UserSummary> {
-    return this.#userList.iterate({ ...params, operationId, path }, options);
+    return this.#userList.iterate(
+      { ...params, operation: USER_LIST_OPERATIONS[operationId], path },
+      options,
+    );
   }
 }

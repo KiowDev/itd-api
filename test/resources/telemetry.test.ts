@@ -274,6 +274,30 @@ describe('telemetry helpers', () => {
     expect(teardown).toHaveBeenCalledOnce();
   });
 
+  it('сохраняет право terminal-cleanup после пересборки запроса плагином', async () => {
+    const { itd, mock } = makeClient();
+    itd.use({
+      name: 'request-rebuilder',
+      install({ operations }) {
+        operations.use((request, next) =>
+          next({
+            operationId: request.operationId,
+            method: request.method,
+            path: request.path,
+            body: request.body,
+            headers: request.headers,
+          }),
+        );
+      },
+    });
+    itd.telemetry
+      .batch()
+      .interaction({ type: InteractionType.PhotoOpen, vs: 'view', postId: 'post' });
+
+    await expect(itd.dispose()).resolves.toBeUndefined();
+    expect(mock.callCount).toBe(1);
+  });
+
   it('параллельный close не лишает dispose права завершить отправку', async () => {
     const { itd, mock } = makeClient();
     itd.telemetry

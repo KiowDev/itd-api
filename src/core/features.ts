@@ -11,7 +11,15 @@ import { ItdAbortError, ItdConfigError, ItdStateError } from './errors.js';
 import type { HttpClient } from './execution/http.js';
 import type { ExtensibleOperationCatalog } from './feature-catalog.js';
 import type { ManagedClientResource } from './managed-resources.js';
-import { type FeatureOperationId, type OperationMethod, RetrySafety } from './operation.js';
+import {
+  defineOperation,
+  type FeatureOperationId,
+  identityResult,
+  type OperationAnnotations,
+  type OperationContract,
+  type OperationMethod,
+  RetrySafety,
+} from './operation.js';
 import type { Logger, RateLimitBucketOverride, RawRequestOptions } from './options.js';
 import { mergeService, type ServiceDefinition, type ServiceRegistry } from './services.js';
 
@@ -22,13 +30,17 @@ export type FeatureRequestOptions = Omit<
 >;
 
 /** Операция одного feature. Локальный ключ используется в {@link FeatureContext.request}. */
-export interface FeatureOperationDefinition {
+export interface FeatureOperationDefinition<T = unknown> {
   readonly method: OperationMethod;
   readonly retrySafety: RetrySafety;
   /** Имя сервиса из {@link ClientFeature.services}; без него используется основной API. */
   readonly service?: string | undefined;
   /** Локальное имя бакета из {@link ClientFeature.buckets}. */
   readonly bucket?: string | undefined;
+  /** Преобразует тело ответа в публичный результат операции. По умолчанию возвращает тело без изменений. */
+  readonly read?: OperationContract<T>['read'] | undefined;
+  /** Необязательные метаданные, интерпретируемые подключёнными плагинами. */
+  readonly annotations?: OperationAnnotations | undefined;
 }
 
 /** Начальные ограничения нового серверного счётчика feature. */
@@ -69,7 +81,12 @@ export interface FeatureContext {
   /** Открывает файловый источник без правил конкретного протокола загрузки. */
   readonly files: FileResolver;
 
-  /** Выполняет объявленную операцию через общие auth, plugins, retry и очереди клиента. */
+  /**
+   * Выполняет объявленную операцию через общие auth, plugins, retry и очереди клиента.
+   *
+   * Форма результата задаётся один раз полем `read` в описании операции. Плагины получают
+   * готовый результат и не видят функцию преобразования.
+   */
   request<T = unknown>(operation: string, options: FeatureRequestOptions): Promise<T>;
   /** Возвращает фактический URL объявленного сервиса с учётом настроек клиента. */
   serviceBaseUrl(name: string): string;
@@ -110,8 +127,7 @@ export interface FeatureRegistryDeps {
 }
 
 interface ResolvedFeatureOperation {
-  readonly operationId: FeatureOperationId;
-  readonly method: OperationMethod;
+  readonly contract: OperationContract<unknown, FeatureOperationId>;
   readonly service: string | undefined;
 }
 
@@ -281,6 +297,21 @@ export class FeatureRegistry {
             `feature «${name}»: bucket операции «${localName}» должен быть строкой`,
           );
         }
+        if (definition.read !== undefined && typeof definition.read !== 'function') {
+          throw new ItdConfigError(
+            `feature «${name}»: read операции «${localName}» должна быть функцией`,
+          );
+        }
+        if (
+          definition.annotations !== undefined &&
+          (typeof definition.annotations !== 'object' ||
+            definition.annotations === null ||
+            Array.isArray(definition.annotations))
+        ) {
+          throw new ItdConfigError(
+            `feature «${name}»: annotations операции «${localName}» должны быть объектом`,
+          );
+        }
         if (definition.service !== undefined && !services.has(definition.service)) {
           throw new ItdConfigError(
             `feature «${name}»: операция «${localName}» ссылается на необъявленный сервис «${definition.service}»`,
@@ -298,16 +329,27 @@ export class FeatureRegistry {
         }
 
         const operationId = `${name}.${localName}` as FeatureOperationId;
-
+        const contract = defineOperation(
+          operationId,
+          {
+            method: definition.method,
+            retrySafety: definition.retrySafety,
+            bucket,
+            ...(definition.annotations === undefined
+              ? {}
+              : { annotations: definition.annotations }),
+          },
+          definition.read ?? identityResult,
+        );
         const unregister = this.#deps.catalog.registerOperation(name, operationId, {
-          method: definition.method,
-          retrySafety: definition.retrySafety,
+          method: contract.method,
+          retrySafety: contract.retrySafety,
           bucket,
+          ...(contract.annotations === undefined ? {} : { annotations: contract.annotations }),
         });
         rollback.push(unregister);
         operations.set(localName, {
-          operationId,
-          method: definition.method,
+          contract,
           service: definition.service,
         });
       }
@@ -352,12 +394,10 @@ export class FeatureRegistry {
             delete scoped.baseUrl;
             delete scoped.retrySafety;
             delete scoped.rateLimitBucket;
-            return this.#deps.http.request<T>({
+            return this.#deps.http.execute(resolved.contract, {
               ...(scoped as FeatureRequestOptions),
-              operationId: resolved.operationId,
-              method: resolved.method,
               ...(resolved.service === undefined ? {} : { service: resolved.service }),
-            });
+            }) as Promise<T>;
           } catch (error) {
             return Promise.reject(error);
           }

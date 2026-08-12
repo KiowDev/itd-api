@@ -392,6 +392,25 @@ describe('ресурс уведомлений', () => {
     expect(marked).toBe(60);
   });
 
+  it('пропускает каждую часть markReadBatch через плагины отдельно', async () => {
+    const { itd } = makeClient(() => json({ markedCount: 1 }));
+    let calls = 0;
+    itd.use({
+      name: 'batch-observer',
+      install: ({ operations }) => {
+        operations.use(async (request, next) => {
+          if (request.operationId === 'notifications.markReadBatch') calls += 1;
+          return next(request);
+        });
+      },
+    });
+
+    await expect(
+      itd.notifications.markReadBatch(Array.from({ length: 45 }, (_, i) => `n${i}`)),
+    ).resolves.toBe(3);
+    expect(calls).toBe(3);
+  });
+
   it('не делает запросов для пустого списка', async () => {
     const { itd, mock } = makeClient([]);
 

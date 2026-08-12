@@ -10,7 +10,12 @@ import { createMultipartFileBody } from '../core/multipart.js';
 import type { RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
 import { assertAllowedMime, mimeFromFilename } from '../domain/mime.js';
+import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
+
+const FILES_UPLOAD = passthroughOperation<UploadedFile>('files.upload');
+const FILES_GET = passthroughOperation<unknown>('files.get');
+const FILES_REMOVE = voidOperation('files.remove');
 
 /** Ответ загрузки файла. */
 export interface UploadedFile {
@@ -59,7 +64,7 @@ export class FilesResource extends BaseResource {
   ): Promise<UploadedFile> {
     const bodyFactory = this.#createBodyFactory(input, uploadOptions);
 
-    return this.http.operation<UploadedFile>('files.upload', {
+    return this.http.execute(FILES_UPLOAD, {
       path: '/api/files/upload',
       bodyFactory,
       ...requestOptions,
@@ -86,7 +91,7 @@ export class FilesResource extends BaseResource {
    * Для ещё не прикреплённого файла сервер может ответить `404`.
    */
   get(fileId: string, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.operation('files.get', {
+    return this.http.execute(FILES_GET, {
       path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
       ...options,
     });
@@ -94,7 +99,7 @@ export class FilesResource extends BaseResource {
 
   /** Удаляет загруженный файл. */
   remove(fileId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('files.remove', {
+    return this.voidOperation(FILES_REMOVE, {
       path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
       ...options,
     });

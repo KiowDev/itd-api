@@ -4,8 +4,25 @@ import type { HttpClient } from '../core/execution/http.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
 import type { Comment, LikeResult } from '../models/content.js';
+import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
-import { type Page, PaginationMode, type Paginator, readPagedPage } from './pagination.js';
+import {
+  type Page,
+  PaginationMode,
+  type Paginator,
+  pageOperation,
+  readPagedPage,
+} from './pagination.js';
+
+const COMMENTS_REPLIES = pageOperation<Comment>('comments.replies', (body) =>
+  readPagedPage<Comment>(body, 'replies'),
+);
+const COMMENTS_REPLY = passthroughOperation<Comment>('comments.reply');
+const COMMENTS_UPDATE = passthroughOperation<Comment>('comments.update');
+const COMMENTS_RESTORE = passthroughOperation<Comment>('comments.restore');
+const COMMENTS_LIKE = passthroughOperation<LikeResult>('comments.like');
+const COMMENTS_UNLIKE = passthroughOperation<LikeResult>('comments.unlike');
+const COMMENTS_REMOVE = voidOperation('comments.remove');
 
 /** Параметры запроса ответов на комментарий. */
 export interface RepliesParams {
@@ -24,11 +41,10 @@ export class CommentsResource extends BaseResource {
 
   /** Ответы на комментарий: `/api/comments/{id}/replies`, постраничная пагинация. */
   readonly #replies = this.paginated<Comment, RepliesParams & { commentId: string }>({
-    operationId: 'comments.replies',
+    operation: COMMENTS_REPLIES,
     path: (p) => `/api/comments/${encodePathSegment(p.commentId, 'commentId')}/replies`,
     query: (p) => ({ limit: p.limit }),
     start: (p) => (p.page !== undefined ? { page: p.page } : {}),
-    read: (body) => readPagedPage<Comment>(body, 'replies'),
     mode: PaginationMode.Page,
   });
 
@@ -83,7 +99,7 @@ export class CommentsResource extends BaseResource {
     const attachmentIds =
       files.length > 0 ? [...existing, ...(await this.#uploadFiles(files, options))] : existing;
 
-    return this.http.operation<Comment>('comments.reply', {
+    return this.http.execute(COMMENTS_REPLY, {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/replies`,
       body: {
         content: data.content ?? '',
@@ -96,7 +112,7 @@ export class CommentsResource extends BaseResource {
 
   /** Редактирует текст комментария. */
   update(commentId: string, content: string, options: RequestOptions = {}): Promise<Comment> {
-    return this.http.operation<Comment>('comments.update', {
+    return this.http.execute(COMMENTS_UPDATE, {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}`,
       body: { content },
       ...options,
@@ -105,7 +121,7 @@ export class CommentsResource extends BaseResource {
 
   /** Удаляет комментарий. Восстановить его можно через {@link restore}. */
   remove(commentId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('comments.remove', {
+    return this.voidOperation(COMMENTS_REMOVE, {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}`,
       ...options,
     });
@@ -113,7 +129,7 @@ export class CommentsResource extends BaseResource {
 
   /** Восстанавливает удалённый комментарий. */
   restore(commentId: string, options: RequestOptions = {}): Promise<Comment> {
-    return this.http.operation<Comment>('comments.restore', {
+    return this.http.execute(COMMENTS_RESTORE, {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/restore`,
       ...options,
     });
@@ -121,7 +137,7 @@ export class CommentsResource extends BaseResource {
 
   /** Ставит реакцию на комментарий. */
   like(commentId: string, options: RequestOptions = {}): Promise<LikeResult> {
-    return this.http.operation<LikeResult>('comments.like', {
+    return this.http.execute(COMMENTS_LIKE, {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/like`,
       ...options,
     });
@@ -129,7 +145,7 @@ export class CommentsResource extends BaseResource {
 
   /** Убирает реакцию с комментария. */
   unlike(commentId: string, options: RequestOptions = {}): Promise<LikeResult> {
-    return this.http.operation<LikeResult>('comments.unlike', {
+    return this.http.execute(COMMENTS_UNLIKE, {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/like`,
       ...options,
     });

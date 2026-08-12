@@ -1,5 +1,8 @@
 import { ItdConfigError } from '../core/errors.js';
+import type { OperationContract } from '../core/operation.js';
+import type { OperationRequestOptions } from '../core/options.js';
 import { pickArray, pickBoolean, pickNumber, pickObject, pickString } from '../core/unwrap.js';
+import { type BuiltInOperationId, defineBuiltInOperation } from '../domain/operations.js';
 
 /**
  * Страница списка — единая форма для всех трёх схем пагинации API.
@@ -197,6 +200,14 @@ export function readOffsetPage<T>(body: unknown, field: string, offset: number):
     nextOffset: offset + items.length,
     raw: body,
   };
+}
+
+/** Создаёт единый контракт пагинированной операции. */
+export function pageOperation<T, TId extends BuiltInOperationId = BuiltInOperationId>(
+  id: TId,
+  read: (body: unknown, request: Readonly<OperationRequestOptions>) => Page<T>,
+): OperationContract<Page<T>, TId> {
+  return defineBuiltInOperation<Page<T>, TId>(id, read);
 }
 
 /**

@@ -1,17 +1,23 @@
 import type { OperationId } from '../../domain/operations.js';
 import type { AuthIdentity } from '../auth-provider.js';
 import type { Unsubscribe } from '../emitter.js';
+import type { OperationMetadata } from '../operation.js';
 import type { Logger, OperationRequestOptions } from '../options.js';
 
 /**
  * Обёртка одной логической операции.
  *
  * Вызывается ровно один раз независимо от retry и auth recovery. Может изменить
- * семантический запрос, обработать разобранный результат или завершить операцию локально.
+ * параметры запроса, обработать публичный результат метода или завершить операцию локально.
+ * `operationId`, HTTP-метод и retry safety задаются контрактом и не могут быть заменены.
  *
  * @param request описание логической операции; не изменяйте сам объект — передайте копию в `next`
  * @param next следующая обёртка либо выполнение операции
- * @returns разобранный результат в том виде, в котором его получит вызывающий код
+ * `next()` возвращает уже нормализованный результат: например `Page<Notification>`, а не
+ * серверный объект с полем `notifications`. Если transformer не вызывает `next`, его
+ * собственный результат считается готовым и повторно не нормализуется.
+ *
+ * @returns результат в том виде, в котором его получит вызывающий код
  *
  * @example Дописать заголовок ко всем операциям
  * ```ts
@@ -72,6 +78,8 @@ export type AttemptInterceptor = (context: AttemptContext, next: AttemptNext) =>
 
 /** Регистрация расширений логической операции. */
 export interface OperationExtensions {
+  /** Возвращает неизменяемые метаданные зарегистрированной операции. */
+  get(operationId: OperationId): OperationMetadata | undefined;
   /**
    * Подключает transformer.
    *
