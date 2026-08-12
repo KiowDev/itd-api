@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAccounts, ItdAccounts, type ItdAccountsOptions } from '../../src/accounts.js';
+import {
+  type AccountFeature,
+  createAccounts,
+  ItdAccounts,
+  type ItdAccountsOptions,
+} from '../../src/accounts.js';
 import { ItdConfigError, ItdStateError } from '../../src/core/errors.js';
+import type { ClientFeature } from '../../src/core/features.js';
 import { createKeyValueStore } from '../../src/core/key-value-store.js';
+import { RetrySafety } from '../../src/core/operation.js';
 import type { ClientPlugin } from '../../src/core/plugins/contracts.js';
 import {
   createMultiTokenStorage,
@@ -28,6 +35,40 @@ function makeAccounts(handler: MockHandler | Response[], options: ItdAccountsOpt
 
 /** Ответ на любой запрос — пустое тело в обёртке API. */
 const ok: MockHandler = () => json({ data: {} });
+
+interface AccountProbeApi {
+  readonly instance: number;
+  ping(): Promise<unknown>;
+}
+
+type ClientWithProbe = ReturnType<ItdAccounts['addAccount']> & {
+  readonly probe: AccountProbeApi;
+};
+
+function probeAccountFeature(
+  created?: (instance: number) => void,
+): AccountFeature<AccountProbeApi> {
+  let sequence = 0;
+  return {
+    key: 'probe',
+    create(): ClientFeature<AccountProbeApi> {
+      const instance = ++sequence;
+      created?.(instance);
+      return {
+        name: 'account-probe',
+        operations: {
+          ping: { method: 'GET', retrySafety: RetrySafety.Safe },
+        },
+        setup: (context) => ({
+          api: {
+            instance,
+            ping: () => context.request('ping', { path: '/api/probe' }),
+          },
+        }),
+      };
+    },
+  };
+}
 
 describe('состав контейнера', () => {
   it('заводит аккаунты и отдаёт их по имени', () => {
@@ -419,6 +460,161 @@ describe('общие и личные настройки', () => {
       /задаются контейнеру/,
     );
     expect(() => accounts.addAccount('без-очереди', { rateLimit: false })).not.toThrow();
+  });
+});
+
+describe('фабрики подключаемых модулей', () => {
+  it('устанавливает независимый модуль на каждый добавленный аккаунт', async () => {
+    const created = vi.fn();
+    const { accounts, mock } = makeAccounts(ok, {
+      features: [probeAccountFeature(created)],
+    });
+
+    const first = accounts.addAccount('a', { auth: 'token-a' }) as ClientWithProbe;
+    const second = accounts.addAccount('b', { auth: 'token-b' }) as ClientWithProbe;
+
+    expect(created).toHaveBeenCalledTimes(2);
+    expect(first.probe).not.toBe(second.probe);
+    expect(first.probe.instance).toBe(1);
+    expect(second.probe.instance).toBe(2);
+    expect(first.featureNames()).toContain('account-probe');
+
+    await first.probe.ping();
+    await second.probe.ping();
+    expect(mock.calls.map((call) => call.headers.get('authorization'))).toEqual([
+      'Bearer token-a',
+      'Bearer token-b',
+    ]);
+  });
+
+  it('устанавливает те же фабрики на восстановленные аккаунты', async () => {
+    const storage = new MemoryMultiTokenStorage({
+      a: { accessToken: 'saved-a' },
+      b: { accessToken: 'saved-b' },
+    });
+    const created = vi.fn();
+    const { accounts } = makeAccounts(ok, {
+      storage,
+      features: [probeAccountFeature(created)],
+    });
+
+    expect(await accounts.restore()).toEqual(['a', 'b']);
+    expect(created).toHaveBeenCalledTimes(2);
+    expect((accounts.account('a') as ClientWithProbe).probe.instance).toBe(1);
+    expect((accounts.account('b') as ClientWithProbe).probe.instance).toBe(2);
+  });
+
+  it('устанавливает общие плагины до вызова фабрики и setup модуля', () => {
+    const order: string[] = [];
+    const feature: AccountFeature<unknown> = {
+      create: () => {
+        order.push('create');
+        return {
+          name: 'ordered',
+          operations: {},
+          setup: () => {
+            order.push('setup');
+            return { api: {} };
+          },
+        };
+      },
+    };
+    const { accounts } = makeAccounts(ok, {
+      plugins: [{ name: 'shared', install: () => void order.push('plugin') }],
+      features: [feature],
+    });
+
+    accounts.addAccount('a');
+
+    expect(order).toEqual(['plugin', 'create', 'setup']);
+  });
+
+  it('close и dispose контейнера передаются независимым ресурсам модулей', async () => {
+    const closed: number[] = [];
+    const disposed: number[] = [];
+    let sequence = 0;
+    const feature: AccountFeature<unknown> = {
+      create: () => {
+        const instance = ++sequence;
+        return {
+          name: 'lifecycle-probe',
+          operations: {},
+          setup: () => ({
+            api: {},
+            close: () => void closed.push(instance),
+            dispose: () => void disposed.push(instance),
+          }),
+        };
+      },
+    };
+    const { accounts } = makeAccounts(ok, { features: [feature] });
+    accounts.addAccount('a');
+    accounts.addAccount('b');
+
+    await accounts.close();
+    expect(closed).toEqual([1, 2]);
+
+    await accounts.dispose();
+    expect(closed).toEqual([1, 2, 1, 2]);
+    expect(disposed).toEqual([1, 2]);
+  });
+
+  it('ошибка setup не публикует аккаунт и освобождает плагины и общий бакет', async () => {
+    const storage = new MemoryMultiTokenStorage();
+    const pluginTeardown = vi.fn();
+    const featureTeardown = vi.fn();
+    let broken = true;
+    let rps = 2;
+    const bucketFeature: AccountFeature<unknown> = {
+      create: () => ({
+        name: 'bucket-owner',
+        buckets: { work: { rps } },
+        operations: {},
+        setup: () => ({ api: {}, dispose: featureTeardown }),
+      }),
+    };
+    const failingFeature: AccountFeature<unknown> = {
+      create: () => ({
+        name: 'setup-failure',
+        operations: {},
+        setup: () => {
+          if (broken) throw new Error('setup failed');
+          return { api: {} };
+        },
+      }),
+    };
+    const { accounts } = makeAccounts(ok, {
+      storage,
+      rateLimit: { concurrency: 2 },
+      plugins: [{ name: 'resourceful', install: () => pluginTeardown }],
+      features: [bucketFeature, failingFeature],
+    });
+
+    expect(() => accounts.addAccount('a', { auth: 'token-a' })).toThrow('setup failed');
+    expect(accounts.has('a')).toBe(false);
+    expect(accounts.size).toBe(0);
+    await vi.waitFor(() => {
+      expect(featureTeardown).toHaveBeenCalledOnce();
+      expect(pluginTeardown).toHaveBeenCalledOnce();
+    });
+
+    broken = false;
+    rps = 3;
+    expect(() => accounts.addAccount('a', { auth: 'token-a' })).not.toThrow();
+    expect(accounts.has('a')).toBe(true);
+  });
+
+  it('проверяет список фабрик при создании контейнера', () => {
+    expect(() => makeAccounts(ok, { features: {} as never })).toThrow(/массивом/);
+    expect(() => makeAccounts(ok, { features: [{} as never] })).toThrow(/create/);
+    expect(() =>
+      makeAccounts(ok, {
+        features: [
+          { key: 'probe', create: () => probeAccountFeature().create() },
+          { key: 'probe', create: () => probeAccountFeature().create() },
+        ],
+      }),
+    ).toThrow(/повторно/);
   });
 });
 

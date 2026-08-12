@@ -8,6 +8,7 @@
 // а сессии складываются в одно хранилище. Подробности — в accounts.ts.
 export type {
   AccountEvents,
+  AccountFeature,
   AddAccountOptions,
   ItdAccountsOptions,
   RateLimitScope,
