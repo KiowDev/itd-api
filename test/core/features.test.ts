@@ -77,6 +77,109 @@ function plugin(transformer: OperationTransformer) {
 }
 
 describe('feature runtime', () => {
+  it('требует однозначный namespace feature', () => {
+    const itd = new ItdClient({ rateLimit: false, retry: false });
+
+    for (const name of ['probe.extra', 'Probe', 'custom:probe', '-probe']) {
+      expect(() =>
+        itd.install({
+          name,
+          operations: {},
+          setup: () => ({ api: undefined }),
+        }),
+      ).toThrow(/\[a-z\]\[a-z0-9-\]\*/);
+    }
+
+    expect(itd.featureNames()).toEqual(['status']);
+  });
+
+  it('разрешает точки в локальном имени операции', async () => {
+    const mock = createMockFetch(() => json({ data: { ok: true } }));
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      rateLimit: false,
+      retry: false,
+    });
+    const seen: string[] = [];
+    itd.use(
+      plugin((request, next) => {
+        seen.push(request.operationId);
+        return next(request);
+      }),
+    );
+    const api = itd.install({
+      name: 'chats',
+      operations: {
+        'messages.list': { method: 'GET', retrySafety: RetrySafety.Safe },
+      },
+      setup: (context) => ({
+        api: () => context.request('messages.list', { path: '/api/chats/messages' }),
+      }),
+    });
+
+    await expect(api()).resolves.toEqual({ ok: true });
+    expect(seen).toEqual(['chats.messages.list']);
+  });
+
+  it('сохраняет глубокий неизменяемый snapshot annotations', () => {
+    const itd = new ItdClient({ rateLimit: false, retry: false });
+    const source = {
+      probe: {
+        kind: 'query',
+        fields: ['message'],
+      },
+    };
+    itd.install({
+      name: 'metadata-probe',
+      operations: {
+        get: {
+          method: 'GET',
+          retrySafety: RetrySafety.Safe,
+          annotations: source,
+        },
+      },
+      setup: () => ({ api: undefined }),
+    });
+    let metadata: unknown;
+    itd.use({
+      name: 'metadata-reader',
+      install({ operations }) {
+        metadata = operations.get('metadata-probe.get')?.annotations;
+      },
+    });
+
+    source.probe.kind = 'mutation';
+    source.probe.fields.push('secret');
+    const snapshot = metadata as {
+      readonly probe: { readonly kind: string; readonly fields: readonly string[] };
+    };
+
+    expect(snapshot).toEqual({ probe: { kind: 'query', fields: ['message'] } });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.probe)).toBe(true);
+    expect(Object.isFrozen(snapshot.probe.fields)).toBe(true);
+  });
+
+  it('отвергает исполняемые и классовые значения annotations', () => {
+    const itd = new ItdClient({ rateLimit: false, retry: false });
+    const feature = (name: string, value: unknown): ClientFeature<void> => ({
+      name,
+      operations: {
+        get: {
+          method: 'GET',
+          retrySafety: RetrySafety.Safe,
+          annotations: { probe: value },
+        },
+      },
+      setup: () => ({ api: undefined }),
+    });
+
+    expect(() => itd.install(feature('function-metadata', () => undefined))).toThrow(/функции/);
+    expect(() => itd.install(feature('map-metadata', new Map()))).toThrow(/обычных объектов/);
+    expect(itd.featureNames()).toEqual(['status']);
+  });
+
   it('регистрирует сервис и операцию в общем auth/plugin pipeline', async () => {
     const mock = createMockFetch(() => json({ data: { ok: true } }));
     const seen: string[] = [];
@@ -467,6 +570,92 @@ describe('feature runtime', () => {
 
     expect(stop).toHaveBeenCalledOnce();
     expect(drain).toHaveBeenCalledOnce();
+    await client.dispose();
+  });
+
+  it.each([
+    ['full', () => new ItdClient({ rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
+  ])('регистрирует managed resource непосредственно в setup(): %s', async (_name, createClient) => {
+    const client = createClient();
+    const stop = vi.fn();
+    const drain = vi.fn(() => Promise.resolve());
+
+    expect(() =>
+      client.install({
+        name: 'managed',
+        operations: {},
+        setup: (context) => {
+          context.manage({ kind: 'managed', stop, drain });
+          return { api: undefined };
+        },
+      }),
+    ).not.toThrow();
+
+    await client.close();
+    expect(stop).toHaveBeenCalledOnce();
+    expect(drain).toHaveBeenCalledOnce();
+    await client.dispose();
+  });
+
+  it('откатывает managed resource при ошибке setup()', async () => {
+    const client = new ItdClient({ rateLimit: false, retry: false });
+    const stop = vi.fn();
+    const drain = vi.fn(() => Promise.resolve());
+    const failure = new Error('setup failed');
+
+    expect(() =>
+      client.install({
+        name: 'managed-rollback',
+        operations: {},
+        setup: (context) => {
+          context.manage({ kind: 'managed rollback', stop, drain });
+          throw failure;
+        },
+      }),
+    ).toThrow(failure);
+    expect(stop).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(drain).toHaveBeenCalledOnce());
+
+    await client.close();
+    expect(stop).toHaveBeenCalledOnce();
+    expect(client.hasFeature('managed-rollback')).toBe(false);
+    await client.dispose();
+  });
+
+  it('ошибки cleanup и logger не подменяют ошибку setup()', async () => {
+    const logError = vi.fn(() => {
+      throw new Error('logger failed');
+    });
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: logError,
+    };
+    const client = new ItdClient({ rateLimit: false, retry: false, logger });
+    const drain = vi.fn(() => Promise.reject(new Error('drain failed')));
+    const failure = new Error('setup failed');
+
+    expect(() =>
+      client.install({
+        name: 'failed-cleanup',
+        operations: {},
+        setup: (context) => {
+          context.manage({
+            kind: 'failed cleanup',
+            stop: () => {
+              throw new Error('stop failed');
+            },
+            drain,
+          });
+          throw failure;
+        },
+      }),
+    ).toThrow(failure);
+    await vi.waitFor(() => expect(drain).toHaveBeenCalledOnce());
+    expect(logError).toHaveBeenCalledTimes(2);
+
     await client.dispose();
   });
 

@@ -138,12 +138,10 @@ function requireName(value: unknown, kind: string): string {
   return value.trim();
 }
 
-function requireOperationName(value: unknown, featureName: string): string {
-  const name = requireName(value, `Операция feature «${featureName}»`);
-  if (name.includes('.')) {
-    throw new ItdConfigError(
-      `feature «${featureName}»: локальное имя операции «${name}» не должно содержать точку`,
-    );
+function requireFeatureName(value: unknown): string {
+  const name = requireName(value, 'Feature');
+  if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+    throw new ItdConfigError(`имя feature «${name}» должно соответствовать [a-z][a-z0-9-]*`);
   }
   return name;
 }
@@ -190,7 +188,7 @@ export class FeatureRegistry {
       throw new ItdConfigError('feature должен быть объектом');
     }
 
-    const name = requireName(feature.name, 'Feature');
+    const name = requireFeatureName(feature.name);
     if (this.#features.has(name)) {
       throw new ItdConfigError(`feature «${name}» уже установлен`);
     }
@@ -222,6 +220,13 @@ export class FeatureRegistry {
     const operations = new Map<string, ResolvedFeatureOperation>();
     const controller = new AbortController();
     let committed = false;
+    const reportRollbackError = (message: string, error: unknown): void => {
+      try {
+        this.#deps.logger?.error(message, error);
+      } catch {
+        // Диагностический logger не должен подменять исходную ошибку установки.
+      }
+    };
 
     try {
       for (const service of feature.services ?? []) {
@@ -269,7 +274,7 @@ export class FeatureRegistry {
       }
 
       for (const [rawLocalName, definition] of Object.entries(feature.operations)) {
-        const localName = requireOperationName(rawLocalName, name);
+        const localName = requireName(rawLocalName, `Операция feature «${name}»`);
         if (typeof definition !== 'object' || definition === null) {
           throw new ItdConfigError(
             `feature «${name}»: операция «${localName}» должна быть объектом`,
@@ -416,10 +421,45 @@ export class FeatureRegistry {
         },
         manage: (resource: ManagedClientResource): (() => void) => {
           this.#deps.assertActive(`зарегистрировать ресурс feature «${name}»`);
-          if (!committed || controller.signal.aborted) {
+          if (controller.signal.aborted) {
             throw new ItdStateError(`feature «${name}» не активен`);
           }
-          return this.#deps.manage(resource);
+          const unregister = this.#deps.manage(resource);
+          let registered = true;
+          const release = (): void => {
+            if (!registered) return;
+            registered = false;
+            unregister();
+          };
+          if (!committed) {
+            rollback.push(() => {
+              if (!registered) return;
+              if (committed) {
+                release();
+                return;
+              }
+
+              try {
+                resource.stop();
+              } catch (error) {
+                reportRollbackError(
+                  `Не удалось остановить ресурс «${resource.kind}» при откате feature «${name}»`,
+                  error,
+                );
+              } finally {
+                release();
+              }
+              void Promise.resolve()
+                .then(() => resource.drain())
+                .catch((error: unknown) => {
+                  reportRollbackError(
+                    `Не удалось освободить ресурс «${resource.kind}» при откате feature «${name}»`,
+                    error,
+                  );
+                });
+            });
+          }
+          return release;
         },
         assertActive: (action: string): void => {
           this.#deps.assertActive(action);

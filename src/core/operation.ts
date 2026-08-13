@@ -1,3 +1,4 @@
+import { ItdConfigError } from './errors.js';
 import type { OperationRequestOptions } from './options.js';
 
 /** HTTP-метод операции. */
@@ -29,7 +30,7 @@ export interface OperationMetadata {
   readonly method: OperationMethod;
   readonly retrySafety: RetrySafety;
   readonly bucket?: string;
-  readonly annotations?: OperationAnnotations;
+  readonly annotations?: Readonly<OperationAnnotations>;
 }
 
 /**
@@ -45,6 +46,53 @@ export interface OperationContract<T = unknown, TId extends string = string>
   readonly read: (body: unknown, request: Readonly<OperationRequestOptions>) => T;
 }
 
+function snapshotAnnotation(
+  value: unknown,
+  operationId: string,
+  copies: Map<object, unknown>,
+): unknown {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value;
+  if (typeof value === 'function') {
+    throw new ItdConfigError(`annotations операции «${operationId}» не должны содержать функции`);
+  }
+
+  const existing = copies.get(value);
+  if (existing !== undefined) return existing;
+
+  if (Array.isArray(value)) {
+    const copy: unknown[] = [];
+    copies.set(value, copy);
+    for (const item of value) copy.push(snapshotAnnotation(item, operationId, copies));
+    return Object.freeze(copy);
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new ItdConfigError(
+      `annotations операции «${operationId}» должны состоять из обычных объектов, массивов и примитивов`,
+    );
+  }
+
+  const copy = Object.create(prototype) as Record<PropertyKey, unknown>;
+  copies.set(value, copy);
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable) continue;
+    if (!('value' in descriptor)) {
+      throw new ItdConfigError(
+        `annotations операции «${operationId}» не должны содержать getters или setters`,
+      );
+    }
+    Object.defineProperty(copy, key, {
+      value: snapshotAnnotation(descriptor.value, operationId, copies),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return Object.freeze(copy);
+}
+
 /** Создаёт неизменяемый контракт результата. @internal */
 export function defineOperation<T, TId extends string>(
   id: TId,
@@ -52,7 +100,9 @@ export function defineOperation<T, TId extends string>(
   read: (body: unknown, request: Readonly<OperationRequestOptions>) => T,
 ): OperationContract<T, TId> {
   const annotations =
-    metadata.annotations === undefined ? undefined : Object.freeze({ ...metadata.annotations });
+    metadata.annotations === undefined
+      ? undefined
+      : (snapshotAnnotation(metadata.annotations, id, new Map()) as OperationAnnotations);
   return Object.freeze({
     id,
     ...metadata,

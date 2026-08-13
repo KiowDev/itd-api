@@ -44,15 +44,15 @@ export {
 declare module 'itd-api' {
   interface OperationAnnotations {
     /** Политика динамической feature-операции для `@itd-api/cache`. */
-    cache?:
+    readonly cache?:
       | {
-          kind: typeof CachePolicyKind.Query;
-          scope?: CachePolicyScope | undefined;
+          readonly kind: typeof CachePolicyKind.Query;
+          readonly scope?: CachePolicyScope | undefined;
         }
       | {
-          kind: typeof CachePolicyKind.Mutation;
-          invalidates: readonly OperationId[] | CacheInvalidation;
-          scope?: typeof CachePolicyScope.Account | undefined;
+          readonly kind: typeof CachePolicyKind.Mutation;
+          readonly invalidates: readonly OperationId[] | CacheInvalidation;
+          readonly scope?: typeof CachePolicyScope.Account | undefined;
         }
       | undefined;
   }

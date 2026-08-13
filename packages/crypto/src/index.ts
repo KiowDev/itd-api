@@ -72,7 +72,7 @@ export { decodeTree } from './walk.js';
 declare module 'itd-api' {
   interface OperationAnnotations {
     /** Поля тела запроса, которые операция разрешает шифровать. */
-    crypto?: { requestFields: readonly string[] } | undefined;
+    readonly crypto?: { readonly requestFields: readonly string[] } | undefined;
   }
 
   interface RequestExtensions {
