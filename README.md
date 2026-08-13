@@ -16,7 +16,7 @@
 [![license](https://img.shields.io/npm/l/itd-api.svg)](./LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/KiowDev/itd-api)
 
-Полнофункциональный TypeScript SDK для социальной сети **итд.com**.
+Полнофункциональный JavaScript/TypeScript SDK для социальной сети **итд.com**.
 Проект не является официальным SDK и не аффилирован с итд.com.
 
 [Документация](https://kiowdev.github.io/itd-api/) ·
@@ -45,6 +45,26 @@ for (const post of page.items) {
   console.log(post.author.username, post.content);
 }
 ```
+
+<details>
+<summary>Пример для JavaScript (CommonJS)</summary>
+
+```js
+const { ItdClient } = require('itd-api');
+
+async function main() {
+  const itd = new ItdClient({ auth: '<accessToken>' });
+  const page = await itd.posts.byUser('nowkie', { limit: 10 });
+
+  for (const post of page.items) {
+    console.log(post.author.username, post.content);
+  }
+}
+
+main().catch(console.error);
+```
+
+</details>
 
 Для долгоживущего приложения восстановите сохранённую сессию или настройте вход по
 [руководству по авторизации](https://kiowdev.github.io/itd-api/authentication/).
