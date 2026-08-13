@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/proxy",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "HTTP/HTTPS- и SOCKS5-прокси для fetch и WebSocket в itd-api",
   "repository": {
     "type": "git",
