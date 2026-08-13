@@ -59,7 +59,7 @@
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
   "peerDependencies": {
-    "itd-api": ">=0.8.0 <1.0.0"
+    "itd-api": ">=0.9.0 <1.0.0"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

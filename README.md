@@ -1,12 +1,12 @@
-<p align="center">
+<div align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/public/logos/itd-api-logo-horizontal-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/public/logos/itd-api-logo-horizontal.svg">
-    <img alt="itd-api" src="https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/public/logos/itd-api-logo-horizontal.svg" width="560">
+    <img alt="itd-api" src="https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/public/logos/itd-api-logo-horizontal.svg">
   </picture>
-</p>
+</div>
 
-# SDK для работы с API ITD
+# SDK для работы с API ИТД
 
 [![npm version](https://img.shields.io/npm/v/itd-api.svg)](https://www.npmjs.com/package/itd-api)
 [![npm downloads](https://img.shields.io/npm/dm/itd-api.svg)](https://www.npmjs.com/package/itd-api)
