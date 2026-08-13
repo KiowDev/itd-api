@@ -1,6 +1,6 @@
 {
   "name": "itd-api",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "JS/TS SDK & API клиент для соцсети ИТД (итд.com)",
   "repository": {
     "type": "git",
