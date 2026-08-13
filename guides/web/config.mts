@@ -188,6 +188,7 @@ export default defineConfig({
     },
   },
   head: [
+    ['link', { rel: 'describedby', href: '/itd-api/llms.txt' }],
     ['meta', { name: 'yandex-verification', content: '3aea310f682d600b' }],
     [
       'meta',

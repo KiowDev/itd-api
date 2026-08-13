@@ -1,0 +1,80 @@
+# itd-api
+
+> An unofficial JavaScript and TypeScript SDK for the API of the itd.com social network. It supports Node.js 18+, browsers, Bun, Deno, and React Native, and ships as both ESM and CommonJS with complete TypeScript types.
+
+The linked documentation is written in Russian. Start with the guides and the curated API reference for explanations and working examples. Use the generated TSDoc API to verify exact signatures and exports. Do not confuse the `itd-api` SDK with the official itd.com API or website: this project is not affiliated with itd.com.
+
+## Getting Started
+
+- [Project README](https://raw.githubusercontent.com/KiowDev/itd-api/main/README.md): SDK overview, installation, minimal example, features, packages, and compatibility.
+- [Quick Start](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/quickstart/README.md): installation, the first request, authenticated clients, publishing, pagination, and error handling.
+- [Guide Index](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/README.md): a task-oriented map of the documentation.
+
+## Guides
+
+- [Authentication and Sessions](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/authentication/README.md): access and refresh tokens, email/password sign-in, Turnstile, OTP, and session storage.
+- [Client Configuration](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/configuration/README.md): timeouts, cancellation, retries, request queues, rate limits, services, hooks, and shutdown.
+- [Real-Time Notifications](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/events/README.md): SSE, polling, handlers, filters, routing, and reconnection.
+- [Multiple Accounts](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/multi-accounts/README.md): the `ItdAccounts` container, shared settings, separate sessions, and storage.
+- [Text Markup](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/text-markup/README.md): the markup builder, Markdown, HTML, spans, links, and post formatting.
+- [Integrations](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/integrations/README.md): browser usage and CORS, HTTP/SOCKS5 proxies, and Turnstile.
+- [Plugins](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/plugins/README.md): cache and crypto plugins, custom plugin creation, interceptors, and lifecycle.
+- [Feature Modules](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/features/README.md): adding domain-specific API modules to the client and integrating them with authentication.
+
+## API Reference
+
+- [Reference Overview](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/README.md): map of client resources and shared conventions for `RequestOptions`, dates, and pagination.
+- [Client](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/client.md): `ItdClient`, resources, methods, events, and constructor options.
+- [Authentication](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/auth.md): `itd.auth`, sign-in, registration, passwords, and session management.
+- [Users](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/users.md): `itd.users`, profiles, follows, blocking, privacy, and badges.
+- [Posts](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/posts.md): `itd.posts`, feeds, publishing, reactions, reposts, polls, and post comments.
+- [Comments](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/comments.md): `itd.comments`, replies, and comment actions.
+- [Notifications](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/notifications.md): `itd.notifications`, listing, unread counts, read markers, and settings.
+- [Files](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/files.md): `itd.files`, media upload and deletion.
+- [Search and Discovery](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/discovery.md): `itd.search`, `itd.hashtags`, trends, recommendations, clans, and the portal.
+- [Notification Events](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/events.md): `itd.notifications.events`, event streams, composers, routers, and transports.
+- [Platform](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/platform.md): `itd.platform`, app versions, changelog, announcements, and service status.
+- [Subscription](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/subscription.md): `itd.subscription`, premium status, auto-renewal, and payment methods.
+- [Verification](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/verification.md): `itd.verification`, verification status and applications.
+- [Reports](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/reports.md): `itd.reports`, reporting content and users.
+- [Telemetry](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/telemetry.md): `itd.telemetry`, explicit view and interaction reporting.
+- [Shop](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/shop.md): `itd.shop`, products, delivery, orders, and email-code access.
+- [Accounts](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/accounts.md): API of the `ItdAccounts` multi-account container.
+
+## Types and Mechanics
+
+- [Data Models](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/models.md): API responses including `Post`, `Comment`, `Profile`, `Notification`, and `Attachment`.
+- [Enums](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/enums.md): SDK enums and their values.
+- [Errors](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/errors.md): the `ItdError` hierarchy, error codes, and predicate functions.
+- [Builders](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/builders.md): `post()`, `comment()`, `poll()`, `report()`, `markup()`, and `renderSpans()`.
+- [Pagination](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/pagination.md): `Page<T>`, `Paginator<T>`, and iteration with `for await`.
+- [Request Pipeline](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/request-pipeline.md): operations, network attempts, authentication, plugins, retries, and queues.
+- [Rate Limits](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/rate-limits.md): buckets, pacing, and how the client reacts to server limits.
+- [Sessions and Storage](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/storage.md): `ItdSession`, storage adapters, and platform-specific entry points.
+- [API Endpoints](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/endpoints.md): HTTP protocols, authentication, support status, and verification dates for operations.
+
+## Additional Packages
+
+- [Package Overview](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/index.md): purpose, runtime support, and role of each package in the ecosystem.
+- [@itd-api/turnstile](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/turnstile.md): obtaining Turnstile tokens in a local browser.
+- [@itd-api/proxy](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/proxy.md): HTTP and WebSocket traffic through HTTP, HTTPS, and SOCKS5 proxies.
+- [@itd-api/cache](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/cache.md): TTL/LRU caching, request deduplication, and invalidation.
+- [@itd-api/hydrate](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/hydrate.md): action methods attached directly to API models.
+- [@itd-api/crypto](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/crypto.md): hidden messages and content encryption through a plugin.
+- [@itd-api/testing](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/testing.md): operation mocks, scripted responses, an in-memory API server, and controlled time.
+
+## Exact TSDoc Signatures
+
+- [Generated API Overview](https://kiowdev.github.io/itd-api/api/): purpose of the generated reference and its entry points.
+- [itd-api](https://kiowdev.github.io/itd-api/api/generated/core/): public classes, functions, interfaces, and types from the main package and the `itd-api/rest` and `itd-api/events` entry points.
+- [itd-api/node](https://kiowdev.github.io/itd-api/api/generated/node/): Node-specific file storage and file sources.
+- [itd-api/web](https://kiowdev.github.io/itd-api/api/generated/web/): browser session storage adapters.
+- [Additional Package APIs](https://kiowdev.github.io/itd-api/api/): generated signatures for `@itd-api/turnstile`, `proxy`, `cache`, `hydrate`, `crypto`, and `testing`.
+
+## Optional
+
+- [Source Code](https://github.com/KiowDev/itd-api): repository, history, and project issues.
+- [npm Package](https://www.npmjs.com/package/itd-api): the published version of the main package.
+- [DeepWiki](https://deepwiki.com/KiowDev/itd-api): an additional automatically generated overview of the source code.
+- [Security Policy](https://raw.githubusercontent.com/KiowDev/itd-api/main/.github/SECURITY.md): supported versions and vulnerability reporting.
+- [Contributing](https://raw.githubusercontent.com/KiowDev/itd-api/main/.github/CONTRIBUTING.md): local development, checks, and contribution rules.
