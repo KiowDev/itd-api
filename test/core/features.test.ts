@@ -11,6 +11,7 @@ import { createMockFetch, json } from '../helpers/mock-fetch.js';
 interface ProbeApi {
   get(): Promise<{ ok: boolean; marked?: boolean }>;
   serviceBaseUrl(): string;
+  connection(): Promise<{ baseUrl: string; authorize: boolean; serviceHeader: string | null }>;
   signal: AbortSignal;
 }
 
@@ -33,7 +34,7 @@ function probeFeature(
       },
     ],
     buckets: {
-      read: { limit: 60, concurrency: 1 },
+      read: { limit: 60, concurrency: 1, rps: 4 },
     },
     operations: {
       get: {
@@ -44,10 +45,16 @@ function probeFeature(
       },
     },
     setup(context): FeatureInstallation<ProbeApi> {
+      const connection = context.connection('probe-api');
       return {
         api: {
           get: () => context.request('get', { path: '/api/probe' }),
           serviceBaseUrl: () => context.serviceBaseUrl('probe-api'),
+          connection: async () => ({
+            baseUrl: connection.baseUrl,
+            authorize: connection.authorize,
+            serviceHeader: (await connection.baseHeaders('/api/probe')).get('x-service'),
+          }),
           signal: context.signal,
         },
         close: () => {
@@ -70,6 +77,109 @@ function plugin(transformer: OperationTransformer) {
 }
 
 describe('feature runtime', () => {
+  it('требует однозначный namespace feature', () => {
+    const itd = new ItdClient({ rateLimit: false, retry: false });
+
+    for (const name of ['probe.extra', 'Probe', 'custom:probe', '-probe']) {
+      expect(() =>
+        itd.install({
+          name,
+          operations: {},
+          setup: () => ({ api: undefined }),
+        }),
+      ).toThrow(/\[a-z\]\[a-z0-9-\]\*/);
+    }
+
+    expect(itd.featureNames()).toEqual(['status']);
+  });
+
+  it('разрешает точки в локальном имени операции', async () => {
+    const mock = createMockFetch(() => json({ data: { ok: true } }));
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      rateLimit: false,
+      retry: false,
+    });
+    const seen: string[] = [];
+    itd.use(
+      plugin((request, next) => {
+        seen.push(request.operationId);
+        return next(request);
+      }),
+    );
+    const api = itd.install({
+      name: 'chats',
+      operations: {
+        'messages.list': { method: 'GET', retrySafety: RetrySafety.Safe },
+      },
+      setup: (context) => ({
+        api: () => context.request('messages.list', { path: '/api/chats/messages' }),
+      }),
+    });
+
+    await expect(api()).resolves.toEqual({ ok: true });
+    expect(seen).toEqual(['chats.messages.list']);
+  });
+
+  it('сохраняет глубокий неизменяемый snapshot annotations', () => {
+    const itd = new ItdClient({ rateLimit: false, retry: false });
+    const source = {
+      probe: {
+        kind: 'query',
+        fields: ['message'],
+      },
+    };
+    itd.install({
+      name: 'metadata-probe',
+      operations: {
+        get: {
+          method: 'GET',
+          retrySafety: RetrySafety.Safe,
+          annotations: source,
+        },
+      },
+      setup: () => ({ api: undefined }),
+    });
+    let metadata: unknown;
+    itd.use({
+      name: 'metadata-reader',
+      install({ operations }) {
+        metadata = operations.get('metadata-probe.get')?.annotations;
+      },
+    });
+
+    source.probe.kind = 'mutation';
+    source.probe.fields.push('secret');
+    const snapshot = metadata as {
+      readonly probe: { readonly kind: string; readonly fields: readonly string[] };
+    };
+
+    expect(snapshot).toEqual({ probe: { kind: 'query', fields: ['message'] } });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.probe)).toBe(true);
+    expect(Object.isFrozen(snapshot.probe.fields)).toBe(true);
+  });
+
+  it('отвергает исполняемые и классовые значения annotations', () => {
+    const itd = new ItdClient({ rateLimit: false, retry: false });
+    const feature = (name: string, value: unknown): ClientFeature<void> => ({
+      name,
+      operations: {
+        get: {
+          method: 'GET',
+          retrySafety: RetrySafety.Safe,
+          annotations: { probe: value },
+        },
+      },
+      setup: () => ({ api: undefined }),
+    });
+
+    expect(() => itd.install(feature('function-metadata', () => undefined))).toThrow(/функции/);
+    expect(() => itd.install(feature('map-metadata', new Map()))).toThrow(/обычных объектов/);
+    expect(itd.featureNames()).toEqual(['status']);
+  });
+
   it('регистрирует сервис и операцию в общем auth/plugin pipeline', async () => {
     const mock = createMockFetch(() => json({ data: { ok: true } }));
     const seen: string[] = [];
@@ -98,11 +208,57 @@ describe('feature runtime', () => {
 
     await expect(probe.get()).resolves.toEqual({ ok: true, marked: true });
     expect(probe.serviceBaseUrl()).toBe('https://mirror.test/root');
+    await expect(probe.connection()).resolves.toEqual({
+      baseUrl: 'https://mirror.test/root',
+      authorize: true,
+      serviceHeader: 'probe',
+    });
     expect(seen).toEqual(['probe.get']);
     expect(mock.calls[0]?.url).toBe('https://mirror.test/root/api/probe');
     expect(mock.calls[0]?.headers.get('authorization')).toBe('Bearer shared-token');
     expect(mock.calls[0]?.headers.get('x-service')).toBe('probe');
     expect(mock.calls[0]?.headers.get('x-plugin')).toBe('yes');
+  });
+
+  it('передаёт operation-плагину предметный результат feature', async () => {
+    const mock = createMockFetch(() => json({ data: { available: 1 } }));
+    const itd = new ItdClient({
+      auth: 'shared-token',
+      fetch: mock.fetch,
+      mode: 'server',
+      retry: false,
+      rateLimit: false,
+    });
+    let seen: unknown;
+    itd.use(
+      plugin(async (request, next) => {
+        const result = await next(request);
+        seen = result;
+        return result;
+      }),
+    );
+    const feature: ClientFeature<{ get(): Promise<{ available: boolean }> }> = {
+      name: 'normalized-probe',
+      operations: {
+        get: {
+          method: 'GET',
+          retrySafety: RetrySafety.Safe,
+          read: (body) => ({
+            available: (body as { available?: unknown }).available === 1,
+          }),
+        },
+      },
+      setup: (context) => ({
+        api: {
+          get: () => context.request('get', { path: '/api/probe' }),
+        },
+      }),
+    };
+
+    const result = await itd.install(feature).get();
+
+    expect(result).toEqual({ available: true });
+    expect(seen).toBe(result);
   });
 
   it('не позволяет отдельному вызову подменить metadata из manifest', async () => {
@@ -168,6 +324,48 @@ describe('feature runtime', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('применяет rps из manifest без серверных заголовков', async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockFetch(() => json({ data: { ok: true } }));
+      const itd = new ItdClient({
+        auth: 'shared-token',
+        fetch: mock.fetch,
+        mode: 'server',
+        retry: false,
+        rateLimit: { concurrency: 4 },
+      });
+      const probe = itd.install(probeFeature());
+
+      const first = probe.get();
+      const second = probe.get();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mock.callCount).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(249);
+      expect(mock.callCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mock.callCount).toBe(2);
+
+      await Promise.all([first, second]);
+      await itd.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('проверяет локальный rps объявленного бакета', () => {
+    const itd = new ItdClient({ mode: 'server', retry: false });
+    const invalid: ClientFeature<never> = {
+      ...probeFeature(),
+      buckets: { read: { rps: 0 } },
+      setup: () => ({ api: undefined as never }),
+    };
+
+    expect(() => itd.install(invalid)).toThrow(ItdConfigError);
+    expect(() => itd.install(probeFeature())).not.toThrow();
   });
 
   it('использует retrySafety из динамического каталога', async () => {
@@ -323,4 +521,218 @@ describe('feature runtime', () => {
     await expect(extended.probe.get()).resolves.toEqual({ ok: true });
     expect(rest.featureNames()).toEqual(['status', 'probe']);
   });
+
+  it.each([
+    ['full', () => new ItdClient({ rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
+  ])(
+    'feature получает общий файловый порт без зависимости от FilesResource: %s',
+    async (_name, createClient) => {
+      const client = createClient();
+      const resolve = client.install({
+        name: 'file-probe',
+        operations: {},
+        setup: (context) => ({ api: context.files.resolve.bind(context.files) }),
+      });
+
+      const source = await resolve(new Blob(['x'], { type: 'application/octet-stream' }));
+
+      expect(source).toMatchObject({ mode: 'buffer', size: 1 });
+      expect(source).not.toHaveProperty('filename');
+      await client.dispose();
+      await expect(
+        resolve(new Blob(['x'], { type: 'application/octet-stream' })),
+      ).rejects.toBeInstanceOf(ItdStateError);
+    },
+  );
+
+  it.each([
+    ['full', () => new ItdClient({ rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
+  ])('managed resource feature проходит общий lifecycle: %s', async (_name, createClient) => {
+    const client = createClient();
+    const stop = vi.fn();
+    const drain = vi.fn(() => Promise.resolve());
+    const feature: ClientFeature<{ start(): void }> = {
+      name: 'runner',
+      operations: {},
+      setup: (context) => ({
+        api: {
+          start: () => {
+            context.manage({ kind: 'runner', stop, drain });
+          },
+        },
+      }),
+    };
+
+    client.install(feature).start();
+    await client.close();
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(drain).toHaveBeenCalledOnce();
+    await client.dispose();
+  });
+
+  it.each([
+    ['full', () => new ItdClient({ rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
+  ])('регистрирует managed resource непосредственно в setup(): %s', async (_name, createClient) => {
+    const client = createClient();
+    const stop = vi.fn();
+    const drain = vi.fn(() => Promise.resolve());
+
+    expect(() =>
+      client.install({
+        name: 'managed',
+        operations: {},
+        setup: (context) => {
+          context.manage({ kind: 'managed', stop, drain });
+          return { api: undefined };
+        },
+      }),
+    ).not.toThrow();
+
+    await client.close();
+    expect(stop).toHaveBeenCalledOnce();
+    expect(drain).toHaveBeenCalledOnce();
+    await client.dispose();
+  });
+
+  it('откатывает managed resource при ошибке setup()', async () => {
+    const client = new ItdClient({ rateLimit: false, retry: false });
+    const stop = vi.fn();
+    const drain = vi.fn(() => Promise.resolve());
+    const failure = new Error('setup failed');
+
+    expect(() =>
+      client.install({
+        name: 'managed-rollback',
+        operations: {},
+        setup: (context) => {
+          context.manage({ kind: 'managed rollback', stop, drain });
+          throw failure;
+        },
+      }),
+    ).toThrow(failure);
+    expect(stop).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(drain).toHaveBeenCalledOnce());
+
+    await client.close();
+    expect(stop).toHaveBeenCalledOnce();
+    expect(client.hasFeature('managed-rollback')).toBe(false);
+    await client.dispose();
+  });
+
+  it('ошибки cleanup и logger не подменяют ошибку setup()', async () => {
+    const logError = vi.fn(() => {
+      throw new Error('logger failed');
+    });
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: logError,
+    };
+    const client = new ItdClient({ rateLimit: false, retry: false, logger });
+    const drain = vi.fn(() => Promise.reject(new Error('drain failed')));
+    const failure = new Error('setup failed');
+
+    expect(() =>
+      client.install({
+        name: 'failed-cleanup',
+        operations: {},
+        setup: (context) => {
+          context.manage({
+            kind: 'failed cleanup',
+            stop: () => {
+              throw new Error('stop failed');
+            },
+            drain,
+          });
+          throw failure;
+        },
+      }),
+    ).toThrow(failure);
+    await vi.waitFor(() => expect(drain).toHaveBeenCalledOnce());
+    expect(logError).toHaveBeenCalledTimes(2);
+
+    await client.dispose();
+  });
+
+  it.each([
+    ['full', () => new ItdClient({ rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ rateLimit: false, retry: false })],
+  ])('close() продолжает cleanup после синхронных исключений: %s', async (_name, createClient) => {
+    const client = createClient();
+    const featureClosed = vi.fn();
+    const laterFeatureClosed = vi.fn();
+    client.install({
+      name: 'closes-after-failure',
+      operations: {},
+      setup: () => ({ api: undefined, close: laterFeatureClosed }),
+    });
+    client.install({
+      name: 'throws-on-close',
+      operations: {},
+      setup: () => ({
+        api: undefined,
+        close: () => {
+          featureClosed();
+          throw new Error('feature close failed');
+        },
+      }),
+    });
+    client.install({
+      name: 'throwing-resource',
+      operations: {},
+      setup: (context) => ({
+        api: () =>
+          context.manage({
+            kind: 'throwing-resource',
+            stop() {},
+            drain() {
+              throw new Error('resource drain failed');
+            },
+          }),
+      }),
+    })();
+
+    const failure = await client.close().catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(featureClosed).toHaveBeenCalledOnce();
+    expect(laterFeatureClosed).toHaveBeenCalledOnce();
+    await client.dispose().catch(() => {});
+  });
+
+  it.each([
+    ['full', () => new ItdClient({ shutdownTimeout: 20, rateLimit: false, retry: false })],
+    ['rest', () => new ItdRestClient({ shutdownTimeout: 20, rateLimit: false, retry: false })],
+  ])(
+    'dispose() ограничивает ожидание зависшего feature и продолжает cleanup: %s',
+    async (_name, createClient) => {
+      const client = createClient();
+      const laterDispose = vi.fn();
+      client.install({
+        name: 'later-dispose',
+        operations: {},
+        setup: () => ({ api: undefined, dispose: laterDispose }),
+      });
+      client.install({
+        name: 'hanging-dispose',
+        operations: {},
+        setup: () => ({ api: undefined, dispose: () => new Promise<never>(() => {}) }),
+      });
+
+      const error = (await client.dispose().catch((cause: unknown) => cause)) as AggregateError;
+
+      expect(error).toBeInstanceOf(AggregateError);
+      expect(error.errors).toEqual([
+        expect.objectContaining({
+          message: expect.stringMatching(/подключаемых модулей.*20 мс/),
+        }),
+      ]);
+      expect(laterDispose).toHaveBeenCalledOnce();
+    },
+  );
 });

@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { connect as netConnect } from 'node:net';
-import { Agent, type Dispatcher, ProxyAgent } from 'undici';
+import { Agent, type Dispatcher, ProxyAgent, WebSocket as UndiciWebSocket } from 'undici';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createProxyDispatcher } from '../src/dispatcher.js';
 import { ProxyError } from '../src/errors.js';
-import { proxyFetch } from '../src/index.js';
+import { proxyConnection, proxyFetch, proxyWebSocket } from '../src/index.js';
 
 // Диспетчеры держат пул соединений — закрываем их, чтобы тесты не оставляли открытых хэндлов.
 const opened: Dispatcher[] = [];
@@ -135,5 +136,120 @@ describe('proxyFetch', () => {
       await close(proxy);
       await close(target);
     }
+  });
+});
+
+describe('proxyWebSocket', () => {
+  it('создаёт совместимый конструктор с собственным диспетчером прокси', async () => {
+    const WebSocketViaProxy = proxyWebSocket('http://127.0.0.1:8080');
+
+    expect(WebSocketViaProxy.prototype).toBeInstanceOf(UndiciWebSocket);
+    expect(WebSocketViaProxy.dispatcher).toBeInstanceOf(ProxyAgent);
+
+    await WebSocketViaProxy.close();
+  });
+
+  it('проверяет адрес прокси при создании конструктора', () => {
+    expect(() => proxyWebSocket('ftp://nope')).toThrow(ProxyError);
+  });
+
+  it('реально устанавливает WebSocket-соединение через HTTP-прокси', async () => {
+    const proxied: string[] = [];
+    const reachedTarget: string[] = [];
+    const seenHeaders: Array<string | undefined> = [];
+
+    const target = createServer();
+    target.on('upgrade', (request, socket) => {
+      reachedTarget.push(request.url ?? '');
+      seenHeaders.push(request.headers['x-test'] as string | undefined);
+
+      const key = request.headers['sec-websocket-key'];
+      if (typeof key !== 'string') {
+        socket.destroy();
+        return;
+      }
+
+      const accept = createHash('sha1')
+        .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest('base64');
+      socket.write(
+        `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+      );
+      socket.once('data', () => {
+        // Немаскированный серверный кадр close с кодом 1000.
+        socket.end(Buffer.from([0x88, 0x02, 0x03, 0xe8]));
+      });
+    });
+
+    const proxy = createServer();
+    proxy.on('connect', (request, clientSocket, head) => {
+      proxied.push(request.url ?? '');
+      const [host, port] = (request.url ?? '').split(':');
+      const upstream = netConnect(Number(port), host, () => {
+        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        if (head.length > 0) upstream.write(head);
+        upstream.pipe(clientSocket);
+        clientSocket.pipe(upstream);
+      });
+      upstream.on('error', () => clientSocket.destroy());
+    });
+
+    const listen = (server: Server) =>
+      new Promise<number>((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+          const address = server.address();
+          if (address === null || typeof address === 'string')
+            throw new Error('unexpected address');
+          resolve(address.port);
+        });
+      });
+    const close = (server: Server) =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+
+    const targetPort = await listen(target);
+    const proxyPort = await listen(proxy);
+    const WebSocketViaProxy = proxyWebSocket(`http://127.0.0.1:${proxyPort}`);
+
+    try {
+      const socket = new WebSocketViaProxy(`ws://127.0.0.1:${targetPort}/events`, [], {
+        headers: { 'X-Test': 'events' },
+      });
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener('open', () => resolve());
+        socket.addEventListener('error', () => reject(new Error('WebSocket не открылся')));
+      });
+
+      const closed = new Promise<void>((resolve) => {
+        socket.addEventListener('close', () => resolve());
+      });
+      socket.close();
+      await closed;
+
+      expect(proxied).toEqual([`127.0.0.1:${targetPort}`]);
+      expect(reachedTarget).toEqual(['/events']);
+      expect(seenHeaders).toEqual(['events']);
+    } finally {
+      await WebSocketViaProxy.close();
+      await close(proxy);
+      await close(target);
+    }
+  });
+});
+
+describe('proxyConnection', () => {
+  it('переиспользует один диспетчер для fetch и WebSocket', async () => {
+    const connection = proxyConnection('socks5://127.0.0.1:1080', {
+      fetch: (async () => new Response('ok')) as typeof fetch,
+    });
+
+    await connection.fetch('https://example.test');
+
+    expect(connection.dispatcher).toBeInstanceOf(Agent);
+    expect(connection.fetch).toHaveProperty('dispatcher', connection.dispatcher);
+    expect(connection.webSocket.dispatcher).toBe(connection.dispatcher);
+
+    await connection.close();
   });
 });

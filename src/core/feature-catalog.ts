@@ -42,6 +42,10 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
     return this.#base.defaultBucket;
   }
 
+  definitionOf(id: string) {
+    return this.#operations.get(id) ?? this.#base.definitionOf(id);
+  }
+
   retrySafetyOf(id: string) {
     return this.#operations.get(id)?.retrySafety ?? this.#base.retrySafetyOf(id);
   }
@@ -66,8 +70,11 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
 
     this.#bucketOwners.set(name, owner);
     if (definition.limit !== undefined) this.#bucketLimits[name] = definition.limit;
-    if (definition.concurrency !== undefined) {
-      this.#bucketOverrides[name] = Object.freeze({ concurrency: definition.concurrency });
+    if (definition.concurrency !== undefined || definition.rps !== undefined) {
+      this.#bucketOverrides[name] = Object.freeze({
+        ...(definition.concurrency === undefined ? {} : { concurrency: definition.concurrency }),
+        ...(definition.rps === undefined ? {} : { rps: definition.rps }),
+      });
     }
 
     return () => {

@@ -34,7 +34,7 @@
     "paths": {
       "itd-api": ["./src/index.ts"],
       "itd-api/rest": ["./src/rest.ts"],
-      "itd-api/realtime": ["./src/realtime.ts"],
+      "itd-api/events": ["./src/events.ts"],
       "itd-api/node": ["./src/node.ts"],
       "itd-api/web": ["./src/web.ts"]
     }

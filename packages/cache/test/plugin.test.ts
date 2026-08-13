@@ -1,12 +1,19 @@
 import {
   type ClientPlugin,
+  type EventMiddleware,
+  type EventMiddlewareObject,
   ItdClient,
   type ItdClientOptions,
-  type ItdRealtime,
+  type Notification,
+  type NotificationEventContext,
+  type NotificationEvents,
+  NotificationUpdateOrigin,
+  NotificationUpdateType,
   RetrySafety,
+  runEventMiddleware,
 } from 'itd-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CacheError, type CachePlugin, cache } from '../src/index.js';
+import { CacheError, type CachePlugin, CachePolicyKind, cache } from '../src/index.js';
 
 type FetchHandler = (url: string, init: RequestInit, call: number) => Response | Promise<Response>;
 
@@ -88,6 +95,45 @@ describe('настройки', () => {
 });
 
 describe('TTL/LRU-кэш', () => {
+  it('поддерживает query и mutation подключаемого feature через метаданные операций', async () => {
+    const { itd, calls } = makeClient((_url, init, call) =>
+      json(init.method === 'POST' ? { sent: true } : { id: `chat-${call}` }),
+    );
+    itd.use(cache({ ttl: 60_000, operations: ['chats.get'] }));
+    const chats = itd.install({
+      name: 'chats',
+      operations: {
+        get: {
+          method: 'GET',
+          retrySafety: RetrySafety.Safe,
+          annotations: { cache: { kind: CachePolicyKind.Query } },
+        },
+        send: {
+          method: 'POST',
+          retrySafety: RetrySafety.Unsafe,
+          annotations: {
+            cache: { kind: CachePolicyKind.Mutation, invalidates: ['chats.get'] },
+          },
+        },
+      },
+      setup: (context) => ({
+        api: {
+          get: () => context.request<{ id: string }>('get', { path: '/api/chats/1' }),
+          send: () => context.request('send', { path: '/api/chats/1/messages', body: {} }),
+        },
+      }),
+    });
+
+    const first = await chats.get();
+    const cached = await chats.get();
+    await chats.send();
+    const refreshed = await chats.get();
+
+    expect(cached).toEqual(first);
+    expect(refreshed).not.toEqual(first);
+    expect(calls).toHaveLength(3);
+  });
+
   it('кэширует встроенный status feature по custom ID', async () => {
     const { itd, calls } = makeClient(() => json({ overall_status: 'operational', services: [] }));
     itd.use(cache({ ttl: 60_000, operations: ['status.get'] }));
@@ -198,6 +244,38 @@ describe('TTL/LRU-кэш', () => {
 
     expect(second.content).toBe('исходный');
     expect(second).not.toBe(first);
+  });
+
+  it('сохраняет нормализованный результат списочного метода', async () => {
+    const { itd, calls } = makeClient(() =>
+      json({
+        notifications: [
+          {
+            id: 'n1',
+            type: 'comment',
+            targetId: 'p1',
+            subjectId: 'c1',
+            subjectType: 'comment',
+            entityPreview: 'комментарий',
+          },
+        ],
+        hasMore: false,
+      }),
+    );
+    itd.use(cache({ ttl: 60_000, operations: ['notifications.list'] }));
+
+    const first = await itd.notifications.list();
+    const second = await itd.notifications.list();
+
+    expect(calls).toHaveLength(1);
+    expect(second).not.toBe(first);
+    expect(second.items[0]).toMatchObject({
+      type: 'post_comment',
+      entityId: 'c1',
+      parentEntityId: 'p1',
+      preview: 'комментарий',
+    });
+    expect(second.raw).toHaveProperty('notifications');
   });
 
   it('пропускает несериализуемый ответ без поломки запроса', async () => {
@@ -731,18 +809,18 @@ describe('область экземпляра', () => {
   });
 });
 
-class FakeRealtime {
-  readonly #listeners = new Map<string, Set<() => void>>();
+class FakeEvents {
+  readonly #middleware: EventMiddleware<NotificationEventContext>[] = [];
   readonly #authIdentity:
     | { userId?: string | undefined; sessionId?: string | undefined }
     | undefined;
   readonly #authScope: string | undefined;
-  readonly baseUrl: string | undefined;
+  readonly baseUrl: string;
 
   constructor(
     authScope?: string,
     authIdentity?: { userId?: string | undefined; sessionId?: string | undefined },
-    baseUrl?: string,
+    baseUrl = 'https://itd.test',
   ) {
     this.#authScope = authScope;
     this.#authIdentity = authIdentity;
@@ -757,15 +835,38 @@ class FakeRealtime {
     return this.#authIdentity;
   }
 
-  on(event: string, listener: () => void): () => void {
-    const listeners = this.#listeners.get(event) ?? new Set();
-    listeners.add(listener);
-    this.#listeners.set(event, listeners);
-    return () => listeners.delete(listener);
+  use(
+    middleware:
+      | EventMiddleware<NotificationEventContext>
+      | EventMiddlewareObject<NotificationEventContext>,
+  ): () => void {
+    const resolved = typeof middleware === 'function' ? middleware : middleware.middleware();
+    this.#middleware.push(resolved);
+    return () => {
+      const index = this.#middleware.indexOf(resolved);
+      if (index >= 0) this.#middleware.splice(index, 1);
+    };
   }
 
-  emit(event: string): void {
-    for (const listener of this.#listeners.get(event) ?? []) listener();
+  async emit(type: 'notification' | 'unreadCount'): Promise<void> {
+    const update =
+      type === 'notification'
+        ? {
+            type: NotificationUpdateType.Notification,
+            data: {
+              notification: {} as Notification,
+              unreadCount: undefined,
+              sound: false,
+            },
+          }
+        : { type: NotificationUpdateType.UnreadCount, data: 1 };
+    const context = {
+      update,
+      stream: this,
+      raw: undefined,
+      origin: NotificationUpdateOrigin.Stream,
+    } as unknown as NotificationEventContext;
+    await runEventMiddleware([...this.#middleware], context, async () => {});
   }
 }
 
@@ -774,7 +875,7 @@ async function fillNotifications(itd: ItdClient): Promise<void> {
   await itd.notifications.count();
 }
 
-describe('realtime', () => {
+describe('события', () => {
   it('очищает список и счётчик и позволяет отписаться', async () => {
     const { itd } = makeClient((url) =>
       url.endsWith('/count')
@@ -789,22 +890,25 @@ describe('realtime', () => {
     await fillNotifications(itd);
     expect(cached.size).toBe(2);
 
-    const realtime = new FakeRealtime();
-    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
+    const events = new FakeEvents();
+    const detach = cached.attachNotificationEvents(events as unknown as NotificationEvents);
     expect(cached.size).toBe(0);
 
+    // Инвалидатор подключён раньше прикладного фильтра, поэтому тот не мешает консистентности.
+    const removeFilter = events.use(async () => {});
     await fillNotifications(itd);
-    realtime.emit('notification');
+    await events.emit('notification');
     expect(cached.size).toBe(0);
 
     await itd.notifications.count();
     expect(cached.size).toBe(1);
-    realtime.emit('unreadCount');
+    await events.emit('unreadCount');
     expect(cached.size).toBe(0);
 
     await fillNotifications(itd);
+    removeFilter();
     detach();
-    realtime.emit('notification');
+    await events.emit('notification');
     expect(cached.size).toBe(2);
   });
 
@@ -825,13 +929,9 @@ describe('realtime', () => {
     await fillNotifications(b.itd);
     expect(cached.size).toBe(4);
 
-    const source = a.itd.realtime({ syncCount: false });
-    const realtime = new FakeRealtime(
-      source.getAuthScope(),
-      source.getAuthIdentity(),
-      source.baseUrl,
-    );
-    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
+    const source = a.itd.notifications.events;
+    const events = new FakeEvents(source.getAuthScope(), source.getAuthIdentity(), source.baseUrl);
+    const detach = cached.attachNotificationEvents(events as unknown as NotificationEvents);
     expect(cached.size).toBe(2);
 
     await fillNotifications(a.itd);
@@ -839,7 +939,7 @@ describe('realtime', () => {
     expect(a.calls).toHaveLength(4);
     expect(b.calls).toHaveLength(2);
 
-    realtime.emit('notification');
+    await events.emit('notification');
     expect(cached.size).toBe(2);
 
     detach();
@@ -863,13 +963,13 @@ describe('realtime', () => {
     await fillNotifications(b.itd);
     expect(cached.size).toBe(4);
 
-    const detach = cached.attachRealtime(new FakeRealtime() as unknown as ItdRealtime);
-
+    const events = new FakeEvents();
+    const detach = cached.attachNotificationEvents(events as unknown as NotificationEvents);
     expect(cached.size).toBe(0);
     detach();
   });
 
-  it('не сохраняет уведомления, запрошенные до realtime-события', async () => {
+  it('не сохраняет уведомления, запрошенные до события', async () => {
     let release!: (response: Response) => void;
     const oldResponse = new Promise<Response>((resolve) => {
       release = resolve;
@@ -885,14 +985,10 @@ describe('realtime', () => {
     const stale = itd.notifications.list();
     await vi.waitFor(() => expect(calls).toHaveLength(1));
 
-    const source = itd.realtime({ syncCount: false });
-    const realtime = new FakeRealtime(
-      source.getAuthScope(),
-      source.getAuthIdentity(),
-      source.baseUrl,
-    );
-    const detach = cached.attachRealtime(realtime as unknown as ItdRealtime);
-    realtime.emit('notification');
+    const source = itd.notifications.events;
+    const events = new FakeEvents(source.getAuthScope(), source.getAuthIdentity(), source.baseUrl);
+    const detach = cached.attachNotificationEvents(events as unknown as NotificationEvents);
+    await events.emit('notification');
 
     release(json({ notifications: [], pagination: { total: 0, hasMore: false } }));
     await stale;
@@ -904,8 +1000,8 @@ describe('realtime', () => {
     source.disconnect();
   });
 
-  it('проверяет переданный поток', () => {
+  it('проверяет переданный канал', () => {
     const cached: CachePlugin = cache({ ttl: 1_000, operations: ['notifications.list'] });
-    expect(() => cached.attachRealtime({} as ItdRealtime)).toThrow(CacheError);
+    expect(() => cached.attachNotificationEvents({} as NotificationEvents)).toThrow(CacheError);
   });
 });

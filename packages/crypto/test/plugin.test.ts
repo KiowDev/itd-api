@@ -1,4 +1,12 @@
-import { ItdClient } from 'itd-api';
+import {
+  type EventContext,
+  ItdClient,
+  type NotificationUpdate,
+  NotificationUpdateOrigin,
+  NotificationUpdateType,
+  RetrySafety,
+  runEventMiddleware,
+} from 'itd-api';
 import { describe, expect, it } from 'vitest';
 import {
   beecrypt,
@@ -62,6 +70,37 @@ describe('порядок плагинов', () => {
 });
 
 describe('шифрование запроса', () => {
+  it('шифрует поля подключаемого feature из метаданных операции', async () => {
+    const { itd, calls } = makeClient([{ id: 'm1' }]);
+    itd.use(crypt());
+    const chats = itd.install({
+      name: 'chats',
+      operations: {
+        send: {
+          method: 'POST',
+          retrySafety: RetrySafety.Unsafe,
+          annotations: { crypto: { requestFields: ['message'] } },
+        },
+      },
+      setup: (context) => ({
+        api: {
+          send: (message: string) =>
+            context.request('send', {
+              path: '/api/chats/1/messages',
+              body: { message },
+              ...cryptoOptions({ encrypt: 'invisible' }),
+            }),
+        },
+      }),
+    });
+
+    await chats.send('секрет');
+
+    const sent = String(calls[0]?.body.message);
+    expect(stripInvisible(sent)).toBe('');
+    expect(invisible.decode(sent)).toBe('секрет');
+  });
+
   it('прячет текст поста', async () => {
     const { itd, calls } = makeClient([{ id: '1' }]);
     itd.use(crypt());
@@ -268,6 +307,35 @@ describe('расшифровка ответа', () => {
     });
   });
 
+  it('расшифровывает preview нормализованного REST-уведомления', async () => {
+    const preview = hidden('обычный текст', 'секрет уведомления');
+    const { itd } = makeClient([
+      {
+        notifications: [
+          {
+            id: 'n1',
+            type: 'comment',
+            targetId: 'p1',
+            subjectId: 'c1',
+            subjectType: 'comment',
+            entityPreview: preview,
+          },
+        ],
+        hasMore: false,
+      },
+    ]);
+    itd.use(crypt());
+
+    const notification = (await itd.notifications.list()).items[0];
+
+    expect(notification?.preview).toBe(preview);
+    expect(notification?.secret).toEqual({
+      cipher: 'invisible',
+      field: 'preview',
+      text: 'секрет уведомления',
+    });
+  });
+
   it('собирает несколько находок профиля', async () => {
     const { itd } = makeClient([
       { id: 'u1', displayName: hidden('Имя', 'первое'), bio: hidden('о себе', 'второе') },
@@ -311,6 +379,61 @@ describe('расшифровка ответа', () => {
     const post = await itd.posts.get('1', cryptoOptions({ decrypt: true }));
 
     expect(post.secret?.text).toBe('секрет');
+  });
+});
+
+describe('расшифровка событий', () => {
+  const context = (preview: string): EventContext<NotificationUpdate> => ({
+    update: {
+      type: NotificationUpdateType.Notification,
+      data: {
+        notification: {
+          id: 'notification-1',
+          type: 'post_comment',
+          rawType: 'comment',
+          entityId: 'comment-1',
+          parentEntityId: 'post-1',
+          isRead: false,
+          actors: [],
+          count: 1,
+          preview,
+          createdAt: '2026-08-12T00:00:00.000Z',
+          updatedAt: '2026-08-12T00:00:00.000Z',
+          raw: {},
+        },
+        unreadCount: undefined,
+        sound: false,
+      },
+    },
+    stream: {},
+    raw: undefined,
+    origin: NotificationUpdateOrigin.Stream,
+  });
+
+  it('работает как промежуточный обработчик нормализованных событий', async () => {
+    const plugin = crypt();
+    const event = context(`обычный текст${encodeInvisible('секрет')}`);
+    let delivered = false;
+
+    await runEventMiddleware([plugin.middleware()], event, async () => {
+      delivered = true;
+      expect(event.update.data.notification.secret?.text).toBe('секрет');
+    });
+
+    expect(delivered).toBe(true);
+  });
+
+  it('учитывает общую настройку decrypt и всегда продолжает цепочку', async () => {
+    const plugin = crypt({ decrypt: false });
+    const event = context(`текст${encodeInvisible('секрет')}`);
+    let delivered = false;
+
+    await runEventMiddleware([plugin.middleware()], event, async () => {
+      delivered = true;
+    });
+
+    expect(delivered).toBe(true);
+    expect(event.update.data.notification.secret).toBeUndefined();
   });
 });
 

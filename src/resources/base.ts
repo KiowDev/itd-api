@@ -1,4 +1,5 @@
-import type { HttpClient } from '../core/execution/http.js';
+import type { HttpClient, HttpOperationOptions } from '../core/execution/http.js';
+import type { OperationContract } from '../core/operation.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import type { QueryParams } from '../core/url.js';
 import type { BuiltInOperationId } from '../domain/operations.js';
@@ -16,13 +17,13 @@ import { Paginator } from './pagination.js';
  */
 export interface ListingSpec<T, P extends object> {
   /** Стабильная семантическая операция списка. */
-  operationId: BuiltInOperationId | ((params: P) => BuiltInOperationId);
+  operation:
+    | OperationContract<Page<T>, BuiltInOperationId>
+    | ((params: P) => OperationContract<Page<T>, BuiltInOperationId>);
   /** Путь эндпоинта. */
   path: (params: P) => string;
   /** Параметры запроса без полей пагинации — их добавит перебор. */
   query: (params: P) => QueryParams;
-  /** Читает страницу из ответа. Получает позицию — она нужна схеме со смещением. */
-  read: (body: unknown, state: PageState) => Page<T>;
   /** Схема пагинации эндпоинта. */
   mode: PaginationMode;
   /** Начальная позиция, вычисленная из параметров (курсор, номер или смещение). */
@@ -44,6 +45,14 @@ export class BaseResource {
 
   constructor(http: HttpClient) {
     this.http = http;
+  }
+
+  /** Выполняет операцию без возвращаемого значения и отбрасывает служебное тело ответа. */
+  protected voidOperation(
+    operation: OperationContract<void, BuiltInOperationId>,
+    options: HttpOperationOptions,
+  ): Promise<void> {
+    return this.http.execute(operation, options);
   }
 
   /**
@@ -76,11 +85,10 @@ export class BaseResource {
    * @example
    * ```ts
    * #feed = this.paginated<Post, FeedParams>({
-   *   operationId: 'posts.list',
+   *   operation: POSTS_LIST,
    *   path: () => '/api/posts',
    *   query: (p) => ({ tab: p.tab, limit: p.limit }),
    *   start: (p) => (p.cursor ? { cursor: p.cursor } : {}),
-   *   read: (body) => readCursorPage<Post>(body, 'posts'),
    *   mode: PaginationMode.Cursor,
    * });
    * ```
@@ -91,14 +99,13 @@ export class BaseResource {
       state: PageState,
       options: RequestOptions = {},
     ): Promise<Page<T>> => {
-      const operationId =
-        typeof spec.operationId === 'function' ? spec.operationId(params) : spec.operationId;
-      const body = await this.http.operation(operationId, {
+      const operation =
+        typeof spec.operation === 'function' ? spec.operation(params) : spec.operation;
+      return this.http.execute(operation, {
         path: spec.path(params),
         query: withPageState(spec.query(params), state),
         ...options,
       });
-      return spec.read(body, state);
     };
 
     return {

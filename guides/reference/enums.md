@@ -1,6 +1,6 @@
-# Перечисления
+# Enum
 
-Перечисления заданы парой «замороженный объект + одноимённый тип»: `FeedTab.Popular` работает
+Enum заданы парой «замороженный объект + одноимённый тип»: `FeedTab.Popular` работает
 как константа, `FeedTab` — как тип. Обычные строки тоже принимаются
 (`itd.posts.list({ tab: 'popular' })`).
 
@@ -73,9 +73,9 @@
 
 `Nobody` `'nobody'` · `Mutual` `'mutual'` (взаимные) · `Followers` `'followers'` · `Everyone` `'everyone'`.
 
-## RealtimeStatus
+## EventChannelStatus
 
-Состояние realtime-соединения.
+Состояние соединения событийного канала.
 
 `Connecting` · `Connected` · `Error` · `Disconnected`.
 
@@ -95,7 +95,7 @@
 
 ## Телеметрия
 
-Числовые wire-коды для методов `itd.telemetry.*`. Библиотека сама
+Числовые коды протокола для методов `itd.telemetry.*`. Библиотека сама
 телеметрию не отправляет. См. [справочник методов](./telemetry.md).
 
 `InteractionType`:

@@ -1,4 +1,4 @@
-import type { OperationMethod, RetrySafety } from './operation.js';
+import type { OperationMetadata, OperationMethod, RetrySafety } from './operation.js';
 import type { RateLimitBucketOverride } from './options.js';
 
 /**
@@ -12,6 +12,8 @@ import type { RateLimitBucketOverride } from './options.js';
  * @internal
  */
 export interface OperationCatalog {
+  /** Публичные метаданные операции. Reader намеренно не входит в этот каталог. */
+  definitionOf(id: string): OperationMetadata | undefined;
   /** Безопасность повтора операции. `undefined` — операция каталогу неизвестна. */
   retrySafetyOf(id: string): RetrySafety | undefined;
   /** HTTP-метод операции. `undefined` — операция каталогу неизвестна. */

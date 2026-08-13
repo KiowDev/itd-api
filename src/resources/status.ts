@@ -28,12 +28,11 @@ export class StatusResource {
     this.#context = context;
   }
 
-  async get(options: RequestOptions = {}): Promise<PlatformStatus> {
-    const body = await this.#context.request<PlatformStatus>('get', {
+  get(options: RequestOptions = {}): Promise<PlatformStatus> {
+    return this.#context.request<PlatformStatus>('get', {
       path: '/api/status',
       ...options,
     });
-    return normalizeStatus(body);
   }
 }
 
@@ -53,6 +52,7 @@ export function createStatusFeature(): ClientFeature<StatusResource> {
         method: 'GET',
         retrySafety: RetrySafety.Safe,
         service: STATUS_SERVICE,
+        read: (body) => normalizeStatus(body as PlatformStatus),
       },
     },
     setup: (context) => ({ api: new StatusResource(context) }),

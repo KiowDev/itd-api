@@ -1,25 +1,21 @@
-import { boundedFileStream, isBoundedFileStream } from '../core/attachments/bounded-stream.js';
-import {
-  type FileContent,
-  type FileContext,
-  type FileInput,
-  type FileStreamContent,
-  FileTransferMode,
-  type LazyFile,
-  type StreamFile,
-  type UrlFile,
-} from '../core/attachments/contracts.js';
-import { resolveFileStreamOptions } from '../core/attachments/options.js';
-import { downloadFile, normalizeMimeType, openUrlFile } from '../core/attachments/url-source.js';
-import { ItdConfigError, ItdError, ItdFileError, ItdFileErrorReason } from '../core/errors.js';
+import { type FileInput, FileTransferMode } from '../core/attachments/contracts.js';
+import type {
+  InternalFileResolver,
+  PreparedBufferSource,
+  PreparedFileSource,
+} from '../core/attachments/resolver.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestBodyFactory } from '../core/execution/pipeline.js';
 import { createMultipartFileBody } from '../core/multipart.js';
 import type { RequestOptions } from '../core/options.js';
-import { isBlob, isFile } from '../core/runtime.js';
 import { encodePathSegment } from '../core/url.js';
 import { assertAllowedMime, mimeFromFilename } from '../domain/mime.js';
+import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
+
+const FILES_UPLOAD = passthroughOperation<UploadedFile>('files.upload');
+const FILES_GET = passthroughOperation<unknown>('files.get');
+const FILES_REMOVE = voidOperation('files.remove');
 
 /** Ответ загрузки файла. */
 export interface UploadedFile {
@@ -46,29 +42,13 @@ export interface UploadOptions {
 /** Таймаут одной попытки загрузки файла — 5 минут. */
 export const DEFAULT_UPLOAD_TIMEOUT = 300_000;
 
-interface PreparedBuffer {
-  mode: 'buffer';
-  blob: Blob;
-  filename: string;
-}
-
-interface PreparedStream {
-  mode: 'stream';
-  stream: ReadableStream<Uint8Array>;
-  filename: string;
-  contentType: string;
-  close?: (() => void | Promise<void>) | undefined;
-}
-
-type PreparedFile = PreparedBuffer | PreparedStream;
-
 /** Файлы и медиа. */
 export class FilesResource extends BaseResource {
-  readonly #fetch: typeof fetch;
+  readonly #files: InternalFileResolver;
 
-  constructor(http: HttpClient, deps: { fetch: typeof fetch }) {
+  constructor(http: HttpClient, deps: { files: InternalFileResolver }) {
     super(http);
-    this.#fetch = deps.fetch;
+    this.#files = deps.files;
   }
 
   /**
@@ -84,7 +64,7 @@ export class FilesResource extends BaseResource {
   ): Promise<UploadedFile> {
     const bodyFactory = this.#createBodyFactory(input, uploadOptions);
 
-    return this.http.operation<UploadedFile>('files.upload', {
+    return this.http.execute(FILES_UPLOAD, {
       path: '/api/files/upload',
       bodyFactory,
       ...requestOptions,
@@ -111,7 +91,7 @@ export class FilesResource extends BaseResource {
    * Для ещё не прикреплённого файла сервер может ответить `404`.
    */
   get(fileId: string, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.operation('files.get', {
+    return this.http.execute(FILES_GET, {
       path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
       ...options,
     });
@@ -119,7 +99,7 @@ export class FilesResource extends BaseResource {
 
   /** Удаляет загруженный файл. */
   remove(fileId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('files.remove', {
+    return this.voidOperation(FILES_REMOVE, {
       path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
       ...options,
     });
@@ -130,207 +110,67 @@ export class FilesResource extends BaseResource {
    * заново, поэтому каждая транспортная попытка получает непрочитанное тело.
    */
   #createBodyFactory(input: FileInput, options: UploadOptions): RequestBodyFactory {
-    const streamMode = this.#isStreamInput(input);
-    let buffered: Promise<PreparedBuffer> | undefined;
+    const streamMode = this.#files.mode(input) === FileTransferMode.Stream;
+    let buffered: Promise<PreparedBufferSource> | undefined;
 
     return async ({ signal, attempt }) => {
-      const context: FileContext = { fetch: this.#fetch, signal, attempt };
-      let prepared: PreparedFile;
-
-      try {
-        if (streamMode) {
-          prepared = await this.#prepareStream(input, options, context);
-        } else {
-          buffered ??= this.#prepareBuffer(input, options, context).catch((error: unknown) => {
+      let prepared: PreparedFileSource;
+      if (streamMode) {
+        prepared = await this.#files.resolve(input, options, { signal, attempt });
+      } else {
+        buffered ??= this.#files
+          .resolve(input, options, { signal, attempt })
+          .then((source) => source as PreparedBufferSource)
+          .catch((error: unknown) => {
             buffered = undefined;
             throw error;
           });
-          prepared = await buffered;
-        }
-      } catch (error) {
-        if (error instanceof ItdError || signal.aborted) throw error;
-        throw new ItdFileError('не удалось получить содержимое вложения', {
-          reason: ItdFileErrorReason.Read,
-          retryable: true,
-          cause: error,
-        });
+        prepared = await buffered;
       }
 
-      if (prepared.mode === 'buffer') {
+      if (prepared.mode === FileTransferMode.Buffer) {
+        const filename = this.#filename(prepared, options);
+        const contentType = prepared.contentType ?? mimeFromFilename(filename);
+        if (options.validateMime !== false) assertAllowedMime(contentType, filename);
+        const blob =
+          !contentType || prepared.blob.type === contentType
+            ? prepared.blob
+            : new Blob([prepared.blob], { type: contentType });
         const form = new FormData();
-        form.set('file', prepared.blob, prepared.filename);
+        form.set('file', blob, filename);
         return { body: form };
       }
 
-      const multipart = createMultipartFileBody(prepared);
-      return {
-        body: multipart.body,
-        headers: { 'Content-Type': multipart.contentType },
-        cleanup: async () => {
-          await multipart.cancel();
-          await prepared.close?.();
-        },
-      };
+      let multipart: ReturnType<typeof createMultipartFileBody> | undefined;
+      try {
+        const filename = this.#filename(prepared, options);
+        const contentType = prepared.contentType ?? mimeFromFilename(filename);
+        if (options.validateMime !== false) assertAllowedMime(contentType, filename);
+        multipart = createMultipartFileBody({
+          stream: prepared.stream,
+          filename,
+          contentType: contentType ?? '',
+        });
+        return {
+          body: multipart.body,
+          headers: { 'Content-Type': multipart.contentType },
+          cleanup: async () => {
+            await multipart?.cancel();
+            await prepared.close();
+          },
+        };
+      } catch (error) {
+        await prepared.close();
+        throw error;
+      }
     };
   }
 
-  /** Определяет режим без чтения источника. */
-  #isStreamInput(input: FileInput): boolean {
-    if (typeof input !== 'object' || input === null) return false;
-    if ('open' in input) return true;
-    if ('url' in input) {
-      return resolveFileStreamOptions(input).mode === FileTransferMode.Stream;
-    }
-    return false;
-  }
-
-  /** Получает и проверяет буферный источник. */
-  async #prepareBuffer(
-    input: FileInput,
-    options: UploadOptions,
-    context: FileContext,
-  ): Promise<PreparedBuffer> {
-    const content = await this.#resolveBuffer(input, context);
-    const filename =
-      options.filename ??
-      content.filename ??
-      this.#nameFromMime(options.contentType ?? content.contentType);
-    const contentType =
-      normalizeMimeType(options.contentType ?? content.contentType) ??
-      normalizeMimeType(isBlob(content.file) ? content.file.type : undefined) ??
-      mimeFromFilename(filename);
-
-    if (options.validateMime !== false) assertAllowedMime(contentType, filename);
-
-    const blob =
-      isBlob(content.file) && (!contentType || content.file.type === contentType)
-        ? content.file
-        : new Blob([content.file as BlobPart], { type: contentType ?? '' });
-
-    const limits = resolveFileStreamOptions(options);
-    if (limits.maxBytes !== undefined && blob.size > limits.maxBytes) {
-      throw new ItdFileError(`файл больше предела в ${limits.maxBytes} байт: ${blob.size}`, {
-        reason: ItdFileErrorReason.TooLarge,
-        limit: limits.maxBytes,
-        actual: blob.size,
-      });
-    }
-
-    return { mode: 'buffer', blob, filename };
-  }
-
-  /** Открывает и проверяет потоковый источник. */
-  async #prepareStream(
-    input: FileInput,
-    options: UploadOptions,
-    context: FileContext,
-  ): Promise<PreparedStream> {
-    let opened: FileStreamContent;
-    if (typeof input === 'object' && input !== null && 'open' in input) {
-      opened = await (input as StreamFile).open(context);
-    } else if (typeof input === 'object' && input !== null && 'url' in input) {
-      const { url, ...urlOptions } = input as UrlFile;
-      opened = await openUrlFile(url, urlOptions, context);
-    } else {
-      throw new ItdConfigError('потоковое вложение должно иметь форму { open } или { url, mode }');
-    }
-
-    if (
-      !opened ||
-      typeof ReadableStream === 'undefined' ||
-      !(opened.stream instanceof ReadableStream)
-    ) {
-      await opened?.close?.();
-      throw new ItdConfigError('потоковый источник должен вернуть { stream: ReadableStream }');
-    }
-
-    try {
-      const filename =
-        options.filename ??
-        opened.filename ??
-        this.#nameFromMime(options.contentType ?? opened.contentType);
-      const contentType =
-        normalizeMimeType(options.contentType ?? opened.contentType) ?? mimeFromFilename(filename);
-      if (options.validateMime !== false) assertAllowedMime(contentType, filename);
-
-      const limits = resolveFileStreamOptions({
-        mode: FileTransferMode.Stream,
-        ...(options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {}),
-        ...(options.streamBufferBytes !== undefined
-          ? { streamBufferBytes: options.streamBufferBytes }
-          : {}),
-      });
-      if (
-        limits.maxBytes !== undefined &&
-        opened.size !== undefined &&
-        opened.size > limits.maxBytes
-      ) {
-        throw new ItdFileError(`файл больше предела в ${limits.maxBytes} байт: ${opened.size}`, {
-          reason: ItdFileErrorReason.TooLarge,
-          limit: limits.maxBytes,
-          actual: opened.size,
-        });
-      }
-
-      const keepExistingLimits =
-        isBoundedFileStream(opened.stream) &&
-        options.maxBytes === undefined &&
-        options.streamBufferBytes === undefined;
-
-      return {
-        mode: 'stream',
-        stream: keepExistingLimits
-          ? opened.stream
-          : boundedFileStream(opened.stream, {
-              ...(limits.maxBytes !== undefined ? { maxBytes: limits.maxBytes } : {}),
-              streamBufferBytes: limits.streamBufferBytes,
-              signal: context.signal,
-            }),
-        filename,
-        contentType: contentType ?? '',
-        ...(opened.close ? { close: opened.close } : {}),
-      };
-    } catch (error) {
-      await opened.close?.();
-      throw error;
-    }
-  }
-
-  /** Разрешает только буферные формы. */
-  #resolveBuffer(input: FileInput, context: FileContext): FileContent | Promise<FileContent> {
-    if (input instanceof ArrayBuffer || ArrayBuffer.isView(input) || isBlob(input)) {
-      return {
-        file: input as Blob | ArrayBuffer | Uint8Array,
-        ...(isFile(input) ? { filename: input.name } : {}),
-      };
-    }
-
-    if (typeof input !== 'object' || input === null) {
-      throw new ItdConfigError(
-        `вложение задано значением типа ${typeof input}; ожидается бинарное значение ` +
-          'или объект { file }, { url }, { load }, { open }. ' +
-          "Для файла на диске используйте fromPath('./photo.jpg') из itd-api/node",
-      );
-    }
-
-    if ('load' in input) return (input as LazyFile).load(context);
-    if ('url' in input) {
-      const { url, ...urlOptions } = input as UrlFile;
-      return downloadFile(url, urlOptions, context);
-    }
-    if ('file' in input) return input as FileContent;
-    if ('open' in input) {
-      throw new ItdConfigError('потоковый источник нельзя использовать как буферный');
-    }
-
-    throw new ItdConfigError(
-      'вложение не распознано: ожидается { file }, { url }, { load } или { open }',
-    );
-  }
-
   /** Подбирает непустое имя, обязательное для multipart. */
-  #nameFromMime(contentType: string | undefined): string {
-    const extension = normalizeMimeType(contentType)?.split('/')[1];
+  #filename(source: PreparedFileSource, options: UploadOptions): string {
+    if (options.filename) return options.filename;
+    if (source.filename) return source.filename;
+    const extension = options.contentType?.split(';', 1)[0]?.trim().split('/')[1];
     return extension ? `file.${extension}` : 'file';
   }
 }

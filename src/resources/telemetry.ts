@@ -2,6 +2,7 @@ import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
 import { createDeviceId } from '../core/runtime.js';
+import { defineBuiltInOperation } from '../domain/operations.js';
 import { InteractionType, type ViewReason, type ViewSource } from '../types/enums.js';
 import { BaseResource } from './base.js';
 
@@ -361,7 +362,7 @@ class TelemetryBatchImpl implements TelemetryBatch {
     return this.#close(false);
   }
 
-  /** Внутренняя финализация после перехода клиента в terminal state. */
+  /** Внутренняя отправка данных после вызова `dispose()`. */
   closeForDispose(): Promise<void> {
     this.prepareForDispose();
     return this.#close(true);
@@ -486,8 +487,8 @@ export class TelemetryResource extends BaseResource {
       ...requestOptions,
     };
     return disposeCleanup
-      ? this.http.cleanupOperation('telemetry.dwell', options)
-      : this.http.operation('telemetry.dwell', options);
+      ? this.http.cleanupOperation(TELEMETRY_DWELL, options)
+      : this.http.execute(TELEMETRY_DWELL, options);
   }
 
   /** Отправляет события взаимодействия с контентом (`POST /api/v1/x`). */
@@ -523,8 +524,8 @@ export class TelemetryResource extends BaseResource {
       ...requestOptions,
     };
     return disposeCleanup
-      ? this.http.cleanupOperation('telemetry.interaction', options)
-      : this.http.operation('telemetry.interaction', options);
+      ? this.http.cleanupOperation(TELEMETRY_INTERACTION, options)
+      : this.http.execute(TELEMETRY_INTERACTION, options);
   }
 
   /** Начинает измерять время просмотра и отправляет результат после `finish()`. */
@@ -602,9 +603,11 @@ export function prepareTelemetryForDispose(resource: TelemetryResource | undefin
   if (resource) TELEMETRY_DISPOSE_PREPARERS.get(resource)?.();
 }
 
-/** Финализирует созданные накопители после перехода клиента в terminal state. @internal */
+/** Отправляет и закрывает созданные накопители после вызова `dispose()`. @internal */
 export function closeTelemetryForDispose(resource: TelemetryResource | undefined): Promise<void> {
   return resource
     ? (TELEMETRY_DISPOSE_CLOSERS.get(resource)?.() ?? Promise.resolve())
     : Promise.resolve();
 }
+const TELEMETRY_DWELL = defineBuiltInOperation<unknown>('telemetry.dwell');
+const TELEMETRY_INTERACTION = defineBuiltInOperation<unknown>('telemetry.interaction');

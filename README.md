@@ -16,7 +16,7 @@
 [![license](https://img.shields.io/npm/l/itd-api.svg)](./LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/KiowDev/itd-api)
 
-Независимый TypeScript-клиент REST и realtime API социальной сети **итд.com**.
+Полнофункциональный TypeScript SDK для социальной сети **итд.com**.
 Проект не является официальным SDK и не аффилирован с итд.com.
 
 [Документация](https://kiowdev.github.io/itd-api/) ·
@@ -55,10 +55,10 @@ for (const post of page.items) {
 |---|---|
 | REST API | пользователи, посты, комментарии, файлы, уведомления, поиск, жалобы, верификация и подписка |
 | Авторизация | access/refresh token, автоматическое обновление, OTP, хранение сессии и несколько аккаунтов |
-| Realtime | SSE и резервный опрос, промежуточные обработчики, типизированные фильтры и маршрутизация |
+| События | SSE и резервный опрос, промежуточные обработчики, типизированные фильтры и маршрутизация |
 | Пагинация | разные серверные схемы через единый `for await` |
 | Публикация | билдеры постов, комментариев, опросов, разметки текста и загрузки файлов |
-| Надёжность | таймауты, отмена, очередь, rate limiting, безопасные повторы, хуки и типизированные ошибки |
+| Надёжность | таймауты, отмена, очередь, ограничения частоты, безопасные повторы, хуки и типизированные ошибки |
 | Расширение | плагины, собственный `fetch`, сервисы и произвольные запросы |
 | Платформа | версии приложений, changelog, анонсы, портал и состояние сервисов |
 
@@ -71,9 +71,9 @@ for (const post of page.items) {
 
 | Пакет | Назначение | Среда | npm | Документация |
 |---|---|---|---|---|
-| `itd-api` | REST/realtime-клиент | Node.js 18+, браузер, Bun, Deno, React Native | [npm](https://www.npmjs.com/package/itd-api) | [быстрый старт](https://kiowdev.github.io/itd-api/quickstart/) |
+| `itd-api` | полный SDK для итд.com | Node.js 18+, браузер, Bun, Deno, React Native | [npm](https://www.npmjs.com/package/itd-api) | [быстрый старт](https://kiowdev.github.io/itd-api/quickstart/) |
 | `@itd-api/turnstile` | получение Turnstile-токена в локальном браузере | Node.js 18+, Bun, Deno + драйвер браузера | [npm](https://www.npmjs.com/package/@itd-api/turnstile) | [документация](https://kiowdev.github.io/itd-api/packages/turnstile) |
-| `@itd-api/proxy` | HTTP/HTTPS- и SOCKS5-транспорт | Node.js 18+, Bun, Deno | [npm](https://www.npmjs.com/package/@itd-api/proxy) | [документация](https://kiowdev.github.io/itd-api/packages/proxy) |
+| `@itd-api/proxy` | прокси-транспорт для HTTP и WebSocket | Node.js 18+, Bun, Deno | [npm](https://www.npmjs.com/package/@itd-api/proxy) | [документация](https://kiowdev.github.io/itd-api/packages/proxy) |
 | `@itd-api/cache` | TTL/LRU-кэш и дедупликация запросов | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/cache) | [документация](https://kiowdev.github.io/itd-api/packages/cache) |
 | `@itd-api/hydrate` | методы действий на моделях API | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/hydrate) | [документация](https://kiowdev.github.io/itd-api/packages/hydrate) |
 | `@itd-api/crypto` | скрытые сообщения в постах, комментариях и профилях | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/crypto) | [документация](https://kiowdev.github.io/itd-api/packages/crypto) |
@@ -88,7 +88,7 @@ for (const post of page.items) {
 | [Конфигурация](https://kiowdev.github.io/itd-api/configuration/) | таймауты, повторы, очереди, сервисы, хуки и жизненный цикл |
 | [Несколько аккаунтов](https://kiowdev.github.io/itd-api/multi-accounts/) | `ItdAccounts`, общее хранилище и отдельные сессии |
 | [Разметка текста](https://kiowdev.github.io/itd-api/text-markup/) | spans, автоматическая разметка и отображение |
-| [Realtime](https://kiowdev.github.io/itd-api/realtime/) | обновления, обработчики, фильтры, маршрутизация и переподключение |
+| [События](https://kiowdev.github.io/itd-api/events/) | обновления, обработчики, фильтры, маршрутизация и переподключение |
 | [Интеграции](https://kiowdev.github.io/itd-api/integrations/) | browser proxy и Turnstile |
 | [Плагины](https://kiowdev.github.io/itd-api/plugins/) | cache, crypto и создание плагина |
 | [Справочник API](https://kiowdev.github.io/itd-api/reference/) | ресурсы, методы, типы, ошибки и билдеры |
@@ -111,7 +111,7 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 
 | Хост | Назначение | Автоматическая передача Bearer-токена |
 |---|---|---|
-| `https://xn--d1ah4a.com` (`итд.com`) | REST API, авторизация и realtime | да, для защищённых REST-методов и realtime |
+| `https://xn--d1ah4a.com` (`итд.com`) | REST API, авторизация и события | да, для защищённых REST-методов и событий |
 | `https://xn--80a7abcbg.xn--d1ah4a.com` (`статус.итд.com`) | публичное состояние сервисов | нет |
 
 Опциональный `@itd-api/turnstile` дополнительно загружает виджет с
@@ -123,8 +123,8 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 
 | Настройка | Последствие |
 |---|---|
-| `baseUrl` | становится основным API-хостом; на него идут авторизация, сессия, защищённые запросы и realtime |
-| `fetch` | получает URL, заголовки и body всех запросов клиента; передавайте только доверенную реализацию |
+| `baseUrl` | становится основным API-хостом; на него идут авторизация, сессия, защищённые запросы и события |
+| `fetch` | получает URL, заголовки и тело всех запросов клиента; передавайте только доверенную реализацию |
 | `proxyFetch(...)` | направляет запросы через указанный вами proxy, которому будут доступны соединения с API |
 | `defineService({ auth: true })` | явно разрешает отправлять Bearer-токен на хост этого сервиса |
 | `request({ baseUrl })` | внешний хост не получает Bearer автоматически; `skipAuth: false` явно разрешает его передачу |
@@ -139,10 +139,10 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 | CORS основного API | браузерному приложению нужен собственный серверный proxy; [подробнее](https://kiowdev.github.io/itd-api/integrations/#браузер-и-cors)                           |
 | Подписчики, подписки и блокировки | сервер возвращает только первые 20 записей; [подробнее](https://kiowdev.github.io/itd-api/reference/users)                                                      |
 | Посты пользователя | `posts.byUser()` возвращает стену, включая чужие публикации на ней; [подробнее](https://kiowdev.github.io/itd-api/reference/posts)                              |
-| Rate limiting | маршруты разбиты на бакеты, у каждого свой лимит запросов в минуту, считается по IP; [таблица бакетов](https://kiowdev.github.io/itd-api/reference/rate-limits) |
+| Ограничения частоты | маршруты разбиты на бакеты, у каждого свой лимит запросов в минуту, считается по IP; [таблица бакетов](https://kiowdev.github.io/itd-api/reference/rate-limits) |
 
-Матрица известных маршрутов, wire-контрактов и статуса поддержки находится в
-[справочнике endpoint](https://kiowdev.github.io/itd-api/reference/endpoints).
+Матрица известных маршрутов, протоколов и статуса поддержки находится в
+[справочнике методов API](https://kiowdev.github.io/itd-api/reference/endpoints).
 
 ## Проект
 

@@ -55,6 +55,14 @@ export {
   type UrlFileOptions,
 } from './core/attachments/contracts.js';
 export { fromStream, fromUrl } from './core/attachments/factories.js';
+export type {
+  FileResolver,
+  PreparedBufferSource,
+  PreparedFileSource,
+  PreparedStreamSource,
+  ResolveFileContext,
+  ResolveFileOptions,
+} from './core/attachments/resolver.js';
 // Авторизация здесь — готовый токен, а не сессия: продлевать его клиент не умеет.
 // Вход по паролю, refresh и хранилище живут в полном `ItdClient`.
 export {
@@ -65,6 +73,7 @@ export {
 } from './core/auth-provider.js';
 export { type ItdClock, systemClock } from './core/clock.js';
 export { DEFAULT_BASE_URL, LIBRARY_VERSION, STATUS_SERVICE } from './core/config.js';
+export type { ClientConnection } from './core/connection.js';
 export type { Listener, Unsubscribe } from './core/emitter.js';
 export {
   ItdAbortError,
@@ -109,7 +118,14 @@ export type {
   FeatureOperationDefinition,
   FeatureRequestOptions,
 } from './core/features.js';
-export { type FeatureOperationId, type OperationMethod, RetrySafety } from './core/operation.js';
+export type { ManagedClientResource } from './core/managed-resources.js';
+export {
+  type FeatureOperationId,
+  type OperationAnnotations,
+  type OperationMetadata,
+  type OperationMethod,
+  RetrySafety,
+} from './core/operation.js';
 export type {
   ClientHooks,
   ErrorContextHook,

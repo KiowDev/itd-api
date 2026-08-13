@@ -1,4 +1,5 @@
 import { ItdConfigError, ItdFileError, ItdFileErrorReason } from '../errors.js';
+import { redactErrorCause, redactUrl } from '../redact.js';
 import { boundedFileStream } from './bounded-stream.js';
 import {
   DEFAULT_URL_FILE_MAX_BYTES,
@@ -53,7 +54,7 @@ async function fetchFile(
   try {
     requested = new URL(target);
   } catch {
-    throw new ItdConfigError(`«${target}» не разбирается как адрес`);
+    throw new ItdConfigError(`«${redactUrl(target)}» не разбирается как адрес`);
   }
 
   if (requested.protocol !== 'http:' && requested.protocol !== 'https:') {
@@ -72,20 +73,22 @@ async function fetchFile(
       throw error;
     }
 
-    throw new ItdFileError(`не удалось получить файл по адресу ${requested.href}`, {
+    const safeUrl = redactUrl(requested.href);
+    throw new ItdFileError(`не удалось получить файл по адресу ${safeUrl}`, {
       reason: ItdFileErrorReason.Network,
-      url: requested.href,
+      url: safeUrl,
       retryable: true,
-      cause: error,
+      cause: redactErrorCause(error),
     });
   }
 
   const finalUrl = response.url ? new URL(response.url) : requested;
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
-    throw new ItdFileError(`источник ${finalUrl.href} ответил статусом ${response.status}`, {
+    const safeUrl = redactUrl(finalUrl.href);
+    throw new ItdFileError(`источник ${safeUrl} ответил статусом ${response.status}`, {
       reason: ItdFileErrorReason.Http,
-      url: finalUrl.href,
+      url: safeUrl,
       status: response.status,
       retryable: response.status === 408 || response.status === 429 || response.status >= 500,
     });
@@ -181,9 +184,10 @@ export async function openUrlFile(
   const resolved = resolveFileStreamOptions(options, DEFAULT_URL_FILE_MAX_BYTES);
   const { response, url, size } = await fetchFile(target, options, context);
   if (!response.body) {
-    throw new ItdFileError(`источник ${url.href} не предоставил потоковое тело`, {
+    const safeUrl = redactUrl(url.href);
+    throw new ItdFileError(`источник ${safeUrl} не предоставил потоковое тело`, {
       reason: ItdFileErrorReason.StreamUnavailable,
-      url: url.href,
+      url: safeUrl,
     });
   }
 

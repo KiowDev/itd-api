@@ -1,5 +1,8 @@
 import {
+  defineOperation,
   type FeatureOperationId,
+  identityResult,
+  type OperationContract,
   type OperationDefinition,
   type OperationMethod,
   RetrySafety,
@@ -121,12 +124,16 @@ export const OPERATIONS = freezeOperations({
   // Опрос уведомлений идёт по тем же двум маршрутам, что notifications.list и .count,
   // и делит с ними один серверный счётчик: при интервале 2 секунды фоновый поток
   // съедает три четверти бакета.
-  'realtime.poll.updates': {
+  'events.notifications.poll.updates': {
     method: 'GET',
     retrySafety: RetrySafety.Safe,
     bucket: 'notifications',
   },
-  'realtime.poll.unread': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'notifications' },
+  'events.notifications.poll.unread': {
+    method: 'GET',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'notifications',
+  },
 
   'hashtags.search': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'hashtags' },
   'hashtags.trending': {
@@ -174,6 +181,14 @@ export type CustomOperationId = `custom:${string}`;
 
 /** ID любого запроса, видимый transformers и hooks. */
 export type OperationId = BuiltInOperationId | FeatureOperationId | CustomOperationId | 'raw';
+
+/** Создаёт контракт результата встроенной операции с проверяемым ID. */
+export function defineBuiltInOperation<T, TId extends BuiltInOperationId = BuiltInOperationId>(
+  id: TId,
+  read: OperationContract<T>['read'] = identityResult<T>,
+): OperationContract<T, TId> {
+  return defineOperation(id, OPERATIONS[id], read);
+}
 
 const BUILT_IN_IDS: ReadonlySet<string> = new Set(Object.keys(OPERATIONS));
 

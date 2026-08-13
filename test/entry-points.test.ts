@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import * as events from '../src/events.js';
 import * as core from '../src/index.js';
 import * as node from '../src/node.js';
-import * as realtime from '../src/realtime.js';
 import * as rest from '../src/rest.js';
 import * as web from '../src/web.js';
 
@@ -62,7 +62,7 @@ describe('состав точек входа', () => {
     for (const name of [
       'ItdClient',
       'ItdAccounts',
-      'ItdRealtime',
+      'NotificationEvents',
       'MemoryTokenStorage',
       'createTokenStorage',
       'TURNSTILE_SITE_KEY',
@@ -71,19 +71,19 @@ describe('состав точек входа', () => {
     }
   });
 
-  it('itd-api/realtime — поток событий с собственным конвейером', () => {
+  it('itd-api/events — каналы событий с собственным конвейером', () => {
     for (const name of [
-      'createRealtimeClient',
-      'ItdRealtimeClient',
-      'ItdRealtime',
+      'createNotificationEventsClient',
+      'NotificationEventsClient',
+      'NotificationEvents',
       'WebSocketTransport',
       'bearerToken',
     ]) {
-      expect(realtime).toHaveProperty(name);
+      expect(events).toHaveProperty(name);
     }
   });
 
-  it('itd-api/realtime не тянет ресурсы, сессию и аккаунты', () => {
+  it('itd-api/events не тянет ресурсы, сессию и аккаунты', () => {
     for (const name of [
       'ItdClient',
       'ItdAccounts',
@@ -92,7 +92,23 @@ describe('состав точек входа', () => {
       'TURNSTILE_SITE_KEY',
       'post',
     ]) {
-      expect(realtime).not.toHaveProperty(name);
+      expect(events).not.toHaveProperty(name);
+    }
+  });
+
+  it('публичные точки входа не сохраняют прежний realtime API', () => {
+    for (const entry of [core, events]) {
+      for (const name of [
+        'ItdRealtime',
+        'ItdRealtimeClient',
+        'createRealtimeClient',
+        'RealtimeComposer',
+        'RealtimeRouter',
+        'RealtimeStatus',
+        'RealtimeUpdateOrigin',
+      ]) {
+        expect(entry).not.toHaveProperty(name);
+      }
     }
   });
 });

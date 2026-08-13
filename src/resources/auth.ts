@@ -1,9 +1,24 @@
 import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
-import { pickArray, pickString } from '../core/unwrap.js';
 import type { Session } from '../models/account.js';
 import type { AuthState } from '../models/users.js';
+import {
+  AUTH_CHANGE_PASSWORD,
+  AUTH_CHECK,
+  AUTH_FORGOT_PASSWORD,
+  AUTH_LOGOUT,
+  AUTH_RESEND_OTP,
+  AUTH_RESET_PASSWORD,
+  AUTH_REVOKE_OTHER_SESSIONS,
+  AUTH_REVOKE_SESSION,
+  AUTH_SESSIONS,
+  AUTH_SIGN_IN,
+  AUTH_SIGN_UP,
+  AUTH_VERIFY_OTP,
+  type SignInResult,
+  SignInStatus,
+} from '../operations/auth.js';
 import { AUTH_PATHS, type AuthManager, type TURNSTILE_SITE_KEY } from '../session/auth.js';
 import { BaseResource } from './base.js';
 
@@ -43,12 +58,9 @@ export interface ResetPasswordInput {
   newPassword: string;
 }
 
+export type { SignInResult, SignInStatus as SignInStatusValue } from '../operations/auth.js';
 /** Чем закончился вход: сразу токеном или запросом кода подтверждения. */
-export const SignInStatus = Object.freeze({
-  Authenticated: 'authenticated',
-  OtpRequired: 'otp_required',
-} as const);
-export type SignInStatus = (typeof SignInStatus)[keyof typeof SignInStatus];
+export { SignInStatus } from '../operations/auth.js';
 
 /**
  * Результат входа.
@@ -56,9 +68,6 @@ export type SignInStatus = (typeof SignInStatus)[keyof typeof SignInStatus];
  * Сервер может как сразу выдать токен, так и потребовать код подтверждения — размеченное
  * объединение делает оба случая явными.
  */
-export type SignInResult =
-  | { status: 'authenticated'; accessToken: string }
-  | { status: 'otp_required'; flowToken: string | undefined };
 
 /**
  * Авторизация, сессии и пароли.
@@ -79,7 +88,7 @@ export class AuthResource extends BaseResource {
    * Без авторизации возвращает `authenticated: false` и `user: null`.
    */
   check(options: RequestOptions = {}): Promise<AuthState> {
-    return this.http.operation<AuthState>('auth.check', {
+    return this.http.execute(AUTH_CHECK, {
       path: '/api/profile',
       ...options,
     });
@@ -90,21 +99,14 @@ export class AuthResource extends BaseResource {
    *
    * @returns `flowToken`, который нужно передать в {@link verifyOtp}
    */
-  async signUp(credentials: CaptchaCredentials, options: RequestOptions = {}): Promise<string> {
-    const body = await this.http.operation('auth.signUp', {
+  signUp(credentials: CaptchaCredentials, options: RequestOptions = {}): Promise<string> {
+    return this.http.execute(AUTH_SIGN_UP, {
       path: AUTH_PATHS.signUp,
       body: credentials,
       skipAuth: true,
       skipAuthRefresh: true,
       ...options,
     });
-
-    const flowToken = pickString(body, 'flowToken');
-    if (!flowToken) {
-      throw new ItdConfigError('Сервер не вернул flowToken при регистрации');
-    }
-
-    return flowToken;
   }
 
   /**
@@ -121,7 +123,7 @@ export class AuthResource extends BaseResource {
     credentials: CaptchaCredentials,
     options: RequestOptions = {},
   ): Promise<SignInResult> {
-    const body = await this.http.operation('auth.signIn', {
+    const result = await this.http.execute(AUTH_SIGN_IN, {
       path: AUTH_PATHS.signIn,
       body: credentials,
       skipAuth: true,
@@ -129,14 +131,10 @@ export class AuthResource extends BaseResource {
       ...options,
     });
 
-    const accessToken = pickString(body, 'accessToken');
-
-    if (accessToken) {
-      await this.#auth.setAccessToken(accessToken);
-      return { status: SignInStatus.Authenticated, accessToken };
+    if (result.status === SignInStatus.Authenticated) {
+      await this.#auth.setAccessToken(result.accessToken);
     }
-
-    return { status: SignInStatus.OtpRequired, flowToken: pickString(body, 'flowToken') };
+    return result;
   }
 
   /**
@@ -148,18 +146,13 @@ export class AuthResource extends BaseResource {
     input: Credentials & { otp: string; flowToken: string },
     options: RequestOptions = {},
   ): Promise<string> {
-    const body = await this.http.operation('auth.verifyOtp', {
+    const accessToken = await this.http.execute(AUTH_VERIFY_OTP, {
       path: AUTH_PATHS.verifyOtp,
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
       ...options,
     });
-
-    const accessToken = pickString(body, 'accessToken');
-    if (!accessToken) {
-      throw new ItdConfigError('Сервер не вернул accessToken после подтверждения кода');
-    }
 
     await this.#auth.setAccessToken(accessToken);
     return accessToken;
@@ -170,7 +163,7 @@ export class AuthResource extends BaseResource {
     input: { email: string; flowToken: string },
     options: RequestOptions = {},
   ): Promise<void> {
-    return this.http.operation<void>('auth.resendOtp', {
+    return this.voidOperation(AUTH_RESEND_OTP, {
       path: AUTH_PATHS.resendOtp,
       body: input,
       skipAuth: true,
@@ -259,7 +252,7 @@ export class AuthResource extends BaseResource {
 
   /** Завершает текущую сессию на сервере и очищает локальную. */
   async logout(options: RequestOptions = {}): Promise<void> {
-    await this.http.operation<void>('auth.logout', {
+    await this.voidOperation(AUTH_LOGOUT, {
       path: AUTH_PATHS.logout,
       skipAuthRefresh: true,
       ...options,
@@ -291,21 +284,14 @@ export class AuthResource extends BaseResource {
    *
    * @returns `flowToken`, который нужно передать в {@link resetPassword}
    */
-  async forgotPassword(input: ForgotPasswordInput, options: RequestOptions = {}): Promise<string> {
-    const body = await this.http.operation('auth.forgotPassword', {
+  forgotPassword(input: ForgotPasswordInput, options: RequestOptions = {}): Promise<string> {
+    return this.http.execute(AUTH_FORGOT_PASSWORD, {
       path: AUTH_PATHS.forgotPassword,
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
       ...options,
     });
-
-    const flowToken = pickString(body, 'flowToken');
-    if (!flowToken) {
-      throw new ItdConfigError('Сервер не вернул flowToken при запросе сброса пароля');
-    }
-
-    return flowToken;
   }
 
   /**
@@ -315,7 +301,7 @@ export class AuthResource extends BaseResource {
    * при нехватке любого отвечает `422`.
    */
   resetPassword(input: ResetPasswordInput, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('auth.resetPassword', {
+    return this.voidOperation(AUTH_RESET_PASSWORD, {
       path: AUTH_PATHS.resetPassword,
       body: input,
       skipAuth: true,
@@ -374,7 +360,7 @@ export class AuthResource extends BaseResource {
     input: { currentPassword: string; newPassword: string },
     options: RequestOptions = {},
   ): Promise<void> {
-    return this.http.operation<void>('auth.changePassword', {
+    return this.voidOperation(AUTH_CHANGE_PASSWORD, {
       path: AUTH_PATHS.changePassword,
       body: { currentPassword: input.currentPassword, newPassword: input.newPassword },
       ...options,
@@ -382,18 +368,16 @@ export class AuthResource extends BaseResource {
   }
 
   /** Загружает список активных сессий. У текущей поле `isCurrent` равно `true`. */
-  async sessions(options: RequestOptions = {}): Promise<Session[]> {
-    const body = await this.http.operation('auth.sessions', {
+  sessions(options: RequestOptions = {}): Promise<Session[]> {
+    return this.http.execute(AUTH_SESSIONS, {
       path: AUTH_PATHS.sessions,
       ...options,
     });
-
-    return pickArray<Session>(body, 'sessions');
   }
 
   /** Завершает указанную сессию. */
   revokeSession(sessionId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('auth.revokeSession', {
+    return this.voidOperation(AUTH_REVOKE_SESSION, {
       path: `${AUTH_PATHS.sessions}/${encodeURIComponent(sessionId)}`,
       ...options,
     });
@@ -401,7 +385,7 @@ export class AuthResource extends BaseResource {
 
   /** Завершает все сессии, кроме текущей. */
   revokeOtherSessions(options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('auth.revokeOtherSessions', {
+    return this.voidOperation(AUTH_REVOKE_OTHER_SESSIONS, {
       path: AUTH_PATHS.sessions,
       ...options,
     });

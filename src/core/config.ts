@@ -243,6 +243,13 @@ function requireConcurrency(value: number, name: string): number {
   return value;
 }
 
+function requireRps(value: number, name: string): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new ItdConfigError(`${name} должен быть положительным числом, получено: ${value}`);
+  }
+  return value;
+}
+
 function resolvePacing(pacing: RateLimitPacing | undefined): RateLimitPacing {
   const known: readonly RateLimitPacing[] = Object.values(RateLimitPacing);
   if (pacing !== undefined && !known.includes(pacing)) {
@@ -286,10 +293,14 @@ function resolveBucketOverrides(
           `получено: ${override.limit}`,
       );
     }
+    if (override.rps !== undefined) {
+      requireRps(override.rps, `rateLimit.bucketOverrides.${name}.rps`);
+    }
 
     const built = builtIn[name];
     resolved[name] = Object.freeze({
       concurrency: override.concurrency ?? built?.concurrency,
+      rps: override.rps ?? built?.rps,
       limit: override.limit ?? built?.limit,
     });
   }
@@ -331,11 +342,7 @@ export function resolveRateLimit(
 
   const concurrency = requireConcurrency(rateLimit.concurrency ?? 6, 'rateLimit.concurrency');
 
-  if (rateLimit.rps !== undefined && (!Number.isFinite(rateLimit.rps) || rateLimit.rps <= 0)) {
-    throw new ItdConfigError(
-      `rateLimit.rps должен быть положительным числом, получено: ${rateLimit.rps}`,
-    );
-  }
+  if (rateLimit.rps !== undefined) requireRps(rateLimit.rps, 'rateLimit.rps');
 
   const retryDelays = rateLimit.retryDelays ?? defaults.retryDelays;
   if (!Array.isArray(retryDelays)) {

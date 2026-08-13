@@ -57,7 +57,7 @@ export {
 } from './ciphers/index.js';
 export { CryptError } from './errors.js';
 export { SECRET_FIELDS, TEXT_FIELDS, type TextOperationId, textFields } from './fields.js';
-export { type CryptOptions, crypt } from './plugin.js';
+export { type CryptOptions, type CryptPlugin, crypt } from './plugin.js';
 export { decodeTree } from './walk.js';
 
 /**
@@ -70,6 +70,11 @@ export { decodeTree } from './walk.js';
  * Читать `secret` можно и без этого — помощником {@link secretOf}.
  */
 declare module 'itd-api' {
+  interface OperationAnnotations {
+    /** Поля тела запроса, которые операция разрешает шифровать. */
+    readonly crypto?: { readonly requestFields: readonly string[] } | undefined;
+  }
+
   interface RequestExtensions {
     /** Настройки скрытых сообщений для этой операции. */
     crypto?: CryptRequestOptions | undefined;
@@ -98,6 +103,12 @@ declare module 'itd-api' {
   }
 
   interface Actor {
+    secret?: Secret;
+    secrets?: Secret[];
+  }
+
+  interface Notification {
+    /** Скрытое сообщение из `preview`, найденное в REST-ответе или событии. */
     secret?: Secret;
     secrets?: Secret[];
   }

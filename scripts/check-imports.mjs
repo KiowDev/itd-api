@@ -3,7 +3,7 @@
  * Сторож направления импортов между слоями `src/`.
  *
  * Слои задуманы однонаправленными: ядро исполняет запрос, домен описывает API итд.com,
- * ресурсы и realtime строятся поверх, а фасад клиента — единственный composition root.
+ * ресурсы и события строятся поверх, а фасад клиента — единственный composition root.
  * Обратный импорт разрушает границу молча: TypeScript его пропускает, тесты — тоже,
  * а обнаруживается он только при попытке вынести слой в отдельный пакет.
  *
@@ -22,19 +22,21 @@ const LAYERS = [
   ['domain/', 'domain'],
   ['types/', 'types'],
   ['models/', 'models'],
+  ['operations/', 'operations'],
   ['session/', 'session'],
   ['resources/', 'resources'],
   ['builders/', 'builders'],
-  ['realtime/', 'realtime'],
+  ['events/', 'events'],
   ['spans/', 'spans'],
   ['notifications/', 'notifications'],
   ['rest/', 'rest'],
   ['client.ts', 'sdk'],
   ['accounts.ts', 'sdk'],
   ['options.ts', 'sdk'],
+  ['notifications-api.ts', 'sdk'],
   ['index.ts', 'entry'],
   ['rest.ts', 'entry'],
-  ['realtime.ts', 'entry'],
+  ['events.ts', 'entry'],
   ['node.ts', 'entry'],
   ['web.ts', 'entry'],
 ];
@@ -52,33 +54,65 @@ const FORBIDDEN = {
     'session',
     'domain',
     'models',
+    'operations',
     'resources',
     'builders',
-    'realtime',
+    'events',
     'spans',
     'notifications',
     'rest',
     'sdk',
   ],
-  domain: ['session', 'resources', 'builders', 'realtime', 'spans', 'notifications', 'rest', 'sdk'],
-  types: ['core', 'session', 'domain', 'resources', 'builders', 'realtime', 'rest', 'sdk'],
+  domain: [
+    'session',
+    'operations',
+    'resources',
+    'builders',
+    'events',
+    'spans',
+    'notifications',
+    'rest',
+    'sdk',
+  ],
+  types: [
+    'core',
+    'session',
+    'domain',
+    'operations',
+    'resources',
+    'builders',
+    'events',
+    'rest',
+    'sdk',
+  ],
   // Перечисления (`types/enums.ts`) сами ни от чего не зависят, поэтому модели их читают.
-  models: ['core', 'session', 'domain', 'resources', 'builders', 'realtime', 'notifications', 'sdk'],
-  session: ['resources', 'builders', 'realtime', 'spans', 'notifications', 'rest', 'sdk'],
+  models: [
+    'core',
+    'session',
+    'domain',
+    'operations',
+    'resources',
+    'builders',
+    'events',
+    'notifications',
+    'sdk',
+  ],
+  operations: ['session', 'resources', 'builders', 'events', 'spans', 'notifications', 'rest', 'sdk'],
+  session: ['resources', 'builders', 'events', 'spans', 'notifications', 'rest', 'sdk'],
   resources: ['rest', 'sdk'],
-  builders: ['resources', 'realtime', 'rest', 'sdk'],
-  realtime: ['session', 'resources', 'builders', 'rest', 'sdk'],
+  builders: ['resources', 'events', 'rest', 'sdk'],
+  events: ['session', 'resources', 'builders', 'rest', 'sdk'],
   // Разметка бросает типизированные ошибки ядра — это нисходящая зависимость.
-  spans: ['session', 'domain', 'resources', 'realtime', 'rest', 'sdk'],
+  spans: ['session', 'domain', 'resources', 'events', 'rest', 'sdk'],
   notifications: ['session', 'resources', 'rest', 'sdk'],
-  rest: ['session', 'realtime', 'sdk'],
+  rest: ['session', 'events', 'sdk'],
 };
 
 /**
  * Границы, которые карта слоёв выразить не может.
  *
  * Точки входа собирают разрешённые им слои и потому не подчиняются общей карте. При этом
- * минимальные `rest` / `realtime` и платформенные `node` / `web` не должны незаметно
+ * минимальные `rest` / `events` и платформенные `node` / `web` не должны незаметно
  * затянуть полный SDK или соседнюю крупную подсистему.
  *
  * `from` и элементы `to` сопоставляются по префиксу, поэтому одним значением закрывается
@@ -87,11 +121,11 @@ const FORBIDDEN = {
 const FORBIDDEN_EDGES = [
   {
     from: 'rest.ts',
-    to: ['client.ts', 'accounts.ts', 'options.ts', 'index.ts', 'session/', 'realtime.ts', 'realtime/'],
-    reason: 'минимальный REST-клиент не должен затягивать полный SDK, сессию или realtime',
+    to: ['client.ts', 'accounts.ts', 'options.ts', 'index.ts', 'session/', 'events.ts', 'events/'],
+    reason: 'минимальный REST-клиент не должен затягивать полный SDK, сессию или события',
   },
   {
-    from: 'realtime.ts',
+    from: 'events.ts',
     to: [
       'client.ts',
       'accounts.ts',
@@ -115,8 +149,8 @@ const FORBIDDEN_EDGES = [
       'index.ts',
       'rest.ts',
       'rest/',
-      'realtime.ts',
-      'realtime/',
+      'events.ts',
+      'events/',
       'resources/',
       'builders/',
     ],
@@ -131,8 +165,8 @@ const FORBIDDEN_EDGES = [
       'index.ts',
       'rest.ts',
       'rest/',
-      'realtime.ts',
-      'realtime/',
+      'events.ts',
+      'events/',
       'resources/',
       'builders/',
     ],

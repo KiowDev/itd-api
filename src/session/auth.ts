@@ -8,12 +8,12 @@ import {
 } from '../core/cookies.js';
 import { Emitter, reportListenerError } from '../core/emitter.js';
 import { ItdApiError, ItdAuthError, ItdConfigError } from '../core/errors.js';
-import type { RequestHandler } from '../core/execution/pipeline.js';
+import type { HttpClient } from '../core/execution/http.js';
 import type { Logger } from '../core/options.js';
 import { createDeviceId } from '../core/runtime.js';
 import { isRecord, requireOptionalBoolean } from '../core/validate.js';
-import { operationMethod } from '../domain/operations.js';
 import type { UserId } from '../models/common.js';
+import { AUTH_REFRESH, AUTH_SIGN_IN, SignInStatus } from '../operations/auth.js';
 import { readTokenIdentity, readTokenSubject } from './jwt.js';
 import type { AuthInput, CredentialsAuth, SessionOptions } from './options.js';
 import { copySession, type ItdSession, MemoryTokenStorage, type TokenStorage } from './storage.js';
@@ -159,7 +159,7 @@ export function resolveSessionConfig(
  * достижимой из любой сборки, включая анонимную.
  */
 export function createItdAuth(options: SessionOptions, deps: AuthProviderDeps): AuthManager {
-  return new AuthManager(resolveSessionConfig(options, deps.config), deps.handler, deps.cookies, {
+  return new AuthManager(resolveSessionConfig(options, deps.config), deps.http, deps.cookies, {
     onAccountChange: deps.onAccountChange,
   });
 }
@@ -214,17 +214,6 @@ export interface AuthEvents {
   authError: { error: unknown };
 }
 
-/** Ответ эндпоинтов, выдающих токен. */
-interface TokenResponse {
-  accessToken?: unknown;
-}
-
-function readAccessToken(payload: unknown): string | undefined {
-  if (typeof payload !== 'object' || payload === null) return undefined;
-  const token = (payload as TokenResponse).accessToken;
-  return typeof token === 'string' && token.length > 0 ? token : undefined;
-}
-
 /** Убирает поле, которое сохраняли промежуточные версии с поддержкой `getUserId()`. */
 function withoutLegacyUserId(session: ItdSession): ItdSession {
   const clean = { ...session };
@@ -254,7 +243,7 @@ interface AuthManagerHooks {
  */
 export class AuthManager implements AuthProvider {
   readonly #config: SessionConfig;
-  readonly #send: RequestHandler;
+  readonly #http: HttpClient;
   readonly #jar: CookieJar;
   readonly #emitter: Emitter<AuthEvents>;
   readonly #hooks: AuthManagerHooks;
@@ -297,12 +286,12 @@ export class AuthManager implements AuthProvider {
 
   constructor(
     config: SessionConfig,
-    send: RequestHandler,
+    http: HttpClient,
     jar: CookieJar,
     hooks: AuthManagerHooks = {},
   ) {
     this.#config = config;
-    this.#send = send;
+    this.#http = http;
     this.#jar = jar;
     this.#hooks = hooks;
     this.#emitter = new Emitter<AuthEvents>((error) =>
@@ -320,7 +309,7 @@ export class AuthManager implements AuthProvider {
     return this.#emitter.once.bind(this.#emitter);
   }
 
-  /** Снимает lifecycle-подписки при терминальном освобождении владельца. @internal */
+  /** Снимает служебные подписки при окончательном освобождении владельца. @internal */
   dispose(): void {
     this.#invalidateInFlight();
     this.#emitter.removeAllListeners();
@@ -397,7 +386,7 @@ export class AuthManager implements AuthProvider {
     return token;
   }
 
-  /** Меняет fallback и завершает realtime, только если фактически сменился аккаунт. */
+  /** Обновляет резервный идентификатор и закрывает события при смене аккаунта. */
   #transitionAuth(accessToken: string | undefined, rotateFallback = true): void {
     const knownPrevious = this.#session !== undefined;
     const previous = this.#identityForToken(this.#session?.accessToken);
@@ -763,17 +752,13 @@ export class AuthManager implements AuthProvider {
       // Служебный запрос идёт через общий pipeline. Слой авторизации он пропускает, чтобы
       // не отправлять устаревший Bearer и не запускать рекурсивный refresh. Очередь безопасна:
       // исходная неудачная транспортная попытка освободила свой слот до вызова этого метода.
-      const payload = await this.#send({
-        operationId: 'auth.refresh',
-        method: operationMethod('auth.refresh'),
+      const accessToken = await this.#http.execute(AUTH_REFRESH, {
         path: AUTH_PATHS.refresh,
         skipAuth: true,
         skipAuthRefresh: true,
         // Тела нет намеренно: сервер читает refresh-токен только из cookie — см.
         // #seedRefreshCookie. По той же причине не нужен и устаревший Bearer.
       });
-
-      const accessToken = readAccessToken(payload);
       if (!accessToken) return this.#reloginOrNull();
 
       if (this.#authEpoch !== epoch) {
@@ -892,18 +877,14 @@ export class AuthManager implements AuthProvider {
 
     // Через общий pipeline: плагины, повторы и очередь сохраняются, а слой авторизации
     // пропускается, потому что токена ещё нет.
-    const payload = await this.#send({
-      operationId: 'auth.signIn',
-      method: operationMethod('auth.signIn'),
+    const result = await this.#http.execute(AUTH_SIGN_IN, {
       path: AUTH_PATHS.signIn,
       body: { email: credentials.email, password: credentials.password, turnstileToken },
       skipAuth: true,
       skipAuthRefresh: true,
     });
 
-    const accessToken = readAccessToken(payload);
-
-    if (!accessToken) {
+    if (result.status !== SignInStatus.Authenticated) {
       // Сервер запросил подтверждение по коду — автоматически это не пройти.
       throw new ItdConfigError(
         'Вход по email и паролю требует подтверждения кодом из письма. Автоматический вход ' +
@@ -911,6 +892,7 @@ export class AuthManager implements AuthProvider {
           'accessToken в конфигурацию клиента.',
       );
     }
+    const accessToken = result.accessToken;
 
     // Прежний refresh-токен и cookie намеренно не переносятся: вход выдал новую сессию,
     // и держаться за старую было бы ошибкой. Идентификатор устройства добавит #saveSession.

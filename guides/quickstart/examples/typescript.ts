@@ -27,7 +27,7 @@ const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
 const versions: PlatformVersions = await itd.platform.version();
 console.log(versions.android.latestVersion, versions.ios.latestVersion);
 
-// ── Перечисления вместо магических строк ────────────────────────────────────────
+// ── Enum вместо магических строк ────────────────────────────────────────────────
 // Работают обе формы: константа и обычная строка.
 await itd.posts.list({ tab: FeedTab.Popular });
 await itd.posts.list({ tab: 'following' });
@@ -90,6 +90,6 @@ await itd.reports.create(report.post(first.id).reason(ReportReason.Spam));
 // ── Уведомления из REST и из потока имеют одну форму ────────────────────────────
 const feed: Notification[] = (await itd.notifications.list({ limit: 10 })).items;
 
-const stream = itd.realtime();
+const stream = itd.notifications.events;
 stream.on('notification', ({ notification }) => feed.unshift(notification));
 await stream.connect();

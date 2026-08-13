@@ -137,6 +137,29 @@ describe('отложенный вход по логину и паролю', () =
     expect(paths).toEqual(['/api/v1/auth/sign-in']);
   });
 
+  it('использует единый публичный контракт auth.signIn внутри сессии', async () => {
+    const seen: unknown[] = [];
+    const { auth, config, plugins } = makeAuth([json({ accessToken: 'new-token' })], {
+      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+    });
+    plugins.add(
+      {
+        name: 'result-recorder',
+        install({ operations }) {
+          operations.use(async (request, next) => {
+            const result = await next(request);
+            if (request.operationId === 'auth.signIn') seen.push(result);
+            return result;
+          });
+        },
+      },
+      { baseUrl: config.baseUrl, logger: config.logger },
+    );
+
+    await expect(auth.token()).resolves.toBe('new-token');
+    expect(seen).toEqual([{ status: 'authenticated', accessToken: 'new-token' }]);
+  });
+
   it('объясняет, что при запросе OTP автоматический вход невозможен', async () => {
     // Сервер вместо токена просит подтверждение — отвечаем так на любой запрос.
     const { auth } = makeAuth(() => json({ flowToken: 'f' }), {

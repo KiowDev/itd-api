@@ -86,7 +86,15 @@ describe('resolveConfig — бакеты', () => {
       rateLimit: { bucketOverrides: { 'files.upload': { limit: 30 } } },
     }).rateLimit?.bucketOverrides;
 
-    expect(overrides?.['files.upload']).toEqual({ concurrency: 1, limit: 30 });
+    expect(overrides?.['files.upload']).toEqual({ concurrency: 1, rps: undefined, limit: 30 });
+  });
+
+  it('проверяет и сохраняет локальный rps бакета', () => {
+    const overrides = resolveConfig({
+      rateLimit: { bucketOverrides: { feed: { rps: 2.5 } } },
+    }).rateLimit?.bucketOverrides;
+
+    expect(overrides?.feed).toEqual({ concurrency: undefined, rps: 2.5, limit: undefined });
   });
 
   it('своё правило выбора бакета снимает проверку имён', () => {
@@ -97,6 +105,7 @@ describe('resolveConfig — бакеты', () => {
 
     expect(resolveConfig({ rateLimit }).rateLimit?.bucketOverrides.proxy).toEqual({
       concurrency: undefined,
+      rps: undefined,
       limit: 20,
     });
   });
@@ -121,6 +130,7 @@ describe('resolveConfig — проверки', () => {
       { rateLimit: { bucketOverrides: { 'posts.craete': { limit: 9 } } } },
     ],
     ['нулевая ёмкость бакета', { rateLimit: { bucketOverrides: { feed: { limit: 0 } } } }],
+    ['нулевой rps бакета', { rateLimit: { bucketOverrides: { feed: { rps: 0 } } } }],
     ['неизвестный mode', { mode: 'proxy' as never }],
     ['fetch не функция', { fetch: 'fetch' as never }],
     ['headers не строки', { headers: { trace: 42 } as never }],

@@ -13,7 +13,7 @@
 npm install itd-api @itd-api/hydrate
 ```
 
-Поддерживается `itd-api >=0.5.0 <1.0.0`.
+Поддерживается `itd-api >=0.8.0 <1.0.0`.
 
 ## Начало работы
 
@@ -34,7 +34,7 @@ const wall = await author.posts({ limit: 20 });
 ```
 
 `hydrateClient()` возвращает типизированный фасад. Исходный `ItdClient` остаётся владельцем
-авторизации, плагинов, очереди запросов и realtime-соединений.
+авторизации, плагинов, очереди запросов и событийных соединений.
 
 ## Доступные действия
 
@@ -103,14 +103,14 @@ await posts[0]?.comment('Первый комментарий');
 Один объект `Paginator` остаётся одноразовым. Для повторного прохода создайте новый через метод
 ресурса.
 
-## Realtime
+## События
 
 Уведомления и вложенные модели гидратируются до вызова промежуточных и обычных обработчиков:
 
 ```ts
 import { NotificationType } from 'itd-api';
 
-const stream = itd.realtime();
+const stream = itd.notifications.events;
 
 stream.onNotification(
   [
@@ -151,15 +151,15 @@ await stream.connect();
 Для маршрутизатора укажите тип гидратированного контекста:
 
 ```ts
-import { RealtimeRouter, RealtimeUpdateType } from 'itd-api';
-import type { HydratedRealtimeContext } from '@itd-api/hydrate';
+import { EventRouter, NotificationUpdateType } from 'itd-api';
+import type { HydratedEventContext } from '@itd-api/hydrate';
 
-const router = new RealtimeRouter(
-  (context: HydratedRealtimeContext) => context.update.type,
+const router = new EventRouter(
+  (context: HydratedEventContext) => context.update.type,
 );
 
-router.route(RealtimeUpdateType.Notification, async (context, next) => {
-  if (context.update.type === RealtimeUpdateType.Notification) {
+router.route(NotificationUpdateType.Notification, async (context, next) => {
+  if (context.update.type === NotificationUpdateType.Notification) {
     await context.update.data.notification.actors[0]?.follow();
   }
   await next();

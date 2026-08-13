@@ -7,6 +7,7 @@ import {
 } from './buckets.js';
 import {
   isBuiltInOperationId,
+  OPERATIONS,
   operationBucket,
   operationMethod,
   operationRetrySafety,
@@ -21,6 +22,7 @@ import {
  * @internal
  */
 export const ITD_CATALOG: OperationCatalog = Object.freeze({
+  definitionOf: (id) => (isBuiltInOperationId(id) ? OPERATIONS[id] : undefined),
   retrySafetyOf: (id) => (isBuiltInOperationId(id) ? operationRetrySafety(id) : undefined),
   methodOf: (id) => (isBuiltInOperationId(id) ? operationMethod(id) : undefined),
   // Неизвестный ID каталог сам сводит к бакету по умолчанию.

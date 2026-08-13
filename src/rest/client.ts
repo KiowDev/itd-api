@@ -3,7 +3,8 @@ import { type AuthProvider, anonymousAuth, bearerToken } from '../core/auth-prov
 import { ItdConfigError, ItdStateError } from '../core/errors.js';
 import { type ClientRuntime, createClientRuntime } from '../core/execution/client-runtime.js';
 import { ExtensibleOperationCatalog } from '../core/feature-catalog.js';
-import { type ClientFeature, FeatureRegistry } from '../core/features.js';
+import { type ClientFeatureHost, createFeatureHost } from '../core/feature-host.js';
+import type { ClientFeature } from '../core/features.js';
 import type { RawRequestOptions, RuntimeOptions } from '../core/options.js';
 import type { ClientPlugin } from '../core/plugins/contracts.js';
 import type { RateLimitBucketState } from '../core/scheduling/rate-limit.js';
@@ -12,7 +13,7 @@ import { ITD_CATALOG } from '../domain/catalog.js';
 import type { CommentsResource } from '../resources/comments.js';
 import type { FilesResource } from '../resources/files.js';
 import type { HashtagsResource } from '../resources/hashtags.js';
-import type { NotificationsResource } from '../resources/notifications.js';
+import { NotificationsResource } from '../resources/notifications.js';
 import type { PlatformResource } from '../resources/platform.js';
 import type { PostsResource } from '../resources/posts.js';
 import type { ReportsResource } from '../resources/reports.js';
@@ -54,7 +55,7 @@ export interface RestClientOptions extends RuntimeOptions {
  */
 export class ItdRestClient {
   readonly #runtime: ClientRuntime;
-  readonly #features: FeatureRegistry;
+  readonly #features: ClientFeatureHost;
   readonly #resources: RestResources;
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
   #disposePromise: Promise<void> | undefined;
@@ -129,22 +130,16 @@ export class ItdRestClient {
       assertActive: (action) => this.#assertActive(action),
       auth: () => resolveAuthProvider(auth),
     });
-    this.#features = new FeatureRegistry({
-      http: this.#runtime.http,
-      services: this.#runtime.services,
-      serviceOverrides: this.#runtime.config.services,
+    this.#features = createFeatureHost(this.#runtime, {
       catalog,
-      baseUrl: this.#runtime.config.baseUrl,
-      clock: this.#runtime.config.clock,
-      logger: this.#runtime.config.logger,
       assertActive: (action) => this.#assertActive(action),
-      registerBucket: (name, definition) => this.#runtime.registerRateLimitBucket(name, definition),
     });
     const status = this.#features.install(createStatusFeature());
     this.#resources = createResources({
       http: this.#runtime.http,
-      fetch: this.#runtime.config.fetch,
+      files: this.#features.files,
       status,
+      createNotifications: (http) => new NotificationsResource(http),
     });
   }
 
@@ -184,12 +179,12 @@ export class ItdRestClient {
     return this.#runtime.rateLimitState();
   }
 
-  /** Устанавливает REST feature поверх общего request pipeline клиента. */
+  /** Устанавливает REST-модуль с общей обработкой запросов клиента. */
   install<TApi>(feature: ClientFeature<TApi>): TApi {
     return this.#features.install(feature);
   }
 
-  /** Устанавливает REST feature и публикует его API как readonly-свойство клиента. */
+  /** Устанавливает REST-модуль и добавляет его API в свойство только для чтения. */
   withFeature<const K extends string, TApi>(
     key: K,
     feature: ClientFeature<TApi>,
@@ -215,12 +210,12 @@ export class ItdRestClient {
     return this as this & { readonly [P in K]: TApi };
   }
 
-  /** Имена установленных feature в порядке установки. */
+  /** Имена установленных модулей в порядке установки. */
   featureNames(): string[] {
     return this.#features.names();
   }
 
-  /** Установлен ли feature с таким именем. */
+  /** Установлен ли модуль с таким именем. */
   hasFeature(name: string): boolean {
     return this.#features.has(name);
   }
@@ -322,7 +317,7 @@ export class ItdRestClient {
 
   async #dispose(): Promise<void> {
     const errors: unknown[] = [];
-    // Телеметрия уходит через ещё установленный plugin pipeline и мимо проверки состояния.
+    // Телеметрия уходит через ещё установленные плагины и мимо проверки состояния.
     this.#resources.prepareTelemetryClose();
     try {
       await this.#features.close();

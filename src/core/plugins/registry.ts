@@ -1,5 +1,6 @@
 import { createDeadline, type Deadline, type ItdClock } from '../clock.js';
 import { ItdConfigError, ItdStateError } from '../errors.js';
+import type { OperationMetadata } from '../operation.js';
 import type { OperationRequestOptions } from '../options.js';
 import { type RegisteredAttemptInterceptor, withAttemptInterceptorScope } from './attempts.js';
 import type {
@@ -30,6 +31,10 @@ export interface PluginRegistryOptions {
   /** Срок ожидания операций плагина при его отключении, мс. `0` — ждать без ограничения. */
   shutdownTimeout: number;
   clock: ItdClock;
+  /** Возвращает публичные метаданные встроенной или feature-операции. */
+  operationMetadata: (
+    operationId: OperationRequestOptions['operationId'],
+  ) => OperationMetadata | undefined;
 }
 
 /**
@@ -117,6 +122,7 @@ export class PluginRegistry {
     const installed = plugin.install({
       ...context,
       operations: {
+        get: this.#options.operationMetadata,
         use: (transformer) => register(transformers, transformer, 'operations'),
       },
       attempts: {
@@ -167,8 +173,11 @@ export class PluginRegistry {
     const deadline = createDeadline(this.#options.shutdownTimeout, this.#options.clock);
     const cleanup = this.#trackCleanup(
       (async () => {
-        const expired = await this.#release(entry, deadline);
-        if (expired) throw expired;
+        const expirationErrors = await this.#release(entry, deadline);
+        if (expirationErrors.length === 1) throw expirationErrors[0];
+        if (expirationErrors.length > 1) {
+          throw new AggregateError(expirationErrors, `Не удалось отключить плагин «${name}»`);
+        }
       })(),
     );
     try {
@@ -203,8 +212,7 @@ export class PluginRegistry {
         }
         for (const entry of entries) {
           try {
-            const expired = await this.#release(entry, deadline);
-            if (expired) errors.push(expired);
+            errors.push(...(await this.#release(entry, deadline)));
           } catch (error) {
             errors.push(error);
           } finally {
@@ -238,13 +246,39 @@ export class PluginRegistry {
     request: OperationRequestOptions,
     execute: (request: OperationRequestOptions) => Promise<unknown>,
   ): Promise<unknown> {
-    const entries = [...this.#ordered];
+    const ordered = this.#ordered;
+    if (ordered.length === 0) return execute(request);
+    const entries = [...ordered];
     for (const entry of entries) entry.activeRequests += 1;
     const interceptorScope: RegisteredAttemptInterceptor[] = entries.flatMap((entry) =>
       entry.interceptors.map((interceptor) => ({ plugin: entry.plugin.name, interceptor })),
     );
-    const scoped = (current: OperationRequestOptions): OperationRequestOptions =>
-      withAttemptInterceptorScope(current, interceptorScope);
+    const operationId = request.operationId;
+    const method = request.method.toUpperCase();
+    const retrySafety = request.retrySafety;
+    const scoped = (current: OperationRequestOptions): OperationRequestOptions => {
+      const prepared = current.retrySafety === undefined ? { ...current, retrySafety } : current;
+      return interceptorScope.length === 0
+        ? prepared
+        : withAttemptInterceptorScope(prepared, interceptorScope);
+    };
+    const validateContract = (prepared: OperationRequestOptions): void => {
+      if (prepared.operationId !== operationId) {
+        throw new ItdConfigError(
+          `operation transformer не может заменить operationId «${operationId}» на «${prepared.operationId}»`,
+        );
+      }
+      if (prepared.method.toUpperCase() !== method) {
+        throw new ItdConfigError(
+          `operation transformer не может заменить метод «${method}» операции «${operationId}» на «${prepared.method}»`,
+        );
+      }
+      if (prepared.retrySafety !== undefined && prepared.retrySafety !== retrySafety) {
+        throw new ItdConfigError(
+          `operation transformer не может заменить retrySafety операции «${operationId}»`,
+        );
+      }
+    };
     const chain = entries
       .flatMap((entry) =>
         entry.transformers.map((transformer) => ({ plugin: entry.plugin.name, transformer })),
@@ -260,10 +294,14 @@ export class PluginRegistry {
                 );
               }
               called = true;
+              validateContract(prepared);
               return next(scoped(prepared));
             });
           },
-        (current) => execute(scoped(current)),
+        (current) => {
+          validateContract(current);
+          return execute(scoped(current));
+        },
       );
 
     try {
@@ -283,20 +321,42 @@ export class PluginRegistry {
   /**
    * Дожидается операций плагина и освобождает его ресурсы.
    *
-   * `teardown` выполняется в любом случае, в том числе после истечения срока.
+   * Функция очистки запускается после ожидания активных операций. Обе стадии ограничены
+   * общим сроком.
    *
-   * @returns ошибка истёкшего срока, если ждать пришлось дольше отведённого
+   * @returns ошибки истёкшего срока для незавершённых стадий
    */
-  async #release(entry: InstalledPlugin, deadline: Deadline): Promise<ItdStateError | undefined> {
-    const finished = await deadline.wait(this.#waitForDrain(entry));
-    await entry.teardown?.();
+  async #release(entry: InstalledPlugin, deadline: Deadline): Promise<ItdStateError[]> {
+    const errors: ItdStateError[] = [];
+    const operationsFinished = await deadline.wait(this.#waitForDrain(entry));
+    if (!operationsFinished) {
+      errors.push(
+        new ItdStateError(
+          `плагин «${entry.plugin.name}» не завершил операции за ${this.#options.shutdownTimeout} мс`,
+        ),
+      );
+    }
 
-    return finished
-      ? undefined
-      : new ItdStateError(
-          `плагин «${entry.plugin.name}» не завершил операции за ${this.#options.shutdownTimeout} мс; ` +
-            'ожидание прекращено, ресурсы плагина освобождены',
-        );
+    let teardownFailed = false;
+    let teardownFailure: unknown;
+    const teardown = Promise.resolve()
+      .then(() => entry.teardown?.())
+      .catch((error: unknown) => {
+        teardownFailed = true;
+        teardownFailure = error;
+      });
+    const teardownFinished = await deadline.wait(teardown);
+    if (!teardownFinished) {
+      errors.push(
+        new ItdStateError(
+          `плагин «${entry.plugin.name}» не завершил teardown за ${this.#options.shutdownTimeout} мс`,
+        ),
+      );
+    } else if (teardownFailed) {
+      throw teardownFailure;
+    }
+
+    return errors;
   }
 
   #waitForDrain(entry: InstalledPlugin): Promise<void> {

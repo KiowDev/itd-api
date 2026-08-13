@@ -51,6 +51,22 @@ unuse(name: string): Promise<boolean>
 Подключает плагин всем аккаунтам — и заведённым, и будущим; показывает общий набор или
 отключает плагин сразу у всех клиентов.
 
+Модули из `features` устанавливаются только при создании клиента и не имеют динамического
+аналога `use()`/`unuse()`. Для каждого аккаунта вызывается отдельный `create()`; если задан
+`key`, API публикуется в свойстве клиента только для чтения. Порядок создания клиента стабилен:
+сначала общие плагины, затем модули в порядке массива `features`, затем публикация аккаунта
+в контейнере. Ошибка фабрики или `setup()` отменяет создание аккаунта целиком.
+
+```ts
+const accounts = new ItdAccounts({
+  features: [{ key: 'probe', create: () => probeFeature() }],
+});
+
+const client = accounts.addAccount('bot');
+// client.probe доступен во время выполнения. Типизированный shortcut предоставляет
+// фабрика конкретного модуля; базовый ItdAccounts не расширяет тип клиента через unknown.
+```
+
 ```ts
 on<K>(event: K, listener): Unsubscribe
 ```
@@ -61,7 +77,7 @@ close(): Promise<void>
 dispose(): Promise<void>
 ```
 `close()` временно закрывает все аккаунты и останавливает общую очередь, не отключая
-плагины. `dispose()` дополнительно вызывает teardown плагинов, отзывает storage-срезы и
+плагины. `dispose()` дополнительно запускает функции очистки плагинов, отзывает срезы хранилища и
 подписки и терминально закрывает контейнер вместе с клиентами. Новые аккаунты, запросы и
 плагины после него завершаются с `ItdStateError`. `await using` вызывает `dispose()`.
 
@@ -87,7 +103,13 @@ dispose(): Promise<void>
 interface ItdAccountsOptions extends Omit<ItdClientOptions, 'auth' | 'storage' | 'deviceId'> {
   storage?: MultiTokenStorage;           // по умолчанию MemoryMultiTokenStorage
   plugins?: readonly ClientPlugin[];     // подключаются каждому аккаунту
+  features?: readonly AccountFeature[];  // новое описание модуля для каждого аккаунта
   rateLimitScope?: 'account' | 'shared'; // очередь: своя у каждого / общая; по умолчанию 'shared'
+}
+
+interface AccountFeature<TApi = unknown> {
+  readonly key?: string;                 // необязательное свойство клиента только для чтения
+  create(): ClientFeature<TApi>;         // вызывается отдельно для каждого аккаунта
 }
 
 type AddAccountOptions = Omit<ItdClientOptions, 'storage'>;

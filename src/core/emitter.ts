@@ -32,7 +32,7 @@ export class Emitter<Events> {
    *
    * @example
    * ```ts
-   * const off = realtime.on('notification', (event) => console.log(event));
+   * const off = events.on('notification', (event) => console.log(event));
    * off();
    * ```
    */

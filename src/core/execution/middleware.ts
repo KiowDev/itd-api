@@ -5,7 +5,6 @@ import { type ResolvedRetryOptions, resolveRetry } from '../config.js';
 import { ItdAbortError, isItdApiError, isItdRateLimitError } from '../errors.js';
 import type { ClientHooks, Logger, RequestOptions } from '../options.js';
 import { dispatchRequestHook } from '../plugins/hooks.js';
-import type { PluginRegistry } from '../plugins/registry.js';
 import {
   createRetryScheduler,
   type RetryPolicy,
@@ -66,10 +65,6 @@ export function createQueueMiddleware(
  * разу, иначе, например, текст поста зашифруется дважды. Здесь же к операции привязывается
  * snapshot attempt interceptors; сами они выполняются транспортом на каждой попытке.
  */
-export function createPluginsMiddleware(plugins: PluginRegistry): RequestMiddleware {
-  return (request, next) => plugins.run(request, next);
-}
-
 /**
  * Слой сервисов.
  *

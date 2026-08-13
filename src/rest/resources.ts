@@ -1,10 +1,11 @@
 import type { FileInput } from '../core/attachments/contracts.js';
+import type { InternalFileResolver } from '../core/attachments/resolver.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
 import { CommentsResource } from '../resources/comments.js';
 import { FilesResource, type UploadOptions } from '../resources/files.js';
 import { HashtagsResource } from '../resources/hashtags.js';
-import { NotificationsResource } from '../resources/notifications.js';
+import type { NotificationsResource } from '../resources/notifications.js';
 import { PlatformResource } from '../resources/platform.js';
 import { PostsResource } from '../resources/posts.js';
 import { ReportsResource } from '../resources/reports.js';
@@ -20,13 +21,15 @@ import { UsersResource } from '../resources/users.js';
 import { VerificationResource } from '../resources/verification.js';
 
 /** Что нужно ресурсам, чтобы ходить в API. */
-export interface ResourceDeps {
+export interface ResourceDeps<N extends NotificationsResource> {
   /** Точка входа в конвейер запросов. */
   http: HttpClient;
-  /** Реализация `fetch` — {@link FilesResource} скачивает по ней вложения по адресу. */
-  fetch: typeof fetch;
+  /** Общий механизм подготовки файловых источников клиента. */
+  files: InternalFileResolver;
   /** Встроенный status feature, которому делегирует `platform.status()`. */
   status: StatusResource;
+  /** Выбирает базовый REST-ресурс либо API уведомлений полного клиента. */
+  createNotifications(http: HttpClient): N;
 }
 
 /**
@@ -34,12 +37,12 @@ export interface ResourceDeps {
  *
  * `auth` сюда не входит: он управляет сессией и потому принадлежит полному клиенту.
  */
-export interface RestResources {
+export interface RestResources<N extends NotificationsResource = NotificationsResource> {
   readonly users: UsersResource;
   readonly posts: PostsResource;
   readonly comments: CommentsResource;
   readonly files: FilesResource;
-  readonly notifications: NotificationsResource;
+  readonly notifications: N;
   readonly hashtags: HashtagsResource;
   readonly search: SearchResource;
   readonly reports: ReportsResource;
@@ -66,12 +69,14 @@ export interface RestResources {
  * Набор общий для полного клиента и минимального REST-клиента — иначе список ресурсов
  * и их зависимости разъезжались бы по двум фасадам.
  */
-export function createResources(deps: ResourceDeps): RestResources {
+export function createResources<N extends NotificationsResource>(
+  deps: ResourceDeps<N>,
+): RestResources<N> {
   let users: UsersResource | undefined;
   let posts: PostsResource | undefined;
   let comments: CommentsResource | undefined;
   let files: FilesResource | undefined;
-  let notifications: NotificationsResource | undefined;
+  let notifications: N | undefined;
   let hashtags: HashtagsResource | undefined;
   let search: SearchResource | undefined;
   let reports: ReportsResource | undefined;
@@ -80,7 +85,7 @@ export function createResources(deps: ResourceDeps): RestResources {
   let platform: PlatformResource | undefined;
   let telemetry: TelemetryResource | undefined;
 
-  const bag: RestResources = {
+  const bag: RestResources<N> = {
     get users() {
       users ??= new UsersResource(deps.http, { uploadFile });
       return users;
@@ -94,11 +99,11 @@ export function createResources(deps: ResourceDeps): RestResources {
       return comments;
     },
     get files() {
-      files ??= new FilesResource(deps.http, { fetch: deps.fetch });
+      files ??= new FilesResource(deps.http, { files: deps.files });
       return files;
     },
     get notifications() {
-      notifications ??= new NotificationsResource(deps.http);
+      notifications ??= deps.createNotifications(deps.http);
       return notifications;
     },
     get hashtags() {

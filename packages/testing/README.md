@@ -1,6 +1,6 @@
 # @itd-api/testing
 
-Сценарные ответы, сервер API в памяти, заготовки данных и управляемый realtime для
+Сценарные ответы, сервер API в памяти, заготовки данных и управляемые события для
 тестирования [`itd-api`](https://github.com/KiowDev/itd-api) без сетевых запросов.
 
 [Руководство](https://kiowdev.github.io/itd-api/packages/testing) ·
@@ -13,7 +13,7 @@ npm install itd-api
 npm install --save-dev @itd-api/testing
 ```
 
-Поддерживается `itd-api >=0.5.0 <1.0.0`.
+Поддерживается `itd-api >=0.8.0 <1.0.0`.
 
 ## Сервер с состоянием
 
@@ -81,19 +81,23 @@ await itd.users.me();
 mock.assertDone();
 ```
 
-Такой mock завершает логическую операцию до retry, auth и transport. Для проверки `401`,
+Такая заглушка завершает логическую операцию до повторов, авторизации и транспорта. Для проверки `401`,
 повторов, заголовков и сериализации по-прежнему используйте `createMockFetch()`.
 
-## Управляемое время и realtime
+## Управляемое время и события
 
 ```ts
-import { createTestClock, MockRealtimeTransport } from '@itd-api/testing';
+import { createTestClock, MockEventTransport } from '@itd-api/testing';
 
 const clock = createTestClock('2026-08-01T10:00:00Z');
-const transport = new MockRealtimeTransport();
+const transport = new MockEventTransport();
 
-const itd = new ItdClient({ auth: 'test-token', clock });
-const stream = itd.realtime({ transport, syncCount: false, jitter: 0 });
+const itd = new ItdClient({
+  auth: 'test-token',
+  clock,
+  events: { notifications: { transport, syncCount: false, jitter: 0 } },
+});
+const stream = itd.notifications.events;
 await stream.connect();
 await transport.waitForConnection(0);
 

@@ -1,11 +1,11 @@
 import type { Comment, ItdClock, MyProfile, Notification, Post, PublicProfile } from 'itd-api';
+import { MockEventTransport } from '../events.js';
 import {
   commentFixture,
   notificationFixture,
   postFixture,
   publicProfileFixture,
 } from '../fixtures.js';
-import { MockRealtimeTransport } from '../realtime.js';
 import type { MockRequest } from '../request.js';
 import type { MockServerSeed, MockServerSnapshot } from './contracts.js';
 import type { CommentState, NotificationState, PostState, UserState } from './entities.js';
@@ -31,7 +31,7 @@ export class MockServerState {
   posts = new Map<string, PostState>();
   comments = new Map<string, CommentState>();
   notifications: NotificationState[] = [];
-  readonly realtime = new Map<string, Set<MockRealtimeTransport>>();
+  readonly eventTransports = new Map<string, Set<MockEventTransport>>();
   readonly clock: ItdClock;
   #postSequence = 1;
   #commentSequence = 1;
@@ -165,7 +165,7 @@ export class MockServerState {
       updatedAt: createdAt,
     });
     this.notifications.unshift({ userId, value });
-    for (const transport of this.realtime.get(userId) ?? []) {
+    for (const transport of this.eventTransports.get(userId) ?? []) {
       if (transport.connected) transport.notification(value, this.unreadCount(userId));
     }
   }
@@ -191,11 +191,11 @@ export class MockServerState {
     return id;
   }
 
-  registerRealtime(user: UserState): MockRealtimeTransport {
-    const transport = new MockRealtimeTransport();
-    const transports = this.realtime.get(user.profile.id) ?? new Set();
+  registerEventTransport(user: UserState): MockEventTransport {
+    const transport = new MockEventTransport();
+    const transports = this.eventTransports.get(user.profile.id) ?? new Set();
     transports.add(transport);
-    this.realtime.set(user.profile.id, transports);
+    this.eventTransports.set(user.profile.id, transports);
     return transport;
   }
 

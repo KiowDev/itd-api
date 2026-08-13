@@ -1,10 +1,45 @@
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { pickBoolean, pickNumber } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
+import { defineBuiltInOperation } from '../domain/operations.js';
 import type { Notification, NotificationSettings } from '../models/notifications.js';
 import { normalizeNotification } from '../notifications/normalize.js';
 import { BaseResource } from './base.js';
-import { type Page, PaginationMode, type Paginator, readOffsetPage } from './pagination.js';
+import {
+  type Page,
+  PaginationMode,
+  type Paginator,
+  pageOperation,
+  readOffsetPage,
+} from './pagination.js';
+
+const NOTIFICATIONS_LIST = pageOperation<Notification>('notifications.list', (body, request) => {
+  const offset = Number(request.query?.offset ?? 0);
+  const page = readOffsetPage<unknown>(body, 'notifications', Number.isFinite(offset) ? offset : 0);
+  return { ...page, items: page.items.map(normalizeNotification) };
+});
+const NOTIFICATIONS_COUNT = defineBuiltInOperation<number>('notifications.count', (body) =>
+  pickNumber(body, 'count', 0),
+);
+const markedCountOperation = <
+  TId extends
+    | 'notifications.markRead'
+    | 'notifications.markReadBatch'
+    | 'notifications.markAllRead',
+>(
+  id: TId,
+) => defineBuiltInOperation<number, TId>(id, (body) => pickNumber(body, 'markedCount', 0));
+const NOTIFICATIONS_MARK_READ = markedCountOperation('notifications.markRead');
+const NOTIFICATIONS_MARK_READ_BATCH = markedCountOperation('notifications.markReadBatch');
+const NOTIFICATIONS_MARK_ALL_READ = markedCountOperation('notifications.markAllRead');
+const NOTIFICATIONS_GET_SETTINGS = defineBuiltInOperation<NotificationSettings>(
+  'notifications.getSettings',
+  readSettings,
+);
+const NOTIFICATIONS_UPDATE_SETTINGS = defineBuiltInOperation<NotificationSettings>(
+  'notifications.updateSettings',
+  readSettings,
+);
 
 const NOTIFICATION_SETTING_KEYS = [
   'enabled',
@@ -55,17 +90,11 @@ function readSettings(body: unknown): NotificationSettings {
 export class NotificationsResource extends BaseResource {
   /** Уведомления: `/api/notifications/`, пагинация по смещению. */
   readonly #list = this.paginated<Notification, NotificationListParams>({
-    operationId: 'notifications.list',
+    operation: NOTIFICATIONS_LIST,
     // Завершающий слэш обязателен: без него сервер отвечает ошибкой.
     path: () => '/api/notifications/',
     query: (p) => ({ limit: p.limit }),
     start: (p) => ({ offset: p.offset ?? 0 }),
-    read: (body, state) => {
-      const page = readOffsetPage<unknown>(body, 'notifications', state.offset ?? 0);
-      // Сайт итд.com оборачивает смещение в строку и притворяется, что это курсор;
-      // библиотека отдаёт честное число, а сами уведомления — в единой форме.
-      return { ...page, items: page.items.map(normalizeNotification) };
-    },
     mode: PaginationMode.Offset,
   });
 
@@ -105,13 +134,11 @@ export class NotificationsResource extends BaseResource {
   }
 
   /** Загружает число непрочитанных уведомлений. */
-  async count(options: RequestOptions = {}): Promise<number> {
-    const body = await this.http.operation('notifications.count', {
+  count(options: RequestOptions = {}): Promise<number> {
+    return this.http.execute(NOTIFICATIONS_COUNT, {
       path: '/api/notifications/count',
       ...options,
     });
-
-    return pickNumber(body, 'count', 0);
   }
 
   /**
@@ -119,13 +146,11 @@ export class NotificationsResource extends BaseResource {
    *
    * @returns сколько записей отметил сервер
    */
-  async markRead(notificationId: string, options: RequestOptions = {}): Promise<number> {
-    const body = await this.http.operation('notifications.markRead', {
+  markRead(notificationId: string, options: RequestOptions = {}): Promise<number> {
+    return this.http.execute(NOTIFICATIONS_MARK_READ, {
       path: `/api/notifications/${encodePathSegment(notificationId, 'notificationId')}/read`,
       ...options,
     });
-
-    return pickNumber(body, 'markedCount', 0);
   }
 
   /**
@@ -143,36 +168,30 @@ export class NotificationsResource extends BaseResource {
     for (let index = 0; index < ids.length; index += READ_BATCH_SIZE) {
       const chunk = ids.slice(index, index + READ_BATCH_SIZE);
 
-      const body = await this.http.operation('notifications.markReadBatch', {
+      marked += await this.http.execute(NOTIFICATIONS_MARK_READ_BATCH, {
         path: '/api/notifications/read-batch',
         body: { ids: chunk },
         ...options,
       });
-
-      marked += pickNumber(body, 'markedCount', 0);
     }
 
     return marked;
   }
 
   /** Отмечает прочитанными все уведомления. */
-  async markAllRead(options: RequestOptions = {}): Promise<number> {
-    const body = await this.http.operation('notifications.markAllRead', {
+  markAllRead(options: RequestOptions = {}): Promise<number> {
+    return this.http.execute(NOTIFICATIONS_MARK_ALL_READ, {
       path: '/api/notifications/read-all',
       ...options,
     });
-
-    return pickNumber(body, 'markedCount', 0);
   }
 
   /** Загружает настройки уведомлений. */
-  async getSettings(options: RequestOptions = {}): Promise<NotificationSettings> {
-    const body = await this.http.operation('notifications.getSettings', {
+  getSettings(options: RequestOptions = {}): Promise<NotificationSettings> {
+    return this.http.execute(NOTIFICATIONS_GET_SETTINGS, {
       path: '/api/notifications/settings',
       ...options,
     });
-
-    return readSettings(body);
   }
 
   /**
@@ -191,12 +210,10 @@ export class NotificationsResource extends BaseResource {
       if (value !== undefined) payload[key] = value;
     }
 
-    const body = await this.http.operation('notifications.updateSettings', {
+    return this.http.execute(NOTIFICATIONS_UPDATE_SETTINGS, {
       path: '/api/notifications/settings',
       body: payload,
       ...options,
     });
-
-    return readSettings(body);
   }
 }

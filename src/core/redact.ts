@@ -18,7 +18,7 @@ const SECRET_FIELDS = new Set([
 ]);
 
 /** Query-параметры, содержащие секреты. */
-const SECRET_QUERY_PARAMS = new Set(['token', 'access_token']);
+const SECRET_QUERY_PARAMS = new Set(['token', 'access_token', 'c']);
 
 /**
  * Прячет середину секрета, оставляя концы для сопоставления.
@@ -47,8 +47,31 @@ export function redactUrl(url: string): string {
     }
     return parsed.toString();
   } catch {
-    return url.replace(/([?&](?:token|access_token)=)[^&#]*/gi, '$1[скрыто]');
+    return url.replace(/([?&](?:token|access_token|c)=)[^&#]*/gi, '$1[скрыто]');
   }
+}
+
+/** Маскирует подписанные адреса внутри произвольного диагностического текста. */
+export function redactUrlsInText(text: string): string {
+  return text.replace(/https?:\/\/[^\s"'<>]+/gi, (url) => redactUrl(url));
+}
+
+/**
+ * Создаёт безопасную причину ошибки для публичной цепочки `cause`.
+ *
+ * Чужие объекты не сохраняются: их поля и пользовательские методы нельзя надёжно
+ * сериализовать без риска вывести секрет. Для Error и строк остаются тип и сообщение,
+ * но все встреченные в сообщении HTTP(S)-адреса проходят маскирование.
+ */
+export function redactErrorCause(error: unknown): Error | undefined {
+  const message =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : undefined;
+  if (message === undefined) return undefined;
+
+  const safeMessage = redactUrlsInText(message);
+  const safe = error instanceof TypeError ? new TypeError(safeMessage) : new Error(safeMessage);
+  if (error instanceof Error && !(error instanceof TypeError)) safe.name = error.name;
+  return safe;
 }
 
 /**

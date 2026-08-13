@@ -9,6 +9,7 @@ import { systemClock } from './core/clock.js';
 import { resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
 import { ItdConfigError, ItdStateError } from './core/errors.js';
+import type { ClientFeature } from './core/features.js';
 import type { Logger } from './core/options.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
@@ -28,6 +29,17 @@ import type { TokenStorage } from './session/storage.js';
 export type RateLimitScope = 'account' | 'shared';
 
 /**
+ * Фабрика подключаемого модуля для клиентов {@link ItdAccounts}.
+ *
+ * `create()` вызывается отдельно для каждого аккаунта, поэтому описание модуля и его API
+ * между клиентами не разделяется. `key` публикует API как readonly-свойство клиента.
+ */
+export interface AccountFeature<TApi = unknown> {
+  readonly key?: string | undefined;
+  create(): ClientFeature<TApi>;
+}
+
+/**
  * Опции конструктора {@link ItdAccounts}.
  *
  * Всё, что понимает `ItdClient`, кроме `auth` и `deviceId`: они у каждого аккаунта свои
@@ -43,6 +55,8 @@ export interface ItdAccountsOptions
   storage?: MultiTokenStorage | undefined;
   /** Плагины, подключаемые каждому аккаунту, в том числе добавленному позже. */
   plugins?: readonly ClientPlugin[] | undefined;
+  /** Модули, создаваемые и устанавливаемые отдельно для каждого аккаунта. */
+  features?: readonly AccountFeature[] | undefined;
   /**
    * Как делить очередь запросов. По умолчанию `'shared'` — одна на всех.
    *
@@ -97,6 +111,43 @@ function validateAccountName(name: string): void {
   if (typeof name !== 'string' || name.trim() === '') {
     throw new ItdConfigError('имя аккаунта должно быть непустой строкой');
   }
+}
+
+/** Проверяет фабрики до создания первого аккаунта. */
+function resolveAccountFeatures(features: readonly AccountFeature[] | undefined): AccountFeature[] {
+  if (features === undefined) return [];
+  if (!Array.isArray(features)) {
+    throw new ItdConfigError('features должен быть массивом фабрик подключаемых модулей');
+  }
+
+  const keys = new Set<string>();
+  return features.map((feature, index) => {
+    if (typeof feature !== 'object' || feature === null || typeof feature.create !== 'function') {
+      throw new ItdConfigError(`features[${index}] должен предоставлять create()`);
+    }
+    if (feature.key !== undefined) {
+      if (
+        typeof feature.key !== 'string' ||
+        feature.key.trim() === '' ||
+        feature.key !== feature.key.trim()
+      ) {
+        throw new ItdConfigError(
+          `features[${index}].key должен быть непустой строкой без пробелов`,
+        );
+      }
+      if (keys.has(feature.key)) {
+        throw new ItdConfigError(
+          `Свойство подключаемого модуля «${feature.key}» объявлено повторно`,
+        );
+      }
+      keys.add(feature.key);
+    }
+    const create = feature.create.bind(feature);
+    return Object.freeze({
+      ...(feature.key === undefined ? {} : { key: feature.key }),
+      create,
+    });
+  });
 }
 
 const DISPOSED_ACCOUNTS = new WeakSet<ItdAccounts>();
@@ -154,6 +205,8 @@ export class ItdAccounts {
   readonly #eventUnsubscribers = new Map<string, Unsubscribe[]>();
   /** Плагины для всех: и для уже заведённых аккаунтов, и для будущих. */
   readonly #plugins: ClientPlugin[];
+  /** Фабрики модулей для новых и восстанавливаемых аккаунтов. */
+  readonly #features: AccountFeature[];
   /** Имена плагинов, чья асинхронная очистка ещё не завершилась. */
   readonly #removingPlugins = new Set<string>();
   /** Общая очередь. `undefined`, когда у каждого аккаунта своя. */
@@ -165,7 +218,7 @@ export class ItdAccounts {
   #disposePromise: Promise<void> | undefined;
 
   constructor(options: ItdAccountsOptions = {}) {
-    const { storage, plugins, rateLimitScope, ...base } = options;
+    const { storage, plugins, features, rateLimitScope, ...base } = options;
 
     if (
       rateLimitScope !== undefined &&
@@ -178,6 +231,7 @@ export class ItdAccounts {
     this.#base = base;
     this.#storage = storage ?? new MemoryMultiTokenStorage();
     this.#plugins = orderPluginDefinitions(plugins ?? []);
+    this.#features = resolveAccountFeatures(features);
     this.#rateLimitScope = rateLimitScope ?? 'shared';
 
     // Общая очередь заводится сразу: проверить опции лучше при создании контейнера,
@@ -218,7 +272,7 @@ export class ItdAccounts {
   /**
    * Заводит аккаунт.
    *
-   * Возвращается обычный `ItdClient` — со всеми ресурсами, плагинами и `realtime()`.
+   * Возвращается обычный `ItdClient` — со всеми ресурсами, плагинами и каналом событий.
    * Хранилище ему подставляется само: срез общего по имени аккаунта.
    *
    * Опция `auth` не обязательна: когда сессия этого аккаунта уже лежит в хранилище,
@@ -266,11 +320,16 @@ export class ItdAccounts {
       );
 
       for (const plugin of this.#plugins) client.use(plugin);
+      for (const feature of this.#features) {
+        const manifest = feature.create();
+        if (feature.key === undefined) client.install(manifest);
+        else client.withFeature(feature.key, manifest);
+      }
     } catch (error) {
       storageControl.revoke();
       if (client) {
         void client.dispose().catch((cleanupError: unknown) => {
-          this.#reportPluginCleanup('неудачного добавления аккаунта', cleanupError);
+          this.#reportCleanup('неудачного добавления аккаунта', cleanupError);
         });
       }
       throw error;
@@ -431,7 +490,7 @@ export class ItdAccounts {
       // откатывается синхронно, а асинхронные teardown завершаются в фоне.
       for (const client of installed.reverse()) {
         void client.unuse(plugin.name).catch((cleanupError: unknown) => {
-          this.#reportPluginCleanup(`отката плагина «${plugin.name}»`, cleanupError);
+          this.#reportCleanup(`отката плагина «${plugin.name}»`, cleanupError);
         });
       }
       throw error;
@@ -567,6 +626,7 @@ export class ItdAccounts {
       Promise.resolve().then(() => this.#queues?.clear()),
     ]);
     this.#plugins.splice(0);
+    this.#features.splice(0);
     this.#removingPlugins.clear();
 
     const errors = results
@@ -607,9 +667,9 @@ export class ItdAccounts {
     };
   }
 
-  /** Не теряет ошибку фонового teardown, который синхронный API не может await-нуть. */
-  #reportPluginCleanup(scope: string, error: unknown): void {
-    const message = `Не удалось завершить teardown после ${scope}`;
+  /** Не теряет ошибку фонового освобождения ресурсов, которого синхронный API не ждёт. */
+  #reportCleanup(scope: string, error: unknown): void {
+    const message = `Не удалось освободить ресурсы после ${scope}`;
     if (this.#logger) this.#logger.error(message, error);
     else console.error(`[itd-api] ${message}`, error);
   }

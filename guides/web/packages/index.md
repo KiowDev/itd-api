@@ -6,7 +6,7 @@
 | Пакет | Для чего | Среда |
 |---|---|---|
 | [`@itd-api/turnstile`](./turnstile.md) | локальное получение Turnstile-токена для входа | Node.js с браузером |
-| [`@itd-api/proxy`](./proxy.md) | HTTP/HTTPS- и SOCKS5-прокси | Node.js |
+| [`@itd-api/proxy`](./proxy.md) | прокси-транспорт для HTTP и WebSocket | Node.js, Bun, Deno |
 | [`@itd-api/cache`](./cache.md) | TTL/LRU-кэш и дедупликация запросов | все поддерживаемые среды |
 | [`@itd-api/hydrate`](./hydrate.md) | методы действий на моделях API | все поддерживаемые среды |
 | [`@itd-api/crypto`](./crypto.md) | скрытые сообщения и шифрование полей | все поддерживаемые среды |

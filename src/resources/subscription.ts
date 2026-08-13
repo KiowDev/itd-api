@@ -1,7 +1,22 @@
 import type { RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
+import { defineBuiltInOperation } from '../domain/operations.js';
 import type { PaymentMethod, Subscription } from '../models/account.js';
+import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
+
+const SUBSCRIPTION_METHODS = defineBuiltInOperation<PaymentMethod[]>(
+  'subscription.methods',
+  (body) => (Array.isArray(body) ? (body as PaymentMethod[]) : []),
+);
+const SUBSCRIPTION_STATUS = passthroughOperation<Subscription>('subscription.status');
+const SUBSCRIPTION_PAY = passthroughOperation<unknown>('subscription.pay');
+const SUBSCRIPTION_SET_AUTO_RENEWAL = passthroughOperation<unknown>('subscription.setAutoRenewal');
+const SUBSCRIPTION_BIND_CARD = passthroughOperation<unknown>('subscription.bindCard');
+const SUBSCRIPTION_SET_DEFAULT_METHOD = passthroughOperation<unknown>(
+  'subscription.setDefaultMethod',
+);
+const SUBSCRIPTION_REMOVE_METHOD = voidOperation('subscription.removeMethod');
 
 /**
  * Подписка и способы оплаты.
@@ -11,7 +26,7 @@ import { BaseResource } from './base.js';
 export class SubscriptionResource extends BaseResource {
   /** Загружает состояние подписки и её цену. */
   status(options: RequestOptions = {}): Promise<Subscription> {
-    return this.http.operation<Subscription>('subscription.status', {
+    return this.http.execute(SUBSCRIPTION_STATUS, {
       // Завершающий слэш обязателен.
       path: '/api/v1/subscription/',
       ...options,
@@ -24,7 +39,7 @@ export class SubscriptionResource extends BaseResource {
    * Форма ответа в документации API не описана, поэтому тип результата не уточняется.
    */
   pay(options: RequestOptions = {}): Promise<unknown> {
-    return this.http.operation('subscription.pay', {
+    return this.http.execute(SUBSCRIPTION_PAY, {
       path: '/api/v1/subscription/pay',
       ...options,
     });
@@ -32,7 +47,7 @@ export class SubscriptionResource extends BaseResource {
 
   /** Включает или отключает автопродление. */
   setAutoRenewal(enabled: boolean, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.operation('subscription.setAutoRenewal', {
+    return this.http.execute(SUBSCRIPTION_SET_AUTO_RENEWAL, {
       path: '/api/v1/subscription/auto-renewal',
       body: { enabled },
       ...options,
@@ -41,25 +56,23 @@ export class SubscriptionResource extends BaseResource {
 
   /** Запускает привязку карты. */
   bindCard(options: RequestOptions = {}): Promise<unknown> {
-    return this.http.operation('subscription.bindCard', {
+    return this.http.execute(SUBSCRIPTION_BIND_CARD, {
       path: '/api/v1/subscription/bind-card',
       ...options,
     });
   }
 
   /** Загружает список способов оплаты. Пустой массив, если карт нет. */
-  async methods(options: RequestOptions = {}): Promise<PaymentMethod[]> {
-    const body = await this.http.operation('subscription.methods', {
+  methods(options: RequestOptions = {}): Promise<PaymentMethod[]> {
+    return this.http.execute(SUBSCRIPTION_METHODS, {
       path: '/api/v1/subscription/methods',
       ...options,
     });
-
-    return Array.isArray(body) ? (body as PaymentMethod[]) : [];
   }
 
   /** Делает способ оплаты основным. */
   setDefaultMethod(methodId: string, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.operation('subscription.setDefaultMethod', {
+    return this.http.execute(SUBSCRIPTION_SET_DEFAULT_METHOD, {
       path: `/api/v1/subscription/methods/${encodePathSegment(methodId, 'methodId')}/default`,
       ...options,
     });
@@ -67,7 +80,7 @@ export class SubscriptionResource extends BaseResource {
 
   /** Удаляет способ оплаты. */
   removeMethod(methodId: string, options: RequestOptions = {}): Promise<void> {
-    return this.http.operation<void>('subscription.removeMethod', {
+    return this.voidOperation(SUBSCRIPTION_REMOVE_METHOD, {
       path: `/api/v1/subscription/methods/${encodePathSegment(methodId, 'methodId')}`,
       ...options,
     });

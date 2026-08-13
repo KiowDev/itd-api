@@ -6,7 +6,7 @@ import type { RateLimitPacing } from './scheduling/pacing.js';
 import type { ServiceDefinition } from './services.js';
 import type { QueryParams } from './url.js';
 
-/** Куда библиотека пишет отладочные сообщения. Совместим с `console`. */
+/** Логгер библиотеки. Совместим с `console`. */
 export interface Logger {
   debug(message: string, ...args: unknown[]): void;
   info(message: string, ...args: unknown[]): void;
@@ -43,6 +43,8 @@ export interface RetryDecisionContext {
 export interface RateLimitBucketOverride {
   /** Одновременных запросов внутри бакета. */
   concurrency?: number | undefined;
+  /** Верхняя граница стартов внутри бакета в секунду. */
+  rps?: number | undefined;
   /** Ёмкость бакета до первого ответа, запросов в минуту. */
   limit?: number | undefined;
 }
@@ -70,8 +72,8 @@ export interface RateLimitOptions {
    *
    * `false` — одна очередь на направление: её пауза придерживает все запросы разом.
    * В этом режиме ёмкость отдельного счётчика неизвестна, поэтому `bucketConcurrency`,
-   * `bucketOverrides` и режим `pacing: 'smooth'` не действуют, а исчерпанный остаток
-   * встречается первой ступенью `retryDelays`.
+   * все поля `bucketOverrides` и режим `pacing: 'smooth'` не действуют, а исчерпанный
+   * остаток встречается первой ступенью `retryDelays`. Общий `rps` продолжает действовать.
    */
   buckets?: boolean | undefined;
   /**
@@ -85,7 +87,7 @@ export interface RateLimitOptions {
    *
    * @example
    * ```ts
-   * rateLimit: { bucketOverrides: { 'posts.create': { limit: 10 }, feed: { concurrency: 2 } } }
+   * rateLimit: { bucketOverrides: { 'posts.create': { rps: 2 }, feed: { concurrency: 2 } } }
    * ```
    */
   bucketOverrides?: Record<string, RateLimitBucketOverride> | undefined;
@@ -147,7 +149,7 @@ export interface RetryContext extends RequestContext {
 }
 
 /**
- * Перехватчики жизненного цикла запроса.
+ * Хуки запроса.
  *
  * Вызываются последовательно; исключение внутри хука прервёт запрос, поэтому свою логику
  * лучше оборачивать в `try`.
@@ -166,8 +168,8 @@ export interface ClientHooks {
 /**
  * Настройки исполнения запросов: куда ходить, как долго ждать и чем представляться.
  *
- * Всё, что нужно generic-ядру и ничего сверх того. Авторизация и сессия описаны отдельно
- * в {@link SessionOptions}, а полный набор опций клиента их объединяет.
+ * Всё, что нужно generic-ядру и ничего сверх того. Авторизация и сессия описаны отдельно,
+ * а полный набор опций клиента их объединяет.
  *
  * Все поля допускают явный `undefined`, чтобы можно было передавать значения, которых
  * может не быть, — например `new ItdClient({ timeout: process.env.TIMEOUT })`.
@@ -210,7 +212,7 @@ export interface RuntimeOptions {
   /**
    * Сколько `close()` и `dispose()` ждут чужой код, мс. По умолчанию 10000.
    *
-   * Ждут обработчиков realtime-потока и операций, вошедших в обёртки плагинов. По истечении
+   * Ждут обработчиков событийного канала и операций, вошедших в обёртки плагинов. По истечении
    * срока ресурсы всё равно освобождаются, а метод отклоняется `ItdStateError` с указанием
    * того, что удерживало остановку. `0` снимает ограничение.
    */
@@ -241,17 +243,16 @@ export interface RuntimeOptions {
 
   // — Наблюдаемость ————————————————————————————————————————————————————————————————————
 
-  /** Перехватчики запросов. */
+  /** Хуки запросов. */
   hooks?: ClientHooks | undefined;
-  /** Отладочный вывод. `true` — писать в `console`. */
+  /** Логгер. `true` — использовать `console`. */
   logger?: Logger | boolean | undefined;
 }
 
 /**
- * Namespaces расширений отдельной операции.
+ * Настройки плагинов для отдельной операции.
  *
- * Пакеты дополняют интерфейс через declaration merging и владеют только своим полем.
- * Core передаёт объект operation transformers без знания его содержимого.
+ * Пакеты дополняют интерфейс и используют отдельные именованные поля.
  */
 // biome-ignore lint/suspicious/noEmptyInterface: interface нужен для declaration merging пакетов
 export interface RequestExtensions {}
@@ -269,14 +270,14 @@ export interface RequestOptions {
   /**
    * Явно переопределяет безопасность повтора операции.
    *
-   * Встроенные resources получают значение из каталога. Опция нужна прежде всего custom/raw
-   * интеграциям и осознанному переопределению серверного контракта.
+   * Встроенные ресурсы получают значение из каталога. Опция предназначена для произвольных
+   * запросов.
    */
   retrySafety?: RetrySafety | undefined;
   /**
    * Имя бакета, из которого списывается запрос.
    *
-   * Встроенные resources берут его из каталога операций; низкоуровневый вызов без этой
+   * Встроенные ресурсы берут его из каталога операций; низкоуровневый вызов без этой
    * опции попадает в `default`.
    *
    * Имя сверяется со встроенной картой — незнакомое отвергается {@link ItdConfigError}
@@ -284,11 +285,11 @@ export interface RequestOptions {
    * заводит собственное пространство имён и проверку снимает.
    */
   rateLimitBucket?: string | undefined;
-  /** Настройки подключённых operation extensions, сгруппированные по владельцу. */
+  /** Настройки подключённых плагинов. */
   extensions?: RequestExtensions | undefined;
 }
 
-/** Опции перебора страниц, не являющиеся параметрами endpoint. */
+/** Опции перебора страниц, не являющиеся параметрами метода API. */
 export interface PaginationOptions extends RequestOptions {
   /** Максимальное число страниц; без значения перебор продолжается до конца списка. */
   maxPages?: number | undefined;
@@ -297,8 +298,8 @@ export interface PaginationOptions extends RequestOptions {
 /** Полное описание запроса для низкоуровневого `itd.request()`. */
 export interface RawRequestOptions extends RequestOptions {
   /**
-   * Семантическое имя низкоуровневого запроса. Встроенные resources выставляют его сами.
-   * Пользовательские значения следует помещать в namespace `custom:`.
+   * Имя низкоуровневого запроса. Встроенные ресурсы задают его сами.
+   * Пользовательские значения должны начинаться с `custom:`.
    */
   operationId?: OperationId | undefined;
   method: string;
@@ -331,15 +332,14 @@ export interface RawRequestOptions extends RequestOptions {
   /**
    * Выполнить запрос мимо очереди.
    *
-   * Продвинутый escape hatch для служебных интеграций. Встроенные refresh и sign-in проходят
-   * обычную очередь: она охватывает только одну сетевую попытку и не создаёт deadlock.
+   * Служебная настройка для интеграций. Встроенные вход и обновление токена проходят очередь.
    */
   skipQueue?: boolean | undefined;
   /** Вернуть тело ответа без снятия обёртки `{ data: … }`. */
   raw?: boolean | undefined;
 }
 
-/** Запрос внутри pipeline: в отличие от raw input всегда имеет семантический ID. */
+/** Подготовленный запрос с обязательным идентификатором операции. */
 export interface OperationRequestOptions extends RawRequestOptions {
   operationId: OperationId;
 }

@@ -1,5 +1,5 @@
 /**
- * Перечисления API итд.com.
+ * Enum API итд.com.
  *
  * Здесь намеренно не используется `enum` из TypeScript. Вместо него — пара «замороженный
  * объект + одноимённый тип». Такой приём даёт всё, ради чего берут `enum`
@@ -26,7 +26,7 @@
  */
 
 /**
- * Открытое строковое перечисление.
+ * Открытый строковый enum.
  *
  * Даёт автодополнение известных значений, но не ломается, если сервер пришлёт новое.
  * Используется там, где документация API перечисляет значения не полностью («`everyone` и др.»).
@@ -121,14 +121,14 @@ export const ReportReason = Object.freeze({
 } as const);
 export type ReportReason = (typeof ReportReason)[keyof typeof ReportReason];
 
-/** Состояние realtime-соединения. */
-export const RealtimeStatus = Object.freeze({
+/** Состояние соединения событийного канала. */
+export const EventChannelStatus = Object.freeze({
   Connecting: 'connecting',
   Connected: 'connected',
   Error: 'error',
   Disconnected: 'disconnected',
 } as const);
-export type RealtimeStatus = (typeof RealtimeStatus)[keyof typeof RealtimeStatus];
+export type EventChannelStatus = (typeof EventChannelStatus)[keyof typeof EventChannelStatus];
 
 /** Состояние сервиса платформы. Тип открытый. */
 export const ServiceState = Object.freeze({

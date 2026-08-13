@@ -14,6 +14,10 @@
  * @packageDocumentation
  */
 
+import type { OperationId } from 'itd-api';
+import type { CacheMode } from './plugin.js';
+import type { CacheInvalidation, CachePolicyKind, CachePolicyScope } from './policy.js';
+
 export { CacheError } from './errors.js';
 export { buildCacheKey } from './key.js';
 export {
@@ -31,10 +35,28 @@ export {
   type CachePlugin,
   cache,
 } from './plugin.js';
-
-import type { CacheMode } from './plugin.js';
+export {
+  CacheInvalidation,
+  CachePolicyKind,
+  CachePolicyScope,
+} from './policy.js';
 
 declare module 'itd-api' {
+  interface OperationAnnotations {
+    /** Правило кэширования операции подключаемого модуля. */
+    readonly cache?:
+      | {
+          readonly kind: typeof CachePolicyKind.Query;
+          readonly scope?: CachePolicyScope | undefined;
+        }
+      | {
+          readonly kind: typeof CachePolicyKind.Mutation;
+          readonly invalidates: readonly OperationId[] | CacheInvalidation;
+          readonly scope?: typeof CachePolicyScope.Account | undefined;
+        }
+      | undefined;
+  }
+
   interface RequestExtensions {
     /** Управление кэшем подключённого `@itd-api/cache`. */
     cache?: CacheMode | undefined;

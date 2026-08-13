@@ -1,7 +1,7 @@
 # @itd-api/hydrate
 
 Методы действий прямо на моделях [`itd-api`](https://github.com/KiowDev/itd-api): постах,
-комментариях, пользователях, вложениях и уведомлениях REST/realtime.
+комментариях, пользователях, вложениях и уведомлениях из REST и событийного канала.
 
 [Руководство](https://kiowdev.github.io/itd-api/packages/hydrate) ·
 [API из TSDoc](https://kiowdev.github.io/itd-api/api/generated/hydrate/)
@@ -12,7 +12,7 @@
 npm install itd-api @itd-api/hydrate
 ```
 
-Поддерживается `itd-api >=0.5.0 <1.0.0`.
+Поддерживается `itd-api >=0.8.0 <1.0.0`.
 
 ## Использование
 
@@ -65,14 +65,14 @@ for await (const post of itd.posts.iterate({ limit: 20 })) {
 }
 ```
 
-## Realtime
+## События
 
-Нормализованные уведомления из realtime получают те же методы, что и результаты REST API:
+Нормализованные уведомления из канала событий получают те же методы, что и результаты REST API:
 
 ```ts
 import { NotificationType } from 'itd-api';
 
-const stream = itd.realtime();
+const stream = itd.notifications.events;
 
 stream.onNotification(
   [

@@ -133,7 +133,7 @@ try {
 - [Авторизация и сессии](../authentication/)
 - [Конфигурация клиента](../configuration/)
 - [Разметка текста](../text-markup/)
-- [Realtime](../realtime/)
+- [События](../events/)
 - [Несколько аккаунтов](../multi-accounts/)
 - [Интеграции](../integrations/)
 - [Плагины](../plugins/)

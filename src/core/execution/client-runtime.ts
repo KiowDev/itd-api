@@ -1,6 +1,7 @@
 import type { AuthProvider, AuthProviderDeps } from '../auth-provider.js';
 import type { OperationCatalog } from '../catalog.js';
 import { assertKnownBucket, type ResolvedRuntimeConfig, resolveRuntimeConfig } from '../config.js';
+import type { ClientConnection } from '../connection.js';
 import { CookieJar } from '../cookies.js';
 import { ItdAbortError } from '../errors.js';
 import type { RateLimitBucketOverride, RuntimeOptions } from '../options.js';
@@ -15,7 +16,6 @@ import {
   createAuthHeadersMiddleware,
   createAuthPreparationMiddleware,
   createAuthRecoveryMiddleware,
-  createPluginsMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
   createServicesMiddleware,
@@ -29,7 +29,7 @@ import {
 } from './pipeline.js';
 import { Transport } from './transport.js';
 
-/** Имена стадий основного request pipeline в порядке выполнения. @internal */
+/** Имена стадий обработки запроса в порядке выполнения. @internal */
 export const ClientRuntimeStage = Object.freeze({
   OperationPlugins: 'operation_plugins',
   Services: 'services',
@@ -57,21 +57,19 @@ export interface ClientRuntimeInternals<A extends AuthProvider> {
   /**
    * Каталог операций, которым пользуется ядро.
    *
-   * Передаётся composition root: generic pipeline не выбирает предметную область сам.
-   * Подмена нужна тестам и клиентам поверх другого набора эндпоинтов.
+   * Позволяет использовать другой набор операций в тестах и специализированных клиентах.
    */
   catalog: OperationCatalog;
-  /** Общая очередь нескольких клиентов; runtime не останавливает её самостоятельно. */
+  /** Общая очередь нескольких клиентов; освобождается её владельцем. */
   queues?: RequestQueuePool | undefined;
-  /** Проверяет терминальное состояние фасада до входа в pipeline. */
+  /** Проверяет состояние клиента до выполнения запроса. */
   assertActive?: ((action: string) => void) | undefined;
 }
 
 /**
  * Собранная внутренняя часть клиента.
  *
- * Фасад владеет ресурсами и realtime-потоками, runtime — сетевой механикой и registries.
- * Контракт намеренно не экспортируется из корневой точки входа.
+ * Содержит сетевую механику и реестры клиента.
  *
  * Параметризован реализацией авторизации: ядру достаточно {@link AuthProvider}, а фасад
  * получает обратно ровно тот тип, который создала его фабрика.
@@ -85,18 +83,20 @@ export interface ClientRuntime<A extends AuthProvider = AuthProvider> {
   readonly cookies: CookieJar;
   readonly plugins: PluginRegistry;
   readonly services: ServiceRegistry;
-  /** Фактический порядок стадий; используется contract-тестом и диагностикой. */
+  /** Фактический порядок стадий для тестов и диагностики. */
   readonly stageOrder: readonly ClientRuntimeStage[];
+  /** Разрешает окружение основного API либо именованного сервиса. */
+  connection(serviceName?: string): ClientConnection;
   platformHeaders(url: string): Promise<Headers>;
   /** Снимок известных бакетов. Пустой, когда очередь отключена. */
   rateLimitState(): RateLimitBucketState[];
-  /** Регистрирует ограничения бакета подключаемого feature. @internal */
+  /** Регистрирует ограничения бакета подключаемого модуля. @internal */
   registerRateLimitBucket(
     name: string,
     definition: RateLimitBucketOverride,
   ): (() => void) | undefined;
   /**
-   * Временно останавливает только принадлежащие runtime очереди.
+   * Временно останавливает принадлежащие клиенту очереди.
    *
    * Накопленный остаток квоты сохраняется: клиент после `close()` может работать дальше,
    * а серверные счётчики от закрытия клиента не сбрасываются.
@@ -119,7 +119,7 @@ function createServiceRegistry(config: ResolvedRuntimeConfig): ServiceRegistry {
   return services;
 }
 
-/** Собирает внутренний runtime клиента и единственный request pipeline. @internal */
+/** Собирает внутренние компоненты и цепочку запросов клиента. @internal */
 export function createClientRuntime<A extends AuthProvider>(
   options: RuntimeOptions,
   internals: ClientRuntimeInternals<A>,
@@ -130,6 +130,7 @@ export function createClientRuntime<A extends AuthProvider>(
   const plugins = new PluginRegistry({
     shutdownTimeout: config.shutdownTimeout,
     clock: config.clock,
+    operationMetadata: (operationId) => catalog.definitionOf(operationId),
   });
   const services = createServiceRegistry(config);
 
@@ -211,10 +212,6 @@ export function createClientRuntime<A extends AuthProvider>(
 
   const stages: PipelineStage[] = [
     {
-      name: ClientRuntimeStage.OperationPlugins,
-      middleware: createPluginsMiddleware(plugins),
-    },
-    {
       name: ClientRuntimeStage.Services,
       middleware: createServicesMiddleware(services),
     },
@@ -284,11 +281,16 @@ export function createClientRuntime<A extends AuthProvider>(
     return handler(request);
   };
 
-  // Auth использует тот же handler: sign-in и refresh объявляют skip-флаги точечно,
+  const http = new HttpClient({
+    handler: clientHandler,
+    plugins,
+    baseUrl: config.baseUrl,
+  });
+  // Auth использует тот же executor: sign-in и refresh объявляют skip-флаги точечно,
   // вместо отдельного pipeline с постепенно расходящимся порядком стадий.
-  auth = internals.auth({ config, handler: clientHandler, cookies: jar });
-  const http = new HttpClient({ handler: clientHandler, baseUrl: config.baseUrl, catalog });
+  auth = internals.auth({ config, http, cookies: jar });
   const stageOrder = Object.freeze([
+    ClientRuntimeStage.OperationPlugins,
     ...stages.map(({ name }) => name),
     ClientRuntimeStage.Transport,
   ]);
@@ -301,6 +303,27 @@ export function createClientRuntime<A extends AuthProvider>(
     plugins,
     services,
     stageOrder,
+    connection: (serviceName) => {
+      const service = serviceName === undefined ? undefined : services.require(serviceName);
+      const baseUrl = service?.baseUrl ?? config.baseUrl;
+
+      return Object.freeze({
+        baseUrl,
+        authorize: service?.auth ?? true,
+        fetch: config.fetch,
+        clock: config.clock,
+        logger: config.logger,
+        baseHeaders: async (url: string) => {
+          const headers = await transport.platformHeaders(url);
+          for (const [name, value] of Object.entries(service?.headers ?? {})) {
+            headers.set(name, value);
+          }
+          return headers;
+        },
+        getToken: () => auth.token(),
+        refreshAuth: () => auth.recover(),
+      });
+    },
     platformHeaders: (url) => transport.platformHeaders(url),
     rateLimitState: () => queues?.states() ?? [],
     registerRateLimitBucket: (name, definition) => queues?.defineBucket(name, definition),

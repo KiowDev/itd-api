@@ -1,7 +1,6 @@
-import type { BuiltInOperationId } from '../../domain/operations.js';
-import type { OperationCatalog } from '../catalog.js';
-import { ItdConfigError } from '../errors.js';
-import type { OperationMethod } from '../operation.js';
+import type { OperationId } from '../../domain/operations.js';
+import type { OperationContract } from '../operation.js';
+import type { PluginRegistry } from '../plugins/registry.js';
 import {
   identifyRequest,
   markDisposeCleanupRequest,
@@ -14,36 +13,28 @@ import {
 export interface HttpClientDeps {
   /** Готовый обработчик — вся цепочка слоёв поверх транспорта. */
   handler: RequestHandler;
+  plugins: PluginRegistry;
   baseUrl: string;
-  /** Каталог, из которого берётся HTTP-метод семантической операции. */
-  catalog: OperationCatalog;
 }
+
+/** Параметры операции без ID и метода, заданных её контрактом. @internal */
+export type HttpOperationOptions = Omit<PipelineRequest, 'operationId' | 'method'>;
 
 /**
  * Точка входа ресурсов в конвейер запросов.
  *
- * Принимает готовый обработчик — цепочку слоёв поверх транспорта, собранную
- * во внутреннем runtime клиента, — и отдаёт ресурсам методы `request`/`operation`.
+ * Принимает готовую цепочку обработки и предоставляет ресурсам методы `request`/`execute`.
  * О слоях и их порядке ресурсы не знают.
  */
 export class HttpClient {
   readonly #handler: RequestHandler;
+  readonly #plugins: PluginRegistry;
   readonly #baseUrl: string;
-  readonly #catalog: OperationCatalog;
 
   constructor(deps: HttpClientDeps) {
     this.#handler = deps.handler;
+    this.#plugins = deps.plugins;
     this.#baseUrl = deps.baseUrl;
-    this.#catalog = deps.catalog;
-  }
-
-  /** Метод операции из каталога. Отсутствие описания — ошибка сборки клиента, не запроса. */
-  #methodOf(operationId: BuiltInOperationId): OperationMethod {
-    const method = this.#catalog.methodOf(operationId);
-    if (method === undefined) {
-      throw new ItdConfigError(`каталог операций не знает «${operationId}»`);
-    }
-    return method;
   }
 
   /** Базовый URL, к которому обращается клиент. */
@@ -61,28 +52,49 @@ export class HttpClient {
    * @throws {ItdNetworkError} если запрос не дошёл до сервера
    */
   request<T = unknown>(options: PipelineRequestInput): Promise<T> {
-    return this.#handler(identifyRequest(options)) as Promise<T>;
+    const request = identifyRequest(options);
+    return this.#plugins.run(request, (prepared) =>
+      this.#handler(prepared as PipelineRequest),
+    ) as Promise<T>;
   }
 
-  /** Выполняет встроенную семантическую операцию, подставляя её HTTP-метод из каталога. */
-  operation<T = unknown>(
-    operationId: BuiltInOperationId,
-    options: Omit<PipelineRequest, 'operationId' | 'method'>,
+  /** Выполняет контракт операции; `next()` плагина возвращает результат после `read`. */
+  execute<T, TId extends OperationId>(
+    operation: OperationContract<T, TId>,
+    options: HttpOperationOptions,
   ): Promise<T> {
-    return this.request<T>({ ...options, operationId, method: this.#methodOf(operationId) });
+    return this.#run(operation, options);
+  }
+
+  #run<T, TId extends OperationId>(
+    operation: OperationContract<T, TId>,
+    options: HttpOperationOptions,
+  ): Promise<T> {
+    const request = identifyRequest({
+      ...options,
+      operationId: operation.id,
+      method: operation.method,
+      retrySafety: options.retrySafety ?? operation.retrySafety,
+    });
+    return this.#plugins.run(request, async (prepared) =>
+      operation.read(await this.#handler(prepared as PipelineRequest), prepared as PipelineRequest),
+    ) as Promise<T>;
   }
 
   /** Выполняет внутреннюю операцию финализации после начала `ItdClient.dispose()`. @internal */
-  cleanupOperation<T = unknown>(
-    operationId: BuiltInOperationId,
-    options: Omit<PipelineRequest, 'operationId' | 'method'>,
+  cleanupOperation<T, TId extends OperationId>(
+    operation: OperationContract<T, TId>,
+    options: HttpOperationOptions,
   ): Promise<T> {
-    return this.request<T>(
-      markDisposeCleanupRequest({
-        ...options,
-        operationId,
-        method: this.#methodOf(operationId),
-      }),
-    );
+    const request = identifyRequest({
+      ...options,
+      operationId: operation.id,
+      method: operation.method,
+      retrySafety: options.retrySafety ?? operation.retrySafety,
+    });
+    return this.#plugins.run(request, async (prepared) => {
+      const cleanupRequest = markDisposeCleanupRequest(prepared) as PipelineRequest;
+      return operation.read(await this.#handler(cleanupRequest), prepared as PipelineRequest);
+    }) as Promise<T>;
   }
 }

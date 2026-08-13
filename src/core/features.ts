@@ -1,8 +1,25 @@
+import type { FileInput } from './attachments/contracts.js';
+import type {
+  FileResolver,
+  PreparedFileSource,
+  ResolveFileContext,
+  ResolveFileOptions,
+} from './attachments/resolver.js';
 import type { ItdClock } from './clock.js';
+import type { ClientConnection } from './connection.js';
 import { ItdAbortError, ItdConfigError, ItdStateError } from './errors.js';
 import type { HttpClient } from './execution/http.js';
 import type { ExtensibleOperationCatalog } from './feature-catalog.js';
-import { type FeatureOperationId, type OperationMethod, RetrySafety } from './operation.js';
+import type { ManagedClientResource } from './managed-resources.js';
+import {
+  defineOperation,
+  type FeatureOperationId,
+  identityResult,
+  type OperationAnnotations,
+  type OperationContract,
+  type OperationMethod,
+  RetrySafety,
+} from './operation.js';
 import type { Logger, RateLimitBucketOverride, RawRequestOptions } from './options.js';
 import { mergeService, type ServiceDefinition, type ServiceRegistry } from './services.js';
 
@@ -13,13 +30,17 @@ export type FeatureRequestOptions = Omit<
 >;
 
 /** Операция одного feature. Локальный ключ используется в {@link FeatureContext.request}. */
-export interface FeatureOperationDefinition {
+export interface FeatureOperationDefinition<T = unknown> {
   readonly method: OperationMethod;
   readonly retrySafety: RetrySafety;
   /** Имя сервиса из {@link ClientFeature.services}; без него используется основной API. */
   readonly service?: string | undefined;
   /** Локальное имя бакета из {@link ClientFeature.buckets}. */
   readonly bucket?: string | undefined;
+  /** Преобразует тело ответа в публичный результат операции. По умолчанию возвращает тело без изменений. */
+  readonly read?: OperationContract<T>['read'] | undefined;
+  /** Необязательные метаданные, интерпретируемые подключёнными плагинами. */
+  readonly annotations?: OperationAnnotations | undefined;
 }
 
 /** Начальные ограничения нового серверного счётчика feature. */
@@ -50,18 +71,31 @@ export interface ClientFeature<TApi> {
   setup(context: FeatureContext): FeatureInstallation<TApi>;
 }
 
-/** Ограниченный доступ feature к общему runtime клиента. */
+/** Доступ подключаемого модуля к клиенту. */
 export interface FeatureContext {
   readonly featureName: string;
   readonly baseUrl: string;
   readonly signal: AbortSignal;
   readonly clock: ItdClock;
   readonly logger: Logger | undefined;
+  /** Открывает файловый источник без правил конкретного протокола загрузки. */
+  readonly files: FileResolver;
 
-  /** Выполняет объявленную операцию через общие auth, plugins, retry и очереди клиента. */
+  /**
+   * Выполняет объявленную операцию через авторизацию, плагины, повторы и очередь клиента.
+   *
+   * Форма результата задаётся один раз полем `read` в описании операции. Плагины получают
+   * готовый результат и не видят функцию преобразования.
+   */
   request<T = unknown>(operation: string, options: FeatureRequestOptions): Promise<T>;
   /** Возвращает фактический URL объявленного сервиса с учётом настроек клиента. */
   serviceBaseUrl(name: string): string;
+  /** Окружение долговременного соединения объявленного сервиса. */
+  connection(name: string): ClientConnection;
+  /** Регистрирует активный долгоживущий ресурс до его остановки. */
+  manage(resource: ManagedClientResource): () => void;
+  /** Проверяет, что создавший модуль клиент ещё работает. */
+  assertActive(action: string): void;
 }
 
 interface InstalledFeature {
@@ -76,13 +110,16 @@ interface InstalledFeature {
 export interface FeatureRegistryDeps {
   readonly http: HttpClient;
   readonly services: ServiceRegistry;
-  /** Исходные overrides из опций: в них ещё различимы отсутствующие `auth` и `headers`. */
+  /** Настройки сервисов до применения значений по умолчанию. */
   readonly serviceOverrides: readonly ServiceDefinition[];
   readonly catalog: ExtensibleOperationCatalog;
   readonly baseUrl: string;
   readonly clock: ItdClock;
   readonly logger: Logger | undefined;
+  readonly files: FileResolver;
   readonly assertActive: (action: string) => void;
+  readonly connection: (serviceName?: string) => ClientConnection;
+  readonly manage: (resource: ManagedClientResource) => () => void;
   readonly registerBucket: (
     name: string,
     definition: FeatureBucketDefinition,
@@ -90,8 +127,7 @@ export interface FeatureRegistryDeps {
 }
 
 interface ResolvedFeatureOperation {
-  readonly operationId: FeatureOperationId;
-  readonly method: OperationMethod;
+  readonly contract: OperationContract<unknown, FeatureOperationId>;
   readonly service: string | undefined;
 }
 
@@ -102,12 +138,10 @@ function requireName(value: unknown, kind: string): string {
   return value.trim();
 }
 
-function requireOperationName(value: unknown, featureName: string): string {
-  const name = requireName(value, `Операция feature «${featureName}»`);
-  if (name.includes('.')) {
-    throw new ItdConfigError(
-      `feature «${featureName}»: локальное имя операции «${name}» не должно содержать точку`,
-    );
+function requireFeatureName(value: unknown): string {
+  const name = requireName(value, 'Feature');
+  if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+    throw new ItdConfigError(`имя feature «${name}» должно соответствовать [a-z][a-z0-9-]*`);
   }
   return name;
 }
@@ -129,9 +163,14 @@ function validateBucket(owner: string, localName: string, bucket: FeatureBucketD
       `feature «${owner}»: concurrency бакета «${localName}» должен быть целым числом от 1`,
     );
   }
+  if (bucket.rps !== undefined && (!Number.isFinite(bucket.rps) || bucket.rps <= 0)) {
+    throw new ItdConfigError(
+      `feature «${owner}»: rps бакета «${localName}» должен быть положительным числом`,
+    );
+  }
 }
 
-/** Реестр feature одного facade. @internal */
+/** Реестр подключаемых модулей клиента. @internal */
 export class FeatureRegistry {
   readonly #deps: FeatureRegistryDeps;
   readonly #features = new Map<string, InstalledFeature>();
@@ -149,7 +188,7 @@ export class FeatureRegistry {
       throw new ItdConfigError('feature должен быть объектом');
     }
 
-    const name = requireName(feature.name, 'Feature');
+    const name = requireFeatureName(feature.name);
     if (this.#features.has(name)) {
       throw new ItdConfigError(`feature «${name}» уже установлен`);
     }
@@ -181,6 +220,13 @@ export class FeatureRegistry {
     const operations = new Map<string, ResolvedFeatureOperation>();
     const controller = new AbortController();
     let committed = false;
+    const reportRollbackError = (message: string, error: unknown): void => {
+      try {
+        this.#deps.logger?.error(message, error);
+      } catch {
+        // Ошибка записи в журнал не заменяет ошибку установки.
+      }
+    };
 
     try {
       for (const service of feature.services ?? []) {
@@ -228,7 +274,7 @@ export class FeatureRegistry {
       }
 
       for (const [rawLocalName, definition] of Object.entries(feature.operations)) {
-        const localName = requireOperationName(rawLocalName, name);
+        const localName = requireName(rawLocalName, `Операция feature «${name}»`);
         if (typeof definition !== 'object' || definition === null) {
           throw new ItdConfigError(
             `feature «${name}»: операция «${localName}» должна быть объектом`,
@@ -256,6 +302,21 @@ export class FeatureRegistry {
             `feature «${name}»: bucket операции «${localName}» должен быть строкой`,
           );
         }
+        if (definition.read !== undefined && typeof definition.read !== 'function') {
+          throw new ItdConfigError(
+            `feature «${name}»: read операции «${localName}» должна быть функцией`,
+          );
+        }
+        if (
+          definition.annotations !== undefined &&
+          (typeof definition.annotations !== 'object' ||
+            definition.annotations === null ||
+            Array.isArray(definition.annotations))
+        ) {
+          throw new ItdConfigError(
+            `feature «${name}»: annotations операции «${localName}» должны быть объектом`,
+          );
+        }
         if (definition.service !== undefined && !services.has(definition.service)) {
           throw new ItdConfigError(
             `feature «${name}»: операция «${localName}» ссылается на необъявленный сервис «${definition.service}»`,
@@ -273,16 +334,27 @@ export class FeatureRegistry {
         }
 
         const operationId = `${name}.${localName}` as FeatureOperationId;
-
+        const contract = defineOperation(
+          operationId,
+          {
+            method: definition.method,
+            retrySafety: definition.retrySafety,
+            bucket,
+            ...(definition.annotations === undefined
+              ? {}
+              : { annotations: definition.annotations }),
+          },
+          definition.read ?? identityResult,
+        );
         const unregister = this.#deps.catalog.registerOperation(name, operationId, {
-          method: definition.method,
-          retrySafety: definition.retrySafety,
+          method: contract.method,
+          retrySafety: contract.retrySafety,
           bucket,
+          ...(contract.annotations === undefined ? {} : { annotations: contract.annotations }),
         });
         rollback.push(unregister);
         operations.set(localName, {
-          operationId,
-          method: definition.method,
+          contract,
           service: definition.service,
         });
       }
@@ -293,6 +365,23 @@ export class FeatureRegistry {
         signal: controller.signal,
         clock: this.#deps.clock,
         logger: this.#deps.logger,
+        files: Object.freeze({
+          resolve: (
+            input: FileInput,
+            options?: ResolveFileOptions,
+            context?: ResolveFileContext,
+          ): Promise<PreparedFileSource> => {
+            try {
+              this.#deps.assertActive(`открыть файловый источник feature «${name}»`);
+              if (!committed || controller.signal.aborted) {
+                throw new ItdStateError(`feature «${name}» не активен`);
+              }
+              return this.#deps.files.resolve(input, options, context);
+            } catch (error) {
+              return Promise.reject(error);
+            }
+          },
+        }),
         request: <T>(operation: string, options: FeatureRequestOptions): Promise<T> => {
           try {
             this.#deps.assertActive(`выполнить операцию feature «${name}»`);
@@ -310,12 +399,10 @@ export class FeatureRegistry {
             delete scoped.baseUrl;
             delete scoped.retrySafety;
             delete scoped.rateLimitBucket;
-            return this.#deps.http.request<T>({
+            return this.#deps.http.execute(resolved.contract, {
               ...(scoped as FeatureRequestOptions),
-              operationId: resolved.operationId,
-              method: resolved.method,
               ...(resolved.service === undefined ? {} : { service: resolved.service }),
-            });
+            }) as Promise<T>;
           } catch (error) {
             return Promise.reject(error);
           }
@@ -325,6 +412,60 @@ export class FeatureRegistry {
             throw new ItdConfigError(`feature «${name}» не объявляет сервис «${serviceName}»`);
           }
           return this.#deps.services.resolveBaseUrl(serviceName);
+        },
+        connection: (serviceName: string): ClientConnection => {
+          if (!services.has(serviceName)) {
+            throw new ItdConfigError(`feature «${name}» не объявляет сервис «${serviceName}»`);
+          }
+          return this.#deps.connection(serviceName);
+        },
+        manage: (resource: ManagedClientResource): (() => void) => {
+          this.#deps.assertActive(`зарегистрировать ресурс feature «${name}»`);
+          if (controller.signal.aborted) {
+            throw new ItdStateError(`feature «${name}» не активен`);
+          }
+          const unregister = this.#deps.manage(resource);
+          let registered = true;
+          const release = (): void => {
+            if (!registered) return;
+            registered = false;
+            unregister();
+          };
+          if (!committed) {
+            rollback.push(() => {
+              if (!registered) return;
+              if (committed) {
+                release();
+                return;
+              }
+
+              try {
+                resource.stop();
+              } catch (error) {
+                reportRollbackError(
+                  `Не удалось остановить ресурс «${resource.kind}» при откате feature «${name}»`,
+                  error,
+                );
+              } finally {
+                release();
+              }
+              void Promise.resolve()
+                .then(() => resource.drain())
+                .catch((error: unknown) => {
+                  reportRollbackError(
+                    `Не удалось освободить ресурс «${resource.kind}» при откате feature «${name}»`,
+                    error,
+                  );
+                });
+            });
+          }
+          return release;
+        },
+        assertActive: (action: string): void => {
+          this.#deps.assertActive(action);
+          if (!committed || controller.signal.aborted) {
+            throw new ItdStateError(`feature «${name}» не активен`);
+          }
         },
       });
 
@@ -364,14 +505,12 @@ export class FeatureRegistry {
   }
 
   async close(): Promise<void> {
-    const errors: unknown[] = [];
-    for (const feature of [...this.#features.values()].reverse()) {
-      try {
-        await feature.close?.();
-      } catch (error) {
-        errors.push(error);
-      }
-    }
+    const results = await Promise.allSettled(
+      [...this.#features.values()].reverse().map(async (feature) => feature.close?.()),
+    );
+    const errors = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason);
     if (errors.length > 0) throw new AggregateError(errors, 'Не удалось закрыть feature');
   }
 
@@ -379,13 +518,21 @@ export class FeatureRegistry {
     if (this.#disposed) return;
     this.#disposed = true;
     const errors: unknown[] = [];
-    for (const feature of [...this.#features.values()].reverse()) {
+    const disposals: Promise<void>[] = [];
+    const features = [...this.#features.values()].reverse();
+
+    // Все модули переводятся в терминальное состояние до ожидания чужого кода. Один
+    // зависший dispose не должен помешать отмене и очистке остальных модулей.
+    for (const feature of features) {
       feature.controller.abort(new ItdAbortError(`Feature «${feature.name}» освобождён`));
       try {
-        await feature.dispose?.();
+        disposals.push(Promise.resolve(feature.dispose?.()).then(() => undefined));
       } catch (error) {
         errors.push(error);
       }
+    }
+
+    for (const feature of features) {
       for (const cleanup of [...feature.cleanup].reverse()) {
         try {
           cleanup();
@@ -395,6 +542,11 @@ export class FeatureRegistry {
       }
     }
     this.#features.clear();
+
+    const results = await Promise.allSettled(disposals);
+    for (const result of results) {
+      if (result.status === 'rejected') errors.push(result.reason);
+    }
     if (errors.length > 0) throw new AggregateError(errors, 'Не удалось освободить feature');
   }
 }

@@ -1,4 +1,5 @@
 import { ItdConfigError, ItdFileError, ItdFileErrorReason } from '../errors.js';
+import { redactErrorCause } from '../redact.js';
 import { boundedFileStream, isReadableByteStream } from './bounded-stream.js';
 import {
   DEFAULT_URL_FILE_MAX_BYTES,
@@ -68,7 +69,7 @@ export function fromStream(
         throw new ItdFileError('не удалось открыть поток вложения', {
           reason: ItdFileErrorReason.Read,
           retryable: true,
-          cause: error,
+          cause: redactErrorCause(error),
         });
       }
       const content = isReadableByteStream(opened) ? { stream: opened } : opened;

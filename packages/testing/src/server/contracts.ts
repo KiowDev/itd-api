@@ -1,5 +1,5 @@
 import type { ItdClientOptions, ItdClock, MyProfile, Notification } from 'itd-api';
-import type { MockRealtimeTransport } from '../realtime.js';
+import type { MockEventTransport } from '../events.js';
 import type { RecordedRequest } from '../request.js';
 import type { MockHandler } from '../router.js';
 
@@ -128,7 +128,7 @@ export interface MockServer {
   failNext(method: string, path: string, responder: Response | Error | MockHandler): void;
   /** Устанавливает обработчик перед встроенными маршрутами и возвращает функцию снятия. */
   override(method: string, path: string, handler: MockHandler): () => void;
-  realtime(options: MockServerClientOptions): MockRealtimeTransport;
+  notificationEvents(options: MockServerClientOptions): MockEventTransport;
   assertNoUnsupportedRequests(): void;
   clearRequests(): void;
 }

@@ -305,7 +305,7 @@ export type ItdFileErrorReason = (typeof ItdFileErrorReason)[keyof typeof ItdFil
 /** Не удалось получить или прочитать содержимое вложения. */
 export class ItdFileError extends ItdError {
   readonly reason: ItdFileErrorReason;
-  /** Адрес источника, если файл получался по сети. */
+  /** Адрес источника без секретных параметров запроса, если файл получался по сети. */
   readonly url: string | undefined;
   /** HTTP-статус источника. */
   readonly status: number | undefined;
@@ -387,7 +387,7 @@ export class ItdAbortError extends ItdError {
  * Операция невозможна в текущем состоянии объекта.
  *
  * Например, клиент уже окончательно освобождён через `dispose()` и не может выполнять
- * новые запросы или создавать realtime-потоки.
+ * новые запросы или создавать событийные соединения.
  */
 export class ItdStateError extends ItdError {
   constructor(message: string, options?: { cause?: unknown }) {

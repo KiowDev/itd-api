@@ -1,5 +1,6 @@
 import type { RequestOptions } from '../core/options.js';
 import { pickArray } from '../core/unwrap.js';
+import { defineBuiltInOperation } from '../domain/operations.js';
 import type { Hashtag } from '../models/content.js';
 import type { UserSummary } from '../models/users.js';
 import { BaseResource } from './base.js';
@@ -9,6 +10,11 @@ export interface SearchResult {
   users: UserSummary[];
   hashtags: Hashtag[];
 }
+
+const SEARCH_ALL = defineBuiltInOperation<SearchResult>('search.all', (body) => ({
+  users: pickArray<UserSummary>(body, 'users'),
+  hashtags: pickArray<Hashtag>(body, 'hashtags'),
+}));
 
 /**
  * Глобальный поиск.
@@ -24,16 +30,11 @@ export class SearchResource extends BaseResource {
    * const { users, hashtags } = await itd.search.all('арт');
    * ```
    */
-  async all(query: string, options: RequestOptions = {}): Promise<SearchResult> {
-    const body = await this.http.operation('search.all', {
+  all(query: string, options: RequestOptions = {}): Promise<SearchResult> {
+    return this.http.execute(SEARCH_ALL, {
       path: '/api/search',
       query: { q: query },
       ...options,
     });
-
-    return {
-      users: pickArray<UserSummary>(body, 'users'),
-      hashtags: pickArray<Hashtag>(body, 'hashtags'),
-    };
   }
 }

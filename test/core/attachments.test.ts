@@ -538,6 +538,66 @@ describe('повторяемые потоки', () => {
 
     expect(uploadCalls).toBe(2);
   });
+
+  it('закрывает открытую сессию источника ровно один раз после успешной отправки', async () => {
+    const close = vi.fn();
+    const source = fromStream(() => ({ stream: new Blob(['готово']).stream(), close }), {
+      filename: 'success.png',
+      contentType: 'image/png',
+    });
+    const itd = new ItdClient({
+      auth: 'token',
+      retry: false,
+      fetch: async (_url, init) => {
+        await streamedFile(init);
+        return uploaded('success');
+      },
+    });
+
+    await itd.files.upload(source);
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('закрывает открытую сессию источника ровно один раз при ошибке MIME', async () => {
+    const close = vi.fn();
+    const source = fromStream(() => ({ stream: new Blob(['данные']).stream(), close }), {
+      filename: 'document.pdf',
+      contentType: 'application/pdf',
+    });
+    const itd = new ItdClient({ auth: 'token', retry: false, fetch: vi.fn() });
+
+    await expect(itd.files.upload(source)).rejects.toThrow(ItdConfigError);
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('закрывает открытую сессию источника ровно один раз при ошибке чтения', async () => {
+    const close = vi.fn();
+    const source = fromStream(
+      () => ({
+        stream: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.error(new Error('read failed'));
+          },
+        }),
+        close,
+      }),
+      { filename: 'broken.png', contentType: 'image/png' },
+    );
+    const itd = new ItdClient({
+      auth: 'token',
+      retry: false,
+      fetch: async (_url, init) => {
+        await new Response(init?.body).arrayBuffer();
+        return uploaded('never');
+      },
+    });
+
+    await expect(itd.files.upload(source)).rejects.toThrow();
+
+    expect(close).toHaveBeenCalledOnce();
+  });
 });
 
 describe('загрузка по адресу', () => {

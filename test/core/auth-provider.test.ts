@@ -5,6 +5,7 @@ import {
   createClientRuntime,
 } from '../../src/core/execution/client-runtime.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
+import { passthroughOperation } from '../../src/operations/common.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { MemoryTokenStorage } from '../../src/session/storage.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
@@ -80,7 +81,7 @@ describe('конвейер спрашивает авторизацию чере�
       { retry: { attempts: 2, baseDelay: 0, maxDelay: 0, jitter: 0 } },
     );
 
-    await runtime.http.operation('users.me', { path: '/api/users/me' });
+    await runtime.http.execute(passthroughOperation('users.me'), { path: '/api/users/me' });
 
     // Обе стадии стоят внутри повторов: попытка после backoff заново готовит состояние
     // и заново читает заголовки, а не переиспользует снимок первой.
@@ -152,9 +153,9 @@ describe('конвейер спрашивает авторизацию чере�
       () => recovering,
     );
 
-    await expect(runtime.http.operation('users.me', { path: '/api/users/me' })).resolves.toEqual({
-      ok: true,
-    });
+    await expect(
+      runtime.http.execute(passthroughOperation('users.me'), { path: '/api/users/me' }),
+    ).resolves.toEqual({ ok: true });
 
     expect(calls.recover).toHaveBeenCalledTimes(1);
     expect(mock.callCount).toBe(2);
@@ -201,7 +202,9 @@ describe('анонимная авторизация', () => {
       anonymousAuth,
     );
 
-    await expect(runtime.http.operation('users.me', { path: '/api/users/me' })).rejects.toThrow();
+    await expect(
+      runtime.http.execute(passthroughOperation('users.me'), { path: '/api/users/me' }),
+    ).rejects.toThrow();
 
     expect(mock.callCount).toBe(1);
     await shutdown(runtime);

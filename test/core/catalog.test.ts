@@ -5,9 +5,11 @@ import {
   type ClientRuntime,
   createClientRuntime,
 } from '../../src/core/execution/client-runtime.js';
+import { ExtensibleOperationCatalog } from '../../src/core/feature-catalog.js';
 import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
 import { RequestQueuePool } from '../../src/core/scheduling/rate-limit.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
+import { passthroughOperation } from '../../src/operations/common.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createItdAuth } from '../../src/session/auth.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
@@ -52,7 +54,7 @@ describe('каталог операций как точка инъекции', (
   it('bucketOf решает, из какого счётчика спишется запрос', async () => {
     const { runtime } = makeRuntime([json({ data: {} })], { rateLimit: { concurrency: 1 } });
 
-    await runtime.http.operation('users.me', { path: '/api/users/me' });
+    await runtime.http.execute(passthroughOperation('users.me'), { path: '/api/users/me' });
 
     // Встроенный каталог кладёт users.me в бакет `users`.
     expect(runtime.rateLimitState().map((state) => state.bucket)).toEqual(['users']);
@@ -66,7 +68,7 @@ describe('каталог операций как точка инъекции', (
       catalogWith({ bucketOf: () => 'search' }),
     );
 
-    await runtime.http.operation('users.me', { path: '/api/users/me' });
+    await runtime.http.execute(passthroughOperation('users.me'), { path: '/api/users/me' });
 
     expect(runtime.rateLimitState().map((state) => state.bucket)).toEqual(['search']);
     await shutdown(runtime);
@@ -85,34 +87,32 @@ describe('каталог операций как точка инъекции', (
     await shutdown(runtime);
   });
 
-  it('retrySafetyOf решает, повторится ли операция после 5xx', async () => {
+  it('контракт задаёт retrySafety независимо от каталога исполнения', async () => {
     const retry = { attempts: 2, baseDelay: 0, maxDelay: 0, jitter: 0 };
     const responses = () => [json({}, { status: 500 }), json({ data: { ok: true } })];
 
     // posts.create помечена в каталоге как unsafe: повтор мог бы создать второй пост.
     const builtIn = makeRuntime(responses(), { retry });
     await expect(
-      builtIn.runtime.http.operation('posts.create', { path: '/api/posts' }),
+      builtIn.runtime.http.execute(passthroughOperation('posts.create'), { path: '/api/posts' }),
     ).rejects.toThrow();
     expect(builtIn.mock.callCount).toBe(1);
     await shutdown(builtIn.runtime);
 
-    // Тот же запрос, но каталог называет операцию безопасной — ядро повторяет её.
+    // Подмена каталога не меняет контракт операции.
     const patched = makeRuntime(
       responses(),
       { retry },
       catalogWith({ retrySafetyOf: () => 'safe' }),
     );
     await expect(
-      patched.runtime.http.operation('posts.create', { path: '/api/posts' }),
-    ).resolves.toEqual({
-      ok: true,
-    });
-    expect(patched.mock.callCount).toBe(2);
+      patched.runtime.http.execute(passthroughOperation('posts.create'), { path: '/api/posts' }),
+    ).rejects.toThrow();
+    expect(patched.mock.callCount).toBe(1);
     await shutdown(patched.runtime);
   });
 
-  it('methodOf подставляет HTTP-метод семантической операции', async () => {
+  it('контракт операции задаёт HTTP-метод независимо от каталога исполнения', async () => {
     const { runtime, mock } = makeRuntime(
       [json({ data: {} })],
       {},
@@ -120,9 +120,9 @@ describe('каталог операций как точка инъекции', (
     );
 
     // Встроенный каталог отправил бы users.me через GET.
-    await runtime.http.operation('users.me', { path: '/api/users/me' });
+    await runtime.http.execute(passthroughOperation('users.me'), { path: '/api/users/me' });
 
-    expect(mock.calls[0]?.method).toBe('PATCH');
+    expect(mock.calls[0]?.method).toBe('GET');
     await shutdown(runtime);
   });
 
@@ -149,7 +149,7 @@ describe('каталог операций как точка инъекции', (
       rateLimit: { concurrency: 1 },
     });
 
-    await runtime.http.operation('posts.list', { path: '/api/posts' });
+    await runtime.http.execute(passthroughOperation('posts.list'), { path: '/api/posts' });
 
     expect(mock.calls[0]?.method).toBe('GET');
     expect(runtime.rateLimitState().map((state) => state.bucket)).toEqual(['feed']);
@@ -199,5 +199,23 @@ describe('ёмкости бакетов доходят из каталога д�
       defaultBucket: 'только',
       bucketOverrides: {},
     });
+  });
+});
+
+describe('динамические бакеты каталога', () => {
+  it('сохраняет rps в поправке и удаляет его при откате регистрации', () => {
+    const catalog = new ExtensibleOperationCatalog(ITD_CATALOG);
+    const unregister = catalog.registerBucket('probe', 'feature:probe/read', {
+      limit: 60,
+      concurrency: 2,
+      rps: 4,
+    });
+
+    expect(catalog.bucketLimits['feature:probe/read']).toBe(60);
+    expect(catalog.bucketOverrides['feature:probe/read']).toEqual({ concurrency: 2, rps: 4 });
+
+    unregister();
+    expect(catalog.bucketLimits['feature:probe/read']).toBeUndefined();
+    expect(catalog.bucketOverrides['feature:probe/read']).toBeUndefined();
   });
 });

@@ -7,13 +7,13 @@ import {
   ItdNotFoundError,
   ItdStateError,
 } from '../../src/core/errors.js';
+import type {
+  EventTransport,
+  EventTransportContext,
+  EventTransportFrame,
+} from '../../src/events/transports/transport.js';
 import type { FileInput } from '../../src/index.js';
 import type { ItdClientOptions } from '../../src/options.js';
-import type {
-  RealtimeTransport,
-  TransportContext,
-  TransportEvent,
-} from '../../src/realtime/transports/transport.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
 import { makeJwt } from '../helpers/jwt.js';
 import {
@@ -25,13 +25,13 @@ import {
 } from '../helpers/mock-fetch.js';
 
 /** Поток, которым управляет тест: событие и обрыв приходят по команде. */
-class TestStreamTransport implements RealtimeTransport {
+class TestStreamTransport implements EventTransport {
   readonly name = 'test';
 
-  #context: TransportContext | undefined;
+  #context: EventTransportContext | undefined;
   #fail: ((error: unknown) => void) | undefined;
 
-  connect(context: TransportContext): Promise<void> {
+  connect(context: EventTransportContext): Promise<void> {
     this.#context = context;
     context.onOpen();
 
@@ -42,7 +42,7 @@ class TestStreamTransport implements RealtimeTransport {
   }
 
   /** Отправляет событие так, будто оно пришло от сервера. */
-  emit(event: TransportEvent): void {
+  emit(event: EventTransportFrame): void {
     this.#context?.onEvent(event);
   }
 
@@ -1204,6 +1204,12 @@ describe('ленивые ресурсы', () => {
     }
   });
 
+  it('notifications владеет одним стабильным events-channel', () => {
+    const { itd } = makeClient([]);
+
+    expect(itd.notifications.events).toBe(itd.notifications.events);
+  });
+
   it('читается через Reflect.get — так его берёт @itd-api/hydrate', () => {
     const { itd } = makeClient([]);
 
@@ -1244,12 +1250,20 @@ describe('ленивые ресурсы', () => {
 });
 
 describe('жизненный цикл', () => {
+  it('проверяет полную конфигурацию events при создании клиента', () => {
+    expect(() => new ItdClient({ events: { notifications: { concurrency: 0 } } })).toThrow(
+      ItdConfigError,
+    );
+  });
+
   it('close() остаётся временной остановкой и не запрещает дальнейшую работу', async () => {
-    const { itd } = makeClient([json({ data: { id: '1' } })]);
+    const { itd } = makeClient([json({ data: { id: '1' } })], {
+      events: { notifications: { syncCount: false } },
+    });
 
     await itd.close();
     itd.use({ name: 'after-close', install() {} });
-    const stream = itd.realtime({ syncCount: false });
+    const stream = itd.notifications.events;
 
     await expect(itd.posts.get('1')).resolves.toMatchObject({ id: '1' });
     expect(stream.status).toBe('disconnected');
@@ -1258,14 +1272,15 @@ describe('жизненный цикл', () => {
   });
 
   it('dispose() сразу переводит клиент и ранее полученные фасады в терминальное состояние', async () => {
-    const { itd, mock } = makeClient([]);
+    const { itd, mock } = makeClient([], {
+      events: { notifications: { syncCount: false } },
+    });
     const posts = itd.posts;
-    const stream = itd.realtime({ syncCount: false });
+    const stream = itd.notifications.events;
 
     const disposing = itd.dispose();
 
     expect(() => itd.use({ name: 'late', install() {} })).toThrow(ItdStateError);
-    expect(() => itd.realtime()).toThrow(ItdStateError);
     expect(() => itd.on('tokens', () => {})).toThrow(ItdStateError);
     expect(() => itd.defineService({ name: 'late', baseUrl: 'https://late.itd.test' })).toThrow(
       ItdStateError,
@@ -1279,12 +1294,15 @@ describe('жизненный цикл', () => {
     expect(mock.callCount).toBe(0);
   });
 
-  it('сохраняет realtime при смене sid и завершает при смене sub', async () => {
+  it('сохраняет события при смене sid и завершает при смене sub', async () => {
+    const transport = new TestStreamTransport();
     const { itd } = makeClient([], {
       auth: makeJwt({ sub: 'user-a', sid: 'session-a' }),
+      events: { notifications: { transport, syncCount: false } },
     });
-    const stream = itd.realtime({ syncCount: false });
+    const stream = itd.notifications.events;
     const disconnect = vi.spyOn(stream, 'disconnect');
+    await stream.connect();
 
     await itd.setSession({
       accessToken: makeJwt({ sub: 'user-a', sid: 'session-b' }),
@@ -1297,14 +1315,19 @@ describe('жизненный цикл', () => {
     expect(disconnect).toHaveBeenCalledOnce();
   });
 
-  it('завершает realtime при смене sub во внешнем источнике токена', async () => {
+  it('завершает события при смене sub во внешнем источнике токена', async () => {
     let token = makeJwt({ sub: 'user-a', sid: 'session-a' });
+    const transport = new TestStreamTransport();
     const { itd } = makeClient(
       [json({ id: '1', content: 'первый' }), json({ id: '2', content: 'второй' })],
-      { auth: { getToken: () => token } },
+      {
+        auth: { getToken: () => token },
+        events: { notifications: { transport, syncCount: false } },
+      },
     );
-    const stream = itd.realtime({ syncCount: false });
+    const stream = itd.notifications.events;
     const disconnect = vi.spyOn(stream, 'disconnect');
+    await stream.connect();
 
     await itd.posts.get('1');
     expect(disconnect).not.toHaveBeenCalled();
@@ -1318,7 +1341,7 @@ describe('жизненный цикл', () => {
   it('close() закрывает порождённые потоки и снимает паузу очереди', async () => {
     const { itd } = makeClient([], { rateLimit: { concurrency: 1, retryDelays: [1000] } });
 
-    const stream = itd.realtime();
+    const stream = itd.notifications.events;
     expect(stream.status).toBe('disconnected');
 
     // Ставим очередь на длинную паузу — close() обязан её снять, иначе таймер удержит loop.
@@ -1330,11 +1353,15 @@ describe('жизненный цикл', () => {
     await itd.close();
   });
 
-  it('ручной disconnect убирает поток из close()', async () => {
-    const { itd } = makeClient([]);
-    const stream = itd.realtime();
+  it('ручной disconnect убирает активный канал из close()', async () => {
+    const transport = new TestStreamTransport();
+    const { itd } = makeClient([], {
+      events: { notifications: { transport, syncCount: false } },
+    });
+    const stream = itd.notifications.events;
     const disconnect = vi.spyOn(stream, 'disconnect');
 
+    await stream.connect();
     stream.disconnect();
     await itd.close();
 
@@ -1342,9 +1369,13 @@ describe('жизненный цикл', () => {
   });
 
   it('await using закрывает потоки на выходе из блока', async () => {
-    const { itd } = makeClient([json({ data: { id: '1' } })]);
-    const stream = itd.realtime();
+    const transport = new TestStreamTransport();
+    const { itd } = makeClient([json({ data: { id: '1' } })], {
+      events: { notifications: { transport, syncCount: false } },
+    });
+    const stream = itd.notifications.events;
     const disconnect = vi.spyOn(stream, 'disconnect');
+    await stream.connect();
 
     {
       await using guard = itd;
@@ -1381,10 +1412,71 @@ describe('жизненный цикл', () => {
     expect(mock.callCount).toBe(1);
   });
 
-  it('dispose() не ждёт зависший обработчик потока дольше срока и называет поток', async () => {
-    const { itd } = makeClient([], { shutdownTimeout: 20 });
+  it('close() отменяет начальную синхронизацию счётчика уведомлений', async () => {
+    const mock = createHangingFetch();
     const transport = new TestStreamTransport();
-    const stream = itd.realtime({ transport, syncCount: false });
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      fetch: mock.fetch,
+      auth: 'test-token',
+      retry: false,
+      rateLimit: false,
+      mode: 'server',
+      events: { notifications: { transport } },
+    });
+    const connecting = itd.notifications.events.connect();
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+    const signal = mock.calls[0]?.signal;
+
+    await itd.close();
+    await connecting;
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('close() ограничивает освобождение ресурсов транспорта общим shutdownTimeout', async () => {
+    let releaseTransportCleanup: (() => void) | undefined;
+    const transport: EventTransport = {
+      name: 'slow-cleanup',
+      connect: (context) => {
+        context.onOpen();
+        return new Promise<void>((resolve) => {
+          context.signal.addEventListener(
+            'abort',
+            () => {
+              releaseTransportCleanup = resolve;
+            },
+            { once: true },
+          );
+        });
+      },
+    };
+    const { itd } = makeClient([], {
+      shutdownTimeout: 20,
+      events: { notifications: { transport, syncCount: false } },
+    });
+    const stream = itd.notifications.events;
+
+    await stream.connect();
+    stream.disconnect();
+    const error = await itd.close().catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ItdStateError);
+    expect((error as Error).message).toMatch(
+      /ресурсы \(notifications:slow-cleanup\) не завершились за 20 мс/,
+    );
+
+    releaseTransportCleanup?.();
+    await stream.drain();
+  });
+
+  it('dispose() не ждёт зависший обработчик потока дольше срока и называет поток', async () => {
+    const transport = new TestStreamTransport();
+    const { itd } = makeClient([], {
+      shutdownTimeout: 20,
+      events: { notifications: { transport, syncCount: false } },
+    });
+    const stream = itd.notifications.events;
     stream.onUpdate(() => new Promise<never>(() => {}));
 
     await stream.connect();
@@ -1394,7 +1486,7 @@ describe('жизненный цикл', () => {
     const [stuck] = error.errors as Error[];
 
     expect(stuck).toBeInstanceOf(ItdStateError);
-    expect(stuck?.message).toMatch(/обработчики потоков \(test\) не завершились за 20 мс/);
+    expect(stuck?.message).toMatch(/ресурсы \(notifications:test\) не завершились за 20 мс/);
   });
 
   it('dispose() не ждёт зависшую операцию плагина дольше срока и называет плагин', async () => {
@@ -1422,9 +1514,11 @@ describe('жизненный цикл', () => {
   });
 
   it('поток, исчерпавший попытки, покидает клиент и возвращается по connect()', async () => {
-    const { itd } = makeClient([]);
     const transport = new TestStreamTransport();
-    const stream = itd.realtime({ transport, syncCount: false, maxAttempts: 0 });
+    const { itd } = makeClient([], {
+      events: { notifications: { transport, syncCount: false, maxAttempts: 0 } },
+    });
+    const stream = itd.notifications.events;
     const disconnect = vi.spyOn(stream, 'disconnect');
     stream.on('error', () => {});
 
