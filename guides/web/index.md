@@ -2,9 +2,36 @@
 layout: home
 title: itd-api — TypeScript SDK для итд.com
 titleTemplate: false
+description: "TypeScript SDK и API-клиент для социальной сети итд.com: авторизация, посты, комментарии, уведомления, файлы и подписки."
+
+head:
+  - - link
+    - rel: canonical
+      href: https://kiowdev.github.io/itd-api/
+  - - meta
+    - property: og:type
+      content: website
+  - - meta
+    - property: og:locale
+      content: ru_RU
+  - - meta
+    - property: og:site_name
+      content: itd-api
+  - - meta
+    - property: og:title
+      content: itd-api — TypeScript SDK для итд.com
+  - - meta
+    - property: og:description
+      content: "TypeScript SDK и API-клиент для социальной сети итд.com: авторизация, посты, комментарии, уведомления, файлы и подписки."
+  - - meta
+    - property: og:url
+      content: https://kiowdev.github.io/itd-api/
+  - - meta
+    - name: twitter:card
+      content: summary
 
 hero:
-  name: itd-api
+  name: "itd-api "
   text: Полный SDK без лишней магии
   tagline: Типобезопасная работа с API итд.com в Node.js, браузере, Bun, Deno и React Native.
   image:

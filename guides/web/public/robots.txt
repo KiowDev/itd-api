@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://kiowdev.github.io/itd-api/sitemap.xml
