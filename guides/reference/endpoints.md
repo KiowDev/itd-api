@@ -1,4 +1,4 @@
-# Матрица покрытия endpoint
+# Методы API
 
 Здесь перечислены поддерживаемые маршруты API и соответствующие им публичные
 методы `itd-api`. Колонка «Основной контракт» фиксирует отправляемые поля и форму
@@ -6,7 +6,7 @@
 
 ## Авторизация и сессии
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `POST /api/v1/auth/sign-up` | `itd.auth.signUp()` | нет | `email`, `password`, `turnstileToken` → `flowToken` | — |
 | `POST /api/v1/auth/sign-in` | `itd.auth.signIn()` | нет | `email`, `password`, `turnstileToken` → access token или `flowToken` | — |
@@ -24,11 +24,11 @@
 
 `signInWithOtp()` объединяет `sign-in` и `verify-otp`,
 `resetPasswordWithOtp()` — `forgot-password` и `reset-password`, поэтому
-отдельных endpoint для них нет.
+отдельных маршрутов для них нет.
 
 ## Пользователи
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `GET /api/users/me` | `itd.users.me()` | Bearer | ответ: текущий пользователь | 2026-07-30, `200` |
 | `PUT /api/users/me` | `itd.users.updateMe()`, `setBanner()`, `removeBanner()` | Bearer | изменяемые поля профиля | — |
@@ -56,7 +56,7 @@
 
 ## Посты
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `GET /api/posts` | `itd.posts.list()`, `iterate()` | Bearer | query: `tab`, `limit`, `cursor` | 2026-07-30, `200` |
 | `POST /api/posts` | `itd.posts.create()` | Bearer | контент, spans, вложения, опрос | — |
@@ -79,7 +79,7 @@
 
 ## Комментарии
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `GET /api/comments/{commentId}/replies` | `itd.comments.replies()`, `iterateReplies()` | Bearer | query: `limit`, `page` | 2026-07-30, `200` |
 | `POST /api/comments/{commentId}/replies` | `itd.comments.reply()` | Bearer | `content`, `attachmentIds[]`, `replyToUserId` | — |
@@ -91,7 +91,7 @@
 
 ## Хештеги и поиск
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `GET /api/hashtags` | `itd.hashtags.search()` | Bearer | query: `q`, `limit` | 2026-07-30, `200` |
 | `GET /api/hashtags/trending` | `itd.hashtags.trending()` | Bearer | query: `limit` | 2026-07-30, `200` |
@@ -100,7 +100,7 @@
 
 ## Уведомления и события
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `GET /api/notifications/` | `itd.notifications.list()`, `iterate()` | Bearer | query: `limit`, `offset` | 2026-07-30, `200` |
 | `GET /api/notifications/count` | `itd.notifications.count()` | Bearer | ответ: `count` | 2026-07-30, `200` |
@@ -113,7 +113,7 @@
 
 ## Файлы
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `POST /api/files/upload` | `itd.files.upload()`, `uploadMany()` | Bearer | `multipart/form-data`, поле `file` | — |
 | `GET /api/files/{fileId}` | `itd.files.get()` | Bearer | идентификатор файла в path → сведения о файле | — |
@@ -121,7 +121,7 @@
 
 ## Жалобы и верификация
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `POST /api/reports` | `itd.reports.create()` | Bearer | цель, причина и комментарий жалобы | — |
 | `GET /api/verification/status` | `itd.verification.status()` | Bearer | ответ: статус заявки | 2026-07-30, `200` |
@@ -129,7 +129,7 @@
 
 ## Подписка
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `GET /api/v1/subscription/` | `itd.subscription.status()` | Bearer | ответ: состояние подписки | 2026-07-30, `200` |
 | `POST /api/v1/subscription/pay` | `itd.subscription.pay()` | Bearer | body отсутствует | — |
@@ -141,7 +141,7 @@
 
 ## Платформа
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `GET /api/platform/version` | `itd.platform.version()` | нет | карта клиентов с `minVersion`, `latestVersion`, `updateUrl` | 2026-07-30, `200` |
 | `GET /api/platform/changelog` | `itd.platform.changelog()` | Bearer | ответ: список изменений | 2026-07-30, `200` |
@@ -151,7 +151,7 @@
 
 ## Телеметрия
 
-| Endpoint | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `POST /api/v1/i` | `itd.telemetry.dwell()` | Bearer | события просмотра `sid`, `e[]` | — |
 | `POST /api/v1/x` | `itd.telemetry.interaction()` | Bearer | события взаимодействия `sid`, `e[]` | — |

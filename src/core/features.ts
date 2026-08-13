@@ -71,7 +71,7 @@ export interface ClientFeature<TApi> {
   setup(context: FeatureContext): FeatureInstallation<TApi>;
 }
 
-/** Ограниченный доступ feature к общему runtime клиента. */
+/** Доступ подключаемого модуля к клиенту. */
 export interface FeatureContext {
   readonly featureName: string;
   readonly baseUrl: string;
@@ -82,7 +82,7 @@ export interface FeatureContext {
   readonly files: FileResolver;
 
   /**
-   * Выполняет объявленную операцию через общие auth, plugins, retry и очереди клиента.
+   * Выполняет объявленную операцию через авторизацию, плагины, повторы и очередь клиента.
    *
    * Форма результата задаётся один раз полем `read` в описании операции. Плагины получают
    * готовый результат и не видят функцию преобразования.
@@ -90,11 +90,11 @@ export interface FeatureContext {
   request<T = unknown>(operation: string, options: FeatureRequestOptions): Promise<T>;
   /** Возвращает фактический URL объявленного сервиса с учётом настроек клиента. */
   serviceBaseUrl(name: string): string;
-  /** Окружение долговременного соединения объявленного feature-сервиса. */
+  /** Окружение долговременного соединения объявленного сервиса. */
   connection(name: string): ClientConnection;
   /** Регистрирует активный долгоживущий ресурс до его остановки. */
   manage(resource: ManagedClientResource): () => void;
-  /** Проверяет, что создавший модуль клиент ещё не освобождён терминально. */
+  /** Проверяет, что создавший модуль клиент ещё работает. */
   assertActive(action: string): void;
 }
 
@@ -110,7 +110,7 @@ interface InstalledFeature {
 export interface FeatureRegistryDeps {
   readonly http: HttpClient;
   readonly services: ServiceRegistry;
-  /** Исходные overrides из опций: в них ещё различимы отсутствующие `auth` и `headers`. */
+  /** Настройки сервисов до применения значений по умолчанию. */
   readonly serviceOverrides: readonly ServiceDefinition[];
   readonly catalog: ExtensibleOperationCatalog;
   readonly baseUrl: string;
@@ -170,7 +170,7 @@ function validateBucket(owner: string, localName: string, bucket: FeatureBucketD
   }
 }
 
-/** Реестр feature одного facade. @internal */
+/** Реестр подключаемых модулей клиента. @internal */
 export class FeatureRegistry {
   readonly #deps: FeatureRegistryDeps;
   readonly #features = new Map<string, InstalledFeature>();
@@ -224,7 +224,7 @@ export class FeatureRegistry {
       try {
         this.#deps.logger?.error(message, error);
       } catch {
-        // Диагностический logger не должен подменять исходную ошибку установки.
+        // Ошибка записи в журнал не заменяет ошибку установки.
       }
     };
 

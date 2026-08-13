@@ -12,30 +12,30 @@ import {
 import { EventRouter, type EventRouteSelector } from './router.js';
 import type { EventContext, NotificationEventContext } from './updates.js';
 
-/** Функция или объектный middleware, который можно добавить в {@link EventComposer}. */
+/** Функция или объект промежуточного обработчика для {@link EventComposer}. */
 export type EventMiddlewareLike<C extends EventContext = NotificationEventContext> =
   | EventMiddleware<C>
   | EventMiddlewareObject<C>;
 
-/** Один middleware или последовательность middleware для ветки composer. */
+/** Один или несколько промежуточных обработчиков ветки. */
 export type EventMiddlewareGroup<C extends EventContext = NotificationEventContext> =
   | EventMiddlewareLike<C>
   | readonly EventMiddlewareLike<C>[];
 
-/** Синхронное или асинхронное условие ветвления composer. */
+/** Синхронное или асинхронное условие ветвления. */
 export type EventFilter<C extends EventContext = NotificationEventContext> = (
   context: C,
 ) => boolean | Promise<boolean>;
 
 /** Ошибка локальной ветки событий вместе с контекстом обрабатываемого обновления. */
 export interface EventErrorContext<C extends EventContext = NotificationEventContext> {
-  /** Исходное исключение middleware. */
+  /** Исходное исключение обработчика. */
   readonly error: unknown;
   /** Контекст обновления, на котором завершилась ветка. */
   readonly context: C;
 }
 
-/** Обработчик локальной границы ошибок composer. */
+/** Обработчик локальной границы ошибок. */
 export type EventErrorBoundary<C extends EventContext = NotificationEventContext> = (
   failure: EventErrorContext<C>,
   next: EventNext,
@@ -120,11 +120,10 @@ async function runBoundaryStep(
 }
 
 /**
- * Собирает переиспользуемый feature-модуль из middleware событий.
+ * Собирает переиспользуемую цепочку обработчиков событий.
  *
- * Composer не открывает соединение и не планирует конкурентность: готовый объект подключается
- * через `stream.use(composer)`, а выполнение остаётся обязанностью существующего dispatcher.
- * Для каждого принятого update используется снимок всей вложенной структуры composer.
+ * Не открывает соединение. Готовый объект подключается через `stream.use(composer)`.
+ * Для каждого обновления используется текущий снимок вложенных обработчиков.
  *
  * @example
  * ```ts
@@ -143,14 +142,14 @@ export class EventComposer<C extends EventContext = NotificationEventContext>
     this.use(...middleware);
   }
 
-  /** Добавляет middleware в конец текущей onion-цепочки. */
+  /** Добавляет промежуточные обработчики в конец цепочки. */
   use(...middleware: readonly EventMiddlewareLike<C>[]): this {
     const normalized = middleware.map(middlewareFunction);
     this.#middleware.push(...normalized);
     return this;
   }
 
-  /** Создаёт дочернюю ветку, выполняемую только когда type guard принимает контекст. */
+  /** Создаёт дочернюю ветку для контекста указанного типа. */
   filter<N extends C>(
     predicate: EventTypeGuard<N, C>,
     ...middleware: readonly EventMiddlewareLike<N>[]
@@ -185,7 +184,7 @@ export class EventComposer<C extends EventContext = NotificationEventContext>
   /**
    * Направляет контекст в одну именованную ветку.
    *
-   * Неизвестный ключ без fallback пропускает update следующему внешнему middleware. Для
+   * Неизвестный ключ без запасной ветки передаёт обновление следующему обработчику. Для
    * динамической регистрации и числовых ключей используйте {@link EventRouter} напрямую.
    */
   route<K extends string | symbol>(
@@ -219,10 +218,8 @@ export class EventComposer<C extends EventContext = NotificationEventContext>
   /**
    * Создаёт дочернюю ветку с локальной границей ошибок.
    *
-   * Граница защищает только переданные и затем добавленные в возвращённый composer middleware.
-   * Ошибки внешней цепочки намеренно не перехватываются. Обработчик может вызвать `next()`,
-   * чтобы после ошибки продолжить внешнюю цепочку, либо повторно выбросить исключение. Внешняя
-   * цепочка начинается после полного завершения защищённой ветки, а не входит в её onion-вызов.
+   * Перехватывает ошибки только из дочерней ветки. Вызов `next()` в обработчике ошибки
+   * продолжает внешнюю цепочку.
    */
   errorBoundary(
     handler: EventErrorBoundary<C>,
@@ -256,7 +253,7 @@ export class EventComposer<C extends EventContext = NotificationEventContext>
     return child;
   }
 
-  /** Возвращает snapshot-aware middleware для `stream.use()` или вложенного composer. */
+  /** Возвращает промежуточный обработчик для `stream.use()` или вложенной цепочки. */
   middleware(): EventMiddleware<C> {
     const middleware: EventMiddleware<C> = (context, next) =>
       this.#captureMiddleware()(context, next);

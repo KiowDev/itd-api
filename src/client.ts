@@ -316,20 +316,20 @@ export class ItdClient {
   }
 
   /**
-   * Устанавливает предметный модуль поверх общей сессии и request pipeline клиента.
+   * Устанавливает предметный модуль с общей сессией и обработкой запросов клиента.
    *
-   * Сервисы, операции и бакеты feature регистрируются до синхронного `setup()`. Возвращаемое
-   * значение — типизированный API модуля; повторное имя feature отклоняется.
+   * Сервисы, операции и бакеты регистрируются до синхронного `setup()`. Возвращает
+   * типизированный API модуля.
    */
   install<TApi>(feature: ClientFeature<TApi>): TApi {
     return this.#features.install(feature);
   }
 
   /**
-   * Устанавливает feature и публикует его API как readonly-свойство этого же клиента.
+   * Устанавливает модуль и добавляет его API в свойство клиента только для чтения.
    *
    * Возвращаемое пересечение сохраняет тип уже подключённых свойств, поэтому вызовы можно
-   * объединять в цепочку: `new ItdClient().withFeature('chats', chatsFeature)`.
+   * объединять в цепочку: `new ItdClient().withFeature('pixelBattle', pixelBattleFeature)`.
    */
   withFeature<const K extends string, TApi>(
     key: K,
@@ -356,12 +356,12 @@ export class ItdClient {
     return this as this & { readonly [P in K]: TApi };
   }
 
-  /** Имена установленных feature в порядке установки. */
+  /** Имена установленных модулей в порядке установки. */
   featureNames(): string[] {
     return this.#features.names();
   }
 
-  /** Установлен ли feature с таким именем. */
+  /** Установлен ли модуль с таким именем. */
   hasFeature(name: string): boolean {
     return this.#features.has(name);
   }
@@ -369,9 +369,7 @@ export class ItdClient {
   /**
    * Подключает плагин.
    *
-   * Плагин может независимо регистрировать transformer логической операции и interceptor
-   * транспортной попытки. Оба контракта охватывают все методы клиента. Подключать плагин
-   * можно в любой момент, но обычно это делают сразу после создания клиента.
+   * Плагин может регистрировать обёртки операций и перехватчики сетевых попыток.
    *
    * @throws {ItdConfigError} если плагин задан неверно или уже подключён
    * @throws {ItdStateError} если клиент уже освобождён через {@link dispose}
@@ -554,7 +552,7 @@ export class ItdClient {
   async #dispose(): Promise<void> {
     const errors: unknown[] = [];
     try {
-      // Сначала завершаем потоки и телеметрию через ещё установленный plugin pipeline.
+      // Сначала завершаем потоки и телеметрию через ещё установленные плагины.
       await this.#close(true);
     } catch (error) {
       errors.push(error);

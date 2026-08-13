@@ -362,7 +362,7 @@ class TelemetryBatchImpl implements TelemetryBatch {
     return this.#close(false);
   }
 
-  /** Внутренняя финализация после перехода клиента в terminal state. */
+  /** Внутренняя отправка данных после вызова `dispose()`. */
   closeForDispose(): Promise<void> {
     this.prepareForDispose();
     return this.#close(true);
@@ -603,7 +603,7 @@ export function prepareTelemetryForDispose(resource: TelemetryResource | undefin
   if (resource) TELEMETRY_DISPOSE_PREPARERS.get(resource)?.();
 }
 
-/** Финализирует созданные накопители после перехода клиента в terminal state. @internal */
+/** Отправляет и закрывает созданные накопители после вызова `dispose()`. @internal */
 export function closeTelemetryForDispose(resource: TelemetryResource | undefined): Promise<void> {
   return resource
     ? (TELEMETRY_DISPOSE_CLOSERS.get(resource)?.() ?? Promise.resolve())

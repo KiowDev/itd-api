@@ -417,7 +417,7 @@ export {
   SpanRenderFormat,
 } from './spans/render.js';
 export type { Loose } from './types/enums.js';
-// Перечисления экспортируются парой «значение + тип» под одним именем:
+// Enum экспортируются парой «значение + тип» под одним именем:
 // FeedTab.Popular работает как константа, FeedTab — как тип. Подробности — в types/enums.ts.
 export {
   AccessType,

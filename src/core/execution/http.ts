@@ -23,8 +23,7 @@ export type HttpOperationOptions = Omit<PipelineRequest, 'operationId' | 'method
 /**
  * Точка входа ресурсов в конвейер запросов.
  *
- * Принимает готовый обработчик — цепочку слоёв поверх транспорта, собранную
- * во внутреннем runtime клиента, — и отдаёт ресурсам методы `request`/`execute`.
+ * Принимает готовую цепочку обработки и предоставляет ресурсам методы `request`/`execute`.
  * О слоях и их порядке ресурсы не знают.
  */
 export class HttpClient {

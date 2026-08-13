@@ -60,7 +60,7 @@ function notificationEventsFacade(
   return facade;
 }
 
-/** Оборачивает стабильный канал уведомлений и гидратирует контексты до пользовательских middleware. */
+/** Оборачивает канал уведомлений и дополняет контексты до пользовательских обработчиков. */
 export function createNotificationEvents(
   context: HydrationContext,
   raw: NotificationEvents,

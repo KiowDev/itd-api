@@ -78,14 +78,14 @@ const referenceSidebar = [
     collapsed: true,
     items: [
       { text: 'Модели', link: '/reference/models' },
-      { text: 'Перечисления', link: '/reference/enums' },
+      { text: 'Enum', link: '/reference/enums' },
       { text: 'Ошибки', link: '/reference/errors' },
       { text: 'Билдеры', link: '/reference/builders' },
       { text: 'Пагинация', link: '/reference/pagination' },
-      { text: 'Request pipeline', link: '/reference/request-pipeline' },
+      { text: 'Порядок выполнения запроса', link: '/reference/request-pipeline' },
       { text: 'Ограничения частоты', link: '/reference/rate-limits' },
       { text: 'Сессии и хранилища', link: '/reference/storage' },
-      { text: 'Матрица endpoint', link: '/reference/endpoints' },
+      { text: 'Методы API', link: '/reference/endpoints' },
     ],
   },
   {

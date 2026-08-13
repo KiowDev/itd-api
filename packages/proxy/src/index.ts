@@ -123,7 +123,7 @@ function createFetch(dispatcher: Dispatcher, base?: typeof fetch): ProxyFetch {
  * Создаёт совместимый с `WebSocketTransport` конструктор, направляющий подключения через прокси.
  *
  * Использует WebSocket из уже установленного `undici` и тот же тип диспетчера, что
- * {@link proxyFetch}; дополнительная runtime-зависимость не требуется.
+ * {@link proxyFetch}; дополнительная зависимость времени выполнения не требуется.
  *
  * @example
  * ```ts

@@ -1,7 +1,7 @@
 import type { ClientConnection } from '../../core/connection.js';
 import type { QueryParams } from '../../core/url.js';
 
-/** Operation IDs emitted by notification transports. */
+/** Идентификаторы операций транспорта уведомлений. */
 export type EventOperationId =
   | 'events.notifications.poll.updates'
   | 'events.notifications.poll.unread';
@@ -12,14 +12,13 @@ export interface EventRequestInput {
   path: string;
   query?: QueryParams | undefined;
   /**
-   * Отмена запроса. Transport и доменная синхронизация передают сигнал текущей попытки
-   * соединения, поэтому disconnect не оставляет фоновые REST-запросы.
+   * Сигнал отмены текущей попытки соединения.
    */
   signal?: AbortSignal | undefined;
 }
 
 /**
- * Порт к конвейеру клиента: очередь, авторизация, повторы, плагины и хуки.
+ * Запрос через очередь, авторизацию, повторы, плагины и обработчики клиента.
  *
  * Ответ приходит уже разобранным и без обёртки `{ data: … }`, а неудача — типизированной
  * ошибкой библиотеки.

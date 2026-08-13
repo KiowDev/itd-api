@@ -189,7 +189,7 @@ interface TelemetryOptions {
 настройки при `batch(telemetryOptions, requestOptions)`, а `flush()` позволяет переопределить
 их для конкретной отправки.
 
-## Перечисления
+## Enum
 
 - `InteractionType.PhotoOpen` — открытие изображения;
 - `InteractionType.VideoProgress` — прогресс просмотра видео;
@@ -197,4 +197,4 @@ interface TelemetryOptions {
 - `ViewReason` — причина завершения просмотра.
 
 Используйте именованные значения вместо числовых wire-кодов. Полный набор приведён в
-[справочнике перечислений](./enums.md#телеметрия).
+[справочнике enum](./enums.md#телеметрия).

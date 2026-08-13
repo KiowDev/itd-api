@@ -6,18 +6,14 @@ import type { ExtensibleOperationCatalog } from './feature-catalog.js';
 import { type ClientFeature, FeatureRegistry } from './features.js';
 import { type ManagedClientResource, ManagedResourceRegistry } from './managed-resources.js';
 
-/** Зависимости composition root подключаемых feature одного клиента. @internal */
+/** Зависимости подключаемых модулей клиента. @internal */
 export interface FeatureHostOptions {
   readonly catalog: ExtensibleOperationCatalog;
   readonly assertActive: (action: string) => void;
 }
 
 /**
- * Собирает feature-host поверх готового runtime.
- *
- * Это единственное место, где внутренние зависимости клиента превращаются в узкие порты
- * {@link FeatureRegistry}. Фасады клиента отвечают только за создание runtime и проверку
- * собственного терминального состояния.
+ * Управляет подключаемыми модулями и их ресурсами.
  *
  * @internal
  */
@@ -59,12 +55,12 @@ export class ClientFeatureHost {
     return this.#features.has(name);
   }
 
-  /** Регистрирует resource, принадлежащий самому facade, а не feature. @internal */
+  /** Регистрирует ресурс самого клиента. @internal */
   manage(resource: ManagedClientResource): () => void {
     return this.#resources.register(resource);
   }
 
-  /** Синхронная остановка перед публикацией нового владельца auth. */
+  /** Останавливает ресурсы перед сменой авторизации. */
   stop(): void {
     const { errors } = this.#resources.stopAll();
     if (errors.length > 0) {
@@ -72,7 +68,7 @@ export class ClientFeatureHost {
     }
   }
 
-  /** Останавливает ресурсы и ограниченно ждёт весь feature lifecycle. */
+  /** Останавливает ресурсы и ждёт функции закрытия модулей. */
   async close(): Promise<void> {
     const snapshot = this.#resources.stopAll();
     const errors = [...snapshot.errors];

@@ -21,7 +21,7 @@ export const RetrySafety = Object.freeze({
 } as const);
 export type RetrySafety = (typeof RetrySafety)[keyof typeof RetrySafety];
 
-/** Метаданные расширений операции. Поля добавляют пакеты плагинов через declaration merging. */
+/** Расширяемые метаданные операции. Плагины добавляют собственные поля. */
 // biome-ignore lint/suspicious/noEmptyInterface: extended by optional plugin packages.
 export interface OperationAnnotations {}
 

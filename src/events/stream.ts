@@ -173,7 +173,7 @@ export interface NotificationEventsDeps {
 
 const EVENT_CONNECT_GUARDS = new WeakMap<object, () => void>();
 
-/** Связывает поток с lifecycle создавшего его клиента. @internal */
+/** Регистрирует проверку состояния создавшего поток клиента. @internal */
 export function setNotificationEventsConnectGuard<C extends NotificationEventContext>(
   stream: NotificationEvents<C>,
   guard: () => void,
@@ -240,8 +240,7 @@ export class NotificationEvents<C extends NotificationEventContext = Notificatio
         coalesceKey: (update) =>
           update.type === NotificationUpdateType.UnreadCount ? update.type : undefined,
         createContext: (update, raw, origin) =>
-          // Флейворные поля появляются в контексте позже — их присваивают плагины
-          // в своих middleware, поэтому здесь собирается базовая форма.
+          // Дополнительные поля позже добавляют плагины в своих обработчиках.
           ({ update, stream: this, raw, origin }) as unknown as C,
         deliver: (update) => this.#deliver(update),
         ...(options.syncCount === false

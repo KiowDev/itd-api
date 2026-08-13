@@ -29,7 +29,7 @@ import {
 } from './pipeline.js';
 import { Transport } from './transport.js';
 
-/** Имена стадий основного request pipeline в порядке выполнения. @internal */
+/** Имена стадий обработки запроса в порядке выполнения. @internal */
 export const ClientRuntimeStage = Object.freeze({
   OperationPlugins: 'operation_plugins',
   Services: 'services',
@@ -57,21 +57,19 @@ export interface ClientRuntimeInternals<A extends AuthProvider> {
   /**
    * Каталог операций, которым пользуется ядро.
    *
-   * Передаётся composition root: generic pipeline не выбирает предметную область сам.
-   * Подмена нужна тестам и клиентам поверх другого набора эндпоинтов.
+   * Позволяет использовать другой набор операций в тестах и специализированных клиентах.
    */
   catalog: OperationCatalog;
-  /** Общая очередь нескольких клиентов; runtime не останавливает её самостоятельно. */
+  /** Общая очередь нескольких клиентов; освобождается её владельцем. */
   queues?: RequestQueuePool | undefined;
-  /** Проверяет терминальное состояние фасада до входа в pipeline. */
+  /** Проверяет состояние клиента до выполнения запроса. */
   assertActive?: ((action: string) => void) | undefined;
 }
 
 /**
  * Собранная внутренняя часть клиента.
  *
- * Фасад владеет ресурсами и событийными каналами, runtime — сетевой механикой и registries.
- * Контракт намеренно не экспортируется из корневой точки входа.
+ * Содержит сетевую механику и реестры клиента.
  *
  * Параметризован реализацией авторизации: ядру достаточно {@link AuthProvider}, а фасад
  * получает обратно ровно тот тип, который создала его фабрика.
@@ -85,20 +83,20 @@ export interface ClientRuntime<A extends AuthProvider = AuthProvider> {
   readonly cookies: CookieJar;
   readonly plugins: PluginRegistry;
   readonly services: ServiceRegistry;
-  /** Фактический порядок стадий; используется contract-тестом и диагностикой. */
+  /** Фактический порядок стадий для тестов и диагностики. */
   readonly stageOrder: readonly ClientRuntimeStage[];
   /** Разрешает окружение основного API либо именованного сервиса. */
   connection(serviceName?: string): ClientConnection;
   platformHeaders(url: string): Promise<Headers>;
   /** Снимок известных бакетов. Пустой, когда очередь отключена. */
   rateLimitState(): RateLimitBucketState[];
-  /** Регистрирует ограничения бакета подключаемого feature. @internal */
+  /** Регистрирует ограничения бакета подключаемого модуля. @internal */
   registerRateLimitBucket(
     name: string,
     definition: RateLimitBucketOverride,
   ): (() => void) | undefined;
   /**
-   * Временно останавливает только принадлежащие runtime очереди.
+   * Временно останавливает принадлежащие клиенту очереди.
    *
    * Накопленный остаток квоты сохраняется: клиент после `close()` может работать дальше,
    * а серверные счётчики от закрытия клиента не сбрасываются.
@@ -121,7 +119,7 @@ function createServiceRegistry(config: ResolvedRuntimeConfig): ServiceRegistry {
   return services;
 }
 
-/** Собирает внутренний runtime клиента и единственный request pipeline. @internal */
+/** Собирает внутренние компоненты и цепочку запросов клиента. @internal */
 export function createClientRuntime<A extends AuthProvider>(
   options: RuntimeOptions,
   internals: ClientRuntimeInternals<A>,

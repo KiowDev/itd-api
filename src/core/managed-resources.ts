@@ -1,12 +1,12 @@
 import { ItdConfigError, ItdStateError } from './errors.js';
 
-/** Долгоживущий ресурс, участвующий в lifecycle создавшего его клиента. */
+/** Долгоживущий ресурс клиента. */
 export interface ManagedClientResource {
-  /** Короткое имя для диагностики зависшего shutdown. */
+  /** Короткое имя для диагностики зависшей остановки. */
   readonly kind: string;
   /** Синхронно прекращает принимать новую работу и запускает отмену. */
   stop(): void;
-  /** Завершается после выхода активных обработчиков и cleanup внешних ресурсов. */
+  /** Завершается после остановки обработчиков и освобождения внешних ресурсов. */
   drain(): Promise<void>;
 }
 
@@ -15,7 +15,7 @@ export interface ManagedResourceSnapshot {
   readonly errors: readonly unknown[];
 }
 
-/** Реестр активных ресурсов одного feature-host. @internal */
+/** Реестр активных ресурсов клиента. @internal */
 export class ManagedResourceRegistry {
   readonly #resources = new Set<ManagedClientResource>();
   #disposed = false;

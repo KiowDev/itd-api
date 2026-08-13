@@ -43,7 +43,7 @@ export {
 
 declare module 'itd-api' {
   interface OperationAnnotations {
-    /** Политика динамической feature-операции для `@itd-api/cache`. */
+    /** Правило кэширования операции подключаемого модуля. */
     readonly cache?:
       | {
           readonly kind: typeof CachePolicyKind.Query;

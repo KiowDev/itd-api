@@ -27,7 +27,7 @@ const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
 const versions: PlatformVersions = await itd.platform.version();
 console.log(versions.android.latestVersion, versions.ios.latestVersion);
 
-// ── Перечисления вместо магических строк ────────────────────────────────────────
+// ── Enum вместо магических строк ────────────────────────────────────────────────
 // Работают обе формы: константа и обычная строка.
 await itd.posts.list({ tab: FeedTab.Popular });
 await itd.posts.list({ tab: 'following' });

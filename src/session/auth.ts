@@ -309,7 +309,7 @@ export class AuthManager implements AuthProvider {
     return this.#emitter.once.bind(this.#emitter);
   }
 
-  /** Снимает lifecycle-подписки при терминальном освобождении владельца. @internal */
+  /** Снимает служебные подписки при окончательном освобождении владельца. @internal */
   dispose(): void {
     this.#invalidateInFlight();
     this.#emitter.removeAllListeners();
@@ -386,7 +386,7 @@ export class AuthManager implements AuthProvider {
     return token;
   }
 
-  /** Меняет fallback и завершает событийные соединения, только если сменился аккаунт. */
+  /** Обновляет резервный идентификатор и закрывает события при смене аккаунта. */
   #transitionAuth(accessToken: string | undefined, rotateFallback = true): void {
     const knownPrevious = this.#session !== undefined;
     const previous = this.#identityForToken(this.#session?.accessToken);

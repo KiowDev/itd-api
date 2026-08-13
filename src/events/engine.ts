@@ -98,17 +98,17 @@ export interface EventChannelDeps<U, C extends EventContext<U, unknown, O>, O = 
   createContext: (update: U, raw: EventTransportFrame | undefined, origin: O) => C;
   /** Доставляет обновление доменным подписчикам после цепочки обработчиков. */
   deliver: (update: U) => void;
-  /** Проверяет право на новый запуск канала, например lifecycle создавшего клиента. */
+  /** Проверяет, можно ли запустить канал. */
   connectGuard?: (() => void) | undefined;
-  /** Доменная инициализация одной connection attempt. */
+  /** Подготовка одной попытки соединения. */
   initialize?:
     | ((reason: EventSyncReason, session: EventSession<U, O>) => Promise<void>)
     | undefined;
-  /** Открыть transport до initializer и удерживать выбранные кадры до его завершения. */
+  /** Открывает транспорт до подготовки и накапливает выбранные кадры до её завершения. */
   openBeforeInitialize?: boolean | undefined;
-  /** Ошибка initializer отклоняет initial connect вместо best-effort продолжения. */
+  /** Ошибка подготовки отклоняет первый `connect()`. */
   initializationRequired?: boolean | undefined;
-  /** Какие transport-кадры удерживать закрытым ready-gate. По умолчанию все. */
+  /** Выбирает кадры, которые нужно накопить до завершения подготовки. По умолчанию все. */
   bufferFrame?: ((event: EventTransportFrame) => boolean) | undefined;
 }
 
@@ -128,7 +128,7 @@ interface ActiveEventSession<U, O> {
 
 const EVENT_CHANNEL_GIVEUP_HOOKS = new WeakMap<object, () => void>();
 
-/** Связывает предметный facade с terminal-событием общего канала, не публикуя lifecycle hook. @internal */
+/** Регистрирует обработчик окончательной остановки канала. @internal */
 export function setEventChannelGiveUpHook(channel: object, hook: () => void): void {
   EVENT_CHANNEL_GIVEUP_HOOKS.set(channel, hook);
 }
@@ -191,7 +191,7 @@ export function resolveEventChannelOptions<C extends EventContext>(
 }
 
 /**
- * Общая механика потока событий: соединение, переподключение с backoff, обновление
+ * Общая механика потока событий: соединение, переподключение с задержкой, обновление
  * токена, реакция на среду, статусы и очередь обработчиков.
  *
  * Ничего не знает о домене: что считать обновлением, как собрать контекст и кому его
@@ -390,7 +390,7 @@ export class EventChannel<
     });
   }
 
-  /** Создаёт отдельный generation и выполняет выбранный доменом порядок orchestration. */
+  /** Создаёт новую попытку соединения и выполняет её подготовку. */
   async #startAttempt(reason: EventSyncReason): Promise<void> {
     if (!this.#wanted) return;
     this.#abortSession(new ItdAbortError('Событийное соединение заменено новой попыткой'));
@@ -434,7 +434,7 @@ export class EventChannel<
     }
   }
 
-  /** Запускает transport одной попытки; повторы планирует engine. */
+  /** Запускает транспорт одной попытки. */
   #runTransport(session: ActiveEventSession<U, O>): void {
     if (!this.#isCurrentSession(session)) return;
     this.#setStatus(EventChannelStatus.Connecting);

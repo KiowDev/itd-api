@@ -179,12 +179,12 @@ export class ItdRestClient {
     return this.#runtime.rateLimitState();
   }
 
-  /** Устанавливает REST feature поверх общего request pipeline клиента. */
+  /** Устанавливает REST-модуль с общей обработкой запросов клиента. */
   install<TApi>(feature: ClientFeature<TApi>): TApi {
     return this.#features.install(feature);
   }
 
-  /** Устанавливает REST feature и публикует его API как readonly-свойство клиента. */
+  /** Устанавливает REST-модуль и добавляет его API в свойство только для чтения. */
   withFeature<const K extends string, TApi>(
     key: K,
     feature: ClientFeature<TApi>,
@@ -210,12 +210,12 @@ export class ItdRestClient {
     return this as this & { readonly [P in K]: TApi };
   }
 
-  /** Имена установленных feature в порядке установки. */
+  /** Имена установленных модулей в порядке установки. */
   featureNames(): string[] {
     return this.#features.names();
   }
 
-  /** Установлен ли feature с таким именем. */
+  /** Установлен ли модуль с таким именем. */
   hasFeature(name: string): boolean {
     return this.#features.has(name);
   }
@@ -317,7 +317,7 @@ export class ItdRestClient {
 
   async #dispose(): Promise<void> {
     const errors: unknown[] = [];
-    // Телеметрия уходит через ещё установленный plugin pipeline и мимо проверки состояния.
+    // Телеметрия уходит через ещё установленные плагины и мимо проверки состояния.
     this.#resources.prepareTelemetryClose();
     try {
       await this.#features.close();

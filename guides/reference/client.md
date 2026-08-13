@@ -54,7 +54,7 @@ unuse(name: string): Promise<boolean>
 сразу для всех ресурсов.
 Пакеты, поддерживаемые проектом itd-api: [`@itd-api/cache`](../plugins/),
 [`@itd-api/crypto`](../plugins/). Остальные методы показывают фактический порядок
-плагинов, проверяют наличие и отключают плагин с вызовом его teardown.
+плагинов, проверяют наличие и отключают плагин с запуском его функции очистки.
 
 ```ts
 defineService(definition: ServiceDefinition): this
@@ -94,8 +94,9 @@ featureNames(): string[]
 hasFeature(name: string): boolean
 ```
 Устанавливает [предметный модуль](../features/) поверх общей сессии и конвейера запросов.
-`install()` возвращает его типизированный API, а `withFeature()` — тот же клиент с readonly-
-свойством модуля, например `itd.withFeature('chats', chatsFeature).chats`. Остальные методы
+`install()` возвращает его типизированный API, а `withFeature()` — тот же клиент со
+свойством модуля, например
+`itd.withFeature('pixelBattle', pixelBattleFeature).pixelBattle`. Остальные методы
 перечисляют установленные модули и проверяют имя; встроенный `status` также виден в реестре.
 
 ```ts
@@ -120,8 +121,8 @@ dispose(): Promise<void>
 их ресурсы и терминально закрывает клиент. После него новые запросы, `use()`,
 `defineService()` и повторный `connect()` существующего канала событий завершаются
 с `ItdStateError`. Уже накопленную телеметрию `dispose()` всё же отправляет: эта
-финализация проходит через ещё установленные плагины до их teardown и не открывает доступ
-новым пользовательским вызовам. Повторный `dispose()` возвращает тот же результат очистки.
+отправка проходит через ещё установленные плагины до их отключения. Повторный `dispose()`
+возвращает тот же результат очистки.
 `await using` вызывает `dispose()`.
 
 Оба метода ждут чужой код не дольше `shutdownTimeout`; по истечении срока ресурсы всё равно
@@ -166,11 +167,11 @@ interface ItdClientOptions {
   retry?: RetryOptions | false;
   rateLimit?: RateLimitOptions | false;
   hooks?: ClientHooks;
-  logger?: Logger | boolean;             // true — писать в console (токены маскируются)
+  logger?: Logger | boolean;             // true — писать в консоль (токены маскируются)
   headers?: Record<string, string>;
   deviceId?: string;                     // X-Device-Id; стабильный; иначе заведётся сам
   userAgent?: string | false;            // false — не слать; в браузере не действует
-  mode?: RuntimeMode;                    // как обращаться с cookie
+  mode?: RuntimeMode;                    // как обращаться с файлами cookie
 }
 ```
 
@@ -242,8 +243,8 @@ interface RateLimitOptions {
 лимита всего приложения используйте один экземпляр `ItdClient`.
 
 Очередь выбирается по паре «`URL.origin` — бакет», уже после разрешения `service`
-и `baseUrl`. Два alias одного origin делят concurrency, RPS и паузы, разные origin
-изолированы; разовый `baseUrl` использует очередь своего origin, а не основного API.
+и `baseUrl`. Разные имена одного адреса делят ограничения одновременности, частоты и паузы;
+разовый `baseUrl` использует очередь своего адреса, а не основного API.
 
 `bucketConcurrency` по умолчанию равен `concurrency`. Единственное встроенное исключение —
 `files.upload` с пределом 1.
@@ -294,7 +295,7 @@ interface ClientHooks {
 
 ```ts
 interface RawRequestOptions extends RequestOptions {
-  operationId?: OperationId;             // `raw` по умолчанию; свои ID — `custom:*`
+  operationId?: OperationId;             // `raw` по умолчанию; свои operationId — `custom:*`
   method: string;
   path: string;                          // с ведущим слэшем; завершающий слэш значим
   service?: string;                      // хост зарегистрированного сервиса
@@ -308,11 +309,11 @@ interface RawRequestOptions extends RequestOptions {
 }
 ```
 
-Встроенные resources передают стабильный `operationId` автоматически; transformers и hooks
-могут опираться на него вместо разбора URL. Произвольный `itd.request()` без ID получает `raw`,
-поэтому built-in плагины не принимают совпавший путь за известную операцию. Для интеграций
-используйте namespace `custom:*`; явный built-in ID означает, что вызывающий гарантирует
-соответствие запроса этой операции.
+Встроенные ресурсы передают постоянный `operationId` автоматически; плагины и хуки могут
+использовать его вместо разбора URL. Произвольный `itd.request()` без идентификатора операции
+получает `raw`, поэтому встроенные плагины не принимают совпавший путь за известную операцию.
+Для интеграций используйте пространство имён `custom:*`; встроенный идентификатор операции
+означает, что запрос соответствует этой операции.
 
 `raw`-запросы с `GET`, `HEAD` и `OPTIONS` считаются безопасными для совместимости.
 `custom:*` по умолчанию всегда `Unsafe`, даже при `GET`: задайте
@@ -320,12 +321,12 @@ interface RawRequestOptions extends RequestOptions {
 интеграции. Глобального переключателя для повтора всех записей намеренно нет.
 
 Каталог встроенных операций доступен программно — это тот же источник, которым пользуются
-resources, повторы и плагины:
+ресурсы, повторы и плагины:
 
 ```ts
 import { isBuiltInOperationId, OPERATIONS, operationMethod, operationRetrySafety } from 'itd-api';
 
-Object.keys(OPERATIONS).length;             // все встроенные ID
+Object.keys(OPERATIONS).length;             // все встроенные operationId
 operationMethod('posts.create');            // 'POST'
 operationRetrySafety('posts.stats');        // 'safe'
 isBuiltInOperationId('posts.create');       // true

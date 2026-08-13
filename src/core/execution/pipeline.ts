@@ -129,7 +129,7 @@ export function markDisposeCleanupRequest(request: PipelineRequestInput): Pipeli
   return { ...request, [DISPOSE_CLEANUP_REQUEST]: true } as PipelineRequestInput;
 }
 
-/** Разрешено ли запросу завершать внутреннюю очистку после перехода клиента в terminal state. @internal */
+/** Разрешено ли запросу завершать внутреннюю очистку после `dispose()`. @internal */
 export function isDisposeCleanupRequest(request: PipelineRequest): boolean {
   return (request as InternalPipelineRequest)[DISPOSE_CLEANUP_REQUEST] === true;
 }
@@ -151,7 +151,7 @@ export type RequestMiddleware = (
 /**
  * Собирает слои в один обработчик.
  *
- * Первый слой оказывается самым внешним. Порядок задаётся внутренним client runtime.
+ * Первый слой становится внешним.
  *
  * @example
  * ```ts

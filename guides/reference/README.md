@@ -22,7 +22,7 @@
 | [Платформа](./platform.md) | `itd.platform` | версии приложений, журнал изменений, анонсы, портал, статус сервисов |
 | [Телеметрия](./telemetry.md) | `itd.telemetry` | явная отправка просмотров и взаимодействий |
 | [События](./events.md) | `itd.notifications.events` | поток уведомлений, composer/router, транспорт, переподключение |
-| [Request pipeline](./request-pipeline.md) | `operations` / `attempts` | границы логической операции, сетевой попытки, retry, auth и queue |
+| [Порядок выполнения запроса](./request-pipeline.md) | `operations` / `attempts` | логическая операция, сетевая попытка, повторы, авторизация и очередь |
 
 ## Несколько аккаунтов
 
@@ -35,12 +35,12 @@
 | Файл | О чём |
 |---|---|
 | [Модели данных](./models.md) | `Post`, `Comment`, `Profile`, `Notification`, `Attachment` и остальные ответы API |
-| [Перечисления](./enums.md) | `FeedTab`, `SpanType`, `NotificationType`, `ReportReason` и прочие |
+| [Enum](./enums.md) | `FeedTab`, `SpanType`, `NotificationType`, `ReportReason` и прочие |
 | [Ошибки](./errors.md) | иерархия `ItdError`, коды `ItdErrorCode`, функции-предикаты |
 | [Билдеры](./builders.md) | `post()`, `comment()`, `poll()`, `report()`, `markup()`, `renderSpans()` |
 | [Пагинация](./pagination.md) | `Page<T>`, `Paginator<T>`, три схемы под одним `for await` |
 | [Сессии и хранилища](./storage.md) | `ItdSession`, одно- и мультиаккаунтные storage, `itd-api/node` |
-| [Матрица endpoint](./endpoints.md) | wire-контракты, авторизация, статус поддержки и дата проверки |
+| [Методы API](./endpoints.md) | протоколы, авторизация, статус поддержки и дата проверки |
 
 ## Общие соглашения
 
@@ -53,8 +53,8 @@ interface RequestOptions {
   timeout?: number;                      // таймаут только этого запроса, мс
   headers?: Record<string, string>;      // дополнительные заголовки
   retry?: RetryOptions | false;          // повторы только этого запроса
-  retrySafety?: RetrySafety;             // точечная семантика повтора custom/raw operation
-  extensions?: RequestExtensions;        // namespace настроек подключённых плагинов
+  retrySafety?: RetrySafety;             // безопасность повтора произвольной операции
+  extensions?: RequestExtensions;        // настройки подключённых плагинов
 }
 
 interface RequestExtensions {}           // расширяется пакетами через declaration merging
@@ -64,7 +64,7 @@ interface PaginationOptions extends RequestOptions {
 }
 ```
 
-Параметры endpoint и выполнения запроса не смешиваются. Если методу нужны собственные параметры,
+Параметры метода API и выполнения запроса не смешиваются. Если методу нужны собственные параметры,
 они идут отдельным объектом раньше последнего `RequestOptions`: `list(params, requestOptions)`.
 Методы-итераторы вместо него принимают `PaginationOptions`.
 

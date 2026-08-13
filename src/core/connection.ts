@@ -4,11 +4,10 @@ import type { Logger } from './options.js';
 /**
  * Разрешённое окружение одного долговременного соединения клиента.
  *
- * Контракт намеренно не содержит REST executor: синхронизационные запросы принадлежат
- * предметному модулю и проходят через его собственный scoped request adapter.
+ * Синхронизационные запросы выполняются через адаптер предметного модуля.
  */
 export interface ClientConnection {
-  /** Фактический HTTP(S) URL сервиса после пользовательских override. */
+  /** Фактический HTTP(S)-адрес сервиса с учётом настроек клиента. */
   readonly baseUrl: string;
   /** Разрешено ли соединению передавать Bearer-токен этому сервису. */
   readonly authorize: boolean;
@@ -16,10 +15,10 @@ export interface ClientConnection {
   readonly clock: ItdClock;
   readonly logger: Logger | undefined;
 
-  /** Platform- и service-заголовки без Bearer-токена. */
+  /** Заголовки платформы и сервиса без Bearer-токена. */
   baseHeaders(url: string): Promise<Headers>;
-  /** Текущий токен; способ его передачи выбирает transport. */
+  /** Текущий токен; способ его передачи выбирает транспорт. */
   getToken(): Promise<string | null>;
-  /** Пытается восстановить авторизацию после отказа transport. */
+  /** Пытается восстановить авторизацию после отказа транспорта. */
   refreshAuth(): Promise<boolean>;
 }
