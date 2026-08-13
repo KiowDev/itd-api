@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/cache",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Кэширование и дедупликация запросов для itd-api",
   "repository": {
     "type": "git",
