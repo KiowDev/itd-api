@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/hydrate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Методы действий на моделях и уведомлениях itd-api",
   "repository": {
     "type": "git",
@@ -63,9 +63,9 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@itd-api/cache": ">=0.1.0",
-    "@itd-api/crypto": ">=0.1.0",
-    "@itd-api/testing": ">=0.1.0",
+    "@itd-api/cache": ">=0.2.0",
+    "@itd-api/crypto": ">=0.2.0",
+    "@itd-api/testing": ">=0.2.0",
     "@types/node": "^26.2.0",
     "publint": "^0.3.23",
     "tsdown": "^0.22.14",
