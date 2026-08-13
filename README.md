@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-# itd-api
+# SDK для работы с API ITD
 
 [![npm version](https://img.shields.io/npm/v/itd-api.svg)](https://www.npmjs.com/package/itd-api)
 [![npm downloads](https://img.shields.io/npm/dm/itd-api.svg)](https://www.npmjs.com/package/itd-api)
@@ -14,10 +14,10 @@
 [![Node.js](https://img.shields.io/node/v/itd-api.svg)](https://www.npmjs.com/package/itd-api)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-3178c6.svg)](./tsconfig.json)
 [![license](https://img.shields.io/npm/l/itd-api.svg)](./LICENSE)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/KiowDev/itd-api)
 
-Полнофункциональный JavaScript/TypeScript SDK для социальной сети **итд.com**.
-Проект не является официальным SDK и не аффилирован с итд.com.
+JavaScript/TypeScript SDK для социальной сети **итд.com**: авторизация, работа с
+пользователями и публикациями, события, пагинация и расширения через плагины.
+Проект не является официальным и не аффилирован с итд.com.
 
 [Документация](https://kiowdev.github.io/itd-api/) ·
 [Быстрый старт](https://kiowdev.github.io/itd-api/quickstart/) ·
@@ -27,33 +27,37 @@
 [Сеть и доверие](#сеть-и-доверие) ·
 [Пакеты проекта](#пакеты-проекта)
 
+## Требования
+
+Для Node.js требуется версия 18+. Поддерживаются JavaScript, TypeScript 5.0+,
+ESM и CommonJS; остальные среды перечислены в разделе [«Совместимость»](#совместимость).
+
 ## Установка
 
 ```bash
 npm install itd-api
 ```
 
-Передайте access token и запросите посты со стены пользователя:
+## Быстрый старт
 
-```ts
-import { ItdClient } from 'itd-api';
+Получите access token по [руководству по авторизации](https://kiowdev.github.io/itd-api/authentication/)
+и сохраните его в переменной окружения `ITD_ACCESS_TOKEN`.
 
-const itd = new ItdClient({ auth: '<accessToken>' });
-const page = await itd.posts.byUser('nowkie', { limit: 10 });
+> [!WARNING]
+> Не храните access token в исходном коде и не публикуйте его в репозитории.
 
-for (const post of page.items) {
-  console.log(post.author.username, post.content);
-}
-```
-
-<details>
-<summary>Пример для JavaScript (CommonJS)</summary>
+Создайте файл `index.js` и запросите посты со стены пользователя:
 
 ```js
 const { ItdClient } = require('itd-api');
 
 async function main() {
-  const itd = new ItdClient({ auth: '<accessToken>' });
+  const accessToken = process.env.ITD_ACCESS_TOKEN;
+  if (!accessToken) {
+    throw new Error('Переменная окружения ITD_ACCESS_TOKEN не задана');
+  }
+
+  const itd = new ItdClient({ auth: accessToken });
   const page = await itd.posts.byUser('nowkie', { limit: 10 });
 
   for (const post of page.items) {
@@ -64,10 +68,16 @@ async function main() {
 main().catch(console.error);
 ```
 
-</details>
+Запустите его командой `node index.js`.
 
-Для долгоживущего приложения восстановите сохранённую сессию или настройте вход по
-[руководству по авторизации](https://kiowdev.github.io/itd-api/authentication/).
+В TypeScript или JavaScript с ES modules используйте ESM-импорт:
+
+```ts
+import { ItdClient } from 'itd-api';
+```
+
+Для долгоживущего приложения восстановите сохранённую сессию или настройте вход
+по руководству по авторизации.
 
 ## Возможности
 
@@ -127,7 +137,13 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 
 ## Сеть и доверие
 
-По умолчанию основной пакет обращается ровно к двум хостам:
+По умолчанию SDK соединяется только с API итд.com и публичным сервисом статуса.
+Bearer-токен автоматически передаётся только основному API.
+
+<details>
+<summary>Подробности о сетевых подключениях и передаче токена</summary>
+
+Основной пакет обращается к двум хостам:
 
 | Хост | Назначение | Автоматическая передача Bearer-токена |
 |---|---|---|
@@ -149,10 +165,19 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 | `defineService({ auth: true })` | явно разрешает отправлять Bearer-токен на хост этого сервиса |
 | `request({ baseUrl })` | внешний хост не получает Bearer автоматически; `skipAuth: false` явно разрешает его передачу |
 
+</details>
+
 Уязвимости следует отправлять приватно по
 [политике безопасности](./.github/SECURITY.md).
 
 ## Известные ограничения платформы
+
+Ограничения зависят от маршрута и среды выполнения. Полная матрица известных
+маршрутов, протоколов и статуса поддержки находится в
+[справочнике методов API](https://kiowdev.github.io/itd-api/reference/endpoints).
+
+<details>
+<summary>Показать известные ограничения</summary>
 
 | Ограничение | Что учитывать                                                                                                                                                   |
 |---|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -161,12 +186,12 @@ TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 
 | Посты пользователя | `posts.byUser()` возвращает стену, включая чужие публикации на ней; [подробнее](https://kiowdev.github.io/itd-api/reference/posts)                              |
 | Ограничения частоты | маршруты разбиты на бакеты, у каждого свой лимит запросов в минуту, считается по IP; [таблица бакетов](https://kiowdev.github.io/itd-api/reference/rate-limits) |
 
-Матрица известных маршрутов, протоколов и статуса поддержки находится в
-[справочнике методов API](https://kiowdev.github.io/itd-api/reference/endpoints).
+</details>
 
 ## Проект
 
-- [DeepWiki по исходному коду](https://deepwiki.com/KiowDev/itd-api) — можно задать любые вопросы нейронке
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/KiowDev/itd-api)
+
 - [CI](https://github.com/KiowDev/itd-api/actions/workflows/ci.yml)
 - [История релизов](https://github.com/KiowDev/itd-api/releases)
 - [Как внести вклад](./.github/CONTRIBUTING.md)
