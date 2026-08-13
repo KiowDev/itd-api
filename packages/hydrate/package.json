@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/hydrate",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Методы действий на моделях и уведомлениях itd-api",
   "repository": {
     "type": "git",
