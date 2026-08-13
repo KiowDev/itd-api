@@ -201,6 +201,7 @@ export type {
   Attachment,
   Comment,
   CommentReplyTo,
+  CommentUpdateResult,
   Hashtag,
   LikeResult,
   PinPostResult,
@@ -208,6 +209,7 @@ export type {
   PollOption,
   Post,
   PostStats,
+  PostUpdateResult,
 } from './models/content.js';
 export { isMyProfile } from './models/guards.js';
 export type { Notification, NotificationSettings } from './models/notifications.js';
@@ -260,6 +262,8 @@ export { statusDays } from './models/status-helpers.js';
 export type {
   Actor,
   Author,
+  AuthState,
+  AuthUser,
   FollowResult,
   MyProfile,
   Pin,

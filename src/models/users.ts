@@ -129,13 +129,26 @@ export interface MyProfile extends ProfileBase {
  * Endpoint доступен без сессии: в этом случае `authenticated` равен `false`,
  * а `user` — `null`.
  */
+export interface AuthUser {
+  id: UserId;
+  username: string;
+  displayName: string;
+  /** Эмодзи-аватар, см. {@link Author.avatar}. */
+  avatar: string;
+  bio: string;
+  verified: boolean;
+  isPhoneVerified: boolean;
+  /** Роли текущего пользователя, например `user`. */
+  roles: string[];
+}
+
 export interface AuthState {
   /** Есть ли действующая сессия. */
   authenticated: boolean;
   /** Заблокирован ли текущий аккаунт. */
   banned: boolean;
-  /** Текущий пользователь либо `null` без действующей сессии. */
-  user: MyProfile | null;
+  /** Компактные данные текущего пользователя либо `null` без действующей сессии. */
+  user: AuthUser | null;
 }
 
 /**

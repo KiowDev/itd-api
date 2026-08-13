@@ -128,7 +128,13 @@ revokeOtherSessions(): Promise<void>
 interface AuthState {
   authenticated: boolean;
   banned: boolean;
-  user: MyProfile | null;
+  user: AuthUser | null;
+}
+
+interface AuthUser {
+  id: UserId; username: string; displayName: string;
+  avatar: string; bio: string; verified: boolean;
+  isPhoneVerified: boolean; roles: string[];
 }
 
 interface Credentials {

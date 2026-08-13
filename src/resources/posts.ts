@@ -20,6 +20,7 @@ import type {
   Poll,
   Post,
   PostStats,
+  PostUpdateResult,
 } from '../models/content.js';
 import { passthroughOperation, voidOperation } from '../operations/common.js';
 import type { CommentSort, FeedTab } from '../types/enums.js';
@@ -48,8 +49,8 @@ const POSTS_STATS = defineBuiltInOperation<PostStats[]>('posts.stats', (body) =>
 );
 const POSTS_CREATE = passthroughOperation<Post>('posts.create');
 const POSTS_GET = passthroughOperation<Post>('posts.get');
-const POSTS_UPDATE = passthroughOperation<Post>('posts.update');
-const POSTS_RESTORE = passthroughOperation<Post>('posts.restore');
+const POSTS_UPDATE = passthroughOperation<PostUpdateResult>('posts.update');
+const POSTS_RESTORE = voidOperation('posts.restore');
 const POSTS_LIKE = passthroughOperation<LikeResult>('posts.like');
 const POSTS_UNLIKE = passthroughOperation<LikeResult>('posts.unlike');
 const POSTS_REPOST = passthroughOperation<Post>('posts.repost');
@@ -228,7 +229,11 @@ export class PostsResource extends BaseResource {
    * функцию-настройщик. Поля создания поста, которые update endpoint не поддерживает
    * (вложения, опрос и стена), отвергаются до запроса.
    */
-  update(postId: string, input: PostUpdateInput, options: RequestOptions = {}): Promise<Post> {
+  update(
+    postId: string,
+    input: PostUpdateInput,
+    options: RequestOptions = {},
+  ): Promise<PostUpdateResult> {
     const data = resolvePostUpdate(input);
     return this.http.execute(POSTS_UPDATE, {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}`,
@@ -246,8 +251,8 @@ export class PostsResource extends BaseResource {
   }
 
   /** Восстанавливает удалённый пост. */
-  restore(postId: string, options: RequestOptions = {}): Promise<Post> {
-    return this.http.execute(POSTS_RESTORE, {
+  restore(postId: string, options: RequestOptions = {}): Promise<void> {
+    return this.voidOperation(POSTS_RESTORE, {
       path: `/api/posts/${encodePathSegment(postId, 'postId')}/restore`,
       ...options,
     });

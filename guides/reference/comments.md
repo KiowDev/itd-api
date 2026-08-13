@@ -20,13 +20,13 @@ reply(commentId: string, input: CommentInput | string): Promise<Comment>
 ## Действия
 
 ```ts
-update(commentId: string, content: string): Promise<Comment>
+update(commentId: string, content: string): Promise<CommentUpdateResult>
 ```
 Редактирует текст комментария.
 
 ```ts
 remove(commentId: string): Promise<void>
-restore(commentId: string): Promise<Comment>
+restore(commentId: string): Promise<void>
 ```
 Удаляет / восстанавливает комментарий.
 

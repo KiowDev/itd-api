@@ -4,6 +4,26 @@ import { apiErrorResponse, apiResponse, emptyResponse } from '../../responses.js
 import { type MockRouteContext, objectBody } from './context.js';
 
 export function registerUserRoutes({ state, route, requireAuth }: MockRouteContext): void {
+  route(HttpMethod.Get, '/api/profile', (request) => {
+    const user = state.authUser(request);
+    return apiResponse({
+      authenticated: user !== undefined,
+      banned: false,
+      user: user
+        ? {
+            id: user.profile.id,
+            username: user.profile.username,
+            displayName: user.profile.displayName,
+            avatar: user.profile.avatar,
+            bio: user.profile.bio,
+            verified: user.profile.verified,
+            isPhoneVerified: user.profile.isPhoneVerified,
+            roles: ['user'],
+          }
+        : null,
+    });
+  });
+
   route(
     HttpMethod.Get,
     '/api/users/me',

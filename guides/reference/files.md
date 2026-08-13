@@ -12,7 +12,7 @@ get(fileId: string, options?: RequestOptions): Promise<unknown>
 remove(fileId: string, options?: RequestOptions): Promise<void>
 ```
 
-`upload()` возвращает `{ id, url }`; `id` передаётся в `attachmentIds`.
+`upload()` возвращает `{ id, url, filename?, mimeType?, size? }`; `id` передаётся в `attachmentIds`.
 `uploadMany()` загружает файлы последовательно и возвращает их идентификаторы в исходном
 порядке. Таймаут загрузки по умолчанию — 300 000 мс; он охватывает
 получение исходного файла и его отправку.

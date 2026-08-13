@@ -97,10 +97,17 @@ interface SubscriptionState {
 Состояние авторизации — ответ `itd.auth.check()`.
 
 ```ts
+interface AuthUser {
+  id: UserId; username: string; displayName: string;
+  avatar: string; bio: string; verified: boolean;
+  isPhoneVerified: boolean;
+  roles: string[];
+}
+
 interface AuthState {
   authenticated: boolean;
   banned: boolean;
-  user: MyProfile | null;
+  user: AuthUser | null;
 }
 ```
 
@@ -198,11 +205,11 @@ interface Post {
   likesCount: number; commentsCount: number; repostsCount: number; viewsCount: number;
   wallRecipientId: UserId | null;        // чья стена, если пост не у себя
   wallRecipient?: Author | null;         // владелец стены
-  isLiked: boolean; isReposted: boolean; isViewed: boolean; isOwner: boolean;
+  isLiked: boolean; isReposted: boolean; isViewed?: boolean; isOwner: boolean;
   originalPost?: Post | null;            // если это репост
   poll?: Poll | null;
   dominantEmoji?: string | null;         // преобладающая реакция
-  editedAt: IsoDate | null;
+  editedAt?: IsoDate | null;
   createdAt: IsoDate;
   vs?: string;                           // служебная метка показа для itd.telemetry
   comments?: Comment[];                  // только в ответе itd.posts.get()
@@ -217,12 +224,24 @@ interface Comment {
   content: string;                       // у голосового пустой
   spans?: Span[];
   author: Author;
-  likesCount: number; repliesCount: number;
+  likesCount: number; repliesCount?: number;
   isLiked: boolean;
   createdAt: IsoDate;
   attachments?: Attachment[];            // у голосового — одно audio/ogg
   replies?: Comment[];                   // превью; полный список — comments.replies()
-  replyTo?: CommentReplyTo;              // { id, username, displayName } — только у ответов
+  replyTo?: CommentReplyTo | null;       // { id, username, displayName } либо null
+}
+```
+
+Редактирование возвращает компактные модели, а не полные `Post` / `Comment`:
+
+```ts
+interface PostUpdateResult {
+  id: string; content: string; spans: Span[]; updatedAt: IsoDate;
+}
+
+interface CommentUpdateResult {
+  id: string; content: string; editedAt: IsoDate;
 }
 ```
 
@@ -242,7 +261,7 @@ interface Attachment {
   type: AttachmentType;                  // 'image' | 'video' | 'audio'
   url: string;                           // адрес на CDN
   width?: number; height?: number;
-  mimeType: string;
+  mimeType?: string;                     // отсутствует в некоторых detail-ответах
   filename?: string; size?: number;      // приходят не всегда
   duration?: number | null;             // аудио/видео, секунды
   order?: number;                        // порядок во вложениях

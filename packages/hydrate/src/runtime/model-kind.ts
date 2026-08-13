@@ -33,7 +33,6 @@ export function modelKind(value: AnyRecord): ModelKind | undefined {
   if (
     hasString(value, 'id') &&
     hasString(value, 'url') &&
-    hasString(value, 'mimeType') &&
     Object.values(AttachmentType).includes(dataField(value, 'type') as AttachmentType)
   ) {
     return ModelKind.Attachment;
@@ -54,7 +53,6 @@ export function modelKind(value: AnyRecord): ModelKind | undefined {
     hasString(value, 'id') &&
     isRecord(dataField(value, 'author')) &&
     hasNumber(value, 'likesCount') &&
-    hasNumber(value, 'repliesCount') &&
     hasString(value, 'createdAt')
   ) {
     return ModelKind.Comment;

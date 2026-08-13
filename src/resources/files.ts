@@ -23,6 +23,12 @@ export interface UploadedFile {
   id: string;
   /** Адрес файла на CDN. */
   url: string;
+  /** Исходное имя файла, если сервер его вернул. */
+  filename?: string;
+  /** Определённый сервером MIME-тип. */
+  mimeType?: string;
+  /** Размер файла в байтах. */
+  size?: number;
 }
 
 /** Настройки загрузки. */

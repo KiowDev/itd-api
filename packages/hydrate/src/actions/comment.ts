@@ -31,14 +31,13 @@ function commentReply(this: AnyRecord, ...args: unknown[]): unknown {
   );
 }
 
-function commentUpdate(this: AnyRecord, ...args: unknown[]): unknown {
+async function commentUpdate(this: AnyRecord, ...args: unknown[]): Promise<unknown> {
   const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.comments.update, context.client.comments, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
+  const updated = (await Reflect.apply(context.client.comments.update, context.client.comments, [
+    modelId(this),
+    ...args,
+  ])) as AnyRecord;
+  return context.hydrate({ ...this, ...updated });
 }
 
 function commentRemove(this: AnyRecord, ...args: unknown[]): unknown {
@@ -51,14 +50,13 @@ function commentRemove(this: AnyRecord, ...args: unknown[]): unknown {
   );
 }
 
-function commentRestore(this: AnyRecord, ...args: unknown[]): unknown {
+async function commentRestore(this: AnyRecord, ...args: unknown[]): Promise<unknown> {
   const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.comments.restore, context.client.comments, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
+  await Reflect.apply(context.client.comments.restore, context.client.comments, [
+    modelId(this),
+    ...args,
+  ]);
+  return this;
 }
 
 function commentGetReplies(this: AnyRecord, ...args: unknown[]): unknown {

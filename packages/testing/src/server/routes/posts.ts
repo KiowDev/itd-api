@@ -101,7 +101,12 @@ export function registerPostRoutes(context: MockRouteContext): void {
       const body = objectBody(request);
       if (typeof body.content === 'string') value.content = body.content;
       value.editedAt = state.now();
-      return apiResponse(state.postModel(value, user));
+      return apiResponse({
+        id: value.id,
+        content: value.content,
+        spans: [],
+        updatedAt: value.editedAt,
+      });
     }),
   );
 
@@ -123,7 +128,7 @@ export function registerPostRoutes(context: MockRouteContext): void {
       const value = ownPost(request.params.postId ?? '', user);
       if (value instanceof Response) return value;
       value.deleted = false;
-      return apiResponse(state.postModel(value, user));
+      return emptyResponse();
     }),
   );
 

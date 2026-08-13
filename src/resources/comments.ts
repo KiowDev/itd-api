@@ -3,7 +3,7 @@ import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
-import type { Comment, LikeResult } from '../models/content.js';
+import type { Comment, CommentUpdateResult, LikeResult } from '../models/content.js';
 import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
 import {
@@ -18,8 +18,8 @@ const COMMENTS_REPLIES = pageOperation<Comment>('comments.replies', (body) =>
   readPagedPage<Comment>(body, 'replies'),
 );
 const COMMENTS_REPLY = passthroughOperation<Comment>('comments.reply');
-const COMMENTS_UPDATE = passthroughOperation<Comment>('comments.update');
-const COMMENTS_RESTORE = passthroughOperation<Comment>('comments.restore');
+const COMMENTS_UPDATE = passthroughOperation<CommentUpdateResult>('comments.update');
+const COMMENTS_RESTORE = voidOperation('comments.restore');
 const COMMENTS_LIKE = passthroughOperation<LikeResult>('comments.like');
 const COMMENTS_UNLIKE = passthroughOperation<LikeResult>('comments.unlike');
 const COMMENTS_REMOVE = voidOperation('comments.remove');
@@ -111,7 +111,11 @@ export class CommentsResource extends BaseResource {
   }
 
   /** Редактирует текст комментария. */
-  update(commentId: string, content: string, options: RequestOptions = {}): Promise<Comment> {
+  update(
+    commentId: string,
+    content: string,
+    options: RequestOptions = {},
+  ): Promise<CommentUpdateResult> {
     return this.http.execute(COMMENTS_UPDATE, {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}`,
       body: { content },
@@ -128,8 +132,8 @@ export class CommentsResource extends BaseResource {
   }
 
   /** Восстанавливает удалённый комментарий. */
-  restore(commentId: string, options: RequestOptions = {}): Promise<Comment> {
-    return this.http.execute(COMMENTS_RESTORE, {
+  restore(commentId: string, options: RequestOptions = {}): Promise<void> {
+    return this.voidOperation(COMMENTS_RESTORE, {
       path: `/api/comments/${encodePathSegment(commentId, 'commentId')}/restore`,
       ...options,
     });

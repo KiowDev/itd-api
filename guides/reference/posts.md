@@ -25,14 +25,14 @@ get(postId: string): Promise<Post>
 Один пост вместе с топовыми комментариями (заполнено поле `comments`).
 
 ```ts
-update(postId: string, input: PostUpdateInput): Promise<Post>
+update(postId: string, input: PostUpdateInput): Promise<PostUpdateResult>
 ```
 Редактирует текст и разметку. Поля создания (вложения, опрос, стена) отвергаются до запроса.
 `content` обязателен.
 
 ```ts
 remove(postId: string): Promise<void>
-restore(postId: string): Promise<Post>
+restore(postId: string): Promise<void>
 ```
 Удаляет / восстанавливает пост.
 

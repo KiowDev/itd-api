@@ -12,7 +12,8 @@ export interface Attachment {
   width?: number;
   /** Высота изображения или видео в пикселях. */
   height?: number;
-  mimeType: string;
+  /** MIME-тип. Может отсутствовать в `GET /api/posts/{id}`. */
+  mimeType?: string;
   /** Исходное имя файла. Приходит не всегда. */
   filename?: string;
   /** Размер в байтах. Приходит не всегда. */
@@ -71,7 +72,7 @@ export interface Post {
   /** Делали ли вы репост. */
   isReposted: boolean;
   /** Засчитан ли просмотр. */
-  isViewed: boolean;
+  isViewed?: boolean;
   /** Ваш ли это пост. */
   isOwner: boolean;
   /** Исходный пост, если это репост. */
@@ -80,7 +81,7 @@ export interface Post {
   /** Преобладающая реакция — эмодзи либо `null`. */
   dominantEmoji?: string | null;
   /** Когда пост отредактировали. `null`, если не редактировали. */
-  editedAt: IsoDate | null;
+  editedAt?: IsoDate | null;
   createdAt: IsoDate;
   /**
    * Служебная метка показа для телеметрии.
@@ -118,7 +119,8 @@ export interface Comment {
   spans?: Span[];
   author: Author;
   likesCount: number;
-  repliesCount: number;
+  /** Может отсутствовать у ответа, созданного через `comments.reply()`. */
+  repliesCount?: number;
   isLiked: boolean;
   createdAt: IsoDate;
   /** Вложения. У голосового — одно аудио с `mimeType: 'audio/ogg'`. */
@@ -126,7 +128,22 @@ export interface Comment {
   /** Вложенные ответы. В списках приходит превью, полный список — через `itd.comments.replies()`. */
   replies?: Comment[];
   /** Заполнено только у ответов. */
-  replyTo?: CommentReplyTo;
+  replyTo?: CommentReplyTo | null;
+}
+
+/** Компактный ответ редактирования поста. */
+export interface PostUpdateResult {
+  id: string;
+  content: string;
+  spans: Span[];
+  updatedAt: IsoDate;
+}
+
+/** Компактный ответ редактирования комментария. */
+export interface CommentUpdateResult {
+  id: string;
+  content: string;
+  editedAt: IsoDate;
 }
 
 /** Хэштег. */

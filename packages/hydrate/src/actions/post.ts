@@ -61,14 +61,10 @@ function postRemove(this: AnyRecord, ...args: unknown[]): unknown {
   );
 }
 
-function postRestore(this: AnyRecord, ...args: unknown[]): unknown {
+async function postRestore(this: AnyRecord, ...args: unknown[]): Promise<unknown> {
   const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.restore, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
+  await Reflect.apply(context.client.posts.restore, context.client.posts, [modelId(this), ...args]);
+  return this;
 }
 
 function postPin(this: AnyRecord, ...args: unknown[]): unknown {

@@ -148,7 +148,7 @@ export function registerCommentRoutes(context: MockRouteContext): void {
       if (comment instanceof Response) return comment;
       const body = objectBody(request);
       if (typeof body.content === 'string') comment.content = body.content;
-      return apiResponse(state.commentModel(comment, user));
+      return apiResponse({ id: comment.id, content: comment.content, editedAt: state.now() });
     }),
   );
 
@@ -170,7 +170,7 @@ export function registerCommentRoutes(context: MockRouteContext): void {
       const comment = ownComment(request.params.commentId ?? '', user);
       if (comment instanceof Response) return comment;
       comment.deleted = false;
-      return apiResponse(state.commentModel(comment, user));
+      return emptyResponse();
     }),
   );
 

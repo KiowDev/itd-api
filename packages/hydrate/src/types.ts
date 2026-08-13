@@ -108,9 +108,7 @@ export interface HydratedPostActions {
     ...args: TailParameters<PostsResource['remove']>
   ): HydratedMethodResult<PostsResource['remove']>;
   /** Восстанавливает удалённый пост. */
-  restore(
-    ...args: TailParameters<PostsResource['restore']>
-  ): HydratedMethodResult<PostsResource['restore']>;
+  restore(...args: TailParameters<PostsResource['restore']>): Promise<HydratedPost>;
   /** Закрепляет пост. */
   pin(...args: TailParameters<PostsResource['pin']>): HydratedMethodResult<PostsResource['pin']>;
   /** Открепляет пост. */
@@ -134,17 +132,13 @@ export interface HydratedCommentActions {
     ...args: TailParameters<CommentsResource['reply']>
   ): HydratedMethodResult<CommentsResource['reply']>;
   /** Изменяет текст комментария. */
-  update(
-    ...args: TailParameters<CommentsResource['update']>
-  ): HydratedMethodResult<CommentsResource['update']>;
+  update(...args: TailParameters<CommentsResource['update']>): Promise<HydratedComment>;
   /** Удаляет комментарий. */
   remove(
     ...args: TailParameters<CommentsResource['remove']>
   ): HydratedMethodResult<CommentsResource['remove']>;
   /** Восстанавливает удалённый комментарий. */
-  restore(
-    ...args: TailParameters<CommentsResource['restore']>
-  ): HydratedMethodResult<CommentsResource['restore']>;
+  restore(...args: TailParameters<CommentsResource['restore']>): Promise<HydratedComment>;
   /** Загружает страницу ответов. */
   getReplies(
     ...args: TailParameters<CommentsResource['replies']>
