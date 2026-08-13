@@ -285,6 +285,27 @@ export default defineConfig({
     search: {
       provider: 'local',
       options: {
+        _render: (source, env, md) => {
+          if (env.relativePath.startsWith('web/api/generated/')) {
+            const title = source.match(/^# .+$/m)?.[0];
+
+            if (!title) return '';
+
+            const afterTitle = source.slice(source.indexOf(title) + title.length);
+            const beforeSections = afterTitle.split(/^## /m, 1)[0];
+            const description = beforeSections
+              .replace(/^```[\s\S]*?^```\s*$/gm, '')
+              .replace(/^Defined in:.*$/gm, '')
+              .replace(/^\*\*\*\s*$/gm, '')
+              .trim()
+              .split(/\r?\n\s*\r?\n/, 1)[0];
+
+            return md.render(`${title}\n\n${description}`, env);
+          }
+
+          const html = md.render(source, env);
+          return env.frontmatter?.search === false ? '' : html;
+        },
         translations: {
           button: {
             buttonText: 'Поиск',

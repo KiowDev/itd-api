@@ -1,8 +1,8 @@
 # itd-api
 
-> An unofficial JavaScript and TypeScript SDK for the API of the itd.com social network. It supports Node.js 18+, browsers, Bun, Deno, and React Native, and ships as both ESM and CommonJS with complete TypeScript types.
+> An unofficial JavaScript and TypeScript SDK for the API of the итд.com social network. It supports Node.js 18+, browsers, Bun, Deno, and React Native, and ships as both ESM and CommonJS with complete TypeScript types.
 
-The linked documentation is written in Russian. Start with the guides and the curated API reference for explanations and working examples. Use the generated TSDoc API to verify exact signatures and exports. Do not confuse the `itd-api` SDK with the official itd.com API or website: this project is not affiliated with itd.com.
+The linked documentation is written in Russian. Start with the guides and the curated API reference for explanations and working examples. Use the generated TSDoc API to verify exact signatures and exports. Do not confuse the `itd-api` SDK with the official итд.com API or website: this project is not affiliated with итд.com (https://xn--d1ah4a.com).
 
 ## Getting Started
 
