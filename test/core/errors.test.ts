@@ -26,6 +26,7 @@ import {
   isItdStateError,
   isItdValidationError,
 } from '../../src/core/errors.js';
+import { ItdErrorCode } from '../../src/types/enums.js';
 
 const ctx = { method: 'POST', path: '/api/posts', status: 400 };
 
@@ -135,6 +136,20 @@ describe('parseErrorBody', () => {
 });
 
 describe('createApiError', () => {
+  it('сохраняет новый код зарезервированного username', () => {
+    const error = createApiError({
+      ...ctx,
+      status: 409,
+      body: {
+        code: 'PROFILE_USERNAME_RESERVED',
+        message: 'This username is reserved by the system',
+      },
+    });
+
+    expect(error.code).toBe(ItdErrorCode.PROFILE_USERNAME_RESERVED);
+    expect(error.hasCode(ItdErrorCode.PROFILE_USERNAME_RESERVED)).toBe(true);
+  });
+
   it('выбирает класс по коду, а не по статусу', () => {
     // VALIDATION_ERROR со статусом 400 — всё равно ошибка валидации
     const error = createApiError({ ...ctx, body: { code: 'VALIDATION_ERROR', message: 'нет' } });
