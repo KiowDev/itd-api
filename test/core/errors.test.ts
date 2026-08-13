@@ -201,7 +201,31 @@ describe('createApiError', () => {
     expect(error.raw).toEqual({
       type: 'validation',
       on: 'body',
-      found: { email: 'a@b.c', password: '[скрыто]' },
+      found: { email: '[скрыто]', password: '[скрыто]' },
+    });
+  });
+
+  it('маскирует код подтверждения, но сохраняет доменный code', () => {
+    const error = createApiError({
+      ...ctx,
+      status: 422,
+      body: {
+        type: 'validation',
+        found: {
+          email: 'buyer@example.test',
+          code: '123456',
+          to: { code: 44, countryCode: 'RU' },
+        },
+      },
+    });
+
+    expect(error.raw).toEqual({
+      type: 'validation',
+      found: {
+        email: '[скрыто]',
+        code: '[скрыто]',
+        to: { code: 44, countryCode: 'RU' },
+      },
     });
   });
 

@@ -28,6 +28,7 @@ import type { PlatformResource } from './resources/platform.js';
 import type { PostsResource } from './resources/posts.js';
 import type { ReportsResource } from './resources/reports.js';
 import type { SearchResource } from './resources/search.js';
+import type { ShopResource } from './resources/shop.js';
 import { createStatusFeature } from './resources/status.js';
 import type { SubscriptionResource } from './resources/subscription.js';
 import type { TelemetryResource } from './resources/telemetry.js';
@@ -190,6 +191,11 @@ export class ItdClient {
   /** Телеметрия просмотров. */
   get telemetry(): TelemetryResource {
     return this.#resources.telemetry;
+  }
+
+  /** Каталог, доставка и заказы магазина ИТД. */
+  get shop(): ShopResource {
+    return this.#resources.shop;
   }
 
   constructor(options: ItdClientOptions = {}) {

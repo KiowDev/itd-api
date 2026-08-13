@@ -10,6 +10,7 @@ import { PlatformResource } from '../resources/platform.js';
 import { PostsResource } from '../resources/posts.js';
 import { ReportsResource } from '../resources/reports.js';
 import { SearchResource } from '../resources/search.js';
+import { ShopResource } from '../resources/shop.js';
 import type { StatusResource } from '../resources/status.js';
 import { SubscriptionResource } from '../resources/subscription.js';
 import {
@@ -50,6 +51,7 @@ export interface RestResources<N extends NotificationsResource = NotificationsRe
   readonly subscription: SubscriptionResource;
   readonly platform: PlatformResource;
   readonly telemetry: TelemetryResource;
+  readonly shop: ShopResource;
   /**
    * Отправляет накопленную телеметрию, если накопитель вообще поднимали.
    *
@@ -84,6 +86,7 @@ export function createResources<N extends NotificationsResource>(
   let subscription: SubscriptionResource | undefined;
   let platform: PlatformResource | undefined;
   let telemetry: TelemetryResource | undefined;
+  let shop: ShopResource | undefined;
 
   const bag: RestResources<N> = {
     get users() {
@@ -133,6 +136,10 @@ export function createResources<N extends NotificationsResource>(
     get telemetry() {
       telemetry ??= new TelemetryResource(deps.http);
       return telemetry;
+    },
+    get shop() {
+      shop ??= new ShopResource(deps.http);
+      return shop;
     },
 
     closeTelemetry: (forDispose) =>

@@ -4,6 +4,7 @@ import { ATTACHMENT_ACTIONS } from './attachment.js';
 import { COMMENT_ACTIONS } from './comment.js';
 import { NOTIFICATION_ACTIONS } from './notification.js';
 import { POST_ACTIONS } from './post.js';
+import { SHOP_DELIVERY_CITY_ACTIONS } from './shop-delivery-city.js';
 import { USER_ACTIONS } from './user.js';
 
 export function actionsFor(kind: ModelKind): Readonly<Record<string, ModelAction>> {
@@ -11,5 +12,6 @@ export function actionsFor(kind: ModelKind): Readonly<Record<string, ModelAction
   if (kind === ModelKind.Comment) return COMMENT_ACTIONS;
   if (kind === ModelKind.Profile || kind === ModelKind.User) return USER_ACTIONS;
   if (kind === ModelKind.Attachment) return ATTACHMENT_ACTIONS;
+  if (kind === ModelKind.ShopDeliveryCity) return SHOP_DELIVERY_CITY_ACTIONS;
   return NOTIFICATION_ACTIONS;
 }

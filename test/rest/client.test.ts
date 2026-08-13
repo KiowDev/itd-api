@@ -86,6 +86,7 @@ const RESOURCE_NAMES = [
   'subscription',
   'platform',
   'telemetry',
+  'shop',
 ] as const;
 
 describe('createRestClient — состав и конвейер', () => {

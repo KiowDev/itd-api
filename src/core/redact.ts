@@ -1,7 +1,13 @@
 import { isBlob } from './runtime.js';
 
 /** Заголовки, значение которых нельзя писать в лог целиком. */
-const SECRET_HEADERS = new Set(['authorization', 'cookie', 'set-cookie', 'x-api-key']);
+const SECRET_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'x-order-token',
+]);
 
 /** Поля тела запроса, значение которых нельзя писать в лог. */
 const SECRET_FIELDS = new Set([
@@ -15,6 +21,11 @@ const SECRET_FIELDS = new Set([
   'token',
   'turnstiletoken',
   'otp',
+  'pass',
+  'email',
+  'phone',
+  'address',
+  'orderaccesstoken',
 ]);
 
 /** Query-параметры, содержащие секреты. */
@@ -115,8 +126,12 @@ export function redactBody(body: unknown): unknown {
 
   if (typeof body === 'object') {
     const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(body)) {
-      result[key] = SECRET_FIELDS.has(key.toLowerCase()) ? '[скрыто]' : redactBody(value);
+    const entries = Object.entries(body);
+    const containsEmail = entries.some(([key]) => key.toLowerCase() === 'email');
+    for (const [key, value] of entries) {
+      const normalized = key.toLowerCase();
+      const secret = SECRET_FIELDS.has(normalized) || (normalized === 'code' && containsEmail);
+      result[key] = secret ? '[скрыто]' : redactBody(value);
     }
     return result;
   }

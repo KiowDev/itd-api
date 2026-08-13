@@ -12,6 +12,7 @@ describe('каталог операций кэша', () => {
   it('содержит читающие POST-операции', () => {
     expect(cacheOperation('posts.stats')?.id).toBe('posts.stats');
     expect(cacheOperation('users.followStatus')?.id).toBe('users.followStatus');
+    expect(cacheOperation('shop.delivery.calculate')?.category).toBe('shop');
   });
 
   it('знает status по ID установленного модуля', () => {

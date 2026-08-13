@@ -193,6 +193,7 @@ clientB.use(shared);
 | Subscription | `subscription.status`, `subscription.methods` |
 | Verification | `verification.status` |
 | Platform | `platform.changelog`, `platform.announcements`, `platform.portal`, `status.get` |
+| Shop | `shop.products.list`, `shop.products.get`, `shop.delivery.countries`, `shop.delivery.cities`, `shop.delivery.points`, `shop.delivery.calculate` |
 
 Страницы, загружаемые итераторами, используют операцию соответствующего списочного метода:
 `posts.iterate()` — `posts.list`, `users.iterateFollowers()` — `users.followers` и так

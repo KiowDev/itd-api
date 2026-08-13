@@ -8,6 +8,7 @@ export const ModelKind = Object.freeze({
   User: 'user',
   Attachment: 'attachment',
   Notification: 'notification',
+  ShopDeliveryCity: 'shop-delivery-city',
 } as const);
 export type ModelKind = (typeof ModelKind)[keyof typeof ModelKind];
 
@@ -25,6 +26,10 @@ function hasBoolean(value: AnyRecord, key: PropertyKey): boolean {
 
 /** Распознаёт поддерживаемую API-модель только по собственным data properties. */
 export function modelKind(value: AnyRecord): ModelKind | undefined {
+  if (hasNumber(value, 'code') && hasString(value, 'name') && hasString(value, 'countryCode')) {
+    return ModelKind.ShopDeliveryCity;
+  }
+
   if (
     hasString(value, 'id') &&
     hasString(value, 'url') &&

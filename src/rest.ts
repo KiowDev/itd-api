@@ -220,6 +220,36 @@ export type {
   Report,
   VerificationStatus,
 } from './models/platform.js';
+export {
+  type CreateShopOrderInput,
+  type ShopConsent,
+  type ShopConsentContext,
+  ShopConsentKind,
+  type ShopCreatedOrder,
+  type ShopDeliveryCalculation,
+  type ShopDeliveryCity,
+  type ShopDeliveryCountry,
+  type ShopDeliveryDestination,
+  type ShopDeliveryPoint,
+  type ShopOrder,
+  type ShopOrderAccessSession,
+  type ShopOrderAccessVerification,
+  type ShopOrderDelivery,
+  type ShopOrderItem,
+  type ShopOrderItemInput,
+  ShopOrderStatus,
+  type ShopOrderSummary,
+  type ShopOrderSupport,
+  type ShopPayment,
+  type ShopProduct,
+  ShopProductCategory,
+  type ShopProductColor,
+  type ShopProductSpec,
+  ShopProductStatus,
+  type ShopRecipient,
+  type ShopSizeChart,
+  type ShopSizeChartRow,
+} from './models/shop.js';
 export type {
   PlatformStatus,
   ServiceStatus,
@@ -267,6 +297,16 @@ export type {
 } from './resources/posts.js';
 export type { ReportsResource } from './resources/reports.js';
 export type { SearchResource, SearchResult } from './resources/search.js';
+export type {
+  CreateShopOrderOptions,
+  PayShopOrderOptions,
+  ShopConsentsResource,
+  ShopDeliveryResource,
+  ShopOrderRequestOptions,
+  ShopOrdersResource,
+  ShopProductsResource,
+  ShopResource,
+} from './resources/shop.js';
 export type { SubscriptionResource } from './resources/subscription.js';
 export type {
   DwellEntry,
@@ -290,6 +330,18 @@ export type {
 } from './resources/users.js';
 export type { VerificationResource } from './resources/verification.js';
 export { createRestClient, ItdRestClient, type RestClientOptions } from './rest/client.js';
+export {
+  createShopFeature,
+  type ShopFeatureApi,
+  type ShopFeatureOptions,
+} from './shop/feature.js';
+export {
+  createMemoryShopOrderAccessStorage,
+  createShopOrderAccessStorage,
+  MemoryShopOrderAccessStorage,
+  type ShopOrderAccessStorage,
+  type ShopOrderAccessStorageAdapterOptions,
+} from './shop/order-access.js';
 export {
   type ParseMarkupOptions,
   parseHtml,

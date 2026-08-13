@@ -30,6 +30,9 @@ import type {
   PostsResource,
   Profile,
   PublicProfile,
+  ShopDeliveryCity,
+  ShopDeliveryPoint,
+  ShopDeliveryResource,
   Unsubscribe,
   UserSummary,
   UsersResource,
@@ -76,6 +79,7 @@ export const HydratableResource = defineHydratableResources({
   Subscription: 'subscription',
   Platform: 'platform',
   Telemetry: 'telemetry',
+  Shop: 'shop',
 });
 
 /** Имя ресурса, результаты которого проходят гидратацию. */
@@ -191,6 +195,14 @@ export interface HydratedNotificationActions {
   readonly comment?: HydratedCommentReference;
 }
 
+/** Действия над городом доставки. */
+export interface HydratedShopDeliveryCityActions {
+  /** Загружает пункты выдачи в городе. */
+  points(
+    ...args: TailParameters<ShopDeliveryResource['points']>
+  ): Promise<HydrateValue<ShopDeliveryPoint[]>>;
+}
+
 /** Рекурсивно гидратирует поля модели и добавляет указанный набор действий. */
 export type HydratedModel<Model, Actions extends object = object> = Omit<
   { [Key in keyof Model]: HydrateValue<Model[Key]> },
@@ -246,6 +258,12 @@ export type HydratedNotification<T extends Notification = Notification> = Hydrat
   HydratedNotificationActions
 >;
 
+/** Город доставки с методом загрузки пунктов выдачи. */
+export type HydratedShopDeliveryCity<T extends ShopDeliveryCity = ShopDeliveryCity> = HydratedModel<
+  T,
+  HydratedShopDeliveryCityActions
+>;
+
 /** Страница, элементы которой получили методы гидратации. */
 export type HydratedPage<T> = HydratedModel<Page<T>>;
 
@@ -282,27 +300,29 @@ export type HydrateValue<T> = T extends
                 ? HydratedComment<T>
                 : T extends Notification
                   ? HydratedNotification<T>
-                  : T extends MyProfile | PublicProfile
-                    ? HydratedProfile<T>
-                    : T extends Author
-                      ? HydratedAuthor<T>
-                      : T extends UserSummary
-                        ? HydratedUserSummary<T>
-                        : T extends Actor
-                          ? HydratedActor<T>
-                          : T extends CommentReplyTo
-                            ? HydratedCommentReplyTo<T>
-                            : T extends Attachment
-                              ? HydratedAttachment<T>
-                              : T extends { userId: string } | { username: string }
-                                ? HydratedUserReference<T>
-                                : T extends readonly unknown[]
-                                  ? { [Key in keyof T]: HydrateValue<T[Key]> }
-                                  : T extends (...args: never[]) => unknown
-                                    ? T
-                                    : T extends object
-                                      ? { [Key in keyof T]: HydrateValue<T[Key]> }
-                                      : T;
+                  : T extends ShopDeliveryCity
+                    ? HydratedShopDeliveryCity<T>
+                    : T extends MyProfile | PublicProfile
+                      ? HydratedProfile<T>
+                      : T extends Author
+                        ? HydratedAuthor<T>
+                        : T extends UserSummary
+                          ? HydratedUserSummary<T>
+                          : T extends Actor
+                            ? HydratedActor<T>
+                            : T extends CommentReplyTo
+                              ? HydratedCommentReplyTo<T>
+                              : T extends Attachment
+                                ? HydratedAttachment<T>
+                                : T extends { userId: string } | { username: string }
+                                  ? HydratedUserReference<T>
+                                  : T extends readonly unknown[]
+                                    ? { [Key in keyof T]: HydrateValue<T[Key]> }
+                                    : T extends (...args: never[]) => unknown
+                                      ? T
+                                      : T extends object
+                                        ? { [Key in keyof T]: HydrateValue<T[Key]> }
+                                        : T;
 
 /** Событие уведомления с гидратированной моделью. */
 export type HydratedNotificationEvent = HydratedModel<NotificationEvent>;
@@ -400,7 +420,9 @@ export type HydratedNotificationEvents = {
 export type HydratedResource<Resource> = {
   [Key in keyof Resource]: Resource[Key] extends (...args: infer Args) => infer Result
     ? (...args: Args) => HydrateValue<Result>
-    : HydrateValue<Resource[Key]>;
+    : Resource[Key] extends object
+      ? HydratedResource<Resource[Key]>
+      : HydrateValue<Resource[Key]>;
 };
 
 /** API уведомлений с гидратированными REST-методами и стабильным каналом событий. */

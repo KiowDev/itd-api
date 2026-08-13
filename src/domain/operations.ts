@@ -171,6 +171,52 @@ export const OPERATIONS = freezeOperations({
 
   'telemetry.dwell': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'telemetry.interaction': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+
+  'shop.products.list': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'shop' },
+  'shop.products.get': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'shop' },
+  'shop.delivery.countries': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'shop' },
+  'shop.delivery.cities': {
+    method: 'GET',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'shop.delivery.cities',
+  },
+  'shop.delivery.points': {
+    method: 'GET',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'shop.delivery.points',
+  },
+  'shop.delivery.calculate': {
+    method: 'POST',
+    retrySafety: RetrySafety.Safe,
+    bucket: 'shop.delivery.calculate',
+  },
+  'shop.orders.create': {
+    method: 'POST',
+    retrySafety: RetrySafety.Idempotent,
+    bucket: 'shop.orders.create',
+  },
+  'shop.orders.list': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'shop.orders.get': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'shop.orders.pay': {
+    method: 'POST',
+    retrySafety: RetrySafety.Unsafe,
+    bucket: 'shop.orders.pay',
+  },
+  'shop.orders.requestAccessCode': {
+    method: 'POST',
+    retrySafety: RetrySafety.Unsafe,
+    bucket: 'shop.orders.requestAccessCode',
+  },
+  'shop.orders.verifyAccessCode': {
+    method: 'POST',
+    retrySafety: RetrySafety.Unsafe,
+    bucket: 'shop.orders.verifyAccessCode',
+  },
+  'shop.consents.record': {
+    method: 'POST',
+    retrySafety: RetrySafety.Unsafe,
+    bucket: 'shop.consents.record',
+  },
 } as const satisfies Record<string, ItdOperationDefinition>);
 
 /** Стабильный ID встроенной операции. */

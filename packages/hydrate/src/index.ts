@@ -28,6 +28,8 @@ export {
   type HydratedPostActions,
   type HydratedProfile,
   type HydratedResource,
+  type HydratedShopDeliveryCity,
+  type HydratedShopDeliveryCityActions,
   type HydratedUserActions,
   type HydratedUserReference,
   type HydratedUserSummary,

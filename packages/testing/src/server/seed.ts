@@ -44,6 +44,12 @@ export function buildMockServerSeed(
   const postSeeds = seed?.posts ?? [];
   const commentSeeds = seed?.comments ?? [];
   const notificationSeeds = seed?.notifications ?? [];
+  const shopProducts = new Map(
+    (seed?.shopProducts ?? []).map((item) => [item.id, structuredClone(item)]),
+  );
+  const shopOrders = new Map(
+    (seed?.shopOrders ?? []).map((item) => [item.value.number, structuredClone(item)]),
+  );
   const userIds = userSeeds.map(
     (item, index) => item.id ?? `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
   );
@@ -59,6 +65,8 @@ export function buildMockServerSeed(
   requireUnique(postIds, 'пост');
   requireUnique(commentIds, 'комментарий');
   requireUnique(notificationIds, 'уведомление');
+  requireUnique([...shopProducts.keys()], 'товар магазина');
+  requireUnique([...shopOrders.keys()], 'заказ магазина');
 
   const knownUsers = new Set(userIds);
   const knownPosts = new Set(postIds);
@@ -217,8 +225,11 @@ export function buildMockServerSeed(
     posts,
     comments,
     notifications,
+    shopProducts,
+    shopOrders,
     postSequence: postIds.length + 1,
     commentSequence: commentIds.length + 1,
     notificationSequence: notificationIds.length + 1,
+    shopOrderSequence: shopOrders.size + 1,
   };
 }

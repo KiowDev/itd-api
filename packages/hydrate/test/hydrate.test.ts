@@ -115,6 +115,19 @@ describe('hydrateClient', () => {
     expect(JSON.parse(JSON.stringify(post))).toEqual(source);
   });
 
+  it('добавляет городу доставки загрузку пунктов выдачи', async () => {
+    const server = createMockServer();
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'test-user-1' })));
+
+    const cities = await itd.shop.delivery.cities('Москва', 'RU');
+    const city = cities[0];
+
+    expect(typeof city?.points).toBe('function');
+    expect(Object.keys(city ?? {})).not.toContain('points');
+    await expect(city?.points()).resolves.toMatchObject([{ cityCode: 44 }]);
+    server.assertNoUnsupportedRequests();
+  });
+
   it('выполняет действия через обычные ресурсы клиента', async () => {
     const { server, itd } = hydratedServerClient();
     const post = await itd.posts.get('post-1');

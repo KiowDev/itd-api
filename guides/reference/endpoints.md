@@ -155,3 +155,21 @@
 |---|---|---|---|---|
 | `POST /api/v1/i` | `itd.telemetry.dwell()` | Bearer | события просмотра `sid`, `e[]` | — |
 | `POST /api/v1/x` | `itd.telemetry.interaction()` | Bearer | события взаимодействия `sid`, `e[]` | — |
+
+## Магазин
+
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+|---|---|---|---|---|
+| `GET /api/v1/shop/products` | `itd.shop.products.list()` | необязательно | ответ: товары | 2026-08-13 |
+| `GET /api/v1/shop/products/{productId}` | `itd.shop.products.get()` | необязательно | идентификатор товара в path; `404` → `null` | 2026-08-13 |
+| `GET /api/v1/shop/delivery/countries` | `itd.shop.delivery.countries()` | необязательно | ответ: страны доставки | 2026-08-13 |
+| `GET /api/v1/shop/delivery/cities` | `itd.shop.delivery.cities()` | необязательно | query: `q`, `country` | 2026-08-13 |
+| `GET /api/v1/shop/delivery/points` | `itd.shop.delivery.points()` | необязательно | query: `cityCode` | 2026-08-13 |
+| `POST /api/v1/shop/delivery/calculate` | `itd.shop.delivery.calculate()` | необязательно | позиции заказа и город доставки | 2026-08-13 |
+| `POST /api/v1/shop/orders` | `itd.shop.orders.create()` | необязательно | заказ; заголовок `Idempotency-Key` | — |
+| `GET /api/v1/shop/orders/my` | `itd.shop.orders.list()` | Bearer или `X-Order-Token` | ответ: заказы покупателя | — |
+| `GET /api/v1/shop/orders/{number}` | `itd.shop.orders.get()` | Bearer или `X-Order-Token` | номер заказа в path | — |
+| `POST /api/v1/shop/orders/{number}/pay` | `itd.shop.orders.pay()` | Bearer или `X-Order-Token` | `returnUrl` → адрес оплаты | — |
+| `POST /api/v1/shop/orders/lookup/request` | `itd.shop.orders.requestAccessCode()` | нет | адрес почты; ответ отбрасывается | — |
+| `POST /api/v1/shop/orders/lookup/verify` | `itd.shop.orders.verifyAccessCode()` | нет | адрес почты и код → `X-Order-Token` | — |
+| `POST /api/v1/shop/consents` | `itd.shop.consents.record()` | необязательно | согласия и контекст формы | — |

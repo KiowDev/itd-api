@@ -32,6 +32,15 @@ export const BUCKET_LIMITS = Object.freeze({
   'users.updateMe': 3,
   'reports.create': 3,
   'verification.submit': 3,
+  shop: 150,
+  'shop.delivery.cities': 60,
+  'shop.delivery.calculate': 45,
+  'shop.delivery.points': 30,
+  'shop.consents.record': 15,
+  'shop.orders.pay': 13,
+  'shop.orders.verifyAccessCode': 13,
+  'shop.orders.create': 12,
+  'shop.orders.requestAccessCode': 4,
 } as const satisfies Record<string, number>);
 
 /** Имя встроенного бакета. */

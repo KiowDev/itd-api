@@ -1,4 +1,11 @@
-import type { ItdClientOptions, ItdClock, MyProfile, Notification } from 'itd-api';
+import type {
+  ItdClientOptions,
+  ItdClock,
+  MyProfile,
+  Notification,
+  ShopOrder,
+  ShopProduct,
+} from 'itd-api';
 import type { MockEventTransport } from '../events.js';
 import type { RecordedRequest } from '../request.js';
 import type { MockHandler } from '../router.js';
@@ -55,11 +62,20 @@ export interface MockNotificationSeed {
   createdAt?: string;
 }
 
+export interface MockShopOrderSeed {
+  value: ShopOrder;
+  userId?: string;
+  email: string;
+  accessToken?: string;
+}
+
 export interface MockServerSeed {
   users?: readonly MockUserSeed[];
   posts?: readonly MockPostSeed[];
   comments?: readonly MockCommentSeed[];
   notifications?: readonly MockNotificationSeed[];
+  shopProducts?: readonly ShopProduct[];
+  shopOrders?: readonly MockShopOrderSeed[];
 }
 
 export interface CreateMockServerOptions {
@@ -73,6 +89,15 @@ export interface MockServerSnapshot {
   readonly posts: readonly MockPostSnapshot[];
   readonly comments: readonly MockCommentSnapshot[];
   readonly notifications: readonly MockNotificationSnapshot[];
+  readonly shopProducts: readonly Readonly<ShopProduct>[];
+  readonly shopOrders: readonly MockShopOrderSnapshot[];
+}
+
+export interface MockShopOrderSnapshot {
+  readonly value: Readonly<ShopOrder>;
+  readonly userId?: string;
+  readonly email: string;
+  readonly accessToken?: string;
 }
 
 /** Пользователь из снимка сервера. */

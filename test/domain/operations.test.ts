@@ -95,6 +95,22 @@ describe('карта серверных счётчиков частоты', () =
     );
   });
 
+  it('разделяет измеренные счётчики доставки магазина', () => {
+    expect(operationBucket('shop.products.list')).toBe('shop');
+    expect(operationBucket('shop.delivery.countries')).toBe('shop');
+    expect(BUCKET_LIMITS[operationBucket('shop.delivery.cities')]).toBe(60);
+    expect(BUCKET_LIMITS[operationBucket('shop.delivery.points')]).toBe(30);
+    expect(BUCKET_LIMITS[operationBucket('shop.delivery.calculate')]).toBe(45);
+    expect(BUCKET_LIMITS[operationBucket('shop.orders.create')]).toBe(12);
+    expect(BUCKET_LIMITS[operationBucket('shop.orders.pay')]).toBe(13);
+    expect(BUCKET_LIMITS[operationBucket('shop.orders.verifyAccessCode')]).toBe(13);
+    expect(operationBucket('shop.orders.pay')).not.toBe(
+      operationBucket('shop.orders.verifyAccessCode'),
+    );
+    expect(BUCKET_LIMITS[operationBucket('shop.orders.requestAccessCode')]).toBe(4);
+    expect(BUCKET_LIMITS[operationBucket('shop.consents.record')]).toBe(15);
+  });
+
   it('не оставляет ни имени без операции, ни операции без ёмкости', () => {
     const used = new Set(Object.keys(OPERATIONS).map((id) => operationBucket(id as never)));
 

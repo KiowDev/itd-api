@@ -34,7 +34,7 @@ export interface RecordedRequest {
 
 const REDACTED = '[СКРЫТО]';
 const SECRET_NAME =
-  /authorization|proxy-authorization|cookie|set-cookie|password|passcode|secret|token|otp|turnstile|captcha/i;
+  /authorization|proxy-authorization|cookie|set-cookie|password|passcode|secret|token|otp|turnstile|captcha|^pass$|^code$|^email$|^phone$|^address$/i;
 
 function isSecret(name: string): boolean {
   return SECRET_NAME.test(name);

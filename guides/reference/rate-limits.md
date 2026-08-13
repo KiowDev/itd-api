@@ -131,7 +131,15 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 
 | Бакет | Операции | В минуту |
 | --- | --- | ---: |
-| `default` | всё, для чего нет отдельного правила: `auth.check`, `posts.get`, `posts.update`, `posts.remove`, `posts.restore`, `posts.pin`, `posts.unpin`, `posts.vote`, `posts.byUser`, `posts.likedByUser`, `comments.replies`, `comments.reply`, `comments.update`, `comments.remove`, `comments.restore`, `users.deactivate`, `users.restore`, `users.createProfile`, `users.updatePrivacy`, `users.setPin`, `users.removePin`, `users.followStatus`, `users.block`, `users.unblock`, `notifications.markRead`, `notifications.markReadBatch`, `notifications.markAllRead`, `notifications.updateSettings`, `subscription.*`, `platform.version`, `platform.changelog`, `platform.announcements`, `platform.portal`, `telemetry.dwell`, `telemetry.interaction`, а также любой незнакомый путь | 150 |
+| `default` | всё, для чего нет отдельного правила: `auth.check`, `posts.get`, `posts.update`, `posts.remove`, `posts.restore`, `posts.pin`, `posts.unpin`, `posts.vote`, `posts.byUser`, `posts.likedByUser`, `comments.replies`, `comments.reply`, `comments.update`, `comments.remove`, `comments.restore`, `users.deactivate`, `users.restore`, `users.createProfile`, `users.updatePrivacy`, `users.setPin`, `users.removePin`, `users.followStatus`, `users.block`, `users.unblock`, `notifications.markRead`, `notifications.markReadBatch`, `notifications.markAllRead`, `notifications.updateSettings`, `subscription.*`, `platform.version`, `platform.changelog`, `platform.announcements`, `platform.portal`, `telemetry.dwell`, `telemetry.interaction`, `shop.orders.list`, `shop.orders.get`, а также любой незнакомый путь | 150 |
+| `shop.delivery.cities` | `shop.delivery.cities` | 60 |
+| `shop.delivery.calculate` | `shop.delivery.calculate` | 45 |
+| `shop.delivery.points` | `shop.delivery.points` | 30 |
+| `shop.orders.create` | `shop.orders.create` | 12 |
+| `shop.orders.pay` | `shop.orders.pay` | 13 |
+| `shop.orders.requestAccessCode` | `shop.orders.requestAccessCode` | 4 |
+| `shop.orders.verifyAccessCode` | `shop.orders.verifyAccessCode` | 13 |
+| `shop.consents.record` | `shop.consents.record` | 15 |
 | `auth` | `auth.signUp`, `auth.signIn`, `auth.verifyOtp`, `auth.resendOtp`, `auth.logout`, `auth.forgotPassword`, `auth.resetPassword`, `auth.changePassword`, `auth.sessions`, `auth.revokeSession`, `auth.revokeOtherSessions` | 35 |
 | `auth.refresh` | `auth.refresh` | 25 |
 | `users` | `users.me`, `users.get`, `users.checkUsername`, `users.search`, `users.whoToFollow`, `users.topClans`, `users.followers`, `users.following`, `users.blocked`, `users.getPrivacy`, `users.pins` | 40 |

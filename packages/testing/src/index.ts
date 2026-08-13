@@ -85,6 +85,8 @@ export {
   type MockServerClientOptions,
   type MockServerSeed,
   type MockServerSnapshot,
+  type MockShopOrderSeed,
+  type MockShopOrderSnapshot,
   type MockUserSeed,
   type MockUserSnapshot,
 } from './server.js';

@@ -60,6 +60,13 @@ export const CACHE_OPERATIONS = freezeOperations([
   { id: 'platform.announcements', category: 'platform' },
   { id: 'platform.portal', category: 'platform' },
   { id: 'status.get', category: 'platform' },
+
+  { id: 'shop.products.list', category: 'shop' },
+  { id: 'shop.products.get', category: 'shop' },
+  { id: 'shop.delivery.countries', category: 'shop' },
+  { id: 'shop.delivery.cities', category: 'shop' },
+  { id: 'shop.delivery.points', category: 'shop' },
+  { id: 'shop.delivery.calculate', category: 'shop' },
 ] as const satisfies readonly CacheOperation[]);
 
 /** Имя операции, доступное в `cache({ operations: … })`. */

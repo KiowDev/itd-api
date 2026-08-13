@@ -70,6 +70,7 @@ const referenceSidebar = [
       { text: 'Верификация', link: '/reference/verification' },
       { text: 'Жалобы', link: '/reference/reports' },
       { text: 'Телеметрия', link: '/reference/telemetry' },
+      { text: 'Магазин', link: '/reference/shop' },
       { text: 'Несколько аккаунтов', link: '/reference/accounts' },
     ],
   },

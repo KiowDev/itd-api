@@ -8,6 +8,7 @@ import { registerCommentRoutes } from './server/routes/comments.js';
 import { createRouteContext, type RegisteredHandler } from './server/routes/context.js';
 import { registerNotificationRoutes } from './server/routes/notifications.js';
 import { registerPostRoutes } from './server/routes/posts.js';
+import { registerShopRoutes } from './server/routes/shop.js';
 import { registerUserRoutes } from './server/routes/users.js';
 import { MockServerState } from './server/state.js';
 
@@ -23,6 +24,8 @@ export type {
   MockServerClientOptions,
   MockServerSeed,
   MockServerSnapshot,
+  MockShopOrderSeed,
+  MockShopOrderSnapshot,
   MockUserSeed,
   MockUserSnapshot,
 } from './server/contracts.js';
@@ -45,6 +48,7 @@ export function createMockServer(options: CreateMockServerOptions = {}): MockSer
   registerPostRoutes(context);
   registerCommentRoutes(context);
   registerNotificationRoutes(context);
+  registerShopRoutes(context);
 
   const dispatch = async (
     registered: RegisteredHandler,

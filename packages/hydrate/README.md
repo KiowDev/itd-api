@@ -51,6 +51,7 @@ type AppClient = HydrateFlavor<ItdClient>;
 | автор, профиль, пользователь из списка или уведомления | `get()`, `follow()`, `unfollow()`, `block()`, `unblock()`, `posts()` |
 | вложение | `isImage()`, `isVideo()`, `isAudio()` |
 | уведомление | `getPost()`, `comment` |
+| город доставки | `points()` |
 
 `getReplies()` загружает полную страницу ответов. Поле `comment.replies` по-прежнему содержит
 предварительно загруженные ответы из исходной модели.

@@ -6,6 +6,7 @@ import {
   NotificationUpdateType,
   type Post,
   type PublicProfile,
+  type ShopDeliveryCity,
 } from 'itd-api';
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
@@ -15,6 +16,7 @@ import type {
   HydratedNotificationEvents,
   HydratedPost,
   HydratedProfile,
+  HydratedShopDeliveryCity,
   HydratedUserReference,
   HydrateFlavor,
   HydrateValue,
@@ -27,6 +29,14 @@ interface ExtendedPost extends Post {
 }
 
 describe('расширяемые типы', () => {
+  it('добавляет действия к городу доставки', () => {
+    expectTypeOf<HydrateValue<ShopDeliveryCity>>().toEqualTypeOf<HydratedShopDeliveryCity>();
+    expectTypeOf<HydratedShopDeliveryCity['points']>().toBeFunction();
+
+    type CitiesResult = ReturnType<HydrateFlavor<ItdClient>['shop']['delivery']['cities']>;
+    expectTypeOf<CitiesResult>().toEqualTypeOf<Promise<HydratedShopDeliveryCity[]>>();
+  });
+
   it('сохраняет поля и владельца произвольного контекста события', () => {
     interface CustomContext extends EventContext<{ payload: Post }, { readonly kind: 'custom' }> {
       session: { id: string };

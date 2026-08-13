@@ -1,4 +1,12 @@
-import type { Comment, ItdClock, MyProfile, Notification, Post, PublicProfile } from 'itd-api';
+import type {
+  Comment,
+  ItdClock,
+  MyProfile,
+  Notification,
+  Post,
+  PublicProfile,
+  ShopProduct,
+} from 'itd-api';
 import { MockEventTransport } from '../events.js';
 import {
   commentFixture,
@@ -8,7 +16,13 @@ import {
 } from '../fixtures.js';
 import type { MockRequest } from '../request.js';
 import type { MockServerSeed, MockServerSnapshot } from './contracts.js';
-import type { CommentState, NotificationState, PostState, UserState } from './entities.js';
+import type {
+  CommentState,
+  NotificationState,
+  PostState,
+  ShopOrderState,
+  UserState,
+} from './entities.js';
 import { buildMockServerSeed } from './seed.js';
 
 function decodeToken(token: string): Record<string, unknown> | undefined {
@@ -31,11 +45,16 @@ export class MockServerState {
   posts = new Map<string, PostState>();
   comments = new Map<string, CommentState>();
   notifications: NotificationState[] = [];
+  shopProducts = new Map<string, ShopProduct>();
+  shopOrders = new Map<string, ShopOrderState>();
+  readonly shopAccess = new Map<string, { email: string; expiresAt: number }>();
+  readonly shopIdempotency = new Map<string, { number: string; pass?: string }>();
   readonly eventTransports = new Map<string, Set<MockEventTransport>>();
   readonly clock: ItdClock;
   #postSequence = 1;
   #commentSequence = 1;
   #notificationSequence = 1;
+  #shopOrderSequence = 1;
 
   constructor(clock: ItdClock) {
     this.clock = clock;
@@ -191,6 +210,13 @@ export class MockServerState {
     return id;
   }
 
+  nextShopOrderNumber(): string {
+    let number: string;
+    do number = `SHOP-${String(this.#shopOrderSequence++).padStart(6, '0')}`;
+    while (this.shopOrders.has(number));
+    return number;
+  }
+
   registerEventTransport(user: UserState): MockEventTransport {
     const transport = new MockEventTransport();
     const transports = this.eventTransports.get(user.profile.id) ?? new Set();
@@ -220,6 +246,8 @@ export class MockServerState {
         actors: item.value.actors.map((actor) => ({ ...actor })),
         userId: item.userId,
       })),
+      shopProducts: [...this.shopProducts.values()],
+      shopOrders: [...this.shopOrders.values()],
     });
   }
 
@@ -230,8 +258,13 @@ export class MockServerState {
     this.posts = next.posts;
     this.comments = next.comments;
     this.notifications = next.notifications;
+    this.shopProducts = next.shopProducts;
+    this.shopOrders = next.shopOrders;
+    this.shopAccess.clear();
+    this.shopIdempotency.clear();
     this.#postSequence = next.postSequence;
     this.#commentSequence = next.commentSequence;
     this.#notificationSequence = next.notificationSequence;
+    this.#shopOrderSequence = next.shopOrderSequence;
   }
 }
