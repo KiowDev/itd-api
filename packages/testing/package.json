@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/testing",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Средства тестирования клиентов и плагинов itd-api без сетевых запросов",
   "repository": {
     "type": "git",
