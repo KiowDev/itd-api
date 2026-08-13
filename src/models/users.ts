@@ -151,6 +151,8 @@ export interface PublicProfile extends ProfileBase {
   isFollowing: boolean;
   /** Подписан ли он на вас. */
   isFollowedBy: boolean;
+  /** Может ли текущий пользователь написать этому профилю личное сообщение. */
+  canMessage: boolean;
   /** Сейчас ли пользователь в сети. */
   online: boolean;
   /** Когда был в сети. `null`, если скрыто настройками приватности. */

@@ -80,6 +80,7 @@ export function publicProfileFixture(input: PublicProfileFixtureInput = {}): Pub
     pinnedPostId: null,
     isFollowing: false,
     isFollowedBy: false,
+    canMessage: false,
     online: false,
     lastSeen: FIXTURE_TIME,
     ...input,

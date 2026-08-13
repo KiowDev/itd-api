@@ -122,6 +122,7 @@ interface PublicProfile {
   pinnedPostId: string | null;
   isFollowing: boolean;                  // подписаны ли вы
   isFollowedBy: boolean;                 // подписан ли он на вас
+  canMessage: boolean;                   // можете ли вы написать ему личное сообщение
   online: boolean;
   lastSeen: IsoDate | null;              // null, если скрыто приватностью
 }
