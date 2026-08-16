@@ -95,7 +95,11 @@ export function prepareRequest(
     }
 
     const allSpans = readSpans(body, field.spansField);
-    const serverSpans = allSpans.filter((span) => !isCryptoSpan(span));
+    // Нулевая разметка не описывает фрагмент и запрещена основным клиентом. Подключаемая
+    // операция может обойти его валидатор, поэтому перед пересчётом такую разметку удаляем.
+    // Crypto spans сохраняются здесь даже с нулевой длиной: resolveRanges обязан завершить
+    // запрос ошибкой, иначе предназначенный для шифрования текст уйдёт открытым.
+    const serverSpans = allSpans.filter((span) => span.type !== 'crypto' && span.length > 0);
     const resolved = resolveRanges(requested, text, field, serverSpans, registry, operation);
     const transformed = transformField(text, resolved, serverSpans, field, operation);
 
@@ -189,7 +193,6 @@ function resolveRanges(
     ) {
       throw new CryptError(`${context}: диапазон должен быть непустым и лежать внутри поля`);
     }
-
     const cipher = registry.resolve(range.cipher, context);
     if (typeof cipher.encode !== 'function') {
       throw new CryptError(`${context}: cipher «${cipher.name}» доступен только для чтения`);

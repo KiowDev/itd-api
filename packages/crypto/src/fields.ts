@@ -142,11 +142,18 @@ export function requestFieldDefinitions(
     }
     const fields = configured.map((field) => normalizeFieldMetadata(field, operationId));
     const names = new Set<string>();
+    const spanFields = new Set<string>();
     for (const field of fields) {
       if (names.has(field.name)) {
         throw new CryptError(`Операция ${operationId}: поле «${field.name}» объявлено повторно`);
       }
+      if (field.spansField !== undefined && spanFields.has(field.spansField)) {
+        throw new CryptError(
+          `Операция ${operationId}: поле разметки «${field.spansField}» объявлено повторно`,
+        );
+      }
       names.add(field.name);
+      if (field.spansField !== undefined) spanFields.add(field.spansField);
     }
     return fields;
   }
@@ -170,9 +177,12 @@ function normalizeFieldMetadata(
   if (!field || typeof field !== 'object' || typeof field.name !== 'string' || field.name === '') {
     throw new CryptError(`Операция ${operationId}: некорректное описание crypto-поля`);
   }
-  if (field.spansField !== undefined && typeof field.spansField !== 'string') {
+  if (
+    field.spansField !== undefined &&
+    (typeof field.spansField !== 'string' || field.spansField === '')
+  ) {
     throw new CryptError(
-      `Операция ${operationId}, поле ${field.name}: spansField должен быть строкой`,
+      `Операция ${operationId}, поле ${field.name}: spansField должен быть непустой строкой`,
     );
   }
   if (

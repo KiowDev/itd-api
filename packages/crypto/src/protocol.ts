@@ -76,16 +76,17 @@ export function scanFrames(text: string, registry: CipherRegistry): FrameScanRes
   while (cursor < text.length) {
     const start = text.indexOf(FRAME_START, cursor);
     if (start < 0) break;
+    const hasOverlappingStart = text[start + FRAME_START.length] === DIGITS[5];
 
     const header = decodeCipherId(text, start + FRAME_START.length);
     if (!header) {
-      cursor = start + FRAME_START.length;
+      cursor = hasOverlappingStart ? start + 1 : start + FRAME_START.length;
       continue;
     }
 
     const endMarker = text.indexOf(FRAME_END, header.end);
     if (endMarker < 0) {
-      cursor = header.end;
+      cursor = hasOverlappingStart ? start + 1 : header.end;
       continue;
     }
 
@@ -96,19 +97,32 @@ export function scanFrames(text: string, registry: CipherRegistry): FrameScanRes
     }
 
     const end = endMarker + FRAME_END.length;
-    occupied.push([start, end]);
     const cipher = registry.byId(header.id);
     if (!cipher?.supportsFragments) {
+      if (hasOverlappingStart) {
+        cursor = start + 1;
+        continue;
+      }
+      occupied.push([start, end]);
       cursor = header.end;
       continue;
     }
 
     const decoded = registry.decode(cipher, text.slice(header.end, endMarker));
     if (decoded === null) {
+      // Пятый U+206F неоднозначен: это либо начало расширенного ID, либо посторонний
+      // символ перед настоящим frame. Если первая трактовка не распознана, проверяем
+      // перекрывающий кандидат, не закрывая его диапазоном occupied.
+      if (hasOverlappingStart) {
+        cursor = start + 1;
+        continue;
+      }
+      occupied.push([start, end]);
       cursor = header.end;
       continue;
     }
 
+    occupied.push([start, end]);
     matches.push({ start, end, cipher, text: decoded });
     cursor = end;
   }

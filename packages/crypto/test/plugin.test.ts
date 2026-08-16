@@ -217,6 +217,76 @@ describe('шифрование запроса', () => {
     expect(result.decoded?.message?.text).toBe('секрет');
   });
 
+  it('отвергает общий spansField у разных полей custom-операции', async () => {
+    const { itd, calls } = makeClient();
+    itd.use(crypt());
+    const chats = itd.install({
+      name: 'duplicate-span-fields',
+      operations: {
+        send: {
+          method: 'POST',
+          retrySafety: RetrySafety.Unsafe,
+          annotations: {
+            crypto: {
+              requestFields: [
+                { name: 'title', spansField: 'spans' },
+                { name: 'message', spansField: 'spans' },
+              ],
+            },
+          },
+        },
+      },
+      setup: (context) => ({
+        api: {
+          send: () =>
+            context.request('send', {
+              path: '/api/chats/1/messages',
+              body: { title: 'тема', message: 'текст', spans: [] },
+            }),
+        },
+      }),
+    });
+
+    await expect(chats.send()).rejects.toThrow(/поле разметки «spans» объявлено повторно/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('удаляет нулевые обычные spans custom-операции при шифровании', async () => {
+    const { itd, calls } = makeClient();
+    itd.use(crypt());
+    const chats = itd.install({
+      name: 'zero-length-spans',
+      operations: {
+        send: {
+          method: 'POST',
+          retrySafety: RetrySafety.Unsafe,
+          annotations: {
+            crypto: {
+              requestFields: [{ name: 'message', spansField: 'spans' }],
+            },
+          },
+        },
+      },
+      setup: (context) => ({
+        api: {
+          send: () =>
+            context.request('send', {
+              path: '/api/chats/1/messages',
+              body: {
+                message: 'секрет',
+                spans: [{ type: 'bold', offset: 2, length: 0 }],
+              },
+              ...cryptoOptions({ spans: [{ cipher: 2, offset: 0, length: 6 }] }),
+            }),
+        },
+      }),
+    });
+
+    await chats.send();
+
+    expect(calls[0]?.body.spans).toEqual([]);
+  });
+
   it('склеивает соседние участки одного cipher после чтения', async () => {
     const { itd } = makeClient();
     itd.use(crypt());
@@ -296,6 +366,12 @@ describe('шифрование запроса', () => {
         }),
       ),
     ).rejects.toThrow(/пересекаются/);
+    await expect(
+      itd.posts.create(
+        { content: 'секрет' },
+        cryptoOptions({ spans: [{ cipher: 2, offset: 1, length: 0 }] }),
+      ),
+    ).rejects.toThrow(/непустым/);
     expect(calls).toHaveLength(0);
   });
 
@@ -383,6 +459,31 @@ describe('расшифровка', () => {
     });
   });
 
+  it.each([1, 2, 3])('пересинхронизируется после %i посторонних U+206F перед frame', (count) => {
+    const prefix = (INVISIBLE_ALPHABET[5] ?? '').repeat(count);
+    const frame =
+      FRAME_START + (INVISIBLE_ALPHABET[2] ?? '') + encodeInvisible('секрет') + FRAME_END;
+    const result = decodeTree({ content: prefix + frame }, BUILT_IN_CIPHERS);
+
+    expect(result.decoded?.content?.text).toBe(`${prefix}секрет`);
+    expect(result.decoded?.content?.spans).toContainEqual({
+      type: 'crypto',
+      cipher: 'invisible',
+      cipherId: 2,
+      offset: count,
+      length: 6,
+    });
+  });
+
+  it('пересинхронизируется перед frame с видимым payload custom cipher', () => {
+    const cipher = fragmentCipher(3, 'brackets');
+    const prefix = INVISIBLE_ALPHABET[5] ?? '';
+    const frame = `${FRAME_START}${INVISIBLE_ALPHABET[3] ?? ''}[секрет]${FRAME_END}`;
+    const result = decodeTree({ content: prefix + frame }, [cipher]);
+
+    expect(result.decoded?.content?.text).toBe(`${prefix}секрет`);
+  });
+
   it('читает несколько legacy-прогонов независимо и сохраняет обложку', () => {
     const content = `до${encodeInvisible('один')}между${encodeInvisible('два')}после`;
     const result = decodeTree({ content }, BUILT_IN_CIPHERS);
@@ -432,6 +533,19 @@ describe('расшифровка', () => {
     expect(decoded).not.toBe(encrypted);
     expect(decoded.items).not.toBe(encrypted.items);
     expect(decoded.untouched).toBe(untouched);
+  });
+
+  it('не переносит нулевые серверные spans в decoded', () => {
+    const wire =
+      FRAME_START + (INVISIBLE_ALPHABET[2] ?? '') + encodeInvisible('секрет') + FRAME_END;
+    const result = decodeTree(
+      { content: wire, spans: [{ type: 'bold', offset: 5, length: 0 }] },
+      BUILT_IN_CIPHERS,
+    );
+
+    expect(result.decoded?.content?.spans).toEqual([
+      { type: 'crypto', cipher: 'invisible', cipherId: 2, offset: 0, length: 6 },
+    ]);
   });
 });
 

@@ -334,6 +334,6 @@ function isSpan(value: unknown): value is Span {
     Number.isInteger(span.offset) &&
     Number.isInteger(span.length) &&
     (span.offset ?? -1) >= 0 &&
-    (span.length ?? -1) >= 0
+    (span.length ?? 0) > 0
   );
 }
