@@ -236,8 +236,18 @@ function transformField(
   operation: string,
 ): { text: string; spans: Span[] } {
   const replacements: PlainReplacement[] = [];
+  const bareWholeField =
+    ranges.length === 1 &&
+    ranges[0]?.start === 0 &&
+    ranges[0]?.end === text.length &&
+    !hasInternalVisualBoundary(spans, text.length);
 
   for (const range of ranges) {
+    if (bareWholeField) {
+      replacements.push({ ...range, wire: encode(range.cipher, text, operation, field.name) });
+      continue;
+    }
+
     if (!range.cipher.supportsFragments) {
       if (ranges.length !== 1 || range.start !== 0 || range.end !== text.length) {
         throw new CryptError(
@@ -245,14 +255,10 @@ function transformField(
             'cipher не поддерживает fragments',
         );
       }
-      if (hasInternalVisualBoundary(spans, text.length)) {
-        throw new CryptError(
-          `${rangeContext(operation, field.name, range.start, range.end - range.start, range.cipher.name)}: ` +
-            'whole-field cipher несовместим с внутренними границами visual spans',
-        );
-      }
-      replacements.push({ ...range, wire: encode(range.cipher, text, operation, field.name) });
-      continue;
+      throw new CryptError(
+        `${rangeContext(operation, field.name, range.start, range.end - range.start, range.cipher.name)}: ` +
+          'whole-field cipher несовместим с внутренними границами visual spans',
+      );
     }
 
     if (!field.preservesInvisibleAlphabet) {

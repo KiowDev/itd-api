@@ -6,14 +6,11 @@ import type {
   DecodedField,
   DecodedFields,
 } from './cipher.js';
-import { INVISIBLE_ALPHABET } from './ciphers/invisible.js';
 import { responseFieldDefinition, SCANNED_FIELDS, type TextFieldDefinition } from './fields.js';
 import { scanFrames } from './protocol.js';
 import { CipherRegistry } from './registry.js';
 
 const MAX_DEPTH = 12;
-const INVISIBLE_RUN = new RegExp(`[${INVISIBLE_ALPHABET}]+`, 'gu');
-
 interface WireReplacement {
   wireStart: number;
   wireEnd: number;
@@ -165,12 +162,10 @@ function decodeField(
         text: frame.text,
       });
     }
-    replacements.push(...scanLegacyRuns(wireText, occupiedFrames, registry));
   }
 
   if (replacements.length === 0 && occupiedFrames.length === 0) {
     for (const cipher of registry.ordered) {
-      if (cipher.supportsFragments || cipher.id === 0) continue;
       if (cipher.requiresInvisibleAlphabet && !preservesInvisibleAlphabet) continue;
       const text = registry.decode(cipher, wireText);
       if (text === null) continue;
@@ -228,53 +223,6 @@ function decodeField(
     .map(({ span }) => span);
 
   return { text: output.join(''), spans };
-}
-
-function scanLegacyRuns(
-  wireText: string,
-  occupiedFrames: readonly (readonly [number, number])[],
-  registry: CipherRegistry,
-): WireReplacement[] {
-  const legacy = registry.byId(0);
-  if (!legacy) return [];
-
-  const replacements: WireReplacement[] = [];
-  const openSegments = subtractIntervals(wireText.length, occupiedFrames);
-
-  for (const [segmentStart, segmentEnd] of openSegments) {
-    const segment = wireText.slice(segmentStart, segmentEnd);
-    for (const match of segment.matchAll(INVISIBLE_RUN)) {
-      const payload = match[0];
-      if (payload.length < 8 || match.index === undefined) continue;
-      const text = registry.decode(legacy, payload);
-      if (text === null) continue;
-      const start = segmentStart + match.index;
-      replacements.push({
-        wireStart: start,
-        wireEnd: start + payload.length,
-        decodedStart: 0,
-        decodedEnd: 0,
-        cipher: legacy,
-        text,
-      });
-    }
-  }
-
-  return replacements;
-}
-
-function subtractIntervals(
-  length: number,
-  intervals: readonly (readonly [number, number])[],
-): Array<[number, number]> {
-  const result: Array<[number, number]> = [];
-  let cursor = 0;
-  for (const [start, end] of intervals) {
-    if (cursor < start) result.push([cursor, start]);
-    cursor = Math.max(cursor, end);
-  }
-  if (cursor < length) result.push([cursor, length]);
-  return result;
 }
 
 function remapWireSpan(span: Span, replacements: readonly WireReplacement[]): Span {

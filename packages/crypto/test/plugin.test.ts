@@ -73,13 +73,10 @@ function fragmentCipher(id: number, name = `cipher-${id}`): Cipher {
 }
 
 describe('реестр cipher', () => {
-  it('не включает служебный декодер в публичный контракт', () => {
+  it('содержит только публичные встроенные шифры и резервирует их ID', () => {
     expect(Object.values(CipherName)).toEqual(['beecrypt', 'invisible']);
     expect(BUILT_IN_CIPHERS.map((cipher) => cipher.name)).toEqual(['beecrypt', 'invisible']);
     expect(() => crypt({ ciphers: [fragmentCipher(0)] })).toThrow(/зарезервирован/);
-    expect(() => crypt({ ciphers: [fragmentCipher(3, 'invisible-legacy')] })).toThrow(
-      /зарезервирован/,
-    );
   });
 
   it('проверяет ID, имена и зарезервированные соответствия при подключении', () => {
@@ -87,7 +84,8 @@ describe('реестр cipher', () => {
     expect(() => crypt({ ciphers: [fragmentCipher(5), fragmentCipher(5, 'other')] })).toThrow(
       /ID 5/,
     );
-    expect(() => crypt({ ciphers: [fragmentCipher(2)] })).toThrow(/зарезервирован/);
+    expect(() => crypt({ ciphers: [fragmentCipher(2)] })).not.toThrow();
+    expect(() => crypt({ ciphers: [fragmentCipher(5, 'invisible')] })).toThrow(/ID 0/);
     expect(() =>
       crypt({ ciphers: [fragmentCipher(5, 'same'), fragmentCipher(6, 'same')] }),
     ).toThrow(/имя cipher/i);
@@ -117,7 +115,7 @@ describe('шифрование запроса', () => {
       text: input.content,
       spans: [
         { type: 'bold', offset: 6, length: 6 },
-        { type: 'crypto', cipher: 'invisible', cipherId: 2, offset: 6, length: 6 },
+        { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 6, length: 6 },
       ],
     });
   });
@@ -149,7 +147,7 @@ describe('шифрование запроса', () => {
       expect(post.decoded?.content?.spans).toContainEqual({
         type: 'crypto',
         cipher: 'invisible',
-        cipherId: 2,
+        cipherId: 0,
         offset: 4,
         length: 6,
       });
@@ -174,7 +172,7 @@ describe('шифрование запроса', () => {
 
     expect(comment.decoded?.content?.text).toBe('видно один и два видно');
     expect(comment.decoded?.content?.spans.filter((span) => span.type === 'crypto')).toEqual([
-      { type: 'crypto', cipher: 'invisible', cipherId: 2, offset: 6, length: 4 },
+      { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 6, length: 4 },
       { type: 'crypto', cipher: 'brackets', cipherId: 3, offset: 13, length: 3 },
     ]);
   });
@@ -211,10 +209,41 @@ describe('шифрование запроса', () => {
 
     const result = (await chats.send('секрет')) as {
       message: string;
-      decoded?: { message?: { text: string } };
+      decoded?: { message?: { text: string; spans: unknown[] } };
     };
-    expect(result.message).toContain(FRAME_START);
+    expect(result.message).toBe(encodeInvisible('секрет'));
     expect(result.decoded?.message?.text).toBe('секрет');
+    expect(result.decoded?.message?.spans).toEqual([
+      { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 0, length: 6 },
+    ]);
+  });
+
+  it('оставляет whole-field bare, но использует frames для внутренних visual-границ', async () => {
+    const bare = makeClient();
+    bare.itd.use(crypt());
+    const plain = await bare.itd.posts.create(
+      { content: 'секрет' },
+      cryptoOptions({ encrypt: 'invisible' }),
+    );
+
+    expect(bare.calls[0]?.body.content).toBe(encodeInvisible('секрет'));
+    expect(String(bare.calls[0]?.body.content)).not.toContain(FRAME_START);
+    expect(plain.decoded?.content?.spans).toEqual([
+      { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 0, length: 6 },
+    ]);
+
+    const framed = makeClient();
+    framed.itd.use(crypt());
+    const formatted = await framed.itd.posts.create(
+      { content: 'секрет', spans: [{ type: 'bold', offset: 1, length: 3 }] },
+      cryptoOptions({ encrypt: 'invisible' }),
+    );
+
+    expect(String(framed.calls[0]?.body.content)).toContain(FRAME_START);
+    expect(formatted.decoded?.content?.spans).toEqual([
+      { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 0, length: 6 },
+      { type: 'bold', offset: 1, length: 3 },
+    ]);
   });
 
   it('отвергает общий spansField у разных полей custom-операции', async () => {
@@ -276,7 +305,7 @@ describe('шифрование запроса', () => {
                 message: 'секрет',
                 spans: [{ type: 'bold', offset: 2, length: 0 }],
               },
-              ...cryptoOptions({ spans: [{ cipher: 2, offset: 0, length: 6 }] }),
+              ...cryptoOptions({ spans: [{ cipher: 0, offset: 0, length: 6 }] }),
             }),
         },
       }),
@@ -294,14 +323,14 @@ describe('шифрование запроса', () => {
       { content: 'одиндва' },
       cryptoOptions({
         spans: [
-          { cipher: 2, offset: 0, length: 4 },
-          { cipher: 2, offset: 4, length: 3 },
+          { cipher: 0, offset: 0, length: 4 },
+          { cipher: 0, offset: 4, length: 3 },
         ],
       }),
     );
 
     expect(post.decoded?.content?.spans).toEqual([
-      { type: 'crypto', cipher: 'invisible', cipherId: 2, offset: 0, length: 7 },
+      { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 0, length: 7 },
     ]);
   });
 
@@ -337,7 +366,7 @@ describe('шифрование запроса', () => {
     await expect(
       itd.posts.create(
         { content: 'секрет' },
-        cryptoOptions({ encrypt: 'invisible', spans: [{ cipher: 2, offset: 0, length: 1 }] }),
+        cryptoOptions({ encrypt: 'invisible', spans: [{ cipher: 0, offset: 0, length: 1 }] }),
       ),
     ).rejects.toThrow(/encrypt нельзя/);
     await expect(
@@ -351,7 +380,7 @@ describe('шифрование запроса', () => {
         content: 'секрет',
         spans: [
           { type: 'link', url: 'https://example.com', offset: 0, length: 3 },
-          { type: 'crypto', cipher: 2, offset: 1, length: 2 },
+          { type: 'crypto', cipher: 0, offset: 1, length: 2 },
         ],
       }),
     ).rejects.toThrow(/семантическим span/);
@@ -360,8 +389,8 @@ describe('шифрование запроса', () => {
         { content: 'секрет' },
         cryptoOptions({
           spans: [
-            { cipher: 2, offset: 0, length: 3 },
-            { cipher: 2, offset: 2, length: 2 },
+            { cipher: 0, offset: 0, length: 3 },
+            { cipher: 0, offset: 2, length: 2 },
           ],
         }),
       ),
@@ -369,7 +398,7 @@ describe('шифрование запроса', () => {
     await expect(
       itd.posts.create(
         { content: 'секрет' },
-        cryptoOptions({ spans: [{ cipher: 2, offset: 1, length: 0 }] }),
+        cryptoOptions({ spans: [{ cipher: 0, offset: 1, length: 0 }] }),
       ),
     ).rejects.toThrow(/непустым/);
     expect(calls).toHaveLength(0);
@@ -400,7 +429,7 @@ describe('шифрование запроса', () => {
     itd.use(crypt());
 
     await expect(
-      itd.posts.create({ content: 'x'.repeat(248) }, cryptoOptions({ encrypt: 'invisible' })),
+      itd.posts.create({ content: 'x'.repeat(251) }, cryptoOptions({ encrypt: 'invisible' })),
     ).rejects.toThrow(/лимит 1000/);
     expect(calls).toHaveLength(0);
   });
@@ -416,9 +445,12 @@ describe('шифрование запроса', () => {
     const { itd } = makeClient();
     itd.use(crypt({ ciphers: [bad] }));
 
-    await expect(itd.posts.create({ content: 'x' }, cryptoOptions({ encrypt: 5 }))).rejects.toThrow(
-      /содержит маркер frame/,
-    );
+    await expect(
+      itd.posts.create(
+        { content: 'xy' },
+        cryptoOptions({ spans: [{ cipher: 5, offset: 0, length: 1 }] }),
+      ),
+    ).rejects.toThrow(/содержит маркер frame/);
   });
 });
 
@@ -444,10 +476,10 @@ describe('расшифровка', () => {
   });
 
   it('оставляет повреждённые и неизвестные frames raw', () => {
-    const id2 = INVISIBLE_ALPHABET[2] ?? '';
+    const id0 = INVISIBLE_ALPHABET[0] ?? '';
     const id3 = INVISIBLE_ALPHABET[3] ?? '';
     const id4 = INVISIBLE_ALPHABET[4] ?? '';
-    const missingEnd = FRAME_START + id2 + encodeInvisible('секрет');
+    const missingEnd = FRAME_START + id0 + encodeInvisible('секрет');
     const unknown = `${FRAME_START + id4}text${encodeInvisible('секрет')}${FRAME_END}`;
     const rejected = `${FRAME_START + id3}bad${FRAME_END}`;
     const rejecting: Cipher = { ...fragmentCipher(3, 'rejecting'), decode: () => null };
@@ -462,14 +494,14 @@ describe('расшифровка', () => {
   it.each([1, 2, 3])('пересинхронизируется после %i посторонних U+206F перед frame', (count) => {
     const prefix = (INVISIBLE_ALPHABET[5] ?? '').repeat(count);
     const frame =
-      FRAME_START + (INVISIBLE_ALPHABET[2] ?? '') + encodeInvisible('секрет') + FRAME_END;
+      FRAME_START + (INVISIBLE_ALPHABET[0] ?? '') + encodeInvisible('секрет') + FRAME_END;
     const result = decodeTree({ content: prefix + frame }, BUILT_IN_CIPHERS);
 
     expect(result.decoded?.content?.text).toBe(`${prefix}секрет`);
     expect(result.decoded?.content?.spans).toContainEqual({
       type: 'crypto',
       cipher: 'invisible',
-      cipherId: 2,
+      cipherId: 0,
       offset: count,
       length: 6,
     });
@@ -484,18 +516,20 @@ describe('расшифровка', () => {
     expect(result.decoded?.content?.text).toBe(`${prefix}секрет`);
   });
 
-  it('читает несколько legacy-прогонов независимо и сохраняет обложку', () => {
-    const content = `до${encodeInvisible('один')}между${encodeInvisible('два')}после`;
-    const result = decodeTree({ content }, BUILT_IN_CIPHERS);
+  it('читает прежний bare whole-field invisible как обычный invisible', () => {
+    const wire = encodeInvisible('я');
+    const result = decodeTree({ content: wire }, BUILT_IN_CIPHERS);
 
-    expect(result.content).toBe(content);
+    expect(result.content).toBe(wire);
     expect(result.decoded?.content).toEqual({
-      text: 'доодинмеждудвапосле',
-      spans: [
-        { type: 'crypto', cipher: 'invisible-legacy', cipherId: 0, offset: 2, length: 4 },
-        { type: 'crypto', cipher: 'invisible-legacy', cipherId: 0, offset: 11, length: 3 },
-      ],
+      text: 'я',
+      spans: [{ type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 0, length: 1 }],
     });
+  });
+
+  it('не распознаёт legacy invisible с видимой обложкой автоматически', () => {
+    const content = `обложка${encodeInvisible('секрет')}`;
+    expect(decodeTree({ content }, BUILT_IN_CIPHERS)).toEqual({ content });
   });
 
   it('читает прежний whole-field beecrypt', () => {
@@ -510,7 +544,7 @@ describe('расшифровка', () => {
 
   it('возвращает copy-on-write результат и не загрязняет raw cache value', () => {
     const wire =
-      FRAME_START + (INVISIBLE_ALPHABET[2] ?? '') + encodeInvisible('секрет') + FRAME_END;
+      FRAME_START + (INVISIBLE_ALPHABET[0] ?? '') + encodeInvisible('секрет') + FRAME_END;
     const raw = Object.freeze({ content: wire, nested: Object.freeze({ value: 1 }) });
     const result = decodeTree(raw, BUILT_IN_CIPHERS);
 
@@ -537,14 +571,14 @@ describe('расшифровка', () => {
 
   it('не переносит нулевые серверные spans в decoded', () => {
     const wire =
-      FRAME_START + (INVISIBLE_ALPHABET[2] ?? '') + encodeInvisible('секрет') + FRAME_END;
+      FRAME_START + (INVISIBLE_ALPHABET[0] ?? '') + encodeInvisible('секрет') + FRAME_END;
     const result = decodeTree(
       { content: wire, spans: [{ type: 'bold', offset: 5, length: 0 }] },
       BUILT_IN_CIPHERS,
     );
 
     expect(result.decoded?.content?.spans).toEqual([
-      { type: 'crypto', cipher: 'invisible', cipherId: 2, offset: 0, length: 6 },
+      { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 0, length: 6 },
     ]);
   });
 });

@@ -112,7 +112,7 @@ describe('обычный текст', () => {
 describe('шифр как объект', () => {
   it('называется invisible и работает без обложки', () => {
     expect(invisible.name).toBe(CipherName.Invisible);
-    expect(invisible.id).toBe(2);
+    expect(invisible.id).toBe(0);
     expect(invisible.supportsFragments).toBe(true);
     expect(invisible.decode(invisible.encode?.('текст') ?? '')).toBe('текст');
   });

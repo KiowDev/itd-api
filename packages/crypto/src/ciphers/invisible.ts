@@ -26,9 +26,10 @@ const INDEX = new Map(DIGITS.map((char, position) => [char, position]));
 /**
  * Кодирует строку невидимыми символами.
  *
- * Результат состоит только из символов {@link INVISIBLE_ALPHABET}. Новый протокол
- * помещает его внутрь общего контейнера. При прямом использовании функция возвращает
- * только закодированную нагрузку без маркеров и идентификатора алгоритма.
+ * Результат состоит только из символов {@link INVISIBLE_ALPHABET}. Целое поле хранит его
+ * без обёртки, а отдельный фрагмент помещается внутрь общего контейнера. При прямом
+ * использовании функция возвращает только закодированную нагрузку без маркеров и
+ * идентификатора алгоритма.
  *
  * @example
  * ```ts
@@ -168,8 +169,9 @@ export function hasInvisible(text: string): boolean {
  * Стеганография невидимыми символами.
  *
  * Использует только те символы, которые сервер итд.com не трогает при сохранении поста.
- * Плагин оборачивает точную нагрузку в общий контейнер и может размещать её между
- * открытыми участками текста. Алгоритм имеет стабильный идентификатор `2`.
+ * Для целого поля плагин отправляет точную нагрузку без обёртки. Отдельные участки он
+ * помещает в общий контейнер, чтобы сохранить их границы. Алгоритм имеет стабильный
+ * идентификатор `0`.
  *
  * Это **обфускация, а не шифрование**: кто знает алфавит — прочитает сообщение.
  * Для секретности комбинируйте с настоящим шифром.
@@ -179,17 +181,9 @@ export function hasInvisible(text: string): boolean {
  */
 export const invisible: Cipher = {
   name: CipherName.Invisible,
-  id: 2,
+  id: 0,
   requiresInvisibleAlphabet: true,
   supportsFragments: true,
   encode: encodeInvisible,
   decode: (encoded) => decodeInvisiblePayload(encoded),
-};
-
-/** @internal */
-export const legacyInvisibleDecoder: Cipher = {
-  name: 'invisible-legacy',
-  id: 0,
-  requiresInvisibleAlphabet: true,
-  decode: (encoded) => decodeInvisiblePayload(encoded, true),
 };

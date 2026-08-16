@@ -1,10 +1,9 @@
 import type { Cipher, CipherRef } from './cipher.js';
-import { legacyInvisibleDecoder } from './ciphers/invisible.js';
 import { CryptError } from './errors.js';
 
 const RESERVED_IDS = new Map<number, string>([
+  [0, 'invisible'],
   [1, 'beecrypt'],
-  [2, 'invisible'],
 ]);
 const RESERVED_NAMES = new Map([...RESERVED_IDS].map(([id, name]) => [name, id]));
 
@@ -33,9 +32,6 @@ export class CipherRegistry {
       if (typeof cipher.decode !== 'function') {
         throw new CryptError(`Cipher «${cipher.name}»: decode должен быть функцией`);
       }
-      if (cipher.id === legacyInvisibleDecoder.id || cipher.name === legacyInvisibleDecoder.name) {
-        throw new CryptError('Идентификатор 0 и связанное с ним имя зарезервированы пакетом');
-      }
       const reservedName = RESERVED_IDS.get(cipher.id);
       if (reservedName !== undefined && reservedName !== cipher.name) {
         throw new CryptError(`Cipher ID ${cipher.id} зарезервирован за «${reservedName}»`);
@@ -57,9 +53,7 @@ export class CipherRegistry {
 
     this.#selectableByName = new Map(byName);
     this.#selectableById = new Map(byId);
-    byId.set(legacyInvisibleDecoder.id, legacyInvisibleDecoder);
-
-    this.#ordered = Object.freeze([legacyInvisibleDecoder, ...ciphers]);
+    this.#ordered = Object.freeze([...ciphers]);
     this.#byId = byId;
   }
 
