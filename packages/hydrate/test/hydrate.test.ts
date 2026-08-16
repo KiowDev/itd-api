@@ -280,7 +280,7 @@ describe('hydrateClient', () => {
     raw.use(crypt());
 
     const post = await hydrateClient(raw).posts.get('encrypted');
-    expect(post.secret?.text).toBe('Скрытый текст');
+    expect(post.decoded?.content?.text).toBe('Скрытый текст');
     expect(typeof post.like).toBe('function');
   });
 

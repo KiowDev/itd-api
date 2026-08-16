@@ -11,6 +11,7 @@ export {
 } from './beecrypt.js';
 export {
   decodeInvisible,
+  decodeInvisiblePayload,
   encodeInvisible,
   extractInvisible,
   hasInvisible,
@@ -21,10 +22,5 @@ export {
   stripInvisible,
 } from './invisible.js';
 
-/**
- * Встроенные шифры — с ними плагин работает, если не задать `ciphers` вручную.
- *
- * Порядок значим: первый считается основным и используется, когда в `encrypt` не назван
- * конкретный шифр. При расшифровке побеждает первый, который прочитал текст.
- */
-export const BUILT_IN_CIPHERS: readonly Cipher[] = Object.freeze([invisible, beecrypt]);
+/** Встроенные шифры, доступные для чтения и отправки. */
+export const BUILT_IN_CIPHERS: readonly Cipher[] = Object.freeze([beecrypt, invisible]);

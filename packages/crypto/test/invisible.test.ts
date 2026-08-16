@@ -8,7 +8,6 @@ import {
   INVISIBLE_ALPHABET,
   INVISIBLE_WIDTH,
   invisible,
-  stripInvisible,
 } from '../src/index.js';
 
 /**
@@ -53,11 +52,11 @@ describe('круговой проход', () => {
     });
   }
 
-  it('переживает обложку', () => {
-    const content = invisible.encode('секрет', { cover: 'обычный текст' });
+  it('строго читает точный payload внутри frame', () => {
+    const payload = encodeInvisible('секрет');
 
-    expect(stripInvisible(content)).toBe('обычный текст');
-    expect(decodeInvisible(content)).toBe('секрет');
+    expect(invisible.decode(payload)).toBe('секрет');
+    expect(invisible.decode(`текст${payload}`)).toBeNull();
   });
 
   it('переживает нормализацию текста сервером', () => {
@@ -113,6 +112,8 @@ describe('обычный текст', () => {
 describe('шифр как объект', () => {
   it('называется invisible и работает без обложки', () => {
     expect(invisible.name).toBe(CipherName.Invisible);
-    expect(invisible.decode(invisible.encode('текст'))).toBe('текст');
+    expect(invisible.id).toBe(2);
+    expect(invisible.supportsFragments).toBe(true);
+    expect(invisible.decode(invisible.encode?.('текст') ?? '')).toBe('текст');
   });
 });

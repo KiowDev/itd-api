@@ -3,7 +3,6 @@ import {
   BEECRYPT_ALPHABET,
   beecrypt,
   CipherName,
-  CryptError,
   decodeBeeCrypt,
   encodeBeeCrypt,
   hasBeeCrypt,
@@ -76,11 +75,7 @@ describe('обычный текст', () => {
 describe('шифр как объект', () => {
   it('называется beecrypt', () => {
     expect(beecrypt.name).toBe(CipherName.BeeCrypt);
-    expect(beecrypt.decode(beecrypt.encode('текст'))).toBe('текст');
-  });
-
-  it('отвергает обложку: прятать шифротекст ему негде', () => {
-    expect(() => beecrypt.encode('секрет', { cover: 'обычный текст' })).toThrow(CryptError);
-    expect(beecrypt.encode('секрет', { cover: '' })).toBe(encodeBeeCrypt('секрет'));
+    expect(beecrypt.id).toBe(1);
+    expect(beecrypt.decode(beecrypt.encode?.('текст') ?? '')).toBe('текст');
   });
 });

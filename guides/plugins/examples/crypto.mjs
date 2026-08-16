@@ -14,10 +14,11 @@
  */
 
 import { ItdClient, isItdApiError } from 'itd-api';
-import { crypt, stripInvisible } from '@itd-api/crypto';
+import { crypt } from '@itd-api/crypto';
 
-const COVER = 'обычный пост, ничего необычного';
 const SECRET = 'секретный текст: 🦎 привет из @itd-api/crypto';
+const CONTENT = `обычный пост: ${SECRET}`;
+const OFFSET = CONTENT.indexOf(SECRET);
 
 const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
 
@@ -25,22 +26,22 @@ const itd = new ItdClient({ auth: process.env.ITD_TOKEN });
 itd.use(crypt());
 
 try {
-  const created = await itd.posts.create(
-    { content: SECRET },
-    { extensions: { crypto: { encrypt: { cipher: 'invisible', cover: COVER } } } },
-  );
+  const created = await itd.posts.create({
+    content: CONTENT,
+    spans: [{ type: 'crypto', cipher: 'invisible', offset: OFFSET, length: SECRET.length }],
+  });
   console.log(`Опубликован пост ${created.id}`);
 
   // Читаем с сервера, а не берём ответ на публикацию: интересно именно то,
   // что сохранилось после нормализации.
   const post = await itd.posts.get(created.id);
 
-  console.log(`Видят все:  ${stripInvisible(post.content)}`);
-  console.log(`Спрятано:   ${post.secret?.text ?? '— ничего не нашлось —'}`);
-  console.log(`Длина:      ${post.content.length} символов вместо ${COVER.length}`);
+  console.log(`Ответ:      ${post.content}`);
+  console.log(`Раскрыто:   ${post.decoded?.content?.text ?? '— ничего не нашлось —'}`);
+  console.log(`Длина ответа: ${post.content.length} позиций UTF-16`);
 
   console.log(
-    post.secret?.text === SECRET
+    post.decoded?.content?.text === CONTENT
       ? '✔ сообщение пережило сохранение на сервере'
       : '✘ сообщение потерялось — формат разошёлся с тем, что делает сервер',
   );

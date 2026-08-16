@@ -1,5 +1,4 @@
-import { type Cipher, CipherName, type EncodeOptions } from '../cipher.js';
-import { CryptError } from '../errors.js';
+import { type Cipher, CipherName } from '../cipher.js';
 
 /**
  * Алфавит: четыре кириллические буквы, по две на пару битов.
@@ -16,7 +15,16 @@ const BASE64_DIGITS = [...BASE64_ALPHABET];
 const BASE64_INDEX = new Map(BASE64_DIGITS.map((char, position) => [char, position]));
 const BASE64_PAD = '='.charCodeAt(0);
 
-/** Кодирует текст в видимые кириллические буквы. */
+/**
+ * Кодирует текст видимыми кириллическими буквами.
+ *
+ * @example
+ * ```ts
+ * encodeBeeCrypt('A'); // 'ъъжъъъжъжЪЪъжЪЪъ'
+ * ```
+ *
+ * @returns строка из символов {@link BEECRYPT_ALPHABET}
+ */
 export function encodeBeeCrypt(text: string): string {
   const base64 = toBase64(new TextEncoder().encode(text));
   const out: string[] = [];
@@ -35,6 +43,12 @@ export function encodeBeeCrypt(text: string): string {
  *
  * @returns `null`, если строка состоит не только из букв алфавита или не складывается
  * в корректный base64 и UTF-8
+ *
+ * @example
+ * ```ts
+ * decodeBeeCrypt(encodeBeeCrypt('секрет')); // 'секрет'
+ * decodeBeeCrypt('обычный текст');           // null
+ * ```
  */
 export function decodeBeeCrypt(text: string): string | null {
   const codes: number[] = [];
@@ -73,7 +87,7 @@ export function decodeBeeCrypt(text: string): string | null {
   }
 }
 
-/** Есть ли в строке сообщение этого шифра. */
+/** Проверяет, является ли строка корректным сообщением `beecrypt`. */
 export function hasBeeCrypt(text: string): boolean {
   return typeof text === 'string' && decodeBeeCrypt(text) !== null;
 }
@@ -130,23 +144,14 @@ function fromBase64(text: string): Uint8Array {
  *
  * Текст переводится в base64, а каждая пара битов его символов заменяется буквой
  * из {@link BEECRYPT_ALPHABET}. Шифротекст **виден целиком** и выглядит как «ЖъЪжЖъ…»,
- * поэтому обложки у этого шифра нет: спрятать сообщение внутри обычного поста нечем.
+ * поэтому алгоритм применяется только ко всему полю. Стабильный идентификатор — `1`.
  *
  * Это тоже **обфускация, а не шифрование**. Длина растёт вчетверо от base64,
  * то есть примерно в 5–6 раз от исходного текста.
  */
 export const beecrypt: Cipher = {
   name: CipherName.BeeCrypt,
-  acceptsCover: false,
-  encode(text: string, options: EncodeOptions = {}): string {
-    if (options.cover !== undefined && options.cover !== '') {
-      throw new CryptError(
-        'Шифр beecrypt не принимает обложку: шифротекст виден целиком, и спрятать его ' +
-          'внутри видимого текста нельзя. Обложка есть у invisible.',
-      );
-    }
-
-    return encodeBeeCrypt(text);
-  },
+  id: 1,
+  encode: encodeBeeCrypt,
   decode: decodeBeeCrypt,
 };

@@ -65,14 +65,14 @@ const crypto = crypt();
 itd.use(crypto);
 itd.notifications.events.use(crypto);
 
-const created = await itd.posts.create(
-  { content: 'секретный текст' },
-  { extensions: { crypto: { encrypt: { cipher: 'invisible', cover: 'обычный пост' } } } },
-);
+const created = await itd.posts.create({
+  content: 'обычный пост: секретный текст',
+  spans: [{ type: 'crypto', cipher: 'invisible', offset: 14, length: 15 }],
+});
 
 const post = await itd.posts.get(created.id);
-console.log(post.content);      // обложка
-console.log(post.secret?.text); // секретный текст
+console.log(post.content);                 // исходное значение ответа сервера
+console.log(post.decoded?.content?.text);  // обычный пост: секретный текст
 ```
 
 Плагин обрабатывает посты, комментарии, ответы, текстовые поля профиля и превью уведомлений.

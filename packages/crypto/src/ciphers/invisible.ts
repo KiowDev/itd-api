@@ -1,7 +1,7 @@
-import { type Cipher, CipherName, type EncodeOptions } from '../cipher.js';
+import { type Cipher, CipherName } from '../cipher.js';
 
 /**
- * Алфавит: шесть невидимых deprecated-format символов `U+206A`…`U+206F`.
+ * Алфавит из шести невидимых управляющих символов `U+206A`…`U+206F`.
  *
  * Других невидимых символов здесь быть не может: сервер итд.com заменяет их пробелом
  * (`U+2000`–`U+2002`, `U+200A`, `U+202F`) либо удаляет (`U+200B`, `U+200C`).
@@ -24,15 +24,19 @@ const DIGITS = [...INVISIBLE_ALPHABET];
 const INDEX = new Map(DIGITS.map((char, position) => [char, position]));
 
 /**
- * Прячет текст в невидимых символах.
+ * Кодирует строку невидимыми символами.
  *
- * Результат состоит только из символов {@link INVISIBLE_ALPHABET} и вставляется в любое
- * место видимого текста — обычно в конец.
+ * Результат состоит только из символов {@link INVISIBLE_ALPHABET}. Новый протокол
+ * помещает его внутрь общего контейнера. При прямом использовании функция возвращает
+ * только закодированную нагрузку без маркеров и идентификатора алгоритма.
  *
  * @example
  * ```ts
- * await itd.posts.create({ content: `смотри что нашёл${encodeInvisible('секрет')}` });
+ * const encoded = encodeInvisible('секрет');
+ * decodeInvisible(encoded); // 'секрет'
  * ```
+ *
+ * @returns строка длиной четыре символа на каждый байт UTF-8
  */
 export function encodeInvisible(text: string): string {
   const bytes = new TextEncoder().encode(text);
@@ -54,10 +58,10 @@ export function encodeInvisible(text: string): string {
 }
 
 /**
- * Оставляет в строке только символы алфавита.
+ * Извлекает из строки символы невидимого алфавита.
  *
- * Заодно решает главную задачу формата: обложка и всё, что сервер добавил от себя,
- * отбрасываются, а нагрузка собирается обратно, даже если её разорвали пробелами.
+ * Все остальные символы отбрасываются, а раздельные невидимые части собираются в одну
+ * нагрузку.
  *
  * @returns `null`, если символов алфавита не набралось и на один байт
  */
@@ -68,7 +72,7 @@ export function extractInvisible(text: string): string | null {
   return payload.length >= INVISIBLE_WIDTH ? payload : null;
 }
 
-/** Видимая часть строки: то же самое без нагрузки. */
+/** Удаляет из строки все символы {@link INVISIBLE_ALPHABET}. */
 export function stripInvisible(text: string): string {
   let visible = '';
   for (const char of text) if (!INDEX.has(char)) visible += char;
@@ -77,7 +81,11 @@ export function stripInvisible(text: string): string {
 }
 
 /**
- * Достаёт спрятанный текст.
+ * Декодирует невидимую нагрузку из произвольной строки.
+ *
+ * Сначала функция собирает все символы {@link INVISIBLE_ALPHABET}, поэтому несколько
+ * отдельных нагрузок будут объединены. Для разбора контейнеров и независимых участков
+ * используйте {@link decodeTree} или подключённый {@link crypt}.
  *
  * @returns `null`, если нагрузки нет или она не складывается в корректный UTF-8
  *
@@ -91,16 +99,31 @@ export function decodeInvisible(text: string): string | null {
   const payload = extractInvisible(text);
   if (payload === null) return null;
 
+  return decodeInvisiblePayload(payload, true);
+}
+
+/**
+ * Декодирует точную нагрузку `invisible` без фильтрации посторонних символов.
+ *
+ * @param encoded строка, состоящая только из {@link INVISIBLE_ALPHABET}
+ * @param allowTruncatedUtf8 разрешить отбросить неполный хвост UTF-8
+ * @returns исходный текст либо `null` при неверном алфавите, байтах или UTF-8
+ */
+export function decodeInvisiblePayload(encoded: string, allowTruncatedUtf8 = false): string | null {
+  if (encoded.length < INVISIBLE_WIDTH) return null;
+  if (!allowTruncatedUtf8 && encoded.length % INVISIBLE_WIDTH !== 0) return null;
+  for (const char of encoded) if (!INDEX.has(char)) return null;
+
   // Неполный хвост отбрасывается: он означает, что часть нагрузки не дошла,
   // а гадать о недостающих цифрах бессмысленно.
-  const count = Math.trunc(payload.length / INVISIBLE_WIDTH);
+  const count = Math.trunc(encoded.length / INVISIBLE_WIDTH);
   const bytes = new Uint8Array(count);
 
   for (let byte = 0; byte < count; byte++) {
     let value = 0;
     for (let digit = 0; digit < INVISIBLE_WIDTH; digit++) {
       value =
-        value * INVISIBLE_BASE + (INDEX.get(payload[byte * INVISIBLE_WIDTH + digit] ?? '') ?? 0);
+        value * INVISIBLE_BASE + (INDEX.get(encoded[byte * INVISIBLE_WIDTH + digit] ?? '') ?? 0);
     }
 
     // Четыре цифры дают до 1295, а байт — до 255. Значений из верхнего диапазона
@@ -109,7 +132,7 @@ export function decodeInvisible(text: string): string | null {
     bytes[byte] = value;
   }
 
-  return decodeUtf8(bytes);
+  return decodeUtf8(bytes, allowTruncatedUtf8);
 }
 
 /**
@@ -119,10 +142,11 @@ export function decodeInvisible(text: string): string | null {
  * для обрезанной нагрузки — потерять стоит одну букву, а не всё сообщение. Дальше трёх
  * байтов отступать незачем: длиннее незавершённой последовательности UTF-8 не бывает.
  */
-function decodeUtf8(bytes: Uint8Array): string | null {
+function decodeUtf8(bytes: Uint8Array, allowTruncated: boolean): string | null {
   const decoder = new TextDecoder('utf-8', { fatal: true });
 
-  for (let dropped = 0; dropped <= 3 && dropped < bytes.length; dropped++) {
+  const maxDropped = allowTruncated ? Math.min(3, bytes.length - 1) : 0;
+  for (let dropped = 0; dropped <= maxDropped; dropped++) {
     try {
       const text = decoder.decode(bytes.subarray(0, bytes.length - dropped));
       // Пустая строка означает, что от сообщения ничего не осталось, — это не находка.
@@ -135,7 +159,7 @@ function decodeUtf8(bytes: Uint8Array): string | null {
   return null;
 }
 
-/** Есть ли в строке спрятанное сообщение. */
+/** Проверяет, содержит ли строка распознаваемую невидимую нагрузку. */
 export function hasInvisible(text: string): boolean {
   return typeof text === 'string' && decodeInvisible(text) !== null;
 }
@@ -143,9 +167,9 @@ export function hasInvisible(text: string): boolean {
 /**
  * Стеганография невидимыми символами.
  *
- * Использует только те символы, которые сервер итд.com не трогает при сохранении поста,
- * поэтому сообщение читается обратно без потерь. Единственный шифр, который умеет обложку:
- * нагрузка невидима и крепится к видимому тексту, ничего в нём не меняя.
+ * Использует только те символы, которые сервер итд.com не трогает при сохранении поста.
+ * Плагин оборачивает точную нагрузку в общий контейнер и может размещать её между
+ * открытыми участками текста. Алгоритм имеет стабильный идентификатор `2`.
  *
  * Это **обфускация, а не шифрование**: кто знает алфавит — прочитает сообщение.
  * Для секретности комбинируйте с настоящим шифром.
@@ -155,9 +179,17 @@ export function hasInvisible(text: string): boolean {
  */
 export const invisible: Cipher = {
   name: CipherName.Invisible,
-  acceptsCover: true,
-  encode(text: string, options: EncodeOptions = {}): string {
-    return (options.cover ?? '') + encodeInvisible(text);
-  },
-  decode: decodeInvisible,
+  id: 2,
+  requiresInvisibleAlphabet: true,
+  supportsFragments: true,
+  encode: encodeInvisible,
+  decode: (encoded) => decodeInvisiblePayload(encoded),
+};
+
+/** @internal */
+export const legacyInvisibleDecoder: Cipher = {
+  name: 'invisible-legacy',
+  id: 0,
+  requiresInvisibleAlphabet: true,
+  decode: (encoded) => decodeInvisiblePayload(encoded, true),
 };

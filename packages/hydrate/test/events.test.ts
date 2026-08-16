@@ -144,11 +144,11 @@ describe('гидратация событий', () => {
       (builder) => builder.content('Секретный ответ').replyTo('user-alice'),
       {
         extensions: {
-          crypto: { encrypt: { cipher: 'invisible', cover: 'Обычный ответ' } },
+          crypto: { encrypt: 'invisible' },
         },
       },
     );
-    expect(reply?.secret?.text).toBe('Секретный ответ');
+    expect(reply?.decoded?.content?.text).toBe('Секретный ответ');
     expect(typeof reply?.getReplies).toBe('function');
     expect(
       server

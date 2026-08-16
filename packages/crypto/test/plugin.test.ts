@@ -6,42 +6,45 @@ import {
   NotificationUpdateType,
   RetrySafety,
   runEventMiddleware,
+  type Span,
 } from 'itd-api';
 import { describe, expect, it } from 'vitest';
 import {
+  BUILT_IN_CIPHERS,
   beecrypt,
-  CryptError,
+  type Cipher,
+  CipherName,
   type CryptRequestOptions,
   crypt,
+  decodeTree,
   encodeBeeCrypt,
   encodeInvisible,
-  invisible,
-  secretOf,
-  stripInvisible,
+  FRAME_END,
+  FRAME_START,
+  INVISIBLE_ALPHABET,
 } from '../src/index.js';
 
 const cryptoOptions = (options: CryptRequestOptions) => ({ extensions: { crypto: options } });
 
-/** Перехваченный запрос: нужен и URL, и тело. */
 interface Call {
   url: string;
   method: string;
   body: Record<string, unknown>;
 }
 
-function makeClient(responses: unknown[]) {
+function makeClient(
+  respond: (call: Call, index: number) => unknown = (call) => ({ id: '1', ...call.body }),
+) {
   const calls: Call[] = [];
-  let index = 0;
 
   const fetchMock = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({
+    const call: Call = {
       url: String(input),
       method: init?.method ?? 'GET',
       body: typeof init?.body === 'string' ? JSON.parse(init.body) : {},
-    });
-
-    const payload = responses[index++] ?? {};
-    return new Response(JSON.stringify({ data: payload }), {
+    };
+    calls.push(call);
+    return new Response(JSON.stringify({ data: respond(call, calls.length - 1) }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -55,23 +58,129 @@ function makeClient(responses: unknown[]) {
     rateLimit: false,
     mode: 'server',
   });
-
   return { itd, calls };
 }
 
-describe('порядок плагинов', () => {
-  it('ставит crypt снаружи cache независимо от порядка подключения', () => {
-    const { itd } = makeClient([]);
-    itd.use({ name: 'cache', install() {} });
-    itd.use(crypt());
+function fragmentCipher(id: number, name = `cipher-${id}`): Cipher {
+  return {
+    id,
+    name,
+    supportsFragments: true,
+    encode: (text) => `[${text}]`,
+    decode: (payload) =>
+      payload.startsWith('[') && payload.endsWith(']') ? payload.slice(1, -1) : null,
+  };
+}
 
-    expect(itd.pluginNames()).toEqual(['crypt', 'cache']);
+describe('реестр cipher', () => {
+  it('не включает служебный декодер в публичный контракт', () => {
+    expect(Object.values(CipherName)).toEqual(['beecrypt', 'invisible']);
+    expect(BUILT_IN_CIPHERS.map((cipher) => cipher.name)).toEqual(['beecrypt', 'invisible']);
+    expect(() => crypt({ ciphers: [fragmentCipher(0)] })).toThrow(/зарезервирован/);
+    expect(() => crypt({ ciphers: [fragmentCipher(3, 'invisible-legacy')] })).toThrow(
+      /зарезервирован/,
+    );
+  });
+
+  it('проверяет ID, имена и зарезервированные соответствия при подключении', () => {
+    expect(() => crypt({ ciphers: [{ ...fragmentCipher(5), id: -1 }] })).toThrow(/safe integer/);
+    expect(() => crypt({ ciphers: [fragmentCipher(5), fragmentCipher(5, 'other')] })).toThrow(
+      /ID 5/,
+    );
+    expect(() => crypt({ ciphers: [fragmentCipher(2)] })).toThrow(/зарезервирован/);
+    expect(() =>
+      crypt({ ciphers: [fragmentCipher(5, 'same'), fragmentCipher(6, 'same')] }),
+    ).toThrow(/имя cipher/i);
   });
 });
 
 describe('шифрование запроса', () => {
-  it('шифрует поля подключаемого feature из метаданных операции', async () => {
-    const { itd, calls } = makeClient([{ id: 'm1' }]);
+  it('заменяет crypto span на frame и восстанавливает plaintext без мутации входа', async () => {
+    const inputSpans: Span[] = [
+      { type: 'bold', offset: 6, length: 6 },
+      { type: 'crypto', cipher: 'invisible', offset: 6, length: 6 },
+    ];
+    const input = { content: 'видно секрет видно', spans: inputSpans };
+    const { itd, calls } = makeClient();
+    itd.use(crypt());
+
+    const post = await itd.posts.create(input);
+    const sent = calls[0]?.body;
+
+    expect(input).toEqual({ content: 'видно секрет видно', spans: inputSpans });
+    expect(String(sent?.content)).toContain(FRAME_START);
+    expect(sent?.spans).toEqual([
+      { type: 'bold', offset: 6, length: String(sent?.content).length - 12 },
+    ]);
+    expect(post.content).toBe(sent?.content);
+    expect(post.decoded?.content).toEqual({
+      text: input.content,
+      spans: [
+        { type: 'bold', offset: 6, length: 6 },
+        { type: 'crypto', cipher: 'invisible', cipherId: 2, offset: 6, length: 6 },
+      ],
+    });
+  });
+
+  const intersections: Array<[string, Span]> = [
+    ['совпадает', { type: 'bold', offset: 4, length: 6 }],
+    ['охватывает', { type: 'bold', offset: 2, length: 10 }],
+    ['внутри', { type: 'bold', offset: 6, length: 2 }],
+    ['пересекает начало', { type: 'bold', offset: 2, length: 4 }],
+    ['пересекает конец', { type: 'bold', offset: 8, length: 4 }],
+  ];
+
+  for (const [name, visual] of intersections) {
+    it(`сохраняет visual span, который ${name} crypto-диапазон`, async () => {
+      const { itd, calls } = makeClient();
+      itd.use(crypt());
+      const cryptoSpan: Span = {
+        type: 'crypto',
+        cipher: 'invisible',
+        offset: 4,
+        length: 6,
+      };
+
+      const post = await itd.posts.create({ content: '0123456789AB', spans: [visual, cryptoSpan] });
+
+      expect((calls[0]?.body.spans as Span[] | undefined)?.[0]?.type).toBe('bold');
+      expect(post.decoded?.content?.text).toBe('0123456789AB');
+      expect(post.decoded?.content?.spans).toContainEqual(visual);
+      expect(post.decoded?.content?.spans).toContainEqual({
+        type: 'crypto',
+        cipher: 'invisible',
+        cipherId: 2,
+        offset: 4,
+        length: 6,
+      });
+    });
+  }
+
+  it('поддерживает raw ranges, разные ciphers и числовые ссылки', async () => {
+    const custom = fragmentCipher(3, 'brackets');
+    const { itd } = makeClient();
+    itd.use(crypt({ ciphers: [...BUILT_IN_CIPHERS, custom] }));
+
+    const comment = await itd.posts.comment(
+      'p1',
+      'видно один и два видно',
+      cryptoOptions({
+        spans: [
+          { cipher: 'invisible', offset: 6, length: 4 },
+          { cipher: 3, offset: 13, length: 3 },
+        ],
+      }),
+    );
+
+    expect(comment.decoded?.content?.text).toBe('видно один и два видно');
+    expect(comment.decoded?.content?.spans.filter((span) => span.type === 'crypto')).toEqual([
+      { type: 'crypto', cipher: 'invisible', cipherId: 2, offset: 6, length: 4 },
+      { type: 'crypto', cipher: 'brackets', cipherId: 3, offset: 13, length: 3 },
+    ]);
+  });
+
+  it('использует metadata custom-операции при отправке и чтении', async () => {
+    const { itd } = makeClient();
     itd.use(crypt());
     const chats = itd.install({
       name: 'chats',
@@ -79,7 +188,13 @@ describe('шифрование запроса', () => {
         send: {
           method: 'POST',
           retrySafety: RetrySafety.Unsafe,
-          annotations: { crypto: { requestFields: ['message'] } },
+          annotations: {
+            crypto: {
+              requestFields: [
+                { name: 'message', maxLength: 1000, preservesInvisibleAlphabet: true },
+              ],
+            },
+          },
         },
       },
       setup: (context) => ({
@@ -94,297 +209,236 @@ describe('шифрование запроса', () => {
       }),
     });
 
-    await chats.send('секрет');
-
-    const sent = String(calls[0]?.body.message);
-    expect(stripInvisible(sent)).toBe('');
-    expect(invisible.decode(sent)).toBe('секрет');
+    const result = (await chats.send('секрет')) as {
+      message: string;
+      decoded?: { message?: { text: string } };
+    };
+    expect(result.message).toContain(FRAME_START);
+    expect(result.decoded?.message?.text).toBe('секрет');
   });
 
-  it('прячет текст поста', async () => {
-    const { itd, calls } = makeClient([{ id: '1' }]);
+  it('склеивает соседние участки одного cipher после чтения', async () => {
+    const { itd } = makeClient();
     itd.use(crypt());
-
-    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: 'invisible' }));
-
-    const sent = String(calls[0]?.body.content);
-    expect(stripInvisible(sent)).toBe('');
-    expect(invisible.decode(sent)).toBe('секрет');
-  });
-
-  it('оставляет обложку видимой', async () => {
-    const { itd, calls } = makeClient([{ id: '1' }]);
-    itd.use(crypt());
-
-    await itd.posts.create(
-      { content: 'секрет' },
-      cryptoOptions({ encrypt: { cipher: 'invisible', cover: 'обычный текст' } }),
-    );
-
-    const sent = String(calls[0]?.body.content);
-    expect(stripInvisible(sent)).toBe('обычный текст');
-    expect(invisible.decode(sent)).toBe('секрет');
-  });
-
-  it('без encrypt тело не трогает', async () => {
-    const { itd, calls } = makeClient([{ id: '1' }]);
-    itd.use(crypt());
-
-    await itd.posts.create({ content: 'обычный пост' });
-
-    expect(calls[0]?.body.content).toBe('обычный пост');
-  });
-
-  it('работает для комментария, ответа и правки', async () => {
-    const { itd, calls } = makeClient([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }]);
-    itd.use(crypt());
-
-    await itd.posts.comment('p1', 'секрет', cryptoOptions({ encrypt: 'invisible' }));
-    await itd.comments.reply('c1', 'ответ', cryptoOptions({ encrypt: 'invisible' }));
-    await itd.comments.update('c1', 'правка', cryptoOptions({ encrypt: 'invisible' }));
-
-    expect(calls.map((call) => invisible.decode(String(call.body.content)))).toEqual([
-      'секрет',
-      'ответ',
-      'правка',
-    ]);
-  });
-
-  it('шифрует профиль целиком, а с fields — только выбранное поле', async () => {
-    const { itd, calls } = makeClient([{ id: 'u1' }, { id: 'u1' }]);
-    itd.use(crypt());
-
-    await itd.users.updateMe(
-      { displayName: 'имя', bio: 'подпись' },
-      cryptoOptions({ encrypt: 'invisible' }),
-    );
-    await itd.users.updateMe(
-      { displayName: 'имя', bio: 'подпись' },
+    const post = await itd.posts.create(
+      { content: 'одиндва' },
       cryptoOptions({
-        encrypt: { cipher: 'invisible', fields: ['bio'], cover: 'видимая подпись' },
+        spans: [
+          { cipher: 2, offset: 0, length: 4 },
+          { cipher: 2, offset: 4, length: 3 },
+        ],
       }),
     );
 
-    expect(invisible.decode(String(calls[0]?.body.displayName))).toBe('имя');
-    expect(invisible.decode(String(calls[0]?.body.bio))).toBe('подпись');
-
-    expect(calls[1]?.body.displayName).toBe('имя');
-    expect(stripInvisible(String(calls[1]?.body.bio))).toBe('видимая подпись');
+    expect(post.decoded?.content?.spans).toEqual([
+      { type: 'crypto', cipher: 'invisible', cipherId: 2, offset: 0, length: 7 },
+    ]);
   });
 
-  it('отказывается шифровать там, где текста нет', async () => {
-    const { itd } = makeClient([{}]);
+  it('шифрует displayName и bio независимо whole-field шифром', async () => {
+    const { itd, calls } = makeClient();
     itd.use(crypt());
 
-    await expect(itd.posts.like('p1', cryptoOptions({ encrypt: 'invisible' }))).rejects.toThrow(
-      CryptError,
-    );
-  });
-
-  it('сообщает о неизвестном шифре и о чужом поле', async () => {
-    const { itd } = makeClient([{}, {}]);
-    itd.use(crypt());
-
-    await expect(
-      itd.posts.create({ content: 'x' }, cryptoOptions({ encrypt: 'coffee' })),
-    ).rejects.toThrow(/не подключён/);
-    await expect(
-      itd.posts.create({ content: 'x' }, cryptoOptions({ encrypt: { fields: ['bio'] } })),
-    ).rejects.toThrow(/не принимает поля bio/);
-  });
-
-  it('не даёт одной обложкой затереть и имя, и подпись', async () => {
-    const { itd } = makeClient([{}]);
-    itd.use(crypt());
-
-    await expect(
-      itd.users.updateMe(
-        { displayName: 'имя', bio: 'подпись' },
-        cryptoOptions({ encrypt: { cover: 'одна на двоих' } }),
-      ),
-    ).rejects.toThrow(/Выберите одно через fields/);
-  });
-});
-
-describe('разметка при шифровании', () => {
-  const spans = [{ type: 'bold' as const, offset: 0, length: 6 }];
-
-  it('spans по обложке уходят как есть', async () => {
-    const { itd, calls } = makeClient([{ id: '1' }]);
-    itd.use(crypt());
-
-    await itd.posts.create(
-      { content: 'секрет', spans },
-      cryptoOptions({ encrypt: { cipher: 'invisible', cover: 'жирное слово' } }),
+    const profile = await itd.users.updateMe(
+      { displayName: 'имя', bio: 'подпись' },
+      cryptoOptions({ encrypt: 'beecrypt' }),
     );
 
-    expect(calls[0]?.body.spans).toEqual(spans);
-    expect(stripInvisible(String(calls[0]?.body.content))).toBe('жирное слово');
+    expect(beecrypt.decode(String(calls[0]?.body.displayName))).toBe('имя');
+    expect(beecrypt.decode(String(calls[0]?.body.bio))).toBe('подпись');
+    expect(profile.decoded?.displayName?.text).toBe('имя');
+    expect(profile.decoded?.bio?.text).toBe('подпись');
   });
 
-  it('без обложки разметку крепить не к чему', async () => {
-    const { itd } = makeClient([{}]);
+  it('не применяет invisible к полям без невидимого алфавита', async () => {
+    const { itd, calls } = makeClient();
     itd.use(crypt());
 
     await expect(
-      itd.posts.create({ content: 'секрет', spans }, cryptoOptions({ encrypt: 'invisible' })),
-    ).rejects.toThrow(/обложка не задана/);
+      itd.users.updateMe({ displayName: 'имя' }, cryptoOptions({ encrypt: 'invisible' })),
+    ).rejects.toThrow(/не сохраняет невидимый алфавит/);
+    expect(calls).toHaveLength(0);
   });
 
-  it('шифр без обложки разметку не переживёт', async () => {
-    const { itd } = makeClient([{}]);
-    itd.use(crypt());
-
-    await expect(
-      itd.posts.create({ content: 'секрет', spans }, cryptoOptions({ encrypt: 'beecrypt' })),
-    ).rejects.toThrow(/не оставляет видимого текста/);
-  });
-
-  it('ловит spans, посчитанные по секрету вместо обложки', async () => {
-    const { itd } = makeClient([{}]);
+  it('проверяет конфликты, диапазоны и семантические spans до сети', async () => {
+    const { itd, calls } = makeClient();
     itd.use(crypt());
 
     await expect(
       itd.posts.create(
-        { content: 'жирное слово', spans },
-        cryptoOptions({ encrypt: { cipher: 'invisible', cover: 'ок' } }),
+        { content: 'секрет' },
+        cryptoOptions({ encrypt: 'invisible', spans: [{ cipher: 2, offset: 0, length: 1 }] }),
       ),
-    ).rejects.toThrow(/не укладывается в обложку/);
+    ).rejects.toThrow(/encrypt нельзя/);
+    await expect(
+      itd.posts.create({ content: 'секрет' }, cryptoOptions({ spans: [] })),
+    ).rejects.toThrow(/не может быть пустым/);
+    await expect(itd.posts.create({ content: 'секрет' }, cryptoOptions({}))).rejects.toThrow(
+      /укажите encrypt или spans/,
+    );
+    await expect(
+      itd.posts.create({
+        content: 'секрет',
+        spans: [
+          { type: 'link', url: 'https://example.com', offset: 0, length: 3 },
+          { type: 'crypto', cipher: 2, offset: 1, length: 2 },
+        ],
+      }),
+    ).rejects.toThrow(/семантическим span/);
+    await expect(
+      itd.posts.create(
+        { content: 'секрет' },
+        cryptoOptions({
+          spans: [
+            { cipher: 2, offset: 0, length: 3 },
+            { cipher: 2, offset: 2, length: 2 },
+          ],
+        }),
+      ),
+    ).rejects.toThrow(/пересекаются/);
+    expect(calls).toHaveLength(0);
   });
 
-  it('без spans обложка ничем не ограничена', async () => {
-    const { itd, calls } = makeClient([{ id: '1' }]);
+  it('whole-field beecrypt принимает только внешние visual spans', async () => {
+    const full: Span = { type: 'bold', offset: 0, length: 6 };
+    const ok = makeClient();
+    ok.itd.use(crypt());
+    const post = await ok.itd.posts.create(
+      { content: 'секрет', spans: [full] },
+      cryptoOptions({ encrypt: 'beecrypt' }),
+    );
+    expect(post.decoded?.content?.spans).toContainEqual(full);
+
+    const bad = makeClient();
+    bad.itd.use(crypt());
+    await expect(
+      bad.itd.posts.create(
+        { content: 'секрет', spans: [{ type: 'bold', offset: 1, length: 3 }] },
+        cryptoOptions({ encrypt: 'beecrypt' }),
+      ),
+    ).rejects.toThrow(/внутренними границами/);
+  });
+
+  it('проверяет итоговый UTF-16 лимит content', async () => {
+    const { itd, calls } = makeClient();
     itd.use(crypt());
 
-    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: { cover: 'ок' } }));
+    await expect(
+      itd.posts.create({ content: 'x'.repeat(248) }, cryptoOptions({ encrypt: 'invisible' })),
+    ).rejects.toThrow(/лимит 1000/);
+    expect(calls).toHaveLength(0);
+  });
 
-    expect(stripInvisible(String(calls[0]?.body.content))).toBe('ок');
+  it('отвергает маркеры frame внутри payload custom cipher', async () => {
+    const bad: Cipher = {
+      id: 5,
+      name: 'bad-payload',
+      supportsFragments: true,
+      encode: () => FRAME_START,
+      decode: () => null,
+    };
+    const { itd } = makeClient();
+    itd.use(crypt({ ciphers: [bad] }));
+
+    await expect(itd.posts.create({ content: 'x' }, cryptoOptions({ encrypt: 5 }))).rejects.toThrow(
+      /содержит маркер frame/,
+    );
   });
 });
 
-describe('расшифровка ответа', () => {
-  const hidden = (visible: string, secret: string) => visible + encodeInvisible(secret);
+describe('расшифровка', () => {
+  it.each([5, 29, 39, 40, 74])('разбирает расширенный cipher ID %i', async (id) => {
+    const cipher = fragmentCipher(id);
+    const { itd } = makeClient();
+    itd.use(crypt({ ciphers: [cipher] }));
 
-  it('находит сообщение в посте, не трогая content', async () => {
-    const content = hidden('обычный текст', 'секрет');
-    const { itd } = makeClient([{ id: '1', content }]);
-    itd.use(crypt());
+    const post = await itd.posts.create(
+      { content: 'до секрет после' },
+      cryptoOptions({ spans: [{ cipher: id, offset: 3, length: 6 }] }),
+    );
 
-    const post = await itd.posts.get('1');
-
-    expect(post.content).toBe(content);
-    expect(post.secret).toEqual({ cipher: 'invisible', field: 'content', text: 'секрет' });
-    expect(secretOf(post)?.text).toBe('секрет');
-  });
-
-  it('обходит ленту вглубь: репост, комментарии, автора', async () => {
-    const { itd } = makeClient([
-      {
-        posts: [
-          {
-            id: '1',
-            content: hidden('репост', 'снаружи'),
-            author: { id: 'u1', displayName: hidden('Имя', 'автор') },
-            originalPost: { id: '0', content: hidden('исходный', 'внутри') },
-            comments: [{ id: 'c1', content: hidden('коммент', 'в комменте') }],
-          },
-        ],
-        pagination: { hasMore: false, nextCursor: null },
-      },
-    ]);
-    itd.use(crypt());
-
-    const page = await itd.posts.list();
-    const post = page.items[0];
-
-    expect(post?.secret?.text).toBe('снаружи');
-    expect(post?.originalPost?.secret?.text).toBe('внутри');
-    expect(post?.comments?.[0]?.secret?.text).toBe('в комменте');
-    expect(post?.author.secret).toEqual({
-      cipher: 'invisible',
-      field: 'displayName',
-      text: 'автор',
+    expect(post.decoded?.content?.text).toBe('до секрет после');
+    expect(post.decoded?.content?.spans).toContainEqual({
+      type: 'crypto',
+      cipher: `cipher-${id}`,
+      cipherId: id,
+      offset: 3,
+      length: 6,
     });
   });
 
-  it('расшифровывает preview нормализованного REST-уведомления', async () => {
-    const preview = hidden('обычный текст', 'секрет уведомления');
-    const { itd } = makeClient([
-      {
-        notifications: [
-          {
-            id: 'n1',
-            type: 'comment',
-            targetId: 'p1',
-            subjectId: 'c1',
-            subjectType: 'comment',
-            entityPreview: preview,
-          },
-        ],
-        hasMore: false,
-      },
-    ]);
-    itd.use(crypt());
+  it('оставляет повреждённые и неизвестные frames raw', () => {
+    const id2 = INVISIBLE_ALPHABET[2] ?? '';
+    const id3 = INVISIBLE_ALPHABET[3] ?? '';
+    const id4 = INVISIBLE_ALPHABET[4] ?? '';
+    const missingEnd = FRAME_START + id2 + encodeInvisible('секрет');
+    const unknown = `${FRAME_START + id4}text${encodeInvisible('секрет')}${FRAME_END}`;
+    const rejected = `${FRAME_START + id3}bad${FRAME_END}`;
+    const rejecting: Cipher = { ...fragmentCipher(3, 'rejecting'), decode: () => null };
 
-    const notification = (await itd.notifications.list()).items[0];
-
-    expect(notification?.preview).toBe(preview);
-    expect(notification?.secret).toEqual({
-      cipher: 'invisible',
-      field: 'preview',
-      text: 'секрет уведомления',
+    expect(decodeTree({ content: missingEnd }, BUILT_IN_CIPHERS)).toEqual({ content: missingEnd });
+    expect(decodeTree({ content: unknown }, BUILT_IN_CIPHERS)).toEqual({ content: unknown });
+    expect(decodeTree({ content: rejected }, [...BUILT_IN_CIPHERS, rejecting])).toEqual({
+      content: rejected,
     });
   });
 
-  it('собирает несколько находок профиля', async () => {
-    const { itd } = makeClient([
-      { id: 'u1', displayName: hidden('Имя', 'первое'), bio: hidden('о себе', 'второе') },
-    ]);
-    itd.use(crypt());
+  it('читает несколько legacy-прогонов независимо и сохраняет обложку', () => {
+    const content = `до${encodeInvisible('один')}между${encodeInvisible('два')}после`;
+    const result = decodeTree({ content }, BUILT_IN_CIPHERS);
 
-    const profile = await itd.users.get('u1');
-
-    expect(profile.secrets?.map((secret) => secret.text)).toEqual(['второе', 'первое']);
-    expect(profile.secret?.field).toBe('bio');
+    expect(result.content).toBe(content);
+    expect(result.decoded?.content).toEqual({
+      text: 'доодинмеждудвапосле',
+      spans: [
+        { type: 'crypto', cipher: 'invisible-legacy', cipherId: 0, offset: 2, length: 4 },
+        { type: 'crypto', cipher: 'invisible-legacy', cipherId: 0, offset: 11, length: 3 },
+      ],
+    });
   });
 
-  it('обычный ответ не помечает', async () => {
-    const { itd } = makeClient([{ id: '1', content: 'обычный пост' }]);
-    itd.use(crypt());
+  it('читает прежний whole-field beecrypt', () => {
+    const wire = encodeBeeCrypt('секрет');
+    const result = decodeTree({ displayName: wire }, BUILT_IN_CIPHERS);
 
-    const post = await itd.posts.get('1');
-
-    expect(post.secret).toBeUndefined();
-    expect(post.secrets).toBeUndefined();
+    expect(result.decoded?.displayName).toEqual({
+      text: 'секрет',
+      spans: [{ type: 'crypto', cipher: 'beecrypt', cipherId: 1, offset: 0, length: 6 }],
+    });
   });
 
-  it('decrypt: false отключает обход — глобально и у одного вызова', async () => {
-    const content = hidden('обычный текст', 'секрет');
+  it('возвращает copy-on-write результат и не загрязняет raw cache value', () => {
+    const wire =
+      FRAME_START + (INVISIBLE_ALPHABET[2] ?? '') + encodeInvisible('секрет') + FRAME_END;
+    const raw = Object.freeze({ content: wire, nested: Object.freeze({ value: 1 }) });
+    const result = decodeTree(raw, BUILT_IN_CIPHERS);
 
-    const off = makeClient([{ id: '1', content }]);
-    off.itd.use(crypt({ decrypt: false }));
-    expect((await off.itd.posts.get('1')).secret).toBeUndefined();
-
-    const once = makeClient([{ id: '1', content }]);
-    once.itd.use(crypt());
-    expect(
-      (await once.itd.posts.get('1', cryptoOptions({ decrypt: false }))).secret,
-    ).toBeUndefined();
+    expect(result).not.toBe(raw);
+    expect(raw).not.toHaveProperty('decoded');
+    expect(result.content).toBe(wire);
+    expect(result.decoded?.content?.text).toBe('секрет');
   });
 
-  it('crypt({ decrypt: false }) не мешает включить расшифровку у вызова', async () => {
-    const { itd } = makeClient([{ id: '1', content: hidden('текст', 'секрет') }]);
-    itd.use(crypt({ decrypt: false }));
+  it('не копирует дерево без находок и сохраняет неизменённые ветви', () => {
+    const untouched = { id: 'same' };
+    const plain = { content: 'обычный текст', untouched };
+    expect(decodeTree(plain, BUILT_IN_CIPHERS)).toBe(plain);
 
-    const post = await itd.posts.get('1', cryptoOptions({ decrypt: true }));
-
-    expect(post.secret?.text).toBe('секрет');
+    const encrypted = {
+      items: [{ content: encodeBeeCrypt('секрет') }],
+      untouched,
+    };
+    const decoded = decodeTree(encrypted, BUILT_IN_CIPHERS);
+    expect(decoded).not.toBe(encrypted);
+    expect(decoded.items).not.toBe(encrypted.items);
+    expect(decoded.untouched).toBe(untouched);
   });
 });
 
-describe('расшифровка событий', () => {
-  const context = (preview: string): EventContext<NotificationUpdate> => ({
-    update: {
+describe('события', () => {
+  it('передаёт дальше расшифрованную копию нормализованного update', async () => {
+    const preview = encodeBeeCrypt('событие');
+    const update: NotificationUpdate = {
       type: NotificationUpdateType.Notification,
       data: {
         notification: {
@@ -404,112 +458,18 @@ describe('расшифровка событий', () => {
         unreadCount: undefined,
         sound: false,
       },
-    },
-    stream: {},
-    raw: undefined,
-    origin: NotificationUpdateOrigin.Stream,
-  });
-
-  it('работает как промежуточный обработчик нормализованных событий', async () => {
-    const plugin = crypt();
-    const event = context(`обычный текст${encodeInvisible('секрет')}`);
-    let delivered = false;
-
-    await runEventMiddleware([plugin.middleware()], event, async () => {
-      delivered = true;
-      expect(event.update.data.notification.secret?.text).toBe('секрет');
-    });
-
-    expect(delivered).toBe(true);
-  });
-
-  it('учитывает общую настройку decrypt и всегда продолжает цепочку', async () => {
-    const plugin = crypt({ decrypt: false });
-    const event = context(`текст${encodeInvisible('секрет')}`);
-    let delivered = false;
-
-    await runEventMiddleware([plugin.middleware()], event, async () => {
-      delivered = true;
-    });
-
-    expect(delivered).toBe(true);
-    expect(event.update.data.notification.secret).toBeUndefined();
-  });
-});
-
-describe('несколько шифров', () => {
-  it('без имени берётся первый — invisible', async () => {
-    const { itd, calls } = makeClient([{ id: '1' }]);
-    itd.use(crypt());
-
-    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: {} }));
-
-    expect(invisible.decode(String(calls[0]?.body.content))).toBe('секрет');
-  });
-
-  it('beecrypt шифрует видимым текстом', async () => {
-    const { itd, calls } = makeClient([{ id: '1' }]);
-    itd.use(crypt());
-
-    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: 'beecrypt' }));
-
-    const sent = String(calls[0]?.body.content);
-    expect(sent).toMatch(/^[жъЖЪ]+$/);
-    expect(beecrypt.decode(sent)).toBe('секрет');
-  });
-
-  it('beecrypt отвергает обложку', async () => {
-    const { itd } = makeClient([{}]);
-    itd.use(crypt());
-
-    await expect(
-      itd.posts.create(
-        { content: 'секрет' },
-        cryptoOptions({ encrypt: { cipher: 'beecrypt', cover: 'обложка' } }),
-      ),
-    ).rejects.toThrow(/не принимает обложку/);
-  });
-
-  it('в ответе узнаёт оба шифра и подписывает, какой сработал', async () => {
-    const { itd } = makeClient([
-      {
-        posts: [
-          { id: '1', content: `обычный текст${encodeInvisible('первый')}` },
-          { id: '2', content: encodeBeeCrypt('второй') },
-          { id: '3', content: 'ничего не спрятано' },
-        ],
-        pagination: { hasMore: false, nextCursor: null },
-      },
-    ]);
-    itd.use(crypt());
-
-    const page = await itd.posts.list();
-
-    expect(page.items.map((post) => post.secret?.cipher)).toEqual([
-      'invisible',
-      'beecrypt',
-      undefined,
-    ]);
-    expect(page.items.map((post) => post.secret?.text)).toEqual(['первый', 'второй', undefined]);
-  });
-});
-
-describe('свой шифр', () => {
-  it('подключается вместо встроенного', async () => {
-    const rot13 = {
-      name: 'rot13',
-      encode: (text: string) => `[${text}]`,
-      decode: (text: string) =>
-        text.startsWith('[') && text.endsWith(']') ? text.slice(1, -1) : null,
+    };
+    const context: EventContext<NotificationUpdate> = {
+      update,
+      stream: {},
+      raw: undefined,
+      origin: NotificationUpdateOrigin.Stream,
     };
 
-    const { itd, calls } = makeClient([{ id: '1' }, { id: '1', content: '[найдено]' }]);
-    itd.use(crypt({ ciphers: [rot13] }));
-
-    await itd.posts.create({ content: 'секрет' }, cryptoOptions({ encrypt: 'rot13' }));
-    expect(calls[0]?.body.content).toBe('[секрет]');
-
-    const post = await itd.posts.get('1');
-    expect(post.secret).toEqual({ cipher: 'rot13', field: 'content', text: 'найдено' });
+    await runEventMiddleware([crypt().middleware()], context, async () => {
+      expect(context.update).not.toBe(update);
+      expect(context.update.data.notification.decoded?.preview?.text).toBe('событие');
+    });
+    expect(update.data.notification).not.toHaveProperty('decoded');
   });
 });

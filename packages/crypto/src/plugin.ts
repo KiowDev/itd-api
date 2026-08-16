@@ -3,49 +3,69 @@ import type {
   EventContext,
   EventMiddleware,
   EventMiddlewareObject,
-  OperationRequestOptions,
   OperationTransformer,
 } from 'itd-api';
-import type { Cipher, EncryptOption, EncryptSpec } from './cipher.js';
+import type { Cipher, RawCryptoOptions } from './cipher.js';
 import { BUILT_IN_CIPHERS } from './ciphers/index.js';
-import { CryptError } from './errors.js';
-import { textFields } from './fields.js';
-import { decodeTree } from './walk.js';
+import type { CryptoOperationMetadata } from './fields.js';
+import { requestFieldDefinitions } from './fields.js';
+import { CipherRegistry } from './registry.js';
+import { prepareRequest } from './request.js';
+import { decodeTreeWithFields } from './walk.js';
 
-/** Настройки плагина. */
+/** Настройки экземпляра crypto-плагина. */
 export interface CryptOptions {
   /**
-   * Подключаемые шифры. По умолчанию — все встроенные, см. {@link BUILT_IN_CIPHERS}.
+   * Полный реестр доступных шифров.
    *
-   * Порядок значим: первый используется, когда в `encrypt` не назван конкретный шифр.
+   * По умолчанию используется {@link BUILT_IN_CIPHERS}. Переданный массив заменяет
+   * встроенный реестр, а не дополняет его. Алгоритмы целого поля проверяются в указанном
+   * порядке, пока один из них не распознает значение.
    */
   ciphers?: readonly Cipher[] | undefined;
   /**
-   * Искать ли скрытые сообщения в ответах. По умолчанию `true`.
+   * Расшифровывать ли ответы HTTP и нормализованные события автоматически.
    *
-   * Выключите, если расшифровка нужна лишь изредка: тогда включайте её у отдельных
-   * вызовов опцией `decrypt: true`.
+   * По умолчанию `true`. Значение отдельного вызова в {@link CryptRequestOptions.decrypt}
+   * имеет приоритет над этой настройкой.
    */
-  decrypt?: boolean | undefined;
-}
-
-/** HTTP-плагин и промежуточный обработчик нормализованных событий. */
-export interface CryptPlugin extends ClientPlugin, EventMiddlewareObject<EventContext> {}
-
-/** Настройки одной операции из namespace `extensions.crypto`. */
-interface CryptRequestOptions {
-  encrypt?: EncryptOption | undefined;
   decrypt?: boolean | undefined;
 }
 
 /**
- * Плагин скрытых сообщений.
- *
- * При отправке шифрует текст поста, комментария или профиля — если у вызова задана опция
- * `encrypt`. При получении просматривает ответ целиком и вешает найденное на те же объекты
- * в поле `secret`, не трогая исходный текст.
+ * Один объект, совместимый и с системой плагинов клиента, и с обработчиками событий.
  *
  * @example
+ * ```ts
+ * const crypto = crypt();
+ * itd.use(crypto);
+ * itd.notifications.events.use(crypto);
+ * ```
+ */
+export interface CryptPlugin extends ClientPlugin, EventMiddlewareObject<EventContext> {}
+
+/**
+ * Настройки crypto-плагина для одного вызова API.
+ *
+ * Помимо режимов шифрования из {@link RawCryptoOptions} позволяют включить или выключить
+ * расшифровку только для текущего результата.
+ */
+export interface CryptRequestOptions extends RawCryptoOptions {
+  /** Расшифровывать ли результат этого вызова; переопределяет настройку плагина. */
+  decrypt?: boolean | undefined;
+}
+
+/**
+ * Создаёт плагин шифрования текстовых полей.
+ *
+ * При отправке плагин находит crypto-разметку, проверяет диапазоны, заменяет выбранный
+ * текст транспортными контейнерами и пересчитывает обычные `spans`. После получения
+ * ответа он оставляет поля сервера без изменений и добавляет готовый текст в `decoded`.
+ *
+ * Плагин ставится снаружи `@itd-api/cache`, поэтому расшифрованное представление строится
+ * одинаково для сетевого ответа и попадания в кэш, не изменяя сохранённый объект.
+ *
+ * @example Зашифровать отдельный участок поста
  * ```ts
  * import { ItdClient } from 'itd-api';
  * import { crypt } from '@itd-api/crypto';
@@ -53,177 +73,66 @@ interface CryptRequestOptions {
  * const itd = new ItdClient({ auth: token });
  * itd.use(crypt());
  *
- * const created = await itd.posts.create(
- *   { content: 'секрет' },
- *   { extensions: { crypto: { encrypt: { cipher: 'invisible', cover: 'обычный текст' } } } },
- * );
+ * const post = await itd.posts.create({
+ *   content: 'видно секрет видно',
+ *   spans: [
+ *     { type: 'bold', offset: 6, length: 6 },
+ *     { type: 'crypto', cipher: 'invisible', offset: 6, length: 6 },
+ *   ],
+ * });
  *
- * const post = await itd.posts.get(created.id);
- * post.secret?.text;  // 'секрет'
+ * console.log(post.decoded?.content?.text); // 'видно секрет видно'
  * ```
+ *
+ * @example Зашифровать все переданные поля профиля целиком
+ * ```ts
+ * await itd.users.updateMe(
+ *   { displayName: 'Имя', bio: 'Подпись' },
+ *   { extensions: { crypto: { encrypt: 'beecrypt' } } },
+ * );
+ * ```
+ *
+ * @throws {@link CryptError} при некорректном реестре шифров или запросе, который нельзя
+ * безопасно преобразовать до отправки
  */
 export function crypt(options: CryptOptions = {}): CryptPlugin {
-  const ciphers = options.ciphers ?? BUILT_IN_CIPHERS;
+  const registry = new CipherRegistry(options.ciphers ?? BUILT_IN_CIPHERS);
   const decryptByDefault = options.decrypt ?? true;
 
-  if (ciphers.length === 0) {
-    throw new CryptError('Плагину нужен хотя бы один шифр');
-  }
-
   const eventMiddleware: EventMiddleware<EventContext> = async (context, next) => {
-    if (decryptByDefault) decodeTree(context.update, ciphers);
+    if (decryptByDefault) {
+      const decoded = decodeTreeWithFields(context.update, registry, undefined);
+      (context as { update: unknown }).update = decoded;
+    }
     await next();
   };
 
   return {
     name: 'crypt',
-    // Кэш хранит нормализованный, но ещё не расшифрованный результат. Поэтому расшифровка
-    // одинаково применяется к сетевому ответу и cache hit, не загрязняя содержимое кэша.
+    // Внешняя позиция гарантирует расшифровку уже после получения результата из кэша.
     before: ['cache'],
     install: ({ operations }) => {
       const transformer: OperationTransformer = async (request, next) => {
-        const current: CryptRequestOptions = request.extensions?.crypto ?? {};
-        let prepared = request;
-        if (current.encrypt !== undefined) {
-          const fields =
-            operations.get(request.operationId)?.annotations?.crypto?.requestFields ??
-            textFields(request.operationId);
-          prepared = encryptRequest(request, current.encrypt, ciphers, fields);
-        }
+        const configured = request.extensions?.crypto;
+        const current: CryptRequestOptions = configured ?? {};
+        const metadata = operations.get(request.operationId)?.annotations?.crypto as
+          | CryptoOperationMetadata
+          | undefined;
+        const fields = requestFieldDefinitions(request.operationId, metadata);
+        const prepared = prepareRequest(
+          request,
+          current,
+          registry,
+          fields,
+          configured !== undefined,
+        );
         const result = await next(prepared);
-        if (current.decrypt ?? decryptByDefault) decodeTree(result, ciphers);
-        return result;
+        return (current.decrypt ?? decryptByDefault)
+          ? decodeTreeWithFields(result, registry, fields)
+          : result;
       };
       operations.use(transformer);
     },
     middleware: () => eventMiddleware,
   };
-}
-
-/**
- * Шифрует текстовые поля тела запроса.
- *
- * Ошибка вместо молчаливого пропуска: если `encrypt` указали там, где шифровать нечего,
- * пост уйдёт открытым текстом — и узнать об этом постфактум неоткуда.
- *
- * @throws {CryptError} если шифр неизвестен, эндпоинт не принимает текста или текста нет
- */
-function encryptRequest(
-  request: OperationRequestOptions,
-  encrypt: EncryptOption,
-  ciphers: readonly Cipher[],
-  available: readonly string[] | undefined,
-): OperationRequestOptions {
-  const spec: EncryptSpec = typeof encrypt === 'string' ? { cipher: encrypt } : encrypt;
-  const cipher = pickCipher(spec.cipher, ciphers);
-  const where = `${request.operationId} (${request.method.toUpperCase()} ${request.path})`;
-
-  if (!available) {
-    throw new CryptError(`Запрос ${where} не принимает текста — шифровать нечего`);
-  }
-
-  const wanted = spec.fields ?? available;
-  const unknown = wanted.filter((field) => !available.includes(field));
-  if (unknown.length > 0) {
-    throw new CryptError(
-      `Запрос ${where} не принимает поля ${unknown.join(', ')}. Доступны: ${available.join(', ')}`,
-    );
-  }
-
-  const body = request.body;
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw new CryptError(`У запроса ${where} нет тела, которое можно зашифровать`);
-  }
-
-  const source = body as Record<string, unknown>;
-  const targets = wanted.filter((field) => {
-    const text = source[field];
-    return typeof text === 'string' && text.trim() !== '';
-  });
-
-  if (targets.length === 0) {
-    throw new CryptError(
-      `В запросе ${where} нечего шифровать: поля ${wanted.join(', ')} пусты или отсутствуют`,
-    );
-  }
-
-  // Одна обложка на несколько полей означала бы, что имя и подпись профиля станут
-  // одинаковыми. Лучше сказать об этом сразу, чем испортить профиль.
-  if (targets.length > 1 && spec.cover !== undefined) {
-    throw new CryptError(
-      `Обложка задана сразу для полей ${targets.join(', ')}. Выберите одно через fields`,
-    );
-  }
-
-  // Разметка относится к тексту поста, поэтому и проверяется, только когда шифруется он.
-  if (targets.includes('content')) checkSpans(source.spans, spec.cover, cipher, where);
-
-  const encrypted: Record<string, unknown> = { ...source };
-  for (const field of targets) {
-    encrypted[field] = cipher.encode(String(source[field]), { cover: spec.cover });
-  }
-
-  return { ...request, body: encrypted };
-}
-
-/**
- * Проверяет, что разметка переживёт шифрование.
- *
- * `spans` уходят на сервер как есть — библиотека их не пересчитывает. Смещения в них
- * считаются от начала видимого текста, а после шифрования видимым остаётся только обложка,
- * и та лишь у шифров, которые её принимают. Поэтому разметка допустима в единственном
- * случае: обложка задана и вмещает каждый фрагмент.
- *
- * @throws {CryptError} если разметку сохранить нельзя
- */
-function checkSpans(
-  spans: unknown,
-  cover: string | undefined,
-  cipher: Cipher,
-  where: string,
-): void {
-  if (!Array.isArray(spans) || spans.length === 0) return;
-
-  if (cipher.acceptsCover !== true) {
-    throw new CryptError(
-      `У запроса ${where} есть spans, а шифр «${cipher.name}» не оставляет видимого текста: ` +
-        'разметку крепить не к чему. Уберите spans или возьмите шифр с обложкой — invisible',
-    );
-  }
-
-  if (cover === undefined || cover === '') {
-    throw new CryptError(
-      `У запроса ${where} есть spans, но обложка не задана: после шифрования от видимого ` +
-        'текста ничего не останется. Задайте cover — spans считаются по нему',
-    );
-  }
-
-  // Единицы смещений в API не определены (UTF-16 или кодовые точки), поэтому граница
-  // берётся по длине UTF-16: она не меньше числа кодовых точек.
-  const limit = cover.length;
-
-  for (const span of spans) {
-    const { offset, length } = (span ?? {}) as { offset?: unknown; length?: unknown };
-    if (typeof offset !== 'number' || typeof length !== 'number') continue;
-
-    if (offset < 0 || offset + length > limit) {
-      throw new CryptError(
-        `Разметка запроса ${where} не укладывается в обложку: фрагмент ${offset}…${offset + length} ` +
-          `при длине обложки ${limit}. spans считаются по cover, а не по секретному тексту`,
-      );
-    }
-  }
-}
-
-function pickCipher(name: string | undefined, ciphers: readonly Cipher[]): Cipher {
-  const names = ciphers.map((cipher) => cipher.name).join(', ');
-
-  // Без имени берётся первый подключённый — он же основной.
-  const cipher = name === undefined ? ciphers[0] : ciphers.find((item) => item.name === name);
-
-  if (!cipher) {
-    throw new CryptError(`Шифр «${name}» не подключён. Доступны: ${names}`);
-  }
-
-  return cipher;
 }
