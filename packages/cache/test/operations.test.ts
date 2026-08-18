@@ -28,7 +28,6 @@ describe('каталог операций кэша', () => {
   it('содержит уникальные ID и глубоко заморожен', () => {
     const ids = CACHE_OPERATIONS.map((operation) => operation.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.every(isCacheOperationId)).toBe(true);
     expect(isCacheOperationId('posts.create')).toBe(false);
     expect(Object.isFrozen(CACHE_OPERATIONS)).toBe(true);
     expect(CACHE_OPERATIONS.every(Object.isFrozen)).toBe(true);

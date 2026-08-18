@@ -36,7 +36,6 @@ describe('itd.platform.version()', () => {
     const versions = await itd.platform.version();
 
     expect(versions).toEqual(VERSION_RESPONSE);
-    expect(versions.ios.updateUrl).toBe(VERSION_RESPONSE.ios.updateUrl);
     expect(mock.calls[0]?.method).toBe('GET');
     expect(mock.calls[0]?.url).toBe('https://itd.test/api/platform/version');
     expect(mock.calls[0]?.body).toBeUndefined();

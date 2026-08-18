@@ -10,14 +10,12 @@ import {
 } from '../../src/domain/operations.js';
 
 describe('каталог операций', () => {
-  it('содержит уникальные стабильные ID и допустимые HTTP-методы', () => {
+  it('содержит операции с допустимыми HTTP-методами и retry safety', () => {
     const ids = Object.keys(OPERATIONS);
     const methods = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
     const retrySafety = new Set(Object.values(RetrySafety));
 
     expect(ids.length).toBeGreaterThan(0);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.every(isBuiltInOperationId)).toBe(true);
     expect(Object.values(OPERATIONS).every(({ method }) => methods.has(method))).toBe(true);
     expect(
       Object.values(OPERATIONS).every((operation) => retrySafety.has(operation.retrySafety)),

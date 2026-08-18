@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   BoundingBox,
   Browser,
@@ -16,6 +16,20 @@ import { ITD_SITE_KEY, solveTurnstile } from '../src/solve.js';
 /** Поддельный браузер: весь путь до токена проверяется без драйвера и без сети. */
 
 const BOX: BoundingBox = { x: 40, y: 40, width: 300, height: 65 };
+
+async function withVirtualTime<T>(operation: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers();
+  const result = operation().then(
+    (value) => ({ status: 'fulfilled' as const, value }),
+    (reason: unknown) => ({ status: 'rejected' as const, reason }),
+  );
+  await vi.runAllTimersAsync();
+  const settled = await result;
+  if (settled.status === 'rejected') throw settled.reason;
+  return settled.value;
+}
+
+afterEach(() => vi.useRealTimers());
 
 describe('настройки запуска браузера', () => {
   it('не отключает sandbox по умолчанию', () => {
@@ -209,7 +223,7 @@ describe('solveTurnstile', () => {
     const page = new FakePage({ tokenAfterClicks: 1 });
     const browser = new FakeBrowser(page);
 
-    const token = await solveTurnstile({ browser });
+    const token = await withVirtualTime(() => solveTurnstile({ browser }));
 
     expect(token).toBe('TOKEN');
     // Origin должен остаться настоящим, иначе виджет откажет по несовпадению домена.
@@ -220,7 +234,7 @@ describe('solveTurnstile', () => {
   it('целится в чекбокс от своего контейнера', async () => {
     const page = new FakePage({ tokenAfterClicks: 1 });
 
-    await solveTurnstile({ browser: new FakeBrowser(page) });
+    await withVirtualTime(() => solveTurnstile({ browser: new FakeBrowser(page) }));
 
     const click = page.clicks[0];
     expect(click).toBeDefined();
@@ -254,7 +268,9 @@ describe('solveTurnstile', () => {
   it('не считает отсутствие ожидаемой разметки поводом сдаться', async () => {
     const page = new FakePage({ noWidget: true, tokenAfterClicks: 1 });
 
-    await expect(solveTurnstile({ browser: new FakeBrowser(page) })).resolves.toBe('TOKEN');
+    await expect(
+      withVirtualTime(() => solveTurnstile({ browser: new FakeBrowser(page) })),
+    ).resolves.toBe('TOKEN');
   });
 
   it('сообщает код ошибки виджета и не повторяет попытку при 110200', async () => {
@@ -274,7 +290,9 @@ describe('solveTurnstile', () => {
     // Коды кроме 110*** временные, и error-callback просит виджет попробовать снова.
     const page = new FakePage({ error: '300010', tokenAfterClicks: 1 });
 
-    await expect(solveTurnstile({ browser: new FakeBrowser(page) })).resolves.toBe('TOKEN');
+    await expect(
+      withVirtualTime(() => solveTurnstile({ browser: new FakeBrowser(page) })),
+    ).resolves.toBe('TOKEN');
   });
 
   it('задаёт контексту язык и размер окна', async () => {
@@ -296,39 +314,17 @@ describe('solveTurnstile', () => {
     expect(browser.contextOptions).toEqual({});
   });
 
-  it('сдаётся по таймауту', async () => {
-    // Токена не будет никогда: порог кликов недостижим за отведённое время.
-    const browser = new FakeBrowser(new FakePage({ tokenAfterClicks: 1000 }));
+  it('сдаётся по таймауту и объясняет последнюю ошибку', async () => {
+    const browser = new FakeBrowser(new FakePage({ error: '300010', tokenAfterClicks: 1000 }));
 
-    const error = await solveTurnstile({ browser, timeout: 3000, attempts: 1 }).catch(
-      (e: unknown) => e,
-    );
+    const error = await withVirtualTime(() =>
+      solveTurnstile({ browser, timeout: 3000, attempts: 1 }),
+    ).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(TurnstileError);
     expect((error as TurnstileError).reason).toBe(TurnstileFailure.Timeout);
-  });
-
-  it('называет версию браузера в сообщении о таймауте', async () => {
-    // Сборка браузера — первое, что стоит проверить при отказе виджета, поэтому она
-    // должна быть видна в самой ошибке, а не только в документации.
-    const browser = new FakeBrowser(new FakePage({ tokenAfterClicks: 1000 }));
-
-    const error = await solveTurnstile({ browser, timeout: 3000, attempts: 1 }).catch(
-      (e: unknown) => e,
-    );
-
-    expect((error as TurnstileError).message).toContain('149.0.7827.55');
-  });
-
-  it('прикладывает к таймауту последнюю ошибку виджета', async () => {
-    const browser = new FakeBrowser(new FakePage({ error: '300010', tokenAfterClicks: 1000 }));
-
-    const error = await solveTurnstile({ browser, timeout: 3000, attempts: 1 }).catch(
-      (e: unknown) => e,
-    );
-
-    expect((error as TurnstileError).reason).toBe(TurnstileFailure.Timeout);
     expect((error as TurnstileError).widgetCode).toBe('300010');
+    expect((error as TurnstileError).message).toContain('149.0.7827.55');
   });
 
   it('проверяет настройки до запуска браузера', async () => {

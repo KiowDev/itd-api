@@ -66,8 +66,17 @@ describe('неизменяемость', () => {
 
   it('build не меняет билдер и вызывается повторно', () => {
     const builder = poll('вопрос').options('а', 'б');
+    const expected = {
+      question: 'вопрос',
+      options: [{ text: 'а' }, { text: 'б' }],
+      multipleChoice: false,
+    };
 
-    expect(builder.build()).toEqual(builder.build());
+    const first = builder.build();
+    const second = builder.build();
+
+    expect(first).toEqual(expected);
+    expect(second).toEqual(expected);
   });
 });
 
