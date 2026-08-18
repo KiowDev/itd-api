@@ -45,9 +45,13 @@ export interface ItdSession {
  * @internal
  */
 export function copySession(session: ItdSession): ItdSession {
+  // Storage — runtime-граница: декодированный backend может нарушить TypeScript-контракт.
+  // Не преобразуем такое значение до проверки AuthManager и клонируем cookies только как массив.
+  if (typeof session !== 'object' || session === null || Array.isArray(session)) return session;
+  const cookies = (session as { cookies?: unknown }).cookies;
   return {
     ...session,
-    ...(session.cookies ? { cookies: [...session.cookies] } : {}),
+    ...(Array.isArray(cookies) ? { cookies: [...cookies] } : {}),
   };
 }
 

@@ -292,8 +292,9 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
         );
         if (delay === undefined) throw error;
 
-        await dispatchRequestHook(deps.hooks, 'onRetry', {
+        const notification = dispatchRequestHook(deps.hooks, 'onRetry', {
           operationId: request.operationId,
+          signal: request.signal,
           method,
           path: request.path,
           url: deps.buildUrl(request),
@@ -303,6 +304,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
           error,
           delay,
         });
+        await (request.signal ? waitForRequest(notification, request.signal) : notification);
 
         deps.logger?.debug(
           `повтор ${method} ${request.path}, попытка ${transportAttempt + 1} через ${delay} мс`,

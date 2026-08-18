@@ -13,7 +13,7 @@ import type {
   EventTransportContext,
   EventTransportFrame,
 } from '../../src/events/transports/transport.js';
-import type { FileInput } from '../../src/index.js';
+import type { ErrorContextHook, FileInput, RequestContext } from '../../src/index.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
 import { makeJwt } from '../helpers/jwt.js';
@@ -93,6 +93,95 @@ describe('граница низкоуровневого запроса', () => {
     expect(mock.callCount).toBe(0);
   });
 
+  it('передаёт operation plugin общий сигнал timeout и освобождает его операцию', async () => {
+    const { itd, mock } = makeClient([], { timeout: 10, shutdownTimeout: 30 });
+    let pluginSignal: AbortSignal | undefined;
+    itd.use({
+      name: 'abort-aware-operation',
+      install({ operations }) {
+        operations.use(
+          (_request, _next, context) =>
+            new Promise<never>((_resolve, reject) => {
+              pluginSignal = context.signal;
+              context.signal.addEventListener('abort', () => reject(context.signal.reason), {
+                once: true,
+              });
+            }),
+        );
+      },
+    });
+
+    await expect(itd.request({ method: 'GET', path: '/api/test' })).rejects.toThrow(
+      ItdTimeoutError,
+    );
+
+    expect(pluginSignal?.aborted).toBe(true);
+    expect(mock.callCount).toBe(0);
+    await expect(itd.dispose()).resolves.toBeUndefined();
+  });
+
+  it('общий timeout освобождает operation plugin при зависшем onRetry', async () => {
+    const onRetry = vi.fn(() => new Promise<void>(() => {}));
+    const { itd } = makeClient(() => json({}, { status: 500 }), {
+      timeout: 10,
+      shutdownTimeout: 30,
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+      hooks: { onRetry },
+    });
+    itd.use({
+      name: 'pass-through',
+      install({ operations }) {
+        operations.use((request, next) => next(request));
+      },
+    });
+
+    await expect(itd.request({ method: 'GET', path: '/api/test' })).rejects.toThrow(
+      ItdTimeoutError,
+    );
+    expect(onRetry).toHaveBeenCalledOnce();
+    await expect(itd.dispose()).resolves.toBeUndefined();
+  });
+
+  it('не классифицирует ошибку onRequest как сетевую и не повторяет запрос', async () => {
+    const failure = new Error('onRequest failed');
+    const onRequest = vi.fn((context: RequestContext) => {
+      context.headers.set('X-Before-Failure', 'present');
+      throw failure;
+    });
+    const onError = vi.fn();
+    const { itd, mock } = makeClient(() => json({ data: {} }), {
+      retry: { attempts: 3, baseDelay: 0, jitter: 0 },
+      hooks: { onRequest, onError },
+    });
+
+    const actual = await itd
+      .request({ method: 'GET', path: '/api/test' })
+      .catch((error: unknown) => error);
+    expect(onRequest).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls[0]?.[0].headers.get('x-before-failure')).toBe('present');
+    expect(mock.callCount).toBe(0);
+    expect(actual).toBe(failure);
+  });
+
+  it('не классифицирует ошибку onResponse как сетевую и не повторяет успешный ответ', async () => {
+    const failure = new Error('onResponse failed');
+    const onResponse = vi.fn(() => {
+      throw failure;
+    });
+    const { itd, mock } = makeClient(() => json({ data: {} }), {
+      retry: { attempts: 3, baseDelay: 0, jitter: 0 },
+      hooks: { onResponse },
+    });
+
+    const actual = await itd
+      .request({ method: 'GET', path: '/api/test' })
+      .catch((error: unknown) => error);
+    expect(onResponse).toHaveBeenCalledOnce();
+    expect(mock.callCount).toBe(1);
+    expect(actual).toBe(failure);
+  });
+
   it('не маскирует ошибку подготовки JSON под сетевую и не повторяет её', async () => {
     const { itd, mock } = makeClient([], {
       retry: { attempts: 3, baseDelay: 0, jitter: 0 },
@@ -169,6 +258,33 @@ describe('граница низкоуровневого запроса', () => {
     await expect(itd.request({ method: 'GET', path: '/api/test' })).rejects.toThrow(
       ItdTimeoutError,
     );
+  });
+
+  it('освобождает operation plugin при зависшем onError транспортной ошибки', async () => {
+    let hookSignal: AbortSignal | undefined;
+    const onError = vi.fn((context: ErrorContextHook) => {
+      hookSignal = context.signal;
+      return new Promise<void>(() => {});
+    });
+    const { itd } = makeClient(() => json({}, { status: 500 }), {
+      timeout: 10,
+      shutdownTimeout: 30,
+      retry: false,
+      hooks: { onError },
+    });
+    itd.use({
+      name: 'pass-through',
+      install({ operations }) {
+        operations.use((request, next) => next(request));
+      },
+    });
+
+    await expect(itd.request({ method: 'GET', path: '/api/test' })).rejects.toThrow(
+      ItdTimeoutError,
+    );
+    expect(onError).toHaveBeenCalledOnce();
+    expect(hookSignal?.aborted).toBe(true);
+    await expect(itd.dispose()).resolves.toBeUndefined();
   });
 });
 

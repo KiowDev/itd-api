@@ -116,6 +116,8 @@ export interface RateLimitOptions {
 export interface RequestContext {
   /** Стабильная семантическая операция; `raw` у низкоуровневого вызова без явного ID. */
   operationId: OperationId;
+  /** Общий сигнал пользовательской отмены, timeout и освобождения клиента. */
+  signal: AbortSignal | undefined;
   method: string;
   /** Путь без базового URL, например `/api/posts`. */
   path: string;

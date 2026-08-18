@@ -152,6 +152,7 @@ export type {
   AttemptNext,
   ClientPlugin,
   OperationExtensions,
+  OperationTransformContext,
   OperationTransformer,
   PluginApi,
   PluginTeardown,

@@ -647,6 +647,22 @@ describe('восстановление и удаление', () => {
     expect(second.size).toBe(0);
   });
 
+  it('пропускает повреждённую запись, не мешая восстановить рабочие аккаунты', async () => {
+    const storage: MultiTokenStorage = {
+      accounts: () => ['ok', 'broken'],
+      get: (account) =>
+        account === 'ok'
+          ? { accessToken: 'saved-token' }
+          : ({ accessToken: 42, cookies: 17 } as never),
+      set: () => {},
+      clear: () => {},
+    };
+    const { accounts } = makeAccounts(ok, { storage });
+
+    await expect(accounts.restore()).resolves.toEqual(['ok']);
+    expect(accounts.names()).toEqual(['ok']);
+  });
+
   it('восстанавливает сессию по сохранённым refresh-cookie без accessToken', async () => {
     const storage = new MemoryMultiTokenStorage({
       kiow: {

@@ -10,7 +10,11 @@ import { createClientRuntime } from '../../src/core/execution/client-runtime.js'
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createItdAuth } from '../../src/session/auth.js';
-import { type ItdSession, MemoryTokenStorage } from '../../src/session/storage.js';
+import {
+  createTokenStorage,
+  type ItdSession,
+  MemoryTokenStorage,
+} from '../../src/session/storage.js';
 import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
@@ -87,6 +91,48 @@ describe('получение токена', () => {
 
     await expect(auth.token()).resolves.toBe('stored-token');
     await expect(auth.getSession()).resolves.toMatchObject({ cookies: [validCookie] });
+  });
+
+  it('отбрасывает повреждённые необязательные поля storage, сохраняя рабочий accessToken', async () => {
+    const storage = createTokenStorage({
+      get: () =>
+        ({
+          accessToken: 'stored-token',
+          refreshToken: '',
+          deviceId: ' ',
+          obtainedAt: Number.NaN,
+          cookies: 17,
+        }) as never,
+      set: () => {},
+      delete: () => {},
+    });
+    const { auth } = makeAuth([], { storage });
+
+    await expect(auth.token()).resolves.toBe('stored-token');
+    await expect(auth.getSession()).resolves.toEqual({ accessToken: 'stored-token' });
+  });
+
+  it('сохраняет неизвестные поля восстановленной сессии для совместимости версий', async () => {
+    const storage = new MemoryTokenStorage({
+      accessToken: 'stored-token',
+      futureField: { version: 2 },
+    } as ItdSession & { futureField: { version: number } });
+    const { auth } = makeAuth([], { storage });
+
+    await auth.setAccessToken('updated-token');
+    await expect(auth.getSession()).resolves.toMatchObject({
+      accessToken: 'updated-token',
+      futureField: { version: 2 },
+    });
+  });
+
+  it('отбрасывает повреждённый accessToken storage, сохраняя рабочую refresh-сессию', async () => {
+    const storage = new MemoryTokenStorage({ accessToken: '', refreshToken: 'refresh-token' });
+    const { auth } = makeAuth([], { storage });
+
+    await expect(auth.token()).resolves.toBeNull();
+    await expect(auth.hasRefreshSession()).resolves.toBe(true);
+    await expect(auth.getSession()).resolves.toEqual({ refreshToken: 'refresh-token' });
   });
 
   it('последний начатый вызов внешнего getToken владеет общим снимком', async () => {

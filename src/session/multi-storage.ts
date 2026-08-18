@@ -66,15 +66,18 @@ export function scopedTokenStorage(storage: MultiTokenStorage, account: string):
  *
  * @internal
  */
-export function isRestorableSession(
-  session: ItdSession | null,
-  baseUrl: string,
-): session is ItdSession {
-  if (!session) return false;
-  if (session.accessToken || session.refreshToken) return true;
+export function isRestorableSession(session: unknown, baseUrl: string): session is ItdSession {
+  if (typeof session !== 'object' || session === null || Array.isArray(session)) return false;
+  const accessToken = (session as { accessToken?: unknown }).accessToken;
+  const refreshToken = (session as { refreshToken?: unknown }).refreshToken;
+  if (typeof accessToken === 'string' && accessToken.trim() !== '') return true;
+  if (typeof refreshToken === 'string' && refreshToken.trim() !== '') return true;
+
+  const cookies = (session as { cookies?: unknown }).cookies;
+  if (!Array.isArray(cookies)) return false;
 
   const jar = new CookieJar();
-  jar.deserialize(session.cookies);
+  jar.deserialize(cookies.filter((entry): entry is string => typeof entry === 'string'));
   return jar.has(AUTH_FLAG_COOKIE, baseUrl);
 }
 

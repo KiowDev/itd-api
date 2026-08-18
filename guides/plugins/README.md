@@ -131,7 +131,13 @@ itd.use(timing);
 type OperationTransformer = (
   request: OperationRequestOptions,
   next: (request: OperationRequestOptions) => Promise<unknown>,
+  context: OperationTransformContext,
 ) => Promise<unknown>;
+
+interface OperationTransformContext {
+  // Общий signal пользовательской отмены, timeout и dispose() клиента.
+  signal: AbortSignal;
+}
 
 type AttemptInterceptor = (
   context: AttemptContext,
@@ -163,6 +169,10 @@ interface PluginApi {
 `operations.get()` возвращает публичные метаданные операции: HTTP-метод, политику повторов,
 бакет и `OperationAnnotations`. Это расширяемый тип: плагин добавляет в него своё поле,
 а подключаемый модуль заполняет поле через `annotations` в описании операции.
+
+Для долгой асинхронной работы используйте `context.signal`, а не только `request.signal`:
+первый также срабатывает по общему timeout и при `dispose()` клиента. Он вынесен из request,
+чтобы служебный lifecycle не менял ключи кэша и дедупликации операции.
 
 Без явных правил подключённая раньше обёртка оказывается снаружи. Она выполняется один раз
 на логический запрос, независимо от внутренних повторов транспорта.

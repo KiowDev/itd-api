@@ -239,36 +239,87 @@ function withoutLegacyUserId(session: ItdSession): ItdSession {
   return clean;
 }
 
-function normalizeSession(value: unknown, source: string): ItdSession {
-  if (!isRecord(value)) throw new ItdConfigError(`${source} должна быть объектом сессии`);
+function normalizeSessionValue(
+  value: unknown,
+  source: string,
+  mode: 'strict' | 'stored' = 'strict',
+  logger?: Logger,
+): ItdSession | null {
+  const tolerant = mode === 'stored';
+  if (!isRecord(value)) {
+    if (tolerant) {
+      logger?.warn(`${source} вернула не объект сессии; сохранённая запись пропущена`);
+      return null;
+    }
+    throw new ItdConfigError(`${source} должна быть объектом сессии`);
+  }
   const record = value as Record<string, unknown>;
+  // Неизвестные поля могут принадлежать более новой версии библиотеки. Сохраняем их,
+  // а известные поля проверяем и исправляем ниже.
+  const normalized: Record<string, unknown> = { ...record };
+  delete normalized.userId;
 
-  for (const field of ['accessToken', 'refreshToken', 'deviceId'] as const) {
+  const normalizeString = (field: 'accessToken' | 'refreshToken' | 'deviceId'): void => {
     const item = record[field];
+    if (item === undefined) {
+      delete normalized[field];
+      return;
+    }
     if (item !== undefined && (typeof item !== 'string' || item.trim() === '')) {
+      if (tolerant) {
+        logger?.warn(`${source}.${field} повреждена; поле сохранённой сессии пропущено`);
+        delete normalized[field];
+        return;
+      }
       throw new ItdConfigError(`${source}.${field} должна быть непустой строкой`);
     }
-  }
-  if (
-    record.obtainedAt !== undefined &&
-    (typeof record.obtainedAt !== 'number' || !Number.isFinite(record.obtainedAt))
-  ) {
-    throw new ItdConfigError(`${source}.obtainedAt должна быть конечным числом`);
-  }
-  let cookies: string[] | undefined;
-  if (record.cookies !== undefined) {
-    if (!Array.isArray(record.cookies)) {
-      throw new ItdConfigError(`${source}.cookies должна быть массивом`);
+    normalized[field] = item;
+  };
+
+  normalizeString('accessToken');
+  normalizeString('refreshToken');
+  normalizeString('deviceId');
+
+  if (record.obtainedAt === undefined) {
+    delete normalized.obtainedAt;
+  } else if (typeof record.obtainedAt !== 'number' || !Number.isFinite(record.obtainedAt)) {
+    if (!tolerant) {
+      throw new ItdConfigError(`${source}.obtainedAt должна быть конечным числом`);
+    } else {
+      logger?.warn(`${source}.obtainedAt повреждена; поле сохранённой сессии пропущено`);
+      delete normalized.obtainedAt;
     }
-    // Одна повреждённая или устаревшая запись не должна блокировать рабочие токены.
-    // CookieJar.deserialize придерживается той же мягкой политики.
-    cookies = record.cookies.filter(
-      (cookie: unknown): cookie is string =>
-        typeof cookie === 'string' && isSerializedCookieEntry(cookie),
-    );
   }
 
-  return withoutLegacyUserId({ ...record, ...(cookies ? { cookies } : {}) } as ItdSession);
+  if (record.cookies === undefined) {
+    delete normalized.cookies;
+  } else {
+    if (!Array.isArray(record.cookies)) {
+      if (tolerant) {
+        logger?.warn(`${source}.cookies повреждена; поле сохранённой сессии пропущено`);
+        delete normalized.cookies;
+      } else {
+        throw new ItdConfigError(`${source}.cookies должна быть массивом`);
+      }
+    } else {
+      // Одна повреждённая или устаревшая запись не должна блокировать рабочие токены.
+      // CookieJar.deserialize придерживается той же мягкой политики.
+      const valid = record.cookies.filter(
+        (cookie: unknown): cookie is string =>
+          typeof cookie === 'string' && isSerializedCookieEntry(cookie),
+      );
+      if (valid.length > 0) normalized.cookies = valid;
+      else delete normalized.cookies;
+    }
+  }
+
+  return normalized as ItdSession;
+}
+
+function normalizeSession(value: unknown, source: string): ItdSession {
+  const normalized = normalizeSessionValue(value, source);
+  if (!normalized) throw new ItdConfigError(`${source} должна быть объектом сессии`);
+  return normalized;
 }
 
 let authScopeSequence = 0;
@@ -775,7 +826,10 @@ export class AuthManager implements AuthProvider {
   async #performLoad(): Promise<ItdSession | null> {
     const loaded = (await this.#config.storage.get()) ?? null;
     this.#assertActive();
-    const stored = loaded ? normalizeSession(loaded, 'storage.get()') : null;
+    const stored =
+      loaded === null
+        ? null
+        : normalizeSessionValue(loaded, 'storage.get()', 'stored', this.#config.logger);
 
     // Восстанавливаем cookie: без них не выйдет обновить токен после перезапуска процесса.
     if (stored?.cookies) this.#jar.deserialize(stored.cookies);

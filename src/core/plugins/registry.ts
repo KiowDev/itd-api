@@ -6,6 +6,7 @@ import { type RegisteredAttemptInterceptor, withAttemptInterceptorScope } from '
 import type {
   AttemptInterceptor,
   ClientPlugin,
+  OperationTransformContext,
   OperationTransformer,
   PluginApi,
   PluginTeardown,
@@ -245,6 +246,7 @@ export class PluginRegistry {
   async run(
     request: OperationRequestOptions,
     execute: (request: OperationRequestOptions) => Promise<unknown>,
+    signal: AbortSignal,
   ): Promise<unknown> {
     const ordered = this.#ordered;
     if (ordered.length === 0) return execute(request);
@@ -256,6 +258,7 @@ export class PluginRegistry {
     const operationId = request.operationId;
     const method = request.method.toUpperCase();
     const retrySafety = request.retrySafety;
+    const context: OperationTransformContext = Object.freeze({ signal });
     const scoped = (current: OperationRequestOptions): OperationRequestOptions => {
       const prepared = current.retrySafety === undefined ? { ...current, retrySafety } : current;
       return interceptorScope.length === 0
@@ -287,16 +290,20 @@ export class PluginRegistry {
         (next, { plugin, transformer }) =>
           (current) => {
             let called = false;
-            return transformer(scoped(current), (prepared) => {
-              if (called) {
-                throw new ItdConfigError(
-                  `operation transformer плагина «${plugin}» вызвал next() больше одного раза`,
-                );
-              }
-              called = true;
-              validateContract(prepared);
-              return next(scoped(prepared));
-            });
+            return transformer(
+              scoped(current),
+              (prepared) => {
+                if (called) {
+                  throw new ItdConfigError(
+                    `operation transformer плагина «${plugin}» вызвал next() больше одного раза`,
+                  );
+                }
+                called = true;
+                validateContract(prepared);
+                return next(scoped(prepared));
+              },
+              context,
+            );
           },
         (current) => {
           validateContract(current);

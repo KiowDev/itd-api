@@ -18,6 +18,7 @@ import { buildQuery, joinUrl } from '../url.js';
 import { createRequestAbortScope, type RequestAbortScope } from './lifecycle.js';
 import {
   identifyRequest,
+  markRequestErrorNotificationAborted,
   markRequestErrorObserved,
   type PipelineRequest,
   type PipelineRequestInput,
@@ -219,34 +220,56 @@ export class Transport {
               );
         const context = {
           operationId: request.operationId,
+          signal: abort.signal,
           method,
           path: request.path,
           url,
           headers,
           attempt,
         };
-        await this.#dispatchErrorHook(request, {
-          ...context,
-          duration: this.#config.clock.now() - startedAt,
-          error: failure,
-        });
+        await this.#dispatchErrorHook(
+          request,
+          {
+            ...context,
+            duration: this.#config.clock.now() - startedAt,
+            error: failure,
+          },
+          abort,
+          timeout,
+        );
         throw failure;
       }
 
       const context = {
         operationId: request.operationId,
+        signal: abort.signal,
         method,
         path: request.path,
         url,
         headers,
         attempt,
       };
-      await abortable(
-        dispatchRequestHook(this.#config.hooks, 'onRequest', context),
-        abort.signal,
-      ).catch((error) => {
-        throw this.#toTransportError(error, abort, request, method, timeout);
-      });
+      try {
+        await abortable(
+          dispatchRequestHook(this.#config.hooks, 'onRequest', context),
+          abort.signal,
+        );
+      } catch (error) {
+        const failure = abort.signal.aborted
+          ? this.#toTransportError(error, abort, request, method, timeout)
+          : error;
+        await this.#dispatchErrorHook(
+          request,
+          {
+            ...context,
+            duration: this.#config.clock.now() - startedAt,
+            error: failure,
+          },
+          abort,
+          timeout,
+        );
+        throw failure;
+      }
 
       this.#config.logger?.debug(`→ ${method} ${request.path}`, {
         headers: redactHeaders(headers),
@@ -279,7 +302,7 @@ export class Transport {
       } catch (error) {
         const duration = this.#config.clock.now() - startedAt;
 
-        await this.#dispatchErrorHook(request, { ...context, duration, error });
+        await this.#dispatchErrorHook(request, { ...context, duration, error }, abort, timeout);
         this.#config.logger?.warn(
           `× ${method} ${request.path} (${duration} мс): ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -312,7 +335,20 @@ export class Transport {
           );
         } catch (error) {
           void response.body?.cancel().catch(() => {});
-          throw this.#toTransportError(error, abort, request, method, timeout);
+          const failure = abort.signal.aborted
+            ? this.#toTransportError(error, abort, request, method, timeout)
+            : error;
+          await this.#dispatchErrorHook(
+            request,
+            {
+              ...context,
+              duration: this.#config.clock.now() - startedAt,
+              error: failure,
+            },
+            abort,
+            timeout,
+          );
+          throw failure;
         } finally {
           if (!hookResponse.bodyUsed) void hookResponse.body?.cancel().catch(() => {});
         }
@@ -341,7 +377,7 @@ export class Transport {
           body: payload,
         });
 
-        await this.#dispatchErrorHook(request, { ...context, duration, error });
+        await this.#dispatchErrorHook(request, { ...context, duration, error }, abort, timeout);
         this.#config.logger?.warn(
           `← ${response.status} ${method} ${request.path} (${duration} мс): ${error.message}`,
         );
@@ -366,14 +402,24 @@ export class Transport {
   async #dispatchErrorHook(
     request: PipelineRequest,
     context: Parameters<NonNullable<ClientHooks['onError']>>[0],
+    abort: RequestAbortScope,
+    timeout: number,
   ): Promise<void> {
     markRequestErrorObserved(request, context.error);
+    const onAbort = () => markRequestErrorNotificationAborted(request);
+    if (abort.signal.aborted) onAbort();
+    else abort.signal.addEventListener('abort', onAbort, { once: true });
     try {
-      await dispatchRequestHook(this.#config.hooks, 'onError', context);
+      await abortable(dispatchRequestHook(this.#config.hooks, 'onError', context), abort.signal);
     } catch (error) {
+      const failure = abort.signal.aborted
+        ? this.#toTransportError(error, abort, request, context.method, timeout)
+        : error;
       // Верхняя граница не должна повторно сообщать ошибку, выброшенную самим onError.
-      markRequestErrorObserved(request, error);
-      throw error;
+      markRequestErrorObserved(request, failure);
+      throw failure;
+    } finally {
+      abort.signal.removeEventListener('abort', onAbort);
     }
   }
 
@@ -432,6 +478,7 @@ export class Transport {
     response: Response,
     context: {
       operationId: PipelineRequest['operationId'];
+      signal: AbortSignal;
       method: string;
       path: string;
       url: string;
@@ -451,11 +498,16 @@ export class Transport {
 
       const failure = this.#toTransportError(error, abort, request, method, timeout);
 
-      await this.#dispatchErrorHook(request, {
-        ...context,
-        duration: this.#config.clock.now() - startedAt,
-        error: failure,
-      });
+      await this.#dispatchErrorHook(
+        request,
+        {
+          ...context,
+          duration: this.#config.clock.now() - startedAt,
+          error: failure,
+        },
+        abort,
+        timeout,
+      );
       this.#config.logger?.warn(
         `× ${method} ${request.path}: не удалось прочитать тело ответа — ${failure.message}`,
       );

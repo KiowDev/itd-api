@@ -18,6 +18,7 @@ interface RequestAuthRecoveryState {
 
 interface RequestErrorObservationState {
   errors: Set<unknown>;
+  lifecycleAbortedDuringNotification: boolean;
 }
 
 type InternalPipelineRequest = PipelineRequest & {
@@ -41,7 +42,10 @@ export function requestAuthRecoveryState(request: PipelineRequest): RequestAuthR
 /** Создаёт общую для копий логического запроса отметку вызова `onError`. @internal */
 export function trackRequestErrorObservation(request: PipelineRequest): void {
   const internal = request as InternalPipelineRequest;
-  internal[REQUEST_ERROR_OBSERVATION_STATE] ??= { errors: new Set() };
+  internal[REQUEST_ERROR_OBSERVATION_STATE] ??= {
+    errors: new Set(),
+    lifecycleAbortedDuringNotification: false,
+  };
 }
 
 /** Отмечает, что ошибка логического запроса уже была передана в `onError`. @internal */
@@ -56,6 +60,21 @@ export function wasRequestErrorObserved(request: PipelineRequest, error: unknown
   return (
     (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE]?.errors.has(error) ??
     false
+  );
+}
+
+/** Отмечает отмену lifecycle во время уже начатого локального `onError`. @internal */
+export function markRequestErrorNotificationAborted(request: PipelineRequest): void {
+  trackRequestErrorObservation(request);
+  const state = (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE];
+  if (state) state.lifecycleAbortedDuringNotification = true;
+}
+
+/** Нужно ли верхней границе не запускать тот же `onError` повторно после отмены. @internal */
+export function wasRequestErrorNotificationAborted(request: PipelineRequest): boolean {
+  return (
+    (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE]
+      ?.lifecycleAbortedDuringNotification ?? false
   );
 }
 

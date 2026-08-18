@@ -14,6 +14,7 @@ import {
   type PipelineRequestInput,
   type RequestHandler,
   trackRequestErrorObservation,
+  wasRequestErrorNotificationAborted,
   wasRequestErrorObserved,
 } from './pipeline.js';
 
@@ -142,8 +143,11 @@ export class HttpClient {
     trackRequestErrorObservation(request);
 
     try {
-      const pending = this.#plugins.run(request, (prepared) =>
-        execute({ ...(prepared as PipelineRequest), signal: scope.signal, timeout: 0 }),
+      const pending = this.#plugins.run(
+        request,
+        (prepared) =>
+          execute({ ...(prepared as PipelineRequest), signal: scope.signal, timeout: 0 }),
+        scope.signal,
       );
       return await waitForRequest(Promise.resolve(pending), scope.signal);
     } catch (error) {
@@ -152,7 +156,10 @@ export class HttpClient {
         { timeout, method: request.method, path: request.path },
         error,
       );
-      if (!wasRequestErrorObserved(request, error)) {
+      const alreadyReported =
+        wasRequestErrorObserved(request, error) ||
+        (scope.signal.aborted && wasRequestErrorNotificationAborted(request));
+      if (!alreadyReported) {
         markRequestErrorObserved(request, error);
         let headers: Headers;
         try {
@@ -162,6 +169,7 @@ export class HttpClient {
         }
         const notification = dispatchRequestHook(this.#hooks, 'onError', {
           operationId: request.operationId,
+          signal: scope.signal,
           method: request.method.toUpperCase(),
           path: request.path,
           url: joinUrl(request.baseUrl ?? this.#baseUrl, request.path) + buildQuery(request.query),

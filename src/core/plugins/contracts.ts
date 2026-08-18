@@ -15,6 +15,7 @@ import type { Logger, OperationRequestOptions } from '../options.js';
  * @param next следующая обёртка либо выполнение операции
  * `next()` возвращает результат публичного метода. Если обёртка не вызывает `next`, её
  * собственный результат считается готовым и повторно не нормализуется.
+ * @param context общий lifecycle операции; его signal учитывает timeout и `dispose()` клиента
  *
  * @returns результат в том виде, в котором его получит вызывающий код
  *
@@ -27,7 +28,14 @@ import type { Logger, OperationRequestOptions } from '../options.js';
 export type OperationTransformer = (
   request: OperationRequestOptions,
   next: (request: OperationRequestOptions) => Promise<unknown>,
+  context: OperationTransformContext,
 ) => Promise<unknown>;
+
+/** Состояние времени жизни логической операции, не влияющее на её семантические параметры. */
+export interface OperationTransformContext {
+  /** Общий сигнал пользовательской отмены, timeout и освобождения клиента. */
+  readonly signal: AbortSignal;
+}
 
 /** Финальные данные одной транспортной попытки. */
 export interface AttemptContext {
