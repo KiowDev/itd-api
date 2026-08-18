@@ -10,7 +10,7 @@ import type {
   ShopOrderSummary,
   ShopPayment,
 } from '../models/shop.js';
-import { createMemoryShopOrderAccessStorage, type ShopOrderAccessStorage } from './order-access.js';
+import { MemoryShopOrderAccessStorage, type ShopOrderAccessStorage } from './order-access.js';
 
 const Operation = Object.freeze({
   RequestCode: 'request-code',
@@ -82,7 +82,7 @@ export function createShopFeature(options: ShopFeatureOptions = {}): ClientFeatu
       [Operation.Pay]: { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: Operation.Pay },
     },
     setup(context) {
-      const storage = options.storage ?? createMemoryShopOrderAccessStorage();
+      const storage = options.storage ?? new MemoryShopOrderAccessStorage();
       let pendingEmail: string | null = null;
 
       const readSession = async (): Promise<ShopOrderAccessSession | null> => {

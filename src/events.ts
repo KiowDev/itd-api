@@ -62,7 +62,6 @@ export {
   type EventEnqueueOptions,
   type EventSession,
   type EventSyncReason,
-  resolveEventChannelOptions,
 } from './events/engine.js';
 export {
   type EventHandler,

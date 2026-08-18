@@ -44,6 +44,7 @@ describe('состав точек входа', () => {
 
     expect(core).not.toHaveProperty('createClientRuntime');
     expect(core).not.toHaveProperty('ClientRuntimeStage');
+    expect(core).not.toHaveProperty('createMemoryShopOrderAccessStorage');
   });
 
   it('itd-api/rest — минимальный клиент и авторизация по готовому токену', () => {
@@ -66,6 +67,7 @@ describe('состав точек входа', () => {
       'MemoryTokenStorage',
       'createTokenStorage',
       'TURNSTILE_SITE_KEY',
+      'createMemoryShopOrderAccessStorage',
     ]) {
       expect(rest).not.toHaveProperty(name);
     }
@@ -91,6 +93,7 @@ describe('состав точек входа', () => {
       'MemoryTokenStorage',
       'TURNSTILE_SITE_KEY',
       'post',
+      'resolveEventChannelOptions',
     ]) {
       expect(events).not.toHaveProperty(name);
     }

@@ -217,9 +217,6 @@ export const AUTH_PATHS = {
  */
 export const TURNSTILE_SITE_KEY = '0x4AAAAAACHhxczw6fJGwPBg';
 
-/** Заголовок с идентификатором устройства. Сервер связывает с ним запись в списке сессий. */
-export const DEVICE_ID_HEADER = 'X-Device-Id';
-
 /** События слоя авторизации. */
 export interface AuthEvents {
   /** Токен получен или обновлён. */

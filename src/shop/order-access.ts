@@ -1,9 +1,5 @@
 import { ItdConfigError } from '../core/errors.js';
-import {
-  createKeyValueStore,
-  type KeyValueStore,
-  MemoryKeyValueStore,
-} from '../core/key-value-store.js';
+import { createKeyValueStore, type KeyValueStore } from '../core/key-value-store.js';
 import type { ShopOrderAccessSession } from '../models/shop.js';
 
 /** Хранилище временного доступа к гостевым заказам. */
@@ -62,9 +58,4 @@ export function createShopOrderAccessStorage(
     set: (session) => backend.set(key, copySession(session)),
     clear: () => backend.delete(key),
   };
-}
-
-/** Создаёт независимое хранилище доступа к заказам в памяти. */
-export function createMemoryShopOrderAccessStorage(): ShopOrderAccessStorage {
-  return createShopOrderAccessStorage(new MemoryKeyValueStore<ShopOrderAccessSession>());
 }

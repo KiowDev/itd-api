@@ -69,7 +69,6 @@ export {
   textFields,
 } from './fields.js';
 export { type CryptOptions, type CryptPlugin, type CryptRequestOptions, crypt } from './plugin.js';
-export { FRAME_END, FRAME_START } from './protocol.js';
 export { decodeTree } from './walk.js';
 
 declare module 'itd-api' {

@@ -456,7 +456,6 @@ export {
   type ShopFeatureOptions,
 } from './shop/feature.js';
 export {
-  createMemoryShopOrderAccessStorage,
   createShopOrderAccessStorage,
   MemoryShopOrderAccessStorage,
   type ShopOrderAccessStorage,

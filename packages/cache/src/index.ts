@@ -19,7 +19,6 @@ import type { CacheMode } from './plugin.js';
 import type { CacheInvalidation, CachePolicyKind, CachePolicyScope } from './policy.js';
 
 export { CacheError } from './errors.js';
-export { buildCacheKey } from './key.js';
 export {
   CACHE_OPERATIONS,
   type CacheOperation,

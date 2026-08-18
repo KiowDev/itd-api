@@ -19,10 +19,9 @@ import {
   decodeTree,
   encodeBeeCrypt,
   encodeInvisible,
-  FRAME_END,
-  FRAME_START,
   INVISIBLE_ALPHABET,
 } from '../src/index.js';
+import { FRAME_END, FRAME_START } from '../src/protocol.js';
 
 const cryptoOptions = (options: CryptRequestOptions) => ({ extensions: { crypto: options } });
 
