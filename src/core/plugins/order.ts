@@ -2,6 +2,16 @@ import { ItdConfigError } from '../errors.js';
 import type { ClientPlugin } from './contracts.js';
 
 const RELATION_FIELDS = ['requires', 'conflicts', 'before', 'after'] as const;
+const PLUGIN_NAME_PART = '[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*';
+const PLUGIN_NAME_PATTERN = new RegExp(
+  `^(?:${PLUGIN_NAME_PART}|@${PLUGIN_NAME_PART}(?:/${PLUGIN_NAME_PART})?(?::${PLUGIN_NAME_PART})?)$`,
+);
+const PLUGIN_NAME_FORMAT =
+  'name, @package[:addon] или @scope/package[:addon] с разделителями -, _ и .';
+
+function isPluginName(value: string): boolean {
+  return PLUGIN_NAME_PATTERN.test(value);
+}
 
 function validateNameList(plugin: ClientPlugin, field: (typeof RELATION_FIELDS)[number]): void {
   const values = plugin[field];
@@ -14,6 +24,11 @@ function validateNameList(plugin: ClientPlugin, field: (typeof RELATION_FIELDS)[
   for (const value of values as readonly unknown[]) {
     if (typeof value !== 'string' || value.trim() === '') {
       throw new ItdConfigError(`плагин «${plugin.name}»: ${field} содержит пустое имя плагина`);
+    }
+    if (!isPluginName(value)) {
+      throw new ItdConfigError(
+        `плагин «${plugin.name}»: имя «${value}» в ${field} должно соответствовать ${PLUGIN_NAME_FORMAT}`,
+      );
     }
     if (value === plugin.name) {
       throw new ItdConfigError(`плагин «${plugin.name}» не может указать себя в ${field}`);
@@ -42,6 +57,9 @@ export function validatePluginDefinition(plugin: ClientPlugin): void {
   const name = plugin.name;
   if (typeof name !== 'string' || name.trim() === '') {
     throw new ItdConfigError('У плагина должно быть непустое имя');
+  }
+  if (!isPluginName(name)) {
+    throw new ItdConfigError(`Имя плагина «${name}» должно соответствовать ${PLUGIN_NAME_FORMAT}`);
   }
 
   for (const field of RELATION_FIELDS) validateNameList(plugin, field);

@@ -48,6 +48,37 @@ describe('подключение плагинов', () => {
     expect(() => itd.use({ name: 'a' } as unknown as ClientPlugin)).toThrow(ItdConfigError);
   });
 
+  it('требует однозначный формат имени плагина и ссылок на плагины', () => {
+    const { itd } = makeClient([]);
+
+    for (const name of [
+      ' cache ',
+      'Cache',
+      'cache..v2',
+      'cache-',
+      'кэш',
+      '@scope/package:',
+      '@scope//package',
+    ]) {
+      expect(() => itd.use({ name, install() {} })).toThrow(/@scope\/package/);
+    }
+    expect(() => itd.use({ name: 'probe', requires: [' cache '], install() {} })).toThrow(
+      /@scope\/package/,
+    );
+    const valid = [
+      'cache-v2',
+      'cache_v2',
+      'cache.v2',
+      '@testing-operations',
+      '@testing_operations:mock-v2.part_one',
+      '@itd-api/testing:operations.v2_mock',
+    ];
+    for (const name of valid) {
+      expect(() => itd.use({ name, install() {} })).not.toThrow();
+    }
+    expect(itd.pluginNames()).toEqual(valid);
+  });
+
   it('отвергает повторное подключение одного имени', () => {
     const { itd } = makeClient([]);
     itd.use(plugin('crypt', (r, next) => next(r)));
@@ -277,8 +308,8 @@ describe('обёртки запроса', () => {
         return result;
       };
 
-    itd.use(plugin('первый', trace('первый')));
-    itd.use(plugin('второй', trace('второй')));
+    itd.use(plugin('first', trace('первый')));
+    itd.use(plugin('second', trace('второй')));
 
     await itd.posts.get('1');
 

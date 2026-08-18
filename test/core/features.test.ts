@@ -5,6 +5,7 @@ import type { ClientFeature, FeatureInstallation } from '../../src/core/features
 import { RetrySafety } from '../../src/core/operation.js';
 import type { OperationTransformer } from '../../src/core/plugins/contracts.js';
 import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
+import { ServiceRegistry } from '../../src/core/services.js';
 import { ItdRestClient } from '../../src/rest/client.js';
 import { createMockFetch, json } from '../helpers/mock-fetch.js';
 
@@ -621,6 +622,48 @@ describe('feature runtime', () => {
     expect(stop).toHaveBeenCalledOnce();
     expect(client.hasFeature('managed-rollback')).toBe(false);
     await client.dispose();
+  });
+
+  it('общий rollback продолжает очистку и сохраняет ошибку setup()', async () => {
+    const cleanupFailure = new Error('cleanup failed');
+    const setupFailure = new Error('setup failed');
+    const deleteService = vi
+      .spyOn(ServiceRegistry.prototype, 'delete')
+      .mockImplementationOnce(() => {
+        throw cleanupFailure;
+      });
+    const logError = vi.fn();
+    const client = new ItdClient({
+      rateLimit: false,
+      retry: false,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: logError },
+    });
+
+    try {
+      expect(() =>
+        client.install({
+          name: 'rollback-probe',
+          services: [
+            { name: 'first-probe', baseUrl: 'https://first.test' },
+            { name: 'second-probe', baseUrl: 'https://second.test' },
+          ],
+          operations: {},
+          setup: () => {
+            throw setupFailure;
+          },
+        }),
+      ).toThrow(setupFailure);
+
+      expect(deleteService).toHaveBeenCalledTimes(2);
+      expect(logError).toHaveBeenCalledWith(
+        'Не удалось полностью откатить feature «rollback-probe»',
+        cleanupFailure,
+      );
+      expect(client.hasFeature('rollback-probe')).toBe(false);
+    } finally {
+      deleteService.mockRestore();
+      await client.dispose();
+    }
   });
 
   it('ошибки cleanup и logger не подменяют ошибку setup()', async () => {

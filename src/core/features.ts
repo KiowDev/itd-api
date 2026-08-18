@@ -131,6 +131,30 @@ interface ResolvedFeatureOperation {
   readonly service: string | undefined;
 }
 
+type FeatureCleanup = () => void;
+
+class FeatureInstallationTransaction {
+  readonly #cleanup: FeatureCleanup[] = [];
+
+  add(cleanup: FeatureCleanup): void {
+    this.#cleanup.push(cleanup);
+  }
+
+  snapshot(): readonly FeatureCleanup[] {
+    return [...this.#cleanup];
+  }
+
+  rollback(reportError: (error: unknown) => void): void {
+    for (let index = this.#cleanup.length - 1; index >= 0; index -= 1) {
+      try {
+        this.#cleanup[index]?.();
+      } catch (error) {
+        reportError(error);
+      }
+    }
+  }
+}
+
 function requireName(value: unknown, kind: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new ItdConfigError(`${kind} должен иметь непустое имя`);
@@ -170,6 +194,57 @@ function validateBucket(owner: string, localName: string, bucket: FeatureBucketD
   }
 }
 
+function validateFeatureDefinition<TApi>(
+  feature: ClientFeature<TApi>,
+  isInstalled: (name: string) => boolean,
+): string {
+  if (typeof feature !== 'object' || feature === null) {
+    throw new ItdConfigError('feature должен быть объектом');
+  }
+
+  const name = requireFeatureName(feature.name);
+  if (isInstalled(name)) {
+    throw new ItdConfigError(`feature «${name}» уже установлен`);
+  }
+  if (typeof feature.setup !== 'function') {
+    throw new ItdConfigError(`feature «${name}» должен предоставлять setup()`);
+  }
+  if (
+    typeof feature.operations !== 'object' ||
+    feature.operations === null ||
+    Array.isArray(feature.operations)
+  ) {
+    throw new ItdConfigError(`feature «${name}» должен объявлять operations`);
+  }
+  if (feature.services !== undefined && !Array.isArray(feature.services)) {
+    throw new ItdConfigError(`feature «${name}»: services должен быть массивом`);
+  }
+  if (
+    feature.buckets !== undefined &&
+    (typeof feature.buckets !== 'object' ||
+      feature.buckets === null ||
+      Array.isArray(feature.buckets))
+  ) {
+    throw new ItdConfigError(`feature «${name}»: buckets должен быть объектом`);
+  }
+  return name;
+}
+
+function validateFeatureInstallation<TApi>(
+  name: string,
+  installation: FeatureInstallation<TApi>,
+): void {
+  if (typeof installation !== 'object' || installation === null || !('api' in installation)) {
+    throw new ItdConfigError(`setup() feature «${name}» должен вернуть объект с полем api`);
+  }
+  if (installation.close !== undefined && typeof installation.close !== 'function') {
+    throw new ItdConfigError(`feature «${name}»: close должен быть функцией`);
+  }
+  if (installation.dispose !== undefined && typeof installation.dispose !== 'function') {
+    throw new ItdConfigError(`feature «${name}»: dispose должен быть функцией`);
+  }
+}
+
 /** Реестр подключаемых модулей клиента. @internal */
 export class FeatureRegistry {
   readonly #deps: FeatureRegistryDeps;
@@ -181,43 +256,165 @@ export class FeatureRegistry {
     this.#deps = deps;
   }
 
+  #registerServices(
+    featureName: string,
+    definitions: readonly ServiceDefinition[],
+    transaction: FeatureInstallationTransaction,
+  ): Set<string> {
+    const services = new Set<string>();
+    for (const service of definitions) {
+      const serviceName = requireName(service?.name, `Сервис feature «${featureName}»`);
+      const owner = this.#serviceOwners.get(serviceName);
+      if (owner !== undefined) {
+        throw new ItdConfigError(
+          `feature «${featureName}»: сервис «${serviceName}» уже принадлежит feature «${owner}»`,
+        );
+      }
+      if (services.has(serviceName)) {
+        throw new ItdConfigError(
+          `feature «${featureName}»: сервис «${serviceName}» объявлен повторно`,
+        );
+      }
+
+      const existed = this.#deps.services.has(serviceName);
+      if (!existed) {
+        this.#deps.services.define(service);
+        transaction.add(() => void this.#deps.services.delete(serviceName));
+      } else {
+        const override = this.#deps.serviceOverrides.find(
+          (candidate) => candidate.name.trim() === serviceName,
+        );
+        if (override) {
+          const previous = this.#deps.services.replace(mergeService(service, override));
+          transaction.add(() => void this.#deps.services.replace(previous));
+        }
+      }
+      this.#serviceOwners.set(serviceName, featureName);
+      transaction.add(() => {
+        if (this.#serviceOwners.get(serviceName) === featureName) {
+          this.#serviceOwners.delete(serviceName);
+        }
+      });
+      services.add(serviceName);
+    }
+    return services;
+  }
+
+  #registerBuckets(
+    featureName: string,
+    definitions: Readonly<Record<string, FeatureBucketDefinition>>,
+    transaction: FeatureInstallationTransaction,
+  ): Map<string, string> {
+    const bucketNames = new Map<string, string>();
+    for (const [rawLocalName, bucket] of Object.entries(definitions)) {
+      const localName = requireName(rawLocalName, `Бакет feature «${featureName}»`);
+      validateBucket(featureName, localName, bucket);
+      const globalName = `feature:${featureName}/${localName}`;
+      transaction.add(this.#deps.catalog.registerBucket(featureName, globalName, bucket));
+      const unregisterQueue = this.#deps.registerBucket(globalName, bucket);
+      if (unregisterQueue) transaction.add(unregisterQueue);
+      bucketNames.set(localName, globalName);
+    }
+    return bucketNames;
+  }
+
+  #registerOperations(
+    featureName: string,
+    definitions: Readonly<Record<string, FeatureOperationDefinition>>,
+    services: ReadonlySet<string>,
+    bucketNames: ReadonlyMap<string, string>,
+    transaction: FeatureInstallationTransaction,
+  ): Map<string, ResolvedFeatureOperation> {
+    const operations = new Map<string, ResolvedFeatureOperation>();
+    for (const [rawLocalName, definition] of Object.entries(definitions)) {
+      const localName = requireName(rawLocalName, `Операция feature «${featureName}»`);
+      if (typeof definition !== 'object' || definition === null) {
+        throw new ItdConfigError(
+          `feature «${featureName}»: операция «${localName}» должна быть объектом`,
+        );
+      }
+      const methods: readonly OperationMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+      if (!methods.includes(definition.method)) {
+        throw new ItdConfigError(
+          `feature «${featureName}»: операция «${localName}» содержит неизвестный HTTP-метод`,
+        );
+      }
+      const retrySafety: readonly RetrySafety[] = Object.values(RetrySafety);
+      if (!retrySafety.includes(definition.retrySafety)) {
+        throw new ItdConfigError(
+          `feature «${featureName}»: операция «${localName}» содержит неизвестную retrySafety`,
+        );
+      }
+      if (definition.service !== undefined && typeof definition.service !== 'string') {
+        throw new ItdConfigError(
+          `feature «${featureName}»: service операции «${localName}» должен быть строкой`,
+        );
+      }
+      if (definition.bucket !== undefined && typeof definition.bucket !== 'string') {
+        throw new ItdConfigError(
+          `feature «${featureName}»: bucket операции «${localName}» должен быть строкой`,
+        );
+      }
+      if (definition.read !== undefined && typeof definition.read !== 'function') {
+        throw new ItdConfigError(
+          `feature «${featureName}»: read операции «${localName}» должна быть функцией`,
+        );
+      }
+      if (
+        definition.annotations !== undefined &&
+        (typeof definition.annotations !== 'object' ||
+          definition.annotations === null ||
+          Array.isArray(definition.annotations))
+      ) {
+        throw new ItdConfigError(
+          `feature «${featureName}»: annotations операции «${localName}» должны быть объектом`,
+        );
+      }
+      if (definition.service !== undefined && !services.has(definition.service)) {
+        throw new ItdConfigError(
+          `feature «${featureName}»: операция «${localName}» ссылается на необъявленный сервис «${definition.service}»`,
+        );
+      }
+
+      const bucket =
+        definition.bucket === undefined
+          ? this.#deps.catalog.defaultBucket
+          : bucketNames.get(definition.bucket);
+      if (bucket === undefined) {
+        throw new ItdConfigError(
+          `feature «${featureName}»: операция «${localName}» ссылается на необъявленный бакет «${definition.bucket}»`,
+        );
+      }
+
+      const operationId = `${featureName}.${localName}` as FeatureOperationId;
+      const contract = defineOperation(
+        operationId,
+        {
+          method: definition.method,
+          retrySafety: definition.retrySafety,
+          bucket,
+          ...(definition.annotations === undefined ? {} : { annotations: definition.annotations }),
+        },
+        definition.read ?? identityResult,
+      );
+      transaction.add(
+        this.#deps.catalog.registerOperation(featureName, operationId, {
+          method: contract.method,
+          retrySafety: contract.retrySafety,
+          bucket,
+          ...(contract.annotations === undefined ? {} : { annotations: contract.annotations }),
+        }),
+      );
+      operations.set(localName, { contract, service: definition.service });
+    }
+    return operations;
+  }
+
   install<TApi>(feature: ClientFeature<TApi>): TApi {
     this.#deps.assertActive('установить feature');
     if (this.#disposed) throw new ItdStateError('Реестр feature уже освобождён');
-    if (typeof feature !== 'object' || feature === null) {
-      throw new ItdConfigError('feature должен быть объектом');
-    }
-
-    const name = requireFeatureName(feature.name);
-    if (this.#features.has(name)) {
-      throw new ItdConfigError(`feature «${name}» уже установлен`);
-    }
-    if (typeof feature.setup !== 'function') {
-      throw new ItdConfigError(`feature «${name}» должен предоставлять setup()`);
-    }
-    if (
-      typeof feature.operations !== 'object' ||
-      feature.operations === null ||
-      Array.isArray(feature.operations)
-    ) {
-      throw new ItdConfigError(`feature «${name}» должен объявлять operations`);
-    }
-    if (feature.services !== undefined && !Array.isArray(feature.services)) {
-      throw new ItdConfigError(`feature «${name}»: services должен быть массивом`);
-    }
-    if (
-      feature.buckets !== undefined &&
-      (typeof feature.buckets !== 'object' ||
-        feature.buckets === null ||
-        Array.isArray(feature.buckets))
-    ) {
-      throw new ItdConfigError(`feature «${name}»: buckets должен быть объектом`);
-    }
-
-    const rollback: Array<() => void> = [];
-    const services = new Set<string>();
-    const bucketNames = new Map<string, string>();
-    const operations = new Map<string, ResolvedFeatureOperation>();
+    const name = validateFeatureDefinition(feature, (candidate) => this.#features.has(candidate));
+    const transaction = new FeatureInstallationTransaction();
     const controller = new AbortController();
     let committed = false;
     const reportRollbackError = (message: string, error: unknown): void => {
@@ -229,135 +426,15 @@ export class FeatureRegistry {
     };
 
     try {
-      for (const service of feature.services ?? []) {
-        const serviceName = requireName(service?.name, `Сервис feature «${name}»`);
-        const owner = this.#serviceOwners.get(serviceName);
-        if (owner !== undefined) {
-          throw new ItdConfigError(
-            `feature «${name}»: сервис «${serviceName}» уже принадлежит feature «${owner}»`,
-          );
-        }
-        if (services.has(serviceName)) {
-          throw new ItdConfigError(`feature «${name}»: сервис «${serviceName}» объявлен повторно`);
-        }
-
-        const existed = this.#deps.services.has(serviceName);
-        if (!existed) {
-          this.#deps.services.define(service);
-          rollback.push(() => void this.#deps.services.delete(serviceName));
-        } else {
-          const override = this.#deps.serviceOverrides.find(
-            (candidate) => candidate.name.trim() === serviceName,
-          );
-          if (override) {
-            const previous = this.#deps.services.replace(mergeService(service, override));
-            rollback.push(() => void this.#deps.services.replace(previous));
-          }
-        }
-        this.#serviceOwners.set(serviceName, name);
-        rollback.push(() => {
-          if (this.#serviceOwners.get(serviceName) === name)
-            this.#serviceOwners.delete(serviceName);
-        });
-        services.add(serviceName);
-      }
-
-      for (const [rawLocalName, bucket] of Object.entries(feature.buckets ?? {})) {
-        const localName = requireName(rawLocalName, `Бакет feature «${name}»`);
-        validateBucket(name, localName, bucket);
-        const globalName = `feature:${name}/${localName}`;
-        const unregisterCatalog = this.#deps.catalog.registerBucket(name, globalName, bucket);
-        rollback.push(unregisterCatalog);
-        const unregisterQueue = this.#deps.registerBucket(globalName, bucket);
-        if (unregisterQueue) rollback.push(unregisterQueue);
-        bucketNames.set(localName, globalName);
-      }
-
-      for (const [rawLocalName, definition] of Object.entries(feature.operations)) {
-        const localName = requireName(rawLocalName, `Операция feature «${name}»`);
-        if (typeof definition !== 'object' || definition === null) {
-          throw new ItdConfigError(
-            `feature «${name}»: операция «${localName}» должна быть объектом`,
-          );
-        }
-        const methods: readonly OperationMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
-        if (!methods.includes(definition.method)) {
-          throw new ItdConfigError(
-            `feature «${name}»: операция «${localName}» содержит неизвестный HTTP-метод`,
-          );
-        }
-        const retrySafety: readonly RetrySafety[] = Object.values(RetrySafety);
-        if (!retrySafety.includes(definition.retrySafety)) {
-          throw new ItdConfigError(
-            `feature «${name}»: операция «${localName}» содержит неизвестную retrySafety`,
-          );
-        }
-        if (definition.service !== undefined && typeof definition.service !== 'string') {
-          throw new ItdConfigError(
-            `feature «${name}»: service операции «${localName}» должен быть строкой`,
-          );
-        }
-        if (definition.bucket !== undefined && typeof definition.bucket !== 'string') {
-          throw new ItdConfigError(
-            `feature «${name}»: bucket операции «${localName}» должен быть строкой`,
-          );
-        }
-        if (definition.read !== undefined && typeof definition.read !== 'function') {
-          throw new ItdConfigError(
-            `feature «${name}»: read операции «${localName}» должна быть функцией`,
-          );
-        }
-        if (
-          definition.annotations !== undefined &&
-          (typeof definition.annotations !== 'object' ||
-            definition.annotations === null ||
-            Array.isArray(definition.annotations))
-        ) {
-          throw new ItdConfigError(
-            `feature «${name}»: annotations операции «${localName}» должны быть объектом`,
-          );
-        }
-        if (definition.service !== undefined && !services.has(definition.service)) {
-          throw new ItdConfigError(
-            `feature «${name}»: операция «${localName}» ссылается на необъявленный сервис «${definition.service}»`,
-          );
-        }
-
-        const bucket =
-          definition.bucket === undefined
-            ? this.#deps.catalog.defaultBucket
-            : bucketNames.get(definition.bucket);
-        if (bucket === undefined) {
-          throw new ItdConfigError(
-            `feature «${name}»: операция «${localName}» ссылается на необъявленный бакет «${definition.bucket}»`,
-          );
-        }
-
-        const operationId = `${name}.${localName}` as FeatureOperationId;
-        const contract = defineOperation(
-          operationId,
-          {
-            method: definition.method,
-            retrySafety: definition.retrySafety,
-            bucket,
-            ...(definition.annotations === undefined
-              ? {}
-              : { annotations: definition.annotations }),
-          },
-          definition.read ?? identityResult,
-        );
-        const unregister = this.#deps.catalog.registerOperation(name, operationId, {
-          method: contract.method,
-          retrySafety: contract.retrySafety,
-          bucket,
-          ...(contract.annotations === undefined ? {} : { annotations: contract.annotations }),
-        });
-        rollback.push(unregister);
-        operations.set(localName, {
-          contract,
-          service: definition.service,
-        });
-      }
+      const services = this.#registerServices(name, feature.services ?? [], transaction);
+      const bucketNames = this.#registerBuckets(name, feature.buckets ?? {}, transaction);
+      const operations = this.#registerOperations(
+        name,
+        feature.operations,
+        services,
+        bucketNames,
+        transaction,
+      );
 
       const context: FeatureContext = Object.freeze({
         featureName: name,
@@ -432,7 +509,7 @@ export class FeatureRegistry {
             unregister();
           };
           if (!committed) {
-            rollback.push(() => {
+            transaction.add(() => {
               if (!registered) return;
               if (committed) {
                 release();
@@ -470,28 +547,22 @@ export class FeatureRegistry {
       });
 
       const installation = feature.setup(context);
-      if (typeof installation !== 'object' || installation === null || !('api' in installation)) {
-        throw new ItdConfigError(`setup() feature «${name}» должен вернуть объект с полем api`);
-      }
-      if (installation.close !== undefined && typeof installation.close !== 'function') {
-        throw new ItdConfigError(`feature «${name}»: close должен быть функцией`);
-      }
-      if (installation.dispose !== undefined && typeof installation.dispose !== 'function') {
-        throw new ItdConfigError(`feature «${name}»: dispose должен быть функцией`);
-      }
+      validateFeatureInstallation(name, installation);
 
       this.#features.set(name, {
         name,
         controller,
         close: installation.close,
         dispose: installation.dispose,
-        cleanup: [...rollback],
+        cleanup: transaction.snapshot(),
       });
       committed = true;
       return installation.api;
     } catch (error) {
       controller.abort(new ItdAbortError(`Установка feature «${name}» отменена`));
-      for (const undo of rollback.reverse()) undo();
+      transaction.rollback((rollbackError) => {
+        reportRollbackError(`Не удалось полностью откатить feature «${name}»`, rollbackError);
+      });
       throw error;
     }
   }
