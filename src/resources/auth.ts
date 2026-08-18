@@ -123,16 +123,21 @@ export class AuthResource extends BaseResource {
     credentials: CaptchaCredentials,
     options: RequestOptions = {},
   ): Promise<SignInResult> {
+    const revision = this.#auth.revision();
+    const cookies = this.#auth.createCookieFlow(false);
     const result = await this.http.execute(AUTH_SIGN_IN, {
       path: AUTH_PATHS.signIn,
       body: credentials,
       skipAuth: true,
       skipAuthRefresh: true,
+      cookieJar: cookies,
       ...options,
     });
 
     if (result.status === SignInStatus.Authenticated) {
-      await this.#auth.setAccessToken(result.accessToken);
+      await this.#auth.setAccessToken(result.accessToken, revision, cookies);
+    } else {
+      this.#auth.commitCookieFlow(cookies, revision);
     }
     return result;
   }
@@ -146,15 +151,18 @@ export class AuthResource extends BaseResource {
     input: Credentials & { otp: string; flowToken: string },
     options: RequestOptions = {},
   ): Promise<string> {
+    const revision = this.#auth.revision();
+    const cookies = this.#auth.createCookieFlow();
     const accessToken = await this.http.execute(AUTH_VERIFY_OTP, {
       path: AUTH_PATHS.verifyOtp,
       body: input,
       skipAuth: true,
       skipAuthRefresh: true,
+      cookieJar: cookies,
       ...options,
     });
 
-    await this.#auth.setAccessToken(accessToken);
+    await this.#auth.setAccessToken(accessToken, revision, cookies);
     return accessToken;
   }
 

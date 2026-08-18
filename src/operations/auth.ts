@@ -36,8 +36,8 @@ export const AUTH_SIGN_IN = defineBuiltInOperation<SignInResult>('auth.signIn', 
 export const AUTH_VERIFY_OTP = defineBuiltInOperation<string>('auth.verifyOtp', (body) =>
   requireString(body, 'accessToken', 'Сервер не вернул accessToken после подтверждения кода'),
 );
-export const AUTH_REFRESH = defineBuiltInOperation<string | undefined>('auth.refresh', (body) =>
-  pickString(body, 'accessToken'),
+export const AUTH_REFRESH = defineBuiltInOperation<string>('auth.refresh', (body) =>
+  requireString(body, 'accessToken', 'Сервер не вернул accessToken при обновлении сессии'),
 );
 export const AUTH_RESEND_OTP = voidOperation('auth.resendOtp');
 export const AUTH_LOGOUT = voidOperation('auth.logout');

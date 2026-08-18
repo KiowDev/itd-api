@@ -66,13 +66,16 @@ export function scopedTokenStorage(storage: MultiTokenStorage, account: string):
  *
  * @internal
  */
-export function isRestorableSession(session: ItdSession | null): session is ItdSession {
+export function isRestorableSession(
+  session: ItdSession | null,
+  baseUrl: string,
+): session is ItdSession {
   if (!session) return false;
   if (session.accessToken || session.refreshToken) return true;
 
   const jar = new CookieJar();
   jar.deserialize(session.cookies);
-  return jar.has(AUTH_FLAG_COOKIE);
+  return jar.has(AUTH_FLAG_COOKIE, baseUrl);
 }
 
 /**

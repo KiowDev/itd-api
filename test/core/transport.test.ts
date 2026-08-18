@@ -315,7 +315,7 @@ describe('Transport: ошибки', () => {
     await expect(
       transport.send({ method: 'GET', path: '/api/posts', signal: controller.signal }),
     ).rejects.toThrow(ItdAbortError);
-    expect(mock.callCount).toBe(1);
+    expect(mock.callCount).toBe(0);
   });
 
   it('уже отменённый signal побеждает готовый ответ пользовательского fetch', async () => {
@@ -396,6 +396,20 @@ describe('Transport: cookie и rate-limit', () => {
 
     expect(mock.calls[0]?.headers.get('cookie')).toBe('is_auth=1');
     expect(jar.has('sid')).toBe(true);
+  });
+
+  it('привязывает Set-Cookie к итоговому URL после redirect', async () => {
+    const jar = new CookieJar();
+    const response = new Response('{}', {
+      headers: { 'content-type': 'application/json', 'set-cookie': 'redirected=1; Path=/' },
+    });
+    Object.defineProperty(response, 'url', { value: 'https://cdn.test/final' });
+    const { transport } = makeTransport([response], {}, { cookies: jar });
+
+    await transport.send({ method: 'GET', path: '/redirect' });
+
+    expect(jar.has('redirected', 'https://cdn.test/final')).toBe(true);
+    expect(jar.has('redirected', 'https://itd.test/redirect')).toBe(false);
   });
 
   it('в браузерном режиме свой cookie-jar не используется', async () => {

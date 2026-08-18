@@ -13,12 +13,14 @@ import {
 } from '../scheduling/retry.js';
 import type { ServiceRegistry } from '../services.js';
 import { normalizeBaseUrl } from '../url.js';
+import { waitForRequest } from './lifecycle.js';
 import {
   beginTransportAttempt,
   currentTransportAttempt,
   type PipelineRequest,
   type RequestHandler,
   type RequestMiddleware,
+  requestAuthRecoveryState,
   trackRequestAttempts,
   withLayerHeaders,
 } from './pipeline.js';
@@ -116,7 +118,10 @@ export function createAuthPreparationMiddleware(
   auth: Pick<AuthProvider, 'prepare'>,
 ): RequestMiddleware {
   return async (request, next) => {
-    if (!request.skipAuth) await auth.prepare();
+    if (!request.skipAuth) {
+      const pending = auth.prepare();
+      await (request.signal ? waitForRequest(pending, request.signal) : pending);
+    }
     return next(request);
   };
 }
@@ -159,18 +164,26 @@ export function createAuthRecoveryMiddleware(
   auth: Pick<AuthProvider, 'recover'>,
 ): RequestMiddleware {
   return async (request, next) => {
+    const recovery = requestAuthRecoveryState(request);
     try {
       return await next(request);
     } catch (error) {
       // Обновляем и повторяем ровно один раз, чтобы не зациклиться, если сервер
       // отдаёт 401 и на свежем токене.
-      if (request.skipAuthRefresh || !isItdApiError(error) || error.status !== 401) {
+      if (
+        request.skipAuthRefresh ||
+        recovery.recovered ||
+        !isItdApiError(error) ||
+        error.status !== 401
+      ) {
         throw error;
       }
 
-      const refreshed = await auth.recover();
+      const pending = auth.recover();
+      const refreshed = await (request.signal ? waitForRequest(pending, request.signal) : pending);
       if (!refreshed) throw error;
 
+      recovery.recovered = true;
       return next({ ...request, skipAuthRefresh: true });
     }
   };

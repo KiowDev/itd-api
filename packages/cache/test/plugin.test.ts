@@ -461,7 +461,7 @@ describe('управление и инвалидация', () => {
 
   it('не очищает кэш после известного запроса без зависимостей', async () => {
     const { itd, calls } = makeClient((url, _init, call) =>
-      url.endsWith('/api/v1/i') ? json({ ok: true }) : postFromUrl(url, call),
+      url.endsWith('/api/v1/x') ? json({ ok: true }) : postFromUrl(url, call),
     );
     itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
@@ -469,7 +469,7 @@ describe('управление и инвалидация', () => {
     await itd.request({
       operationId: 'telemetry.interaction',
       method: 'POST',
-      path: '/api/v1/i',
+      path: '/api/v1/x',
       body: {},
     });
     await itd.posts.get('1');

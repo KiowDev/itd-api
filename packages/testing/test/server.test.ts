@@ -22,7 +22,7 @@ const BOB = '00000000-0000-4000-8000-000000000002';
 const CAROL = '00000000-0000-4000-8000-000000000003';
 
 async function settleUntil(condition: () => boolean): Promise<void> {
-  for (let index = 0; index < 30 && !condition(); index += 1) await Promise.resolve();
+  for (let index = 0; index < 100 && !condition(); index += 1) await Promise.resolve();
   if (!condition()) throw new Error('Условие не наступило');
 }
 

@@ -166,7 +166,7 @@ describe('telemetry helpers', () => {
     expect(batch.pendingDwell).toBe(1);
 
     await batch.flush({ signal: new AbortController().signal });
-    expect(mock.callCount).toBe(2);
+    expect(mock.callCount).toBe(1);
     expect(batch.pendingDwell).toBe(0);
   });
 

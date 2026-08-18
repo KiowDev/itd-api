@@ -2,12 +2,13 @@ import type { AuthIdentity, AuthProvider, AuthProviderDeps } from '../core/auth-
 import type { ItdClock } from '../core/clock.js';
 import {
   AUTH_FLAG_COOKIE,
-  type CookieJar,
+  CookieJar,
+  isSerializedCookieEntry,
   REFRESH_COOKIE,
   REFRESH_COOKIE_PATH,
 } from '../core/cookies.js';
 import { Emitter, reportListenerError } from '../core/emitter.js';
-import { ItdApiError, ItdAuthError, ItdConfigError } from '../core/errors.js';
+import { ItdAuthError, ItdConfigError, ItdStateError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { Logger } from '../core/options.js';
 import { createDeviceId } from '../core/runtime.js';
@@ -58,6 +59,17 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
     );
   }
 
+  const modes = [
+    'getToken' in auth,
+    'accessToken' in auth || 'refreshToken' in auth,
+    'email' in auth || 'password' in auth,
+  ].filter(Boolean).length;
+  if (modes > 1) {
+    throw new ItdConfigError(
+      'auth должен описывать ровно один способ авторизации: getToken, accessToken или email/password',
+    );
+  }
+
   if ('getToken' in auth) {
     if (typeof auth.getToken !== 'function') {
       throw new ItdConfigError('auth.getToken должен быть функцией');
@@ -68,6 +80,12 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
   if ('accessToken' in auth) {
     if (typeof auth.accessToken !== 'string' || auth.accessToken.trim() === '') {
       throw new ItdConfigError('auth.accessToken должен быть непустой строкой');
+    }
+    if (
+      auth.refreshToken !== undefined &&
+      (typeof auth.refreshToken !== 'string' || auth.refreshToken.trim() === '')
+    ) {
+      throw new ItdConfigError('auth.refreshToken должен быть непустой строкой');
     }
     return { ...auth };
   }
@@ -216,9 +234,41 @@ export interface AuthEvents {
 
 /** Убирает поле, которое сохраняли промежуточные версии с поддержкой `getUserId()`. */
 function withoutLegacyUserId(session: ItdSession): ItdSession {
-  const clean = { ...session };
+  const clean = copySession(session);
   delete (clean as ItdSession & { userId?: unknown }).userId;
   return clean;
+}
+
+function normalizeSession(value: unknown, source: string): ItdSession {
+  if (!isRecord(value)) throw new ItdConfigError(`${source} должна быть объектом сессии`);
+  const record = value as Record<string, unknown>;
+
+  for (const field of ['accessToken', 'refreshToken', 'deviceId'] as const) {
+    const item = record[field];
+    if (item !== undefined && (typeof item !== 'string' || item.trim() === '')) {
+      throw new ItdConfigError(`${source}.${field} должна быть непустой строкой`);
+    }
+  }
+  if (
+    record.obtainedAt !== undefined &&
+    (typeof record.obtainedAt !== 'number' || !Number.isFinite(record.obtainedAt))
+  ) {
+    throw new ItdConfigError(`${source}.obtainedAt должна быть конечным числом`);
+  }
+  let cookies: string[] | undefined;
+  if (record.cookies !== undefined) {
+    if (!Array.isArray(record.cookies)) {
+      throw new ItdConfigError(`${source}.cookies должна быть массивом`);
+    }
+    // Одна повреждённая или устаревшая запись не должна блокировать рабочие токены.
+    // CookieJar.deserialize придерживается той же мягкой политики.
+    cookies = record.cookies.filter(
+      (cookie: unknown): cookie is string =>
+        typeof cookie === 'string' && isSerializedCookieEntry(cookie),
+    );
+  }
+
+  return withoutLegacyUserId({ ...record, ...(cookies ? { cookies } : {}) } as ItdSession);
 }
 
 let authScopeSequence = 0;
@@ -258,7 +308,7 @@ export class AuthManager implements AuthProvider {
   /** Общий промис обновления: к нему присоединяются все, кто получил 401. */
   #refreshing: Promise<string | null> | null = null;
   /** Общий промис входа по логину и паролю. */
-  #signingIn: Promise<string> | null = null;
+  #signingIn: Promise<string | null> | null = null;
   /** Fallback-область для изоляции состояния плагинов, когда JWT-идентичность недоступна. */
   #authScope = nextAuthScope();
   /** Последний токен внешнего источника; `undefined` означает, что источник ещё не читался. */
@@ -283,6 +333,9 @@ export class AuthManager implements AuthProvider {
    * воскресить уже очищенную сессию поверх `signOut`.
    */
   #authEpoch = 0;
+  #externalReadGeneration = 0;
+  #disposed = false;
+  #persistence: Promise<void> = Promise.resolve();
 
   constructor(
     config: SessionConfig,
@@ -301,16 +354,25 @@ export class AuthManager implements AuthProvider {
 
   /** Подписка на события авторизации. */
   get on(): Emitter<AuthEvents>['on'] {
-    return this.#emitter.on.bind(this.#emitter);
+    return ((...args: Parameters<Emitter<AuthEvents>['on']>) => {
+      this.#assertActive();
+      return this.#emitter.on(...args);
+    }) as Emitter<AuthEvents>['on'];
   }
 
   /** Подписка на одно срабатывание. */
   get once(): Emitter<AuthEvents>['once'] {
-    return this.#emitter.once.bind(this.#emitter);
+    return ((...args: Parameters<Emitter<AuthEvents>['once']>) => {
+      this.#assertActive();
+      return this.#emitter.once(...args);
+    }) as Emitter<AuthEvents>['once'];
   }
 
   /** Снимает служебные подписки при окончательном освобождении владельца. @internal */
   dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#externalReadGeneration += 1;
     this.#invalidateInFlight();
     this.#emitter.removeAllListeners();
   }
@@ -327,6 +389,7 @@ export class AuthManager implements AuthProvider {
 
   /** Загружает сессию и возвращает идентификаторы аккаунта и сессии для плагинов. */
   async getAuthIdentity(): Promise<AuthIdentity> {
+    this.#assertActive();
     const session = await this.#loadSession();
     if (session?.accessToken) return this.#identityForToken(session.accessToken);
 
@@ -355,6 +418,35 @@ export class AuthManager implements AuthProvider {
   /** Отмечает смену владельца авторизации — обесценивает результат идущего обновления. */
   #invalidateInFlight(): void {
     this.#authEpoch += 1;
+    this.#externalReadGeneration += 1;
+  }
+
+  /** Ревизия владельца сессии для условного commit внешнего auth-flow. @internal */
+  revision(): number {
+    this.#assertActive();
+    return this.#authEpoch;
+  }
+
+  /** Создаёт изолированный jar для сетевого auth-flow. @internal */
+  createCookieFlow(inherit = true): CookieJar {
+    this.#assertActive();
+    return inherit ? this.#jar.clone() : new CookieJar();
+  }
+
+  /** Применяет cookies только если владелец сессии не сменился. @internal */
+  commitCookieFlow(cookies: CookieJar, expectedRevision: number): boolean {
+    this.#assertActive();
+    if (this.#authEpoch !== expectedRevision) return false;
+    this.#jar.replaceWith(cookies);
+    return true;
+  }
+
+  #assertActive(): void {
+    if (this.#disposed) throw new ItdStateError('Менеджер авторизации уже освобождён');
+  }
+
+  #currentAccessToken(): string | null {
+    return this.#session?.accessToken ?? null;
   }
 
   #identityForToken(accessToken: string | undefined): AuthIdentity {
@@ -368,7 +460,11 @@ export class AuthManager implements AuthProvider {
   async #readExternalToken(
     getToken: () => string | null | Promise<string | null>,
   ): Promise<string | null> {
+    this.#assertActive();
+    const generation = ++this.#externalReadGeneration;
     const token = (await getToken()) ?? null;
+    this.#assertActive();
+    if (generation !== this.#externalReadGeneration) return token;
     const current = this.#identityForToken(token ?? undefined);
 
     if (this.#externalToken !== undefined && this.#externalToken !== token) {
@@ -411,6 +507,7 @@ export class AuthManager implements AuthProvider {
    * ответ был бы `false` даже при полностью рабочей сохранённой сессии.
    */
   async hasRefreshSession(): Promise<boolean> {
+    this.#assertActive();
     await this.#loadSession();
     return this.#hasRefreshSession();
   }
@@ -432,6 +529,7 @@ export class AuthManager implements AuthProvider {
    * обязаны завершиться до захвата слота очереди.
    */
   async prepare(): Promise<void> {
+    this.#assertActive();
     await this.token();
   }
 
@@ -455,6 +553,7 @@ export class AuthManager implements AuthProvider {
    * через `itd.auth.refresh()`, а библиотека просто пробрасывает {@link ItdAuthError}.
    */
   recover(): Promise<boolean> {
+    this.#assertActive();
     return this.#config.autoRefresh ? this.onUnauthorized() : Promise.resolve(false);
   }
 
@@ -466,6 +565,7 @@ export class AuthManager implements AuthProvider {
    * по новой сессии на каждый старт.
    */
   deviceId(): Promise<string> {
+    this.#assertActive();
     if (this.#deviceId) return Promise.resolve(this.#deviceId);
 
     // Дедупликация: параллельные вызовы на холодном клиенте получают один `X-Device-Id`.
@@ -477,10 +577,13 @@ export class AuthManager implements AuthProvider {
   }
 
   async #resolveDeviceId(): Promise<string> {
+    const revision = this.#authEpoch;
     const session = await this.#loadSession();
+    this.#assertActive();
     const deviceId = this.#config.deviceId ?? session?.deviceId ?? createDeviceId();
 
     this.#deviceId = deviceId;
+    if (this.#authEpoch !== revision) return deviceId;
 
     // Записываем, только если значение действительно новое, — иначе каждый первый запрос
     // дёргал бы хранилище без всякой пользы.
@@ -498,6 +601,7 @@ export class AuthManager implements AuthProvider {
    * и пароль, первый же запрос сам заведёт сессию.
    */
   async token(): Promise<string | null> {
+    this.#assertActive();
     const session = await this.#loadSession();
     if (session?.accessToken) return session.accessToken;
 
@@ -522,6 +626,7 @@ export class AuthManager implements AuthProvider {
    * @returns `true`, если токен обновлён и запрос имеет смысл повторить
    */
   async onUnauthorized(): Promise<boolean> {
+    this.#assertActive();
     try {
       const token = await this.#refreshDeduplicated();
       if (token !== null) return true;
@@ -564,26 +669,41 @@ export class AuthManager implements AuthProvider {
    * @throws {ItdAuthError} если обновить сессию не удалось
    */
   async refresh(): Promise<string> {
+    this.#assertActive();
     const token = await this.#refreshDeduplicated();
     if (token === null) throw this.#noRefreshSessionError();
     return token;
   }
 
   /** Сохраняет токен, полученный извне, — например после подтверждения OTP. */
-  async setAccessToken(accessToken: string): Promise<void> {
+  async setAccessToken(
+    accessToken: string,
+    expectedRevision = this.#authEpoch,
+    cookies?: CookieJar,
+  ): Promise<boolean> {
+    this.#assertActive();
+    if (typeof accessToken !== 'string' || accessToken.trim() === '') {
+      throw new ItdConfigError('accessToken должен быть непустой строкой');
+    }
     await this.#loadSession();
+    this.#assertActive();
+    if (this.#authEpoch !== expectedRevision) return false;
+    if (cookies) this.#jar.replaceWith(cookies);
     this.#invalidateInFlight();
     this.#transitionAuth(accessToken);
-    await this.#saveSession({
+    const saved = this.#saveSession({
       ...(this.#session ?? {}),
       accessToken,
       obtainedAt: this.#config.clock.now(),
     });
     this.#emitter.emit('tokens', { accessToken });
+    await saved;
+    return true;
   }
 
   /** Текущая сессия целиком. Полезно, чтобы сохранить её самому. */
   async getSession(): Promise<ItdSession | null> {
+    this.#assertActive();
     const session = await this.#loadSession();
     return session ? copySession(session) : null;
   }
@@ -595,25 +715,29 @@ export class AuthManager implements AuthProvider {
    * токена идентификатор прежнего владельца остаться не может.
    */
   async getUserId(): Promise<UserId | undefined> {
+    this.#assertActive();
     const session = await this.#loadSession();
     return session?.accessToken ? readTokenSubject(session.accessToken) : undefined;
   }
 
   /** Заменяет сессию и связанные с ней cookie целиком. */
   async setSession(session: ItdSession): Promise<void> {
+    this.#assertActive();
+    const normalized = normalizeSession(session, 'session');
     await this.#loadSession();
+    this.#assertActive();
     this.#invalidateInFlight();
-    this.#transitionAuth(session.accessToken);
+    this.#transitionAuth(normalized.accessToken);
     this.#jar.clear();
-    this.#jar.deserialize(session.cookies);
+    this.#jar.deserialize(normalized.cookies);
 
-    if (session.deviceId) this.#deviceId = session.deviceId;
+    if (normalized.deviceId) this.#deviceId = normalized.deviceId;
 
     // Refresh-cookie добавляется до сериализации сессии.
-    this.#session = session;
+    this.#session = normalized;
     this.#seedRefreshCookie();
 
-    await this.#saveSession(session);
+    await this.#saveSession(normalized);
   }
 
   /**
@@ -623,16 +747,19 @@ export class AuthManager implements AuthProvider {
    * новую запись в списке сессий.
    */
   async clear(): Promise<void> {
+    this.#assertActive();
     await this.#loadSession();
+    this.#assertActive();
     this.#invalidateInFlight();
     this.#transitionAuth(undefined);
-    this.#session = null;
     this.#jar.clear();
-    await this.#config.storage.clear();
-
-    if (this.#deviceId) await this.#saveSession({ deviceId: this.#deviceId });
-
+    const retained = this.#deviceId ? { deviceId: this.#deviceId } : null;
+    this.#session = retained;
     this.#emitter.emit('signOut', undefined);
+    await this.#enqueuePersistence(async () => {
+      await this.#config.storage.clear();
+      if (retained) await this.#config.storage.set(copySession(retained));
+    });
   }
 
   #loadSession(): Promise<ItdSession | null> {
@@ -647,7 +774,8 @@ export class AuthManager implements AuthProvider {
 
   async #performLoad(): Promise<ItdSession | null> {
     const loaded = (await this.#config.storage.get()) ?? null;
-    const stored = loaded ? withoutLegacyUserId(loaded) : null;
+    this.#assertActive();
+    const stored = loaded ? normalizeSession(loaded, 'storage.get()') : null;
 
     // Восстанавливаем cookie: без них не выйдет обновить токен после перезапуска процесса.
     if (stored?.cookies) this.#jar.deserialize(stored.cookies);
@@ -683,7 +811,7 @@ export class AuthManager implements AuthProvider {
 
     const refreshToken = this.#session?.refreshToken;
     if (!refreshToken) return;
-    if (this.#jar.has(REFRESH_COOKIE)) return;
+    if (this.#jar.has(REFRESH_COOKIE, this.#config.baseUrl + REFRESH_COOKIE_PATH)) return;
 
     this.#jar.set(this.#config.baseUrl, REFRESH_COOKIE, refreshToken, REFRESH_COOKIE_PATH);
   }
@@ -708,15 +836,22 @@ export class AuthManager implements AuthProvider {
   async #saveSession(session: ItdSession): Promise<void> {
     const cookies = this.#config.useCookieJar ? this.#jar.serialize() : undefined;
     const deviceId = session.deviceId ?? this.#deviceId;
+    const { cookies: _staleCookies, ...withoutCookies } = copySession(session);
 
     const next = withoutLegacyUserId({
-      ...session,
+      ...withoutCookies,
       ...(cookies?.length ? { cookies } : {}),
       ...(deviceId ? { deviceId } : {}),
     });
 
     this.#session = next;
-    await this.#config.storage.set(next);
+    await this.#enqueuePersistence(() => this.#config.storage.set(copySession(next)));
+  }
+
+  #enqueuePersistence(operation: () => void | Promise<void>): Promise<void> {
+    const pending = this.#persistence.then(operation, operation);
+    this.#persistence = pending.catch(() => {});
+    return pending;
   }
 
   /**
@@ -736,6 +871,7 @@ export class AuthManager implements AuthProvider {
   }
 
   async #performRefresh(): Promise<string | null> {
+    this.#assertActive();
     await this.#loadSession();
 
     if (!this.#hasRefreshSession()) {
@@ -747,6 +883,7 @@ export class AuthManager implements AuthProvider {
     // Снимок владельца авторизации: если он сменится, пока идёт сетевой запрос,
     // результат обновления записывать нельзя.
     const epoch = this.#authEpoch;
+    const flowCookies = this.#jar.clone();
 
     try {
       // Служебный запрос идёт через общий pipeline. Слой авторизации он пропускает, чтобы
@@ -756,16 +893,18 @@ export class AuthManager implements AuthProvider {
         path: AUTH_PATHS.refresh,
         skipAuth: true,
         skipAuthRefresh: true,
+        cookieJar: flowCookies,
         // Тела нет намеренно: сервер читает refresh-токен только из cookie — см.
         // #seedRefreshCookie. По той же причине не нужен и устаревший Bearer.
       });
-      if (!accessToken) return this.#reloginOrNull();
 
       if (this.#authEpoch !== epoch) {
         // Пока шёл refresh, владельца сменили (signOut / setSession / вход): его результат
         // устарел. Не воскрешаем сохранённую сессию, отдаём актуальный токен как есть.
         return this.#session?.accessToken ?? null;
       }
+
+      this.#jar.replaceWith(flowCookies);
 
       // Сервер выдаёт при обновлении **новый** refresh-токен (`Set-Cookie: refresh_token=…;
       // Max-Age=2592000`) и тут же гасит прежний. Забрать его из jar обязательно: иначе
@@ -778,7 +917,7 @@ export class AuthManager implements AuthProvider {
       // Refresh продолжает ту же серверную сессию. Для непрозрачного токена это единственная
       // надёжная возможность сохранить scope; смена пользователя в JWT всё равно будет обнаружена.
       this.#transitionAuth(accessToken, false);
-      await this.#saveSession({
+      const saved = this.#saveSession({
         ...(this.#session ?? {}),
         accessToken,
         ...(rotated ? { refreshToken: rotated } : {}),
@@ -786,9 +925,10 @@ export class AuthManager implements AuthProvider {
       });
 
       this.#emitter.emit('tokens', { accessToken });
+      await saved;
       return accessToken;
     } catch (error) {
-      if (error instanceof ItdApiError) {
+      if (error instanceof ItdAuthError) {
         if (this.#authEpoch !== epoch) {
           // Владельца сменили, пока шёл refresh: ошибка относится к уже забытой сессии —
           // не трогаем актуальное состояние.
@@ -796,10 +936,13 @@ export class AuthManager implements AuthProvider {
         }
 
         // Сессия недействительна — чистим её, иначе будем биться в стену на каждом запросе.
+        this.#invalidateInFlight();
+        const clearedRevision = this.#authEpoch;
         this.#transitionAuth(undefined);
         this.#session = null;
         this.#jar.clear();
-        await this.#config.storage.clear();
+        await this.#enqueuePersistence(() => this.#config.storage.clear());
+        if (this.#authEpoch !== clearedRevision) return this.#currentAccessToken();
 
         const relogged = await this.#reloginOrNull();
         if (relogged !== null) return relogged;
@@ -827,7 +970,8 @@ export class AuthManager implements AuthProvider {
 
     try {
       return await this.#signInWithCredentials(auth);
-    } catch {
+    } catch (error) {
+      this.#config.logger?.warn('Автоматический повторный вход не удался', error);
       return null;
     }
   }
@@ -838,10 +982,11 @@ export class AuthManager implements AuthProvider {
    * Параллельные вызовы объединяются: одновременный старт нескольких запросов не должен
    * приводить к нескольким попыткам входа и блокировке аккаунта.
    */
-  #signInWithCredentials(credentials: CredentialsAuth): Promise<string> {
+  #signInWithCredentials(credentials: CredentialsAuth): Promise<string | null> {
     if (this.#signingIn) return this.#signingIn;
 
-    const promise = this.#performSignIn(credentials).finally(() => {
+    const revision = this.#authEpoch;
+    const promise = this.#performSignIn(credentials, revision).finally(() => {
       this.#signingIn = null;
     });
 
@@ -872,8 +1017,9 @@ export class AuthManager implements AuthProvider {
     );
   }
 
-  async #performSignIn(credentials: CredentialsAuth): Promise<string> {
+  async #performSignIn(credentials: CredentialsAuth, revision: number): Promise<string | null> {
     const turnstileToken = await this.#resolveTurnstileToken(credentials);
+    const flowCookies = new CookieJar();
 
     // Через общий pipeline: плагины, повторы и очередь сохраняются, а слой авторизации
     // пропускается, потому что токена ещё нет.
@@ -882,6 +1028,7 @@ export class AuthManager implements AuthProvider {
       body: { email: credentials.email, password: credentials.password, turnstileToken },
       skipAuth: true,
       skipAuthRefresh: true,
+      cookieJar: flowCookies,
     });
 
     if (result.status !== SignInStatus.Authenticated) {
@@ -893,14 +1040,18 @@ export class AuthManager implements AuthProvider {
       );
     }
     const accessToken = result.accessToken;
+    this.#assertActive();
+    if (this.#authEpoch !== revision) return this.#session?.accessToken ?? null;
+    this.#jar.replaceWith(flowCookies);
 
     // Прежний refresh-токен и cookie намеренно не переносятся: вход выдал новую сессию,
     // и держаться за старую было бы ошибкой. Идентификатор устройства добавит #saveSession.
     this.#invalidateInFlight();
     this.#transitionAuth(accessToken);
-    await this.#saveSession({ accessToken, obtainedAt: this.#config.clock.now() });
+    const saved = this.#saveSession({ accessToken, obtainedAt: this.#config.clock.now() });
     this.#emitter.emit('tokens', { accessToken });
     this.#emitter.emit('signIn', { accessToken });
+    await saved;
 
     return accessToken;
   }

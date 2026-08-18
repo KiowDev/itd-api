@@ -1,19 +1,63 @@
 import type { OperationId } from '../../domain/operations.js';
+import type { CookieJar } from '../cookies.js';
 import type { OperationRequestOptions } from '../options.js';
 
 const REQUEST_ATTEMPT_STATE = Symbol('itd-api.request-attempt-state');
 const REQUEST_QUEUE_KEY = Symbol('itd-api.request-queue-key');
+const REQUEST_AUTH_RECOVERY_STATE = Symbol('itd-api.request-auth-recovery-state');
+const REQUEST_ERROR_OBSERVATION_STATE = Symbol('itd-api.request-error-observation-state');
 const DISPOSE_CLEANUP_REQUEST = Symbol('itd-api.dispose-cleanup-request');
 
 interface RequestAttemptState {
   value: number;
 }
 
+interface RequestAuthRecoveryState {
+  recovered: boolean;
+}
+
+interface RequestErrorObservationState {
+  errors: Set<unknown>;
+}
+
 type InternalPipelineRequest = PipelineRequest & {
   [REQUEST_ATTEMPT_STATE]?: RequestAttemptState;
   [REQUEST_QUEUE_KEY]?: RequestQueueKey;
+  [REQUEST_AUTH_RECOVERY_STATE]?: RequestAuthRecoveryState;
+  [REQUEST_ERROR_OBSERVATION_STATE]?: RequestErrorObservationState;
   [DISPOSE_CLEANUP_REQUEST]?: true;
 };
+
+/** Возвращает общее для всех retry состояние восстановления авторизации. @internal */
+export function requestAuthRecoveryState(request: PipelineRequest): RequestAuthRecoveryState {
+  const internal = request as InternalPipelineRequest;
+  const current = internal[REQUEST_AUTH_RECOVERY_STATE];
+  if (current) return current;
+  const state = { recovered: false };
+  internal[REQUEST_AUTH_RECOVERY_STATE] = state;
+  return state;
+}
+
+/** Создаёт общую для копий логического запроса отметку вызова `onError`. @internal */
+export function trackRequestErrorObservation(request: PipelineRequest): void {
+  const internal = request as InternalPipelineRequest;
+  internal[REQUEST_ERROR_OBSERVATION_STATE] ??= { errors: new Set() };
+}
+
+/** Отмечает, что ошибка логического запроса уже была передана в `onError`. @internal */
+export function markRequestErrorObserved(request: PipelineRequest, error: unknown): void {
+  trackRequestErrorObservation(request);
+  const state = (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE];
+  state?.errors.add(error);
+}
+
+/** Была ли конкретная ошибка этой логической операции уже передана в `onError`. @internal */
+export function wasRequestErrorObserved(request: PipelineRequest, error: unknown): boolean {
+  return (
+    (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE]?.errors.has(error) ??
+    false
+  );
+}
 
 /** Тело, заново подготовленное для одной транспортной попытки. */
 export interface PreparedRequestBody {
@@ -44,6 +88,8 @@ export type RequestBodyFactory = (
  * `Authorization`, заданный вызывающим кодом вручную.
  */
 export interface PipelineRequest extends OperationRequestOptions {
+  /** Изолированный cookie jar конкретного auth-flow. @internal */
+  cookieJar?: CookieJar | undefined;
   /** Повторяемое тело. Используется внутренними ресурсами вместо `body`. @internal */
   bodyFactory?: RequestBodyFactory | undefined;
   /**

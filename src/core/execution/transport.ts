@@ -15,8 +15,10 @@ import { redactBody, redactHeaders } from '../redact.js';
 import { isBlob } from '../runtime.js';
 import { unwrapData } from '../unwrap.js';
 import { buildQuery, joinUrl } from '../url.js';
+import { createRequestAbortScope, type RequestAbortScope } from './lifecycle.js';
 import {
   identifyRequest,
+  markRequestErrorObserved,
   type PipelineRequest,
   type PipelineRequestInput,
   type PreparedRequestBody,
@@ -151,61 +153,6 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-/** Результат объединения отмены запроса, отмены клиента и таймаута. */
-interface AbortBundle {
-  signal: AbortSignal;
-  /** Сработал ли именно таймаут — от этого зависит класс ошибки. */
-  timedOut: () => boolean;
-  cleanup: () => void;
-}
-
-/**
- * Объединяет пользовательский `AbortSignal`, сигнал жизни клиента и таймаут.
- *
- * Реализовано вручную, а не через `AbortSignal.any`: последний появился только в Node 20,
- * а библиотека поддерживает Node 18. Причина отмены переносится от источника как есть.
- */
-function createAbortBundle(
-  userSignal: AbortSignal | undefined,
-  lifetimeSignal: AbortSignal | undefined,
-  timeout: number,
-  clock: ItdClock,
-): AbortBundle {
-  const controller = new AbortController();
-  let timedOut = false;
-
-  const link = (source: AbortSignal | undefined): (() => void) | undefined => {
-    if (!source) return undefined;
-    if (source.aborted) {
-      controller.abort(source.reason);
-      return undefined;
-    }
-
-    const onAbort = () => controller.abort(source.reason);
-    source.addEventListener('abort', onAbort, { once: true });
-    return () => source.removeEventListener('abort', onAbort);
-  };
-
-  const unlink = [link(userSignal), link(lifetimeSignal)];
-
-  const cancelTimer =
-    timeout > 0
-      ? clock.schedule(() => {
-          timedOut = true;
-          controller.abort();
-        }, timeout)
-      : undefined;
-
-  return {
-    signal: controller.signal,
-    timedOut: () => timedOut,
-    cleanup: () => {
-      cancelTimer?.();
-      for (const detach of unlink) detach?.();
-    },
-  };
-}
-
 /**
  * Единственное место, откуда библиотека ходит в сеть.
  *
@@ -239,11 +186,10 @@ export class Transport {
     const request = identifyRequest(input);
     const method = request.method.toUpperCase();
     const url = this.buildUrl(request);
-    const headers = await this.#buildHeaders(request, url);
     const attempt = request.attempt ?? 1;
 
     const timeout = request.timeout ?? this.#config.timeout;
-    const abort = createAbortBundle(
+    const abort = createRequestAbortScope(
       request.signal,
       this.#deps.lifetimeSignal,
       timeout,
@@ -253,13 +199,24 @@ export class Transport {
     let cleanupBody: (() => void | Promise<void>) | undefined;
 
     try {
+      const headers = await abortable(this.#buildHeaders(request, url), abort.signal).catch(
+        (error) => {
+          throw this.#toTransportError(error, abort, request, method, timeout);
+        },
+      );
       let body: BodyInit | undefined;
       try {
         const prepared = await this.#prepareBody(request, headers, abort.signal, attempt);
         body = prepared.body;
         cleanupBody = prepared.cleanup;
       } catch (error) {
-        const failure = this.#toTransportError(error, abort, request, method, timeout);
+        const failure =
+          abort.signal.aborted || error instanceof ItdError
+            ? this.#toTransportError(error, abort, request, method, timeout)
+            : new ItdConfigError(
+                `Не удалось подготовить тело ${method} ${request.path}: ${error instanceof Error ? error.message : String(error)}`,
+                { cause: error },
+              );
         const context = {
           operationId: request.operationId,
           method,
@@ -268,7 +225,7 @@ export class Transport {
           headers,
           attempt,
         };
-        await dispatchRequestHook(this.#config.hooks, 'onError', {
+        await this.#dispatchErrorHook(request, {
           ...context,
           duration: this.#config.clock.now() - startedAt,
           error: failure,
@@ -284,7 +241,12 @@ export class Transport {
         headers,
         attempt,
       };
-      await dispatchRequestHook(this.#config.hooks, 'onRequest', context);
+      await abortable(
+        dispatchRequestHook(this.#config.hooks, 'onRequest', context),
+        abort.signal,
+      ).catch((error) => {
+        throw this.#toTransportError(error, abort, request, method, timeout);
+      });
 
       this.#config.logger?.debug(`→ ${method} ${request.path}`, {
         headers: redactHeaders(headers),
@@ -317,7 +279,7 @@ export class Transport {
       } catch (error) {
         const duration = this.#config.clock.now() - startedAt;
 
-        await dispatchRequestHook(this.#config.hooks, 'onError', { ...context, duration, error });
+        await this.#dispatchErrorHook(request, { ...context, duration, error });
         this.#config.logger?.warn(
           `× ${method} ${request.path} (${duration} мс): ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -330,17 +292,30 @@ export class Transport {
         this.#deps.onRateLimit(limit, remaining, request);
       }
 
-      if (this.#config.useCookieJar) this.#deps.cookies?.setFromResponse(url, response);
+      if (this.#config.useCookieJar) {
+        (request.cookieJar ?? this.#deps.cookies)?.setFromResponse(response.url || url, response);
+      }
 
       // Хук получает собственную ветвь тела: чтение ответа внутри хука не должно лишать
       // транспорт возможности разобрать основной ответ.
       if (response.ok && hasRequestHook(this.#config.hooks, 'onResponse')) {
-        await dispatchRequestHook(this.#config.hooks, 'onResponse', {
-          ...context,
-          status: response.status,
-          duration: this.#config.clock.now() - startedAt,
-          response: response.clone(),
-        });
+        const hookResponse = response.clone();
+        try {
+          await abortable(
+            dispatchRequestHook(this.#config.hooks, 'onResponse', {
+              ...context,
+              status: response.status,
+              duration: this.#config.clock.now() - startedAt,
+              response: hookResponse,
+            }),
+            abort.signal,
+          );
+        } catch (error) {
+          void response.body?.cancel().catch(() => {});
+          throw this.#toTransportError(error, abort, request, method, timeout);
+        } finally {
+          if (!hookResponse.bodyUsed) void hookResponse.body?.cancel().catch(() => {});
+        }
       }
 
       const payload = await this.#readBodyOrFail(
@@ -350,6 +325,7 @@ export class Transport {
         method,
         abort,
         timeout,
+        startedAt,
       );
       const duration = this.#config.clock.now() - startedAt;
 
@@ -365,7 +341,7 @@ export class Transport {
           body: payload,
         });
 
-        await dispatchRequestHook(this.#config.hooks, 'onError', { ...context, duration, error });
+        await this.#dispatchErrorHook(request, { ...context, duration, error });
         this.#config.logger?.warn(
           `← ${response.status} ${method} ${request.path} (${duration} мс): ${error.message}`,
         );
@@ -386,6 +362,20 @@ export class Transport {
       }
     }
   };
+
+  async #dispatchErrorHook(
+    request: PipelineRequest,
+    context: Parameters<NonNullable<ClientHooks['onError']>>[0],
+  ): Promise<void> {
+    markRequestErrorObserved(request, context.error);
+    try {
+      await dispatchRequestHook(this.#config.hooks, 'onError', context);
+    } catch (error) {
+      // Верхняя граница не должна повторно сообщать ошибку, выброшенную самим onError.
+      markRequestErrorObserved(request, error);
+      throw error;
+    }
+  }
 
   /** Подготавливает тело внутри попытки, чтобы поток можно было открыть заново при retry. */
   async #prepareBody(
@@ -450,11 +440,10 @@ export class Transport {
     },
     request: PipelineRequest,
     method: string,
-    abort: AbortBundle,
+    abort: RequestAbortScope,
     timeout: number,
+    startedAt: number,
   ): Promise<unknown> {
-    const startedAt = this.#config.clock.now();
-
     try {
       return await abortable(readBody(response), abort.signal);
     } catch (error) {
@@ -462,7 +451,7 @@ export class Transport {
 
       const failure = this.#toTransportError(error, abort, request, method, timeout);
 
-      await dispatchRequestHook(this.#config.hooks, 'onError', {
+      await this.#dispatchErrorHook(request, {
         ...context,
         duration: this.#config.clock.now() - startedAt,
         error: failure,
@@ -489,7 +478,10 @@ export class Transport {
    * Собирает общие заголовки клиента: `User-Agent`, идентификатор устройства,
    * заголовки конфигурации и cookie для указанного адреса.
    */
-  async platformHeaders(url: string): Promise<Headers> {
+  async platformHeaders(
+    url: string,
+    cookieJar: CookieJar | undefined = this.#deps.cookies,
+  ): Promise<Headers> {
     const headers = new Headers();
 
     // Сервер этот заголовок не требует, но ожидает: дешевле отправить, чем разбираться,
@@ -506,8 +498,8 @@ export class Transport {
     for (const [name, value] of Object.entries(this.#config.headers))
       setHeader(headers, name, value);
 
-    if (this.#config.useCookieJar && this.#deps.cookies) {
-      const cookie = this.#deps.cookies.getHeader(url);
+    if (this.#config.useCookieJar && cookieJar) {
+      const cookie = cookieJar.getHeader(url);
       if (cookie) setHeader(headers, 'Cookie', cookie);
     }
 
@@ -519,7 +511,7 @@ export class Transport {
    * Заголовки вызова применяются последними.
    */
   async #buildHeaders(request: PipelineRequest, url: string): Promise<Headers> {
-    const headers = await this.platformHeaders(url);
+    const headers = await this.platformHeaders(url, request.cookieJar);
 
     // Заголовок из конфигурации имеет приоритет над значением по умолчанию.
     if (!headers.has('Accept')) headers.set('Accept', 'application/json');
@@ -537,7 +529,7 @@ export class Transport {
   /** Превращает исключение `fetch` в понятную ошибку библиотеки. */
   #toTransportError(
     error: unknown,
-    abort: AbortBundle,
+    abort: RequestAbortScope,
     request: PipelineRequest,
     method: string,
     timeout: number,

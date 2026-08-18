@@ -28,6 +28,19 @@ export const REFRESH_COOKIE_PATH = '/api/v1/auth';
 
 /** Разделитель origin и содержимого cookie при сериализации. В origin пробелов не бывает. */
 const SERIALIZED_SEPARATOR = ' ';
+const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/** Проверяет одну запись, созданную {@link CookieJar.serialize}. @internal */
+export function isSerializedCookieEntry(entry: string): boolean {
+  const separatorAt = entry.indexOf(SERIALIZED_SEPARATOR);
+  if (separatorAt <= 0) return false;
+
+  const origin = entry.slice(0, separatorAt);
+  if (originOf(origin) !== origin) return false;
+
+  const parsed = parseSetCookie([entry.slice(separatorAt + 1)]);
+  return parsed.length === 1 && COOKIE_NAME.test(parsed[0]?.name ?? '');
+}
 
 /** Дата в миллисекунды. Некорректная дата считается отсутствующей, а не `NaN`. */
 function toTimestamp(date: Date | undefined): number | undefined {
@@ -68,6 +81,20 @@ function pathMatches(cookiePath: string, requestPath: string): boolean {
  */
 export class CookieJar {
   readonly #byOrigin = new Map<string, Map<string, StoredCookie>>();
+
+  /** Независимая копия для auth-flow, который ещё не получил право на commit. */
+  clone(): CookieJar {
+    const copy = new CookieJar();
+    copy.deserialize(this.serialize());
+    return copy;
+  }
+
+  /** Атомарно с точки зрения синхронных читателей заменяет содержимое снимком другого jar. */
+  replaceWith(source: CookieJar): void {
+    const entries = source.serialize();
+    this.clear();
+    this.deserialize(entries);
+  }
 
   /**
    * Забирает `Set-Cookie` из ответа.
@@ -209,12 +236,11 @@ export class CookieJar {
     if (!entries) return;
 
     for (const entry of entries) {
+      if (!isSerializedCookieEntry(entry)) continue;
       const separatorAt = entry.indexOf(SERIALIZED_SEPARATOR);
-      if (separatorAt <= 0) continue;
 
       const origin = entry.slice(0, separatorAt);
       const setCookie = entry.slice(separatorAt + 1);
-      if (!originOf(origin)) continue;
 
       this.setFromStrings(origin, [setCookie]);
     }

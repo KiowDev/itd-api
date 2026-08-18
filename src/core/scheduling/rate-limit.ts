@@ -439,8 +439,8 @@ interface DestinationQueues {
  * Очереди по парам «направление — серверный счётчик частоты».
  *
  * Направление — origin уже разрешённого URL: разные локальные имена одного хоста делят
- * лимит, а запрос с разовым внешним `baseUrl` не попадает в основную очередь. Мощность
- * карты ограничена каталогом операций, поэтому ни TTL, ни вытеснение не нужны.
+ * лимит, а запрос с разовым внешним `baseUrl` не попадает в основную очередь. Созданные
+ * очереди сохраняются до `clear()`/`dispose()`, чтобы не терять известное состояние лимитов.
  *
  * @internal
  */
@@ -454,7 +454,6 @@ export class RequestQueuePool {
     string,
     { definition: Readonly<RateLimitBucketOverride>; references: number }
   >();
-
   constructor(options: ResolvedRateLimitOptions, clock: ItdClock = systemClock) {
     this.#options = options;
     this.#clock = clock;

@@ -662,6 +662,16 @@ describe('восстановление и удаление', () => {
     expect(accounts.has('kiow')).toBe(true);
   });
 
+  it('не восстанавливает аккаунт по is_auth cookie другого origin', async () => {
+    const storage = new MemoryMultiTokenStorage({
+      phantom: { cookies: ['https://other.test is_auth=1; Path=/'] },
+    });
+    const { accounts } = makeAccounts(ok, { storage });
+
+    expect(await accounts.restore()).toEqual([]);
+    expect(accounts.has('phantom')).toBe(false);
+  });
+
   it('не теряет остальные аккаунты из-за нечитаемого ключа', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const sessions = new Map<string, ItdSession>([
@@ -918,7 +928,7 @@ describe('события', () => {
     accounts.on('signOut', signOut);
 
     await accounts.removeAccount('a');
-    await client.auth.signOut();
+    await expect(client.auth.signOut()).rejects.toThrow(ItdStateError);
 
     expect(signOut).not.toHaveBeenCalled();
   });

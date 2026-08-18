@@ -285,6 +285,11 @@ export function createClientRuntime<A extends AuthProvider>(
     handler: clientHandler,
     plugins,
     baseUrl: config.baseUrl,
+    timeout: config.timeout,
+    clock: config.clock,
+    lifetimeSignal: lifetime.signal,
+    hooks: config.hooks,
+    assertActive: () => internals.assertActive?.('выполнить новый запрос'),
   });
   // Auth использует тот же executor: sign-in и refresh объявляют skip-флаги точечно,
   // вместо отдельного pipeline с постепенно расходящимся порядком стадий.

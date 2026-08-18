@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ItdApiError, ItdAuthError, ItdConfigError } from '../../src/core/errors.js';
+import {
+  ItdApiError,
+  ItdAuthError,
+  ItdConfigError,
+  ItdStateError,
+  ItdTimeoutError,
+} from '../../src/core/errors.js';
 import { createClientRuntime } from '../../src/core/execution/client-runtime.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
@@ -42,6 +48,75 @@ function makeAuth(
 }
 
 describe('получение токена', () => {
+  it('отклоняет неоднозначную runtime-конфигурацию auth', () => {
+    expect(() =>
+      makeAuth([], {
+        auth: {
+          accessToken: 'token',
+          getToken: () => 'external',
+        } as never,
+      }),
+    ).toThrow(ItdConfigError);
+  });
+
+  it('проверяет refreshToken на runtime-границе', () => {
+    expect(() =>
+      makeAuth([], {
+        auth: { accessToken: 'token', refreshToken: '' },
+      }),
+    ).toThrow(ItdConfigError);
+  });
+
+  it('нормализует внешние снимки сессии на runtime-границе', async () => {
+    const { auth } = makeAuth([]);
+
+    await expect(auth.setSession({ accessToken: '' })).rejects.toThrow(ItdConfigError);
+    await expect(auth.setSession({ deviceId: ' ' })).rejects.toThrow(ItdConfigError);
+    await expect(auth.setSession({ cookies: 'не массив' as never })).rejects.toThrow(
+      ItdConfigError,
+    );
+  });
+
+  it('фильтрует повреждённые cookie из custom storage, сохраняя рабочую сессию', async () => {
+    const validCookie = 'https://itd.test sid=ok; Path=/';
+    const storage = new MemoryTokenStorage({
+      accessToken: 'stored-token',
+      cookies: [validCookie, 'https://itd.test broken'],
+    });
+    const { auth } = makeAuth([], { storage });
+
+    await expect(auth.token()).resolves.toBe('stored-token');
+    await expect(auth.getSession()).resolves.toMatchObject({ cookies: [validCookie] });
+  });
+
+  it('последний начатый вызов внешнего getToken владеет общим снимком', async () => {
+    const resolvers: Array<(token: string) => void> = [];
+    const { auth } = makeAuth([], {
+      auth: { getToken: () => new Promise<string>((resolve) => resolvers.push(resolve)) },
+    });
+
+    const first = auth.token();
+    const second = auth.token();
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+    resolvers[1]?.('newer');
+    await second;
+    resolvers[0]?.('older');
+    await first;
+
+    expect(auth.currentHeaders()).toEqual({ Authorization: 'Bearer newer' });
+  });
+
+  it('общий timeout прерывает ожидание внешнего getToken до сети', async () => {
+    const { http, mock } = makeAuth([], {
+      timeout: 10,
+      auth: { getToken: () => new Promise<string>(() => {}) },
+    });
+
+    await expect(http.request({ method: 'GET', path: '/api/ping' })).rejects.toThrow(
+      ItdTimeoutError,
+    );
+    expect(mock.callCount).toBe(0);
+  });
   it('берёт токен из строки в конфигурации', async () => {
     const { auth } = makeAuth([], { auth: 'token-1' });
 
@@ -217,6 +292,7 @@ describe('обновление токена', () => {
 
     await expect(auth.refresh()).rejects.toThrow(ItdApiError);
     expect(mock.callCount).toBe(1);
+    expect(await auth.token()).toBe('old-token');
   });
 
   it('бросает ItdAuthError, если обновлять нечем', async () => {
@@ -266,6 +342,43 @@ describe('обновление токена', () => {
 
     await expect(auth.refresh()).rejects.toThrow(ItdAuthError);
     expect(mock.callCount).toBe(1);
+  });
+
+  it('считает успешный refresh без accessToken нарушением ответа', async () => {
+    const { auth } = makeAuth([json({ ok: true })], {
+      auth: { accessToken: 'old-token', refreshToken: 'r' },
+    });
+
+    await expect(auth.refresh()).rejects.toThrow(ItdConfigError);
+    expect(await auth.token()).toBe('old-token');
+  });
+
+  it('не обновляет токен второй раз после retry той же логической операции', async () => {
+    let refreshCalls = 0;
+    let resourceCalls = 0;
+    const { http } = makeAuth(
+      (request) => {
+        if (request.url.endsWith('/refresh')) {
+          refreshCalls += 1;
+          return json({ accessToken: 'fresh' });
+        }
+        resourceCalls += 1;
+        if (resourceCalls === 1 || resourceCalls === 3) {
+          return json({ code: 'UNAUTHORIZED' }, { status: 401 });
+        }
+        return json({ error: 'temporary' }, { status: 503 });
+      },
+      {
+        auth: { accessToken: 'old', refreshToken: 'refresh' },
+        retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+      },
+    );
+
+    await expect(http.request({ method: 'GET', path: '/api/protected' })).rejects.toThrow(
+      ItdAuthError,
+    );
+    expect(refreshCalls).toBe(1);
+    expect(resourceCalls).toBe(3);
   });
 });
 
@@ -368,6 +481,52 @@ describe('гонка выхода и запоздавшего обновлени
     expect(await auth.token()).toBeNull();
     const stored = await storage.get();
     expect(stored?.accessToken).toBeUndefined();
+  });
+
+  it('clear() отбрасывает cookies запоздавшего refresh', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const headers = new Headers({ 'content-type': 'application/json' });
+    headers.append('set-cookie', 'is_auth=1; Path=/');
+    headers.append('set-cookie', 'refresh_token=late; Path=/api/v1/auth');
+    const { auth, jar } = makeAuth(
+      async () => {
+        await gate;
+        return new Response(JSON.stringify({ accessToken: 'late' }), { headers });
+      },
+      { auth: { accessToken: 'old', refreshToken: 'old-refresh' } },
+    );
+
+    const refreshing = auth.refresh();
+    await auth.clear();
+    release();
+    await expect(refreshing).rejects.toThrow(ItdAuthError);
+
+    expect(jar.has('is_auth', 'https://itd.test')).toBe(false);
+    expect(jar.has('refresh_token', 'https://itd.test/api/v1/auth')).toBe(false);
+  });
+
+  it('clear() не позволяет запоздавшему ленивому входу вернуть сессию', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { auth } = makeAuth(
+      async () => {
+        await gate;
+        return json({ accessToken: 'late-sign-in' });
+      },
+      { auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' } },
+    );
+
+    const signingIn = auth.token();
+    await auth.clear();
+    release();
+
+    await expect(signingIn).resolves.toBeNull();
+    expect((await auth.getSession())?.accessToken).toBeUndefined();
   });
 
   it('setSession во время refresh не перетирается поздним ответом', async () => {
@@ -802,6 +961,58 @@ describe('конкурентная инициализация на холодн�
     // Дедупликация: одно чтение хранилища и одна запись на всех, а не по одной на запрос.
     expect(store.reads).toBe(1);
     expect(store.writes).toBe(1);
+  });
+
+  it('сериализует записи пользовательского storage в порядке commit', async () => {
+    const releases: Array<() => void> = [];
+    const written: string[] = [];
+    const storage = {
+      get: () => null,
+      set: (session: ItdSession) =>
+        new Promise<void>((resolve) => {
+          written.push(session.accessToken ?? 'none');
+          releases.push(resolve);
+        }),
+      clear: () => {},
+    };
+    const { auth } = makeAuth([], { storage });
+
+    const first = auth.setSession({ accessToken: 'first' });
+    await vi.waitFor(() => expect(written).toEqual(['first']));
+    const second = auth.setSession({ accessToken: 'second' });
+    await Promise.resolve();
+    expect(written).toEqual(['first']);
+
+    releases.shift()?.();
+    await vi.waitFor(() => expect(written).toEqual(['first', 'second']));
+    releases.shift()?.();
+    await Promise.all([first, second]);
+    expect((await auth.getSession())?.accessToken).toBe('second');
+  });
+
+  it('эмитит memory-commit даже если persistence завершился ошибкой', async () => {
+    const { auth } = makeAuth([], {
+      storage: {
+        get: () => null,
+        set: () => Promise.reject(new Error('disk unavailable')),
+        clear: () => {},
+      },
+    });
+    const tokens = vi.fn();
+    auth.on('tokens', tokens);
+
+    await expect(auth.setAccessToken('memory-token')).rejects.toThrow('disk unavailable');
+
+    expect(tokens).toHaveBeenCalledWith({ accessToken: 'memory-token' });
+    expect(auth.currentHeaders()).toEqual({ Authorization: 'Bearer memory-token' });
+  });
+
+  it('после dispose не запускает новые операции auth', async () => {
+    const { auth } = makeAuth([], { auth: 'token' });
+    auth.dispose();
+
+    await expect(auth.refresh()).rejects.toThrow(ItdStateError);
+    await expect(auth.clear()).rejects.toThrow(ItdStateError);
   });
 });
 

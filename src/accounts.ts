@@ -6,7 +6,7 @@ import {
 } from './client.js';
 import { installAsyncDisposeFallback } from './core/async-dispose.js';
 import { systemClock } from './core/clock.js';
-import { resolveRateLimit } from './core/config.js';
+import { DEFAULT_BASE_URL, resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
 import { ItdConfigError, ItdStateError } from './core/errors.js';
 import type { ClientFeature } from './core/features.js';
@@ -397,7 +397,7 @@ export class ItdAccounts {
     const added: string[] = [];
 
     for (const { name, session } of sessions) {
-      if (!isRestorableSession(session)) continue;
+      if (!isRestorableSession(session, this.#base.baseUrl ?? DEFAULT_BASE_URL)) continue;
       // Пока читали хранилище, аккаунт могли добавить вручную или начать удалять.
       if (this.#clients.has(name) || this.#removing.has(name)) continue;
       this.addAccount(name);

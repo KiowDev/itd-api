@@ -6,6 +6,7 @@ import {
   ItdConfigError,
   ItdNotFoundError,
   ItdStateError,
+  ItdTimeoutError,
 } from '../../src/core/errors.js';
 import type {
   EventTransport,
@@ -66,6 +67,110 @@ function makeClient(handler: MockHandler | Response[], options: ItdClientOptions
 
   return { itd, mock };
 }
+
+describe('граница низкоуровневого запроса', () => {
+  it('разрешает вручную указать ID встроенной операции', async () => {
+    const { itd, mock } = makeClient([json({ ok: true })]);
+
+    await expect(
+      itd.request({ operationId: 'posts.list', method: 'GET', path: '/api/manual-feed' }),
+    ).resolves.toEqual({ ok: true });
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/manual-feed');
+  });
+
+  it('общий timeout охватывает operation plugin до transport', async () => {
+    const { itd, mock } = makeClient([], { timeout: 10 });
+    itd.use({
+      name: 'hanging-operation',
+      install({ operations }) {
+        operations.use(() => new Promise<never>(() => {}));
+      },
+    });
+
+    await expect(itd.request({ method: 'GET', path: '/api/test' })).rejects.toThrow(
+      ItdTimeoutError,
+    );
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('не маскирует ошибку подготовки JSON под сетевую и не повторяет её', async () => {
+    const { itd, mock } = makeClient([], {
+      retry: { attempts: 3, baseDelay: 0, jitter: 0 },
+    });
+    const body: Record<string, unknown> = {};
+    body.self = body;
+
+    await expect(itd.request({ method: 'GET', path: '/api/test', body })).rejects.toThrow(
+      ItdConfigError,
+    );
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('вызывает onError и для ошибки до входа в transport', async () => {
+    const onError = vi.fn();
+    const { itd, mock } = makeClient([], { hooks: { onError } });
+
+    await expect(
+      itd.request({ method: 'GET', path: '/api/test', service: 'missing' }),
+    ).rejects.toThrow(ItdConfigError);
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('не подавляет onError другого запроса с тем же объектом ошибки', async () => {
+    const failure = new Error('shared failure');
+    const onError = vi.fn();
+    const { itd } = makeClient([], { hooks: { onError } });
+    itd.use({
+      name: 'shared-error',
+      install({ operations }) {
+        operations.use(() => Promise.reject(failure));
+      },
+    });
+
+    await expect(itd.request({ method: 'GET', path: '/api/first' })).rejects.toBe(failure);
+    await expect(itd.request({ method: 'GET', path: '/api/second' })).rejects.toBe(failure);
+
+    expect(onError).toHaveBeenCalledTimes(2);
+  });
+
+  it('сообщает новую ошибку retry после уже обработанной ошибки попытки', async () => {
+    const retryFailure = new Error('retry hook failed');
+    const onError = vi.fn();
+    const { itd } = makeClient([json({}, { status: 500 })], {
+      retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+      hooks: {
+        onError,
+        onRetry: () => {
+          throw retryFailure;
+        },
+      },
+    });
+
+    await expect(itd.request({ method: 'GET', path: '/api/test' })).rejects.toBe(retryFailure);
+
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(onError.mock.calls[1]?.[0].error).toBe(retryFailure);
+  });
+
+  it('не удерживает timeout из-за зависшего onError', async () => {
+    const { itd } = makeClient([], {
+      timeout: 10,
+      hooks: { onError: () => new Promise<void>(() => {}) },
+    });
+    itd.use({
+      name: 'hanging-operation',
+      install({ operations }) {
+        operations.use(() => new Promise<never>(() => {}));
+      },
+    });
+
+    await expect(itd.request({ method: 'GET', path: '/api/test' })).rejects.toThrow(
+      ItdTimeoutError,
+    );
+  });
+});
 
 /** Ответ ленты в том виде, в каком его отдаёт сервер. */
 function feedPage(ids: string[], nextCursor: string | null) {
@@ -1502,7 +1607,7 @@ describe('жизненный цикл', () => {
       },
     });
 
-    void itd.posts.get('1');
+    void itd.posts.get('1').catch(() => {});
     await vi.waitFor(() => expect(entered).toBe(true));
 
     const error = (await itd.dispose().catch((cause: unknown) => cause)) as AggregateError;
