@@ -31,6 +31,7 @@ describe('createClientRuntime', () => {
     expect(runtime.stageOrder).toEqual([
       ClientRuntimeStage.OperationPlugins,
       ClientRuntimeStage.Services,
+      ClientRuntimeStage.AuthPreflight,
       ClientRuntimeStage.Retry,
       ClientRuntimeStage.AuthRecovery,
       ClientRuntimeStage.AuthPreparation,
@@ -49,6 +50,7 @@ describe('createClientRuntime', () => {
     expect(runtime.stageOrder).toEqual([
       ClientRuntimeStage.OperationPlugins,
       ClientRuntimeStage.Services,
+      ClientRuntimeStage.AuthPreflight,
       ClientRuntimeStage.Retry,
       ClientRuntimeStage.AuthRecovery,
       ClientRuntimeStage.AuthPreparation,

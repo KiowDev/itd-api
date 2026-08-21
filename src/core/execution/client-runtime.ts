@@ -14,6 +14,7 @@ import {
   composePipeline,
   createAttemptMiddleware,
   createAuthHeadersMiddleware,
+  createAuthPreflightMiddleware,
   createAuthPreparationMiddleware,
   createAuthRecoveryMiddleware,
   createQueueMiddleware,
@@ -33,6 +34,7 @@ import { Transport } from './transport.js';
 export const ClientRuntimeStage = Object.freeze({
   OperationPlugins: 'operation_plugins',
   Services: 'services',
+  AuthPreflight: 'auth_preflight',
   Retry: 'retry',
   AuthRecovery: 'auth_recovery',
   AuthPreparation: 'auth_preparation',
@@ -216,6 +218,10 @@ export function createClientRuntime<A extends AuthProvider>(
       middleware: createServicesMiddleware(services),
     },
     {
+      name: ClientRuntimeStage.AuthPreflight,
+      middleware: createAuthPreflightMiddleware(() => auth),
+    },
+    {
       name: ClientRuntimeStage.Retry,
       middleware: createRetryMiddleware({
         clock: config.clock,
@@ -234,7 +240,9 @@ export function createClientRuntime<A extends AuthProvider>(
     },
     {
       name: ClientRuntimeStage.AuthPreparation,
-      middleware: createAuthPreparationMiddleware({ prepare: () => auth.prepare() }),
+      middleware: createAuthPreparationMiddleware({
+        prepare: () => auth.prepare(),
+      }),
     },
   ];
 

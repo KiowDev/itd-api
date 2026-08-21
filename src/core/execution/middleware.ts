@@ -108,6 +108,22 @@ export function createServicesMiddleware(registry: ServiceRegistry): RequestMidd
   };
 }
 
+/** Однократная auth-подготовка вне retry исходного запроса. */
+export function createAuthPreflightMiddleware(
+  getAuth: () => Pick<AuthProvider, 'preflight'>,
+): RequestMiddleware {
+  return async (request, next) => {
+    if (!request.skipAuth) {
+      const auth = getAuth();
+      if (auth.preflight) {
+        const pending = auth.preflight(request.skipAuthRefresh !== true);
+        await (request.signal ? waitForRequest(pending, request.signal) : pending);
+      }
+    }
+    return next(request);
+  };
+}
+
 /**
  * Подготавливает auth state до входа транспортной попытки в очередь.
  *
@@ -120,7 +136,13 @@ export function createAuthPreparationMiddleware(
   return async (request, next) => {
     if (!request.skipAuth) {
       const pending = auth.prepare();
-      await (request.signal ? waitForRequest(pending, request.signal) : pending);
+      try {
+        await (request.signal ? waitForRequest(pending, request.signal) : pending);
+      } catch (error) {
+        // Recovery пропускает только эту ошибку; retry не считается восстановлением.
+        requestAuthRecoveryState(request).preparationErrors.add(error);
+        throw error;
+      }
     }
     return next(request);
   };
@@ -168,11 +190,13 @@ export function createAuthRecoveryMiddleware(
     try {
       return await next(request);
     } catch (error) {
+      const preparationFailed = recovery.preparationErrors.delete(error);
       // Обновляем и повторяем ровно один раз, чтобы не зациклиться, если сервер
       // отдаёт 401 и на свежем токене.
       if (
         request.skipAuthRefresh ||
         recovery.recovered ||
+        preparationFailed ||
         !isItdApiError(error) ||
         error.status !== 401
       ) {

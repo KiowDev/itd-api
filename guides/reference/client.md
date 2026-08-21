@@ -159,7 +159,7 @@ interface ItdClientOptions {
   services?: Record<string, string | Omit<ServiceDefinition, 'name'>>;
   auth?: AuthInput;                      // см. ниже
   storage?: TokenStorage;                // по умолчанию MemoryTokenStorage
-  autoRefresh?: boolean;                 // обновлять токен при 401; по умолчанию true
+  autoRefresh?: boolean;                 // обновлять токен заранее и при 401; по умолчанию true
   reloginOnRefreshFailure?: boolean;     // повторный вход при неудаче refresh; по умолчанию true
   fetch?: typeof fetch;                  // своя реализация: Deno, RN, тесты, прокси
   timeout?: number;                      // по умолчанию 30000; 0 — без ограничения
@@ -303,7 +303,7 @@ interface RawRequestOptions extends RequestOptions {
   query?: QueryParams;
   body?: unknown;                        // JSON; для файлов — FormData
   skipAuth?: boolean;                    // не подставлять токен; false — разрешить внешнему хосту
-  skipAuthRefresh?: boolean;             // не обновлять токен при 401
+  skipAuthRefresh?: boolean;             // не обновлять токен заранее и при 401
   skipQueue?: boolean;                   // мимо очереди
   raw?: boolean;                         // вернуть тело без снятия обёртки { data }
 }

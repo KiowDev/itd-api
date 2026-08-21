@@ -14,6 +14,7 @@ interface RequestAttemptState {
 
 interface RequestAuthRecoveryState {
   recovered: boolean;
+  preparationErrors: Set<unknown>;
 }
 
 interface RequestErrorObservationState {
@@ -34,7 +35,7 @@ export function requestAuthRecoveryState(request: PipelineRequest): RequestAuthR
   const internal = request as InternalPipelineRequest;
   const current = internal[REQUEST_AUTH_RECOVERY_STATE];
   if (current) return current;
-  const state = { recovered: false };
+  const state = { recovered: false, preparationErrors: new Set<unknown>() };
   internal[REQUEST_AUTH_RECOVERY_STATE] = state;
   return state;
 }

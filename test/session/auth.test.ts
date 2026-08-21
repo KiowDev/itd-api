@@ -51,6 +51,13 @@ function makeAuth(
   };
 }
 
+function fixedClock(now: number): NonNullable<ItdClientOptions['clock']> {
+  return {
+    now: () => now,
+    schedule: () => () => {},
+  };
+}
+
 describe('получение токена', () => {
   it('отклоняет неоднозначную runtime-конфигурацию auth', () => {
     expect(() =>
@@ -209,6 +216,26 @@ describe('отложенный вход по логину и паролю', () =
 
     expect(await auth.token()).toBe('new-token');
     expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/sign-in');
+  });
+
+  it('входит до первого защищённого запроса', async () => {
+    const { http, mock } = makeAuth(
+      (request) =>
+        request.url.endsWith('/sign-in')
+          ? json({ accessToken: 'new-token' })
+          : json({ data: { ok: true } }),
+      { auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' } },
+    );
+
+    await expect(http.request({ method: 'GET', path: '/api/protected' })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(mock.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/api/v1/auth/sign-in',
+      '/api/protected',
+    ]);
+    expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer new-token');
   });
 
   it('объединяет параллельные входы в один запрос', async () => {
@@ -428,6 +455,283 @@ describe('обновление токена', () => {
   });
 });
 
+describe('предварительное обновление токена', () => {
+  const now = 1_700_000_000_000;
+
+  it('не обновляет токен, которому осталось больше 30 секунд', async () => {
+    const accessToken = makeJwt({ exp: (now + 31_000) / 1000 });
+    const { http, mock } = makeAuth([json({ data: { ok: true } })], {
+      auth: { accessToken, refreshToken: 'refresh-token' },
+      clock: fixedClock(now),
+    });
+
+    await expect(http.request({ method: 'GET', path: '/api/protected' })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(mock.callCount).toBe(1);
+    expect(mock.calls[0]?.headers.get('authorization')).toBe(`Bearer ${accessToken}`);
+  });
+
+  it('обновляет истекающий токен до защищённого запроса', async () => {
+    const accessToken = makeJwt({ exp: (now + 30_000) / 1000 });
+    const refreshed = makeJwt({ exp: (now + 15 * 60_000) / 1000 });
+    const { http, mock } = makeAuth(
+      (request) =>
+        request.url.endsWith('/refresh')
+          ? json({ accessToken: refreshed })
+          : json({ data: { ok: true } }),
+      {
+        auth: { accessToken, refreshToken: 'refresh-token' },
+        clock: fixedClock(now),
+      },
+    );
+
+    await expect(http.request({ method: 'GET', path: '/api/protected' })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(mock.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/api/v1/auth/refresh',
+      '/api/protected',
+    ]);
+    expect(mock.calls[1]?.headers.get('authorization')).toBe(`Bearer ${refreshed}`);
+  });
+
+  it('объединяет предварительное обновление параллельных запросов', async () => {
+    const accessToken = makeJwt({ exp: (now - 1_000) / 1000 });
+    const refreshed = makeJwt({ exp: (now + 15 * 60_000) / 1000 });
+    let refreshCalls = 0;
+    const { http, mock } = makeAuth(
+      (request) => {
+        if (request.url.endsWith('/refresh')) {
+          refreshCalls += 1;
+          return json({ accessToken: refreshed });
+        }
+        return json({ data: { ok: true } });
+      },
+      {
+        auth: { accessToken, refreshToken: 'refresh-token' },
+        clock: fixedClock(now),
+      },
+    );
+
+    await Promise.all(
+      Array.from({ length: 10 }, () => http.request({ method: 'GET', path: '/api/protected' })),
+    );
+
+    expect(refreshCalls).toBe(1);
+    expect(mock.callCount).toBe(11);
+    expect(
+      mock.calls
+        .filter((call) => !call.url.endsWith('/refresh'))
+        .every((call) => call.headers.get('authorization') === `Bearer ${refreshed}`),
+    ).toBe(true);
+  });
+
+  it('оставляет непрозрачный токен реактивной проверке сервера', async () => {
+    const { http, mock } = makeAuth([json({ data: { ok: true } })], {
+      auth: { accessToken: 'opaque-token', refreshToken: 'refresh-token' },
+      clock: fixedClock(now),
+    });
+
+    await http.request({ method: 'GET', path: '/api/protected' });
+
+    expect(mock.callCount).toBe(1);
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/protected');
+  });
+
+  it('не делает предварительный refresh при autoRefresh: false', async () => {
+    const accessToken = makeJwt({ exp: (now - 1_000) / 1000 });
+    const { http, mock } = makeAuth([json({ data: { ok: true } })], {
+      auth: { accessToken, refreshToken: 'refresh-token' },
+      autoRefresh: false,
+      clock: fixedClock(now),
+    });
+
+    await http.request({ method: 'GET', path: '/api/protected' });
+
+    expect(mock.callCount).toBe(1);
+    expect(mock.calls[0]?.headers.get('authorization')).toBe(`Bearer ${accessToken}`);
+  });
+
+  it('уважает skipAuthRefresh у служебного запроса', async () => {
+    const accessToken = makeJwt({ exp: (now - 1_000) / 1000 });
+    const { http, mock } = makeAuth([json({ data: { ok: true } })], {
+      auth: { accessToken, refreshToken: 'refresh-token' },
+      clock: fixedClock(now),
+    });
+
+    await http.request({
+      method: 'POST',
+      path: '/api/protected',
+      skipAuthRefresh: true,
+    });
+
+    expect(mock.callCount).toBe(1);
+    expect(mock.calls[0]?.headers.get('authorization')).toBe(`Bearer ${accessToken}`);
+  });
+
+  it('не обновляет сессию, заменённую через setSession после проверки срока', async () => {
+    const expired = makeJwt({ exp: (now - 1_000) / 1000 });
+    const fresh = makeJwt({ exp: (now + 15 * 60_000) / 1000 });
+    const { auth, http, mock } = makeAuth(
+      (request) =>
+        request.url.endsWith('/refresh')
+          ? json({ code: 'SESSION_EXPIRED' }, { status: 401 })
+          : json({ data: { ok: true } }),
+      {
+        auth: { accessToken: expired, refreshToken: 'old-refresh' },
+        clock: fixedClock(now),
+      },
+    );
+    await auth.token();
+    const authError = vi.fn();
+    auth.on('authError', authError);
+
+    const request = http.request({ method: 'GET', path: '/api/protected' });
+    await auth.setSession({ accessToken: fresh, refreshToken: 'new-refresh' });
+
+    await expect(request).resolves.toEqual({ ok: true });
+    expect(mock.calls.map((call) => new URL(call.url).pathname)).toEqual(['/api/protected']);
+    expect(mock.calls[0]?.headers.get('authorization')).toBe(`Bearer ${fresh}`);
+    expect(await auth.token()).toBe(fresh);
+    expect(authError).not.toHaveBeenCalled();
+  });
+
+  it('не перезаписывает токен, заданный через setAccessToken после проверки срока', async () => {
+    const expired = makeJwt({ exp: (now - 1_000) / 1000 });
+    const fresh = makeJwt({ exp: (now + 15 * 60_000) / 1000 });
+    const { auth, http, mock } = makeAuth(
+      (request) =>
+        request.url.endsWith('/refresh')
+          ? json({ accessToken: 'unexpected-refresh' })
+          : json({ data: { ok: true } }),
+      {
+        auth: { accessToken: expired, refreshToken: 'refresh-token' },
+        clock: fixedClock(now),
+      },
+    );
+    await auth.token();
+
+    const request = http.request({ method: 'GET', path: '/api/protected' });
+    await auth.setAccessToken(fresh);
+
+    await expect(request).resolves.toEqual({ ok: true });
+    expect(mock.calls.map((call) => new URL(call.url).pathname)).toEqual(['/api/protected']);
+    expect(mock.calls[0]?.headers.get('authorization')).toBe(`Bearer ${fresh}`);
+    expect(await auth.token()).toBe(fresh);
+  });
+
+  it('не запускает повторный вход из устаревшего preflight после clear', async () => {
+    const expired = makeJwt({ exp: (now - 1_000) / 1000 });
+    const { auth, http, mock } = makeAuth(
+      (request) =>
+        request.url.endsWith('/sign-in')
+          ? json({ accessToken: 'unexpected-sign-in' })
+          : json({ data: { ok: true } }),
+      {
+        auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+        clock: fixedClock(now),
+      },
+    );
+    await auth.setSession({ accessToken: expired, refreshToken: 'refresh-token' });
+
+    const request = http.request({ method: 'GET', path: '/api/protected' });
+    await auth.clear();
+
+    await expect(request).resolves.toEqual({ ok: true });
+    expect(mock.calls.map((call) => new URL(call.url).pathname)).toEqual(['/api/protected']);
+    expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
+    expect(await auth.getSession()).toEqual(
+      expect.not.objectContaining({ accessToken: expect.anything() }),
+    );
+  });
+
+  it('не отправляет защищённый запрос, если предварительный refresh не удался', async () => {
+    const accessToken = makeJwt({ exp: (now - 1_000) / 1000 });
+    const { auth, http, mock } = makeAuth([json({ code: 'SESSION_EXPIRED' }, { status: 401 })], {
+      auth: { accessToken, refreshToken: 'refresh-token' },
+      clock: fixedClock(now),
+    });
+    const authError = vi.fn();
+    auth.on('authError', authError);
+
+    await expect(http.request({ method: 'GET', path: '/api/protected' })).rejects.toThrow(
+      ItdAuthError,
+    );
+
+    expect(mock.callCount).toBe(1);
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/refresh');
+    expect(authError).toHaveBeenCalledOnce();
+  });
+
+  it('не повторяет небезопасный refresh по retry-политике исходного GET', async () => {
+    const accessToken = makeJwt({ exp: (now - 1_000) / 1000 });
+    const { http, mock } = makeAuth(
+      () => json({ code: 'TEMPORARY_UNAVAILABLE' }, { status: 503 }),
+      {
+        auth: { accessToken, refreshToken: 'refresh-token' },
+        clock: fixedClock(now),
+        retry: { attempts: 2, baseDelay: 0, maxDelay: 0, jitter: 0 },
+      },
+    );
+
+    await expect(http.request({ method: 'GET', path: '/api/protected' })).rejects.toMatchObject({
+      status: 503,
+      path: '/api/v1/auth/refresh',
+    });
+
+    expect(mock.callCount).toBe(1);
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/refresh');
+  });
+
+  it('повторяет refresh отдельно, когда shouldRetry явно разрешает его семантику', async () => {
+    const accessToken = makeJwt({ exp: (now - 1_000) / 1000 });
+    const refreshed = makeJwt({ exp: (now + 15 * 60_000) / 1000 });
+    const retryOperations: string[] = [];
+    const { http, mock } = makeAuth(
+      (_request, index) => {
+        if (index === 0) return json({ code: 'TEMPORARY_UNAVAILABLE' }, { status: 503 });
+        if (index === 1) return json({ accessToken: refreshed });
+        return json({ data: { ok: true } });
+      },
+      {
+        auth: { accessToken, refreshToken: 'refresh-token' },
+        clock: {
+          now: () => now,
+          schedule: (callback, delay) => {
+            if (delay === 0) queueMicrotask(callback);
+            return () => {};
+          },
+        },
+        retry: {
+          attempts: 2,
+          baseDelay: 0,
+          maxDelay: 0,
+          jitter: 0,
+          shouldRetry: (_error, _attempt, context) => {
+            retryOperations.push(context.operationId);
+            return context.operationId === 'auth.refresh';
+          },
+        },
+      },
+    );
+
+    await expect(http.request({ method: 'GET', path: '/api/protected' })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(retryOperations).toEqual(['auth.refresh']);
+    expect(mock.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/refresh',
+      '/api/protected',
+    ]);
+    expect(mock.calls[2]?.headers.get('authorization')).toBe(`Bearer ${refreshed}`);
+  });
+});
+
 describe('refresh-токен, переданный строкой', () => {
   it('уходит cookie, а не телом запроса', async () => {
     const { auth, mock } = makeAuth([json({ accessToken: 'refreshed' })], {
@@ -601,6 +905,34 @@ describe('гонка выхода и запоздавшего обновлени
     expect(await auth.token()).toBe('explicit');
     const stored = await storage.get();
     expect(stored?.accessToken).toBe('explicit');
+  });
+
+  it('новая ревизия запускает свой refresh после завершения предыдущей', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { auth, mock } = makeAuth(
+      async (_request, index) => {
+        if (index === 0) {
+          await gate;
+          return json({ accessToken: 'stale-refreshed' });
+        }
+        return json({ accessToken: 'new-refreshed' });
+      },
+      { auth: { accessToken: 'old-token', refreshToken: 'old-refresh' } },
+    );
+
+    const previous = auth.refresh();
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+    await auth.setSession({ accessToken: 'new-token', refreshToken: 'new-refresh' });
+    const current = auth.refresh();
+    release();
+
+    await expect(previous).resolves.toBe('new-token');
+    await expect(current).resolves.toBe('new-refreshed');
+    expect(mock.callCount).toBe(2);
+    expect(await auth.token()).toBe('new-refreshed');
   });
 });
 
@@ -1051,6 +1383,22 @@ describe('конкурентная инициализация на холодн�
 
     expect(tokens).toHaveBeenCalledWith({ accessToken: 'memory-token' });
     expect(auth.currentHeaders()).toEqual({ Authorization: 'Bearer memory-token' });
+  });
+
+  it('не скрывает ошибку persistence после refresh', async () => {
+    const storage = {
+      get: () => ({
+        accessToken: 'old-token',
+        refreshToken: 'refresh-token',
+        deviceId: 'device-1',
+      }),
+      set: () => Promise.reject(new Error('disk unavailable')),
+      clear: () => {},
+    };
+    const { auth } = makeAuth([json({ accessToken: 'refreshed' })], { storage });
+
+    await expect(auth.refresh()).rejects.toThrow('disk unavailable');
+    expect(auth.currentHeaders()).toEqual({ Authorization: 'Bearer refreshed' });
   });
 
   it('после dispose не запускает новые операции auth', async () => {

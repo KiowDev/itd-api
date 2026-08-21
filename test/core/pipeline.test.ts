@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveRuntimeConfig } from '../../src/core/config.js';
-import { ItdAbortError } from '../../src/core/errors.js';
+import { ItdAbortError, ItdAuthError } from '../../src/core/errors.js';
 import {
   composePipeline,
   createAuthHeadersMiddleware,
+  createAuthPreparationMiddleware,
   createAuthRecoveryMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
@@ -156,6 +157,32 @@ describe('слой авторизации', () => {
       }),
     ).rejects.toThrow();
     expect(recover).not.toHaveBeenCalled();
+  });
+
+  it('не запускает recovery повторно после ошибки подготовки авторизации', async () => {
+    const error = new ItdAuthError({
+      status: 401,
+      code: 'SESSION_EXPIRED',
+      message: 'Сессия истекла',
+      method: 'POST',
+      path: '/api/v1/auth/refresh',
+      raw: undefined,
+    });
+    const recover = vi.fn().mockResolvedValue(false);
+    const transport = vi.fn().mockResolvedValue({});
+    const request = composePipeline(
+      [
+        createAuthRecoveryMiddleware({ recover }),
+        createAuthPreparationMiddleware({ prepare: () => Promise.reject(error) }),
+      ],
+      transport,
+    );
+
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/protected' }),
+    ).rejects.toBe(error);
+    expect(recover).not.toHaveBeenCalled();
+    expect(transport).not.toHaveBeenCalled();
   });
 });
 

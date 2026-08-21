@@ -54,7 +54,8 @@ export interface SessionOptions {
   /** Где хранить сессию. По умолчанию {@link MemoryTokenStorage}. */
   storage?: TokenStorage | undefined;
   /**
-   * Обновлять токен автоматически при ответе `401`. По умолчанию `true`.
+   * Обновлять токен перед истечением и восстанавливать сессию при ответе `401`.
+   * По умолчанию `true`.
    *
    * При `false` библиотека просто пробросит {@link ItdAuthError}, а обновлением
    * вы управляете сами через `itd.auth.refresh()`.

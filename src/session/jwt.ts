@@ -15,10 +15,44 @@ function decodeBase64Url(segment: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+/** Читает полезную нагрузку JWT без проверки подписи. */
+function readTokenPayload(token: string): Record<string, unknown> | undefined {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return undefined;
+
+    const parsed: unknown = JSON.parse(decodeBase64Url(payload));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+    return parsed as Record<string, unknown>;
+  } catch {
+    // Непрозрачный или повреждённый токен допустим: его свойства просто неизвестны.
+    return undefined;
+  }
+}
+
 /** Идентификаторы владельца и сессии, прочитанные из JWT без проверки подписи. */
 export interface TokenIdentity {
   subject?: string | undefined;
   sessionId?: string | undefined;
+}
+
+/** Локально используемые поля JWT. */
+export interface TokenMetadata extends TokenIdentity {
+  expiresAt?: number | undefined;
+}
+
+/** Читает используемые клиентом поля JWT за один раз. */
+export function readTokenMetadata(token: string): TokenMetadata {
+  const payload = readTokenPayload(token);
+  if (!payload) return {};
+
+  const { sub, sid, exp } = payload;
+  const expiresAt = typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : undefined;
+  return {
+    ...(typeof sub === 'string' && sub.length > 0 ? { subject: sub } : {}),
+    ...(typeof sid === 'string' && sid.length > 0 ? { sessionId: sid } : {}),
+    ...(expiresAt !== undefined && Number.isFinite(expiresAt) ? { expiresAt } : {}),
+  };
 }
 
 /**
@@ -28,22 +62,22 @@ export interface TokenIdentity {
  * лишь метками для разделения локального состояния и не дают доступа: его определяет сервер.
  */
 export function readTokenIdentity(token: string): TokenIdentity {
-  try {
-    const payload = token.split('.')[1];
-    if (!payload) return {};
+  const { subject, sessionId } = readTokenMetadata(token);
+  return { ...(subject ? { subject } : {}), ...(sessionId ? { sessionId } : {}) };
+}
 
-    const parsed: unknown = JSON.parse(decodeBase64Url(payload));
-    if (typeof parsed !== 'object' || parsed === null) return {};
-
-    const { sub, sid } = parsed as { sub?: unknown; sid?: unknown };
-    return {
-      ...(typeof sub === 'string' && sub.length > 0 ? { subject: sub } : {}),
-      ...(typeof sid === 'string' && sid.length > 0 ? { sessionId: sid } : {}),
-    };
-  } catch {
-    // Токен другого формата — не повод падать: поля просто останутся пустыми.
-    return {};
-  }
+/**
+ * Читает срок действия JWT из claim `exp`.
+ *
+ * JWT хранит NumericDate в секундах, а остальное ядро использует миллисекунды. Подпись
+ * намеренно не проверяется: значение служит только подсказкой для раннего refresh, а
+ * окончательное решение о действительности токена всё равно принимает сервер.
+ *
+ * @returns момент истечения в миллисекундах либо `undefined` для непрозрачного,
+ * повреждённого JWT или некорректного `exp`
+ */
+export function readTokenExpiration(token: string): number | undefined {
+  return readTokenMetadata(token).expiresAt;
 }
 
 /**

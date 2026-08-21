@@ -15,9 +15,12 @@ import { createDeviceId } from '../core/runtime.js';
 import { isRecord, requireOptionalBoolean } from '../core/validate.js';
 import type { UserId } from '../models/common.js';
 import { AUTH_REFRESH, AUTH_SIGN_IN, SignInStatus } from '../operations/auth.js';
-import { readTokenIdentity, readTokenSubject } from './jwt.js';
+import { readTokenMetadata, type TokenMetadata } from './jwt.js';
 import type { AuthInput, CredentialsAuth, SessionOptions } from './options.js';
 import { copySession, type ItdSession, MemoryTokenStorage, type TokenStorage } from './storage.js';
+
+/** Запас до истечения токена на очередь и выполнение запроса. */
+const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 30_000;
 
 /**
  * Настройки сессии после подстановки умолчаний и проверок.
@@ -331,6 +334,16 @@ interface AuthManagerHooks {
   onAccountChange?: (() => void) | undefined;
 }
 
+interface RefreshExpectation {
+  epoch: number;
+  accessToken?: string | undefined;
+}
+
+interface InFlightRefresh {
+  epoch: number;
+  promise: Promise<string | null>;
+}
+
 /**
  * Хранит сессию и продлевает её.
  *
@@ -353,8 +366,8 @@ export class AuthManager implements AuthProvider {
    * старте читают хранилище один раз и не заводят каждый свой `deviceId`.
    */
   #loading: Promise<ItdSession | null> | null = null;
-  /** Общий промис обновления: к нему присоединяются все, кто получил 401. */
-  #refreshing: Promise<string | null> | null = null;
+  /** Текущее обновление: к нему присоединяются запросы той же ревизии. */
+  #refreshing: InFlightRefresh | null = null;
   /** Общий промис входа по логину и паролю. */
   #signingIn: Promise<string | null> | null = null;
   /** Fallback-область для изоляции состояния плагинов, когда JWT-идентичность недоступна. */
@@ -363,6 +376,7 @@ export class AuthManager implements AuthProvider {
   #externalToken: string | null | undefined;
   /** Идентификаторы последнего токена внешнего источника для синхронных потребителей. */
   #externalIdentity: AuthIdentity | undefined;
+  #tokenMetadata: { accessToken: string; value: TokenMetadata } | undefined;
   /**
    * Идентификатор устройства.
    *
@@ -376,9 +390,7 @@ export class AuthManager implements AuthProvider {
    * Счётчик смен владельца авторизации.
    *
    * Растёт при каждой операции, которая заменяет или очищает сессию извне: `clear`,
-   * `setSession`, `setAccessToken`, вход. `#performRefresh` снимает его значение перед
-   * сетевым запросом и сверяет перед записью — иначе запоздавший ответ обновления мог бы
-   * воскресить уже очищенную сессию поверх `signOut`.
+   * `setSession`, `setAccessToken`, вход. Refresh сверяет снимок до и после сетевого запроса.
    */
   #authEpoch = 0;
   #externalReadGeneration = 0;
@@ -422,6 +434,7 @@ export class AuthManager implements AuthProvider {
     this.#disposed = true;
     this.#externalReadGeneration += 1;
     this.#invalidateInFlight();
+    this.#tokenMetadata = undefined;
     this.#emitter.removeAllListeners();
   }
 
@@ -498,11 +511,23 @@ export class AuthManager implements AuthProvider {
   }
 
   #identityForToken(accessToken: string | undefined): AuthIdentity {
-    const token = accessToken ? readTokenIdentity(accessToken) : {};
+    const token = this.#metadataForToken(accessToken);
     return {
       ...(token.subject ? { userId: token.subject as UserId } : {}),
       ...(token.sessionId ? { sessionId: token.sessionId } : {}),
     };
+  }
+
+  #metadataForToken(accessToken: string | undefined): TokenMetadata {
+    if (!accessToken) {
+      this.#tokenMetadata = undefined;
+      return {};
+    }
+    if (this.#tokenMetadata?.accessToken === accessToken) return this.#tokenMetadata.value;
+
+    const value = readTokenMetadata(accessToken);
+    this.#tokenMetadata = { accessToken, value };
+    return value;
   }
 
   async #readExternalToken(
@@ -570,15 +595,48 @@ export class AuthManager implements AuthProvider {
     return Boolean(this.#session?.refreshToken);
   }
 
-  /**
-   * Готовит состояние авторизации до входа запроса в очередь. Стадия `auth_preparation`.
-   *
-   * Загрузка хранилища, внешний источник токена и отложенный вход асинхронны, поэтому
-   * обязаны завершиться до захвата слота очереди.
-   */
+  /** Готовит внутреннюю сессию до retry исходного запроса. */
+  async preflight(allowRefresh: boolean): Promise<void> {
+    this.#assertActive();
+    const session = await this.#loadSession();
+    let accessToken = session?.accessToken;
+
+    if (!accessToken) {
+      const auth = this.#config.auth;
+      if (typeof auth === 'object' && auth !== null && 'email' in auth) {
+        accessToken = (await this.#signInWithCredentials(auth)) ?? undefined;
+      }
+    }
+
+    if (!accessToken || !allowRefresh || !this.#config.autoRefresh) return;
+
+    const expiresAt = this.#metadataForToken(accessToken).expiresAt;
+    if (
+      expiresAt === undefined ||
+      expiresAt > this.#config.clock.now() + ACCESS_TOKEN_REFRESH_LEEWAY_MS ||
+      !this.#hasRefreshSession()
+    ) {
+      return;
+    }
+
+    try {
+      await this.#refreshDeduplicated({ epoch: this.#authEpoch, accessToken });
+    } catch (error) {
+      this.#emitter.emit('authError', { error });
+      throw error;
+    }
+  }
+
+  /** Перед каждой попыткой перечитывает внешний источник токена. */
   async prepare(): Promise<void> {
     this.#assertActive();
-    await this.token();
+    const session = await this.#loadSession();
+    if (session?.accessToken) return;
+
+    const auth = this.#config.auth;
+    if (typeof auth === 'object' && auth !== null && 'getToken' in auth) {
+      await this.#readExternalToken(() => auth.getToken());
+    }
   }
 
   /**
@@ -765,7 +823,7 @@ export class AuthManager implements AuthProvider {
   async getUserId(): Promise<UserId | undefined> {
     this.#assertActive();
     const session = await this.#loadSession();
-    return session?.accessToken ? readTokenSubject(session.accessToken) : undefined;
+    return session?.accessToken ? this.#identityForToken(session.accessToken).userId : undefined;
   }
 
   /** Заменяет сессию и связанные с ней cookie целиком. */
@@ -905,25 +963,39 @@ export class AuthManager implements AuthProvider {
     return pending;
   }
 
-  /**
-   * Обновление с дедупликацией.
-   *
-   * Все, кто пришёл, пока обновление уже идёт, получают его результат, а не запускают своё.
-   */
-  #refreshDeduplicated(): Promise<string | null> {
-    if (this.#refreshing) return this.#refreshing;
+  /** Дедуплицирует refresh одной ревизии; следующая ждёт завершения предыдущей. */
+  #refreshDeduplicated(
+    expectation: RefreshExpectation = { epoch: this.#authEpoch },
+  ): Promise<string | null> {
+    const current = this.#refreshing;
+    if (current) {
+      if (current.epoch === expectation.epoch) return current.promise;
+      return current.promise.then(
+        () => this.#refreshDeduplicated(expectation),
+        () => this.#refreshDeduplicated(expectation),
+      );
+    }
 
-    const promise = this.#performRefresh().finally(() => {
-      this.#refreshing = null;
+    const promise = this.#performRefresh(expectation).finally(() => {
+      if (this.#refreshing?.promise === promise) this.#refreshing = null;
     });
 
-    this.#refreshing = promise;
+    this.#refreshing = { epoch: expectation.epoch, promise };
     return promise;
   }
 
-  async #performRefresh(): Promise<string | null> {
+  #matchesRefreshExpectation(expectation: RefreshExpectation): boolean {
+    return (
+      this.#authEpoch === expectation.epoch &&
+      (expectation.accessToken === undefined ||
+        this.#session?.accessToken === expectation.accessToken)
+    );
+  }
+
+  async #performRefresh(expectation: RefreshExpectation): Promise<string | null> {
     this.#assertActive();
     await this.#loadSession();
+    if (!this.#matchesRefreshExpectation(expectation)) return this.#currentAccessToken();
 
     if (!this.#hasRefreshSession()) {
       // Нет признаков сессии — обновлять нечего. При наличии логина и пароля
@@ -931,9 +1003,6 @@ export class AuthManager implements AuthProvider {
       return this.#reloginOrNull();
     }
 
-    // Снимок владельца авторизации: если он сменится, пока идёт сетевой запрос,
-    // результат обновления записывать нельзя.
-    const epoch = this.#authEpoch;
     const flowCookies = this.#jar.clone();
 
     try {
@@ -949,7 +1018,7 @@ export class AuthManager implements AuthProvider {
         // #seedRefreshCookie. По той же причине не нужен и устаревший Bearer.
       });
 
-      if (this.#authEpoch !== epoch) {
+      if (!this.#matchesRefreshExpectation(expectation)) {
         // Пока шёл refresh, владельца сменили (signOut / setSession / вход): его результат
         // устарел. Не воскрешаем сохранённую сессию, отдаём актуальный токен как есть.
         return this.#session?.accessToken ?? null;
@@ -977,15 +1046,11 @@ export class AuthManager implements AuthProvider {
 
       this.#emitter.emit('tokens', { accessToken });
       await saved;
+      if (this.#authEpoch !== expectation.epoch) return this.#currentAccessToken();
       return accessToken;
     } catch (error) {
+      if (this.#authEpoch !== expectation.epoch) return this.#currentAccessToken();
       if (error instanceof ItdAuthError) {
-        if (this.#authEpoch !== epoch) {
-          // Владельца сменили, пока шёл refresh: ошибка относится к уже забытой сессии —
-          // не трогаем актуальное состояние.
-          return this.#session?.accessToken ?? null;
-        }
-
         // Сессия недействительна — чистим её, иначе будем биться в стену на каждом запросе.
         this.#invalidateInFlight();
         const clearedRevision = this.#authEpoch;

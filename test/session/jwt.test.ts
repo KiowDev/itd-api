@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { readTokenIdentity, readTokenSubject } from '../../src/session/jwt.js';
+import {
+  readTokenExpiration,
+  readTokenIdentity,
+  readTokenMetadata,
+  readTokenSubject,
+} from '../../src/session/jwt.js';
 import { makeJwt } from '../helpers/jwt.js';
 
 describe('readTokenSubject', () => {
@@ -54,5 +59,34 @@ describe('readTokenIdentity', () => {
     expect(readTokenIdentity(makeJwt({ sub: 'user-1', sid: 42 }))).toEqual({
       subject: 'user-1',
     });
+  });
+});
+
+describe('readTokenMetadata', () => {
+  it('читает идентификаторы и срок за один проход', () => {
+    const token = makeJwt({ sub: 'user-1', sid: 'session-1', exp: 1_700_000_123 });
+
+    expect(readTokenMetadata(token)).toEqual({
+      subject: 'user-1',
+      sessionId: 'session-1',
+      expiresAt: 1_700_000_123_000,
+    });
+  });
+});
+
+describe('readTokenExpiration', () => {
+  it('переводит NumericDate exp из секунд в миллисекунды', () => {
+    expect(readTokenExpiration(makeJwt({ exp: 1_700_000_123 }))).toBe(1_700_000_123_000);
+  });
+
+  it('не угадывает срок непрозрачного или повреждённого токена', () => {
+    expect(readTokenExpiration('opaque-token')).toBeUndefined();
+    expect(readTokenExpiration('header.invalid.signature')).toBeUndefined();
+  });
+
+  it('игнорирует отсутствующий и некорректный exp', () => {
+    expect(readTokenExpiration(makeJwt({ sub: 'user' }))).toBeUndefined();
+    expect(readTokenExpiration(makeJwt({ exp: '1700000123' }))).toBeUndefined();
+    expect(readTokenExpiration(makeJwt({ exp: Number.NaN }))).toBeUndefined();
   });
 });

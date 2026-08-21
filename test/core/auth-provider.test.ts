@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type AuthProvider, anonymousAuth } from '../../src/core/auth-provider.js';
+import { ItdApiError } from '../../src/core/errors.js';
 import {
   type ClientRuntime,
   createClientRuntime,
@@ -14,6 +15,7 @@ import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.j
 function spyAuth(headers: () => Record<string, string> = () => ({ Authorization: 'Bearer t' })) {
   const calls = {
     token: vi.fn(),
+    preflight: vi.fn(),
     prepare: vi.fn(),
     currentHeaders: vi.fn(),
     recover: vi.fn(),
@@ -25,6 +27,9 @@ function spyAuth(headers: () => Record<string, string> = () => ({ Authorization:
     token: async () => {
       calls.token();
       return headers().Authorization?.replace('Bearer ', '') ?? null;
+    },
+    preflight: async (allowRefresh) => {
+      calls.preflight(allowRefresh);
     },
     prepare: async () => {
       calls.prepare();
@@ -87,6 +92,44 @@ describe('конвейер спрашивает авторизацию чере�
     // и заново читает заголовки, а не переиспользует снимок первой.
     expect(calls.prepare).toHaveBeenCalledTimes(2);
     expect(calls.currentHeaders).toHaveBeenCalledTimes(2);
+    expect(calls.preflight).toHaveBeenCalledOnce();
+    expect(calls.preflight).toHaveBeenCalledWith(true);
+    await shutdown(runtime);
+  });
+
+  it('не переносит ошибку подготовки на recovery следующей retry-попытки', async () => {
+    const { provider, calls } = spyAuth();
+    const preparationError = new ItdApiError({
+      status: 503,
+      code: 'TEMPORARY_UNAVAILABLE',
+      message: 'временный сбой источника токена',
+      method: 'GET',
+      path: '/token',
+      raw: undefined,
+    });
+    let preparationCalls = 0;
+    const flaky: AuthProvider = {
+      ...provider,
+      prepare: async () => {
+        calls.prepare();
+        preparationCalls += 1;
+        if (preparationCalls === 1) throw preparationError;
+      },
+    };
+    const { runtime, mock } = makeRuntime(
+      [json({ code: 'UNAUTHORIZED' }, { status: 401 }), json({ data: { ok: true } })],
+      () => flaky,
+      { retry: { attempts: 2, baseDelay: 0, maxDelay: 0, jitter: 0 } },
+    );
+
+    await expect(
+      runtime.http.execute(passthroughOperation('users.me'), { path: '/api/users/me' }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(calls.preflight).toHaveBeenCalledOnce();
+    expect(calls.prepare).toHaveBeenCalledTimes(3);
+    expect(calls.recover).toHaveBeenCalledOnce();
+    expect(mock.callCount).toBe(2);
     await shutdown(runtime);
   });
 
@@ -97,8 +140,28 @@ describe('конвейер спрашивает авторизацию чере�
     await runtime.http.request({ method: 'POST', path: '/api/v1/auth/sign-in', skipAuth: true });
 
     expect(calls.prepare).not.toHaveBeenCalled();
+    expect(calls.preflight).not.toHaveBeenCalled();
     expect(calls.currentHeaders).not.toHaveBeenCalled();
     expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
+    await shutdown(runtime);
+  });
+
+  it('вызывает preflight с контекстом пользовательского провайдера', async () => {
+    const provider = {
+      ...anonymousAuth(),
+      prepared: false,
+      async preflight(
+        this: AuthProvider & { prepared: boolean },
+        allowRefresh: boolean,
+      ): Promise<void> {
+        this.prepared = allowRefresh;
+      },
+    };
+    const { runtime } = makeRuntime([json({ data: {} })], () => provider);
+
+    await runtime.http.request({ method: 'GET', path: '/api/ping' });
+
+    expect(provider.prepared).toBe(true);
     await shutdown(runtime);
   });
 
