@@ -2,7 +2,9 @@
 
 Здесь перечислены поддерживаемые маршруты API и соответствующие им публичные
 методы `itd-api`. Колонка «Основной контракт» фиксирует отправляемые поля и форму
-полезного результата. 
+полезного результата. В колонке «Авторизация» значение `нет` означает, что SDK намеренно
+не отправляет Bearer-токен, `необязательно` — маршрут работает без сессии, но клиент с
+настроенной сессией может отправить токен, а `Bearer` — маршрут требует access token.
 
 ## Авторизация и сессии
 
@@ -17,7 +19,7 @@
 | `POST /api/v1/auth/forgot-password` | `itd.auth.forgotPassword()` | нет | `email`, `turnstileToken` → `flowToken` | — |
 | `POST /api/v1/auth/reset-password` | `itd.auth.resetPassword()` | нет | `email`, `newPassword`, `otp`, `flowToken` | — |
 | `POST /api/v1/auth/change-password` | `itd.auth.changePassword()` | Bearer | `currentPassword`, `newPassword` | — |
-| `GET /api/profile` | `itd.auth.check()` | необязательно | ответ: `authenticated`, `banned`, `user` | 2026-08-13, `200` |
+| `GET /api/profile` | `itd.auth.check()` | необязательно | ответ: `authenticated`, `banned`, `user` | 2026-08-22, `200` |
 | `GET /api/v1/auth/sessions` | `itd.auth.sessions()` | Bearer | ответ: `sessions[]` | 2026-08-13, `200` |
 | `DELETE /api/v1/auth/sessions/{sessionId}` | `itd.auth.revokeSession()` | Bearer | идентификатор сессии в path | — |
 | `DELETE /api/v1/auth/sessions` | `itd.auth.revokeOtherSessions()`, `itd.auth.logoutAll()` | Bearer | завершение остальных сессий | — |
@@ -36,7 +38,7 @@
 | `POST /api/users/me/restore` | `itd.users.restore()` | Bearer | body отсутствует | — |
 | `POST /api/users/profile` | `itd.users.createProfile()` | Bearer | `username`, `displayName`, `avatar` | — |
 | `GET /api/users/{user}` | `itd.users.get()` | Bearer | id или username в path | 2026-08-13, `200` |
-| `GET /api/users/check-username` | `itd.users.checkUsername()` | Bearer | query: `username` | 2026-08-13, `200` |
+| `GET /api/users/check-username` | `itd.users.checkUsername()` | необязательно | query: `username` | 2026-08-22, `200` |
 | `GET /api/users/search` | `itd.users.search()` | Bearer | query: `q`, `limit` | 2026-08-13, `200` |
 | `GET /api/users/suggestions/who-to-follow` | `itd.users.whoToFollow()` | Bearer | ответ: `users[]` | 2026-08-13, `200` |
 | `GET /api/users/stats/top-clans` | `itd.users.topClans()` | Bearer | ответ: `clans[]` | 2026-08-13, `200` |
@@ -93,10 +95,10 @@
 
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
-| `GET /api/hashtags` | `itd.hashtags.search()` | Bearer | query: `q`, `limit` | 2026-08-13, `200` |
-| `GET /api/hashtags/trending` | `itd.hashtags.trending()` | Bearer | query: `limit` | 2026-08-13, `200` |
-| `GET /api/hashtags/{tag}/posts` | `itd.hashtags.posts()`, `iteratePosts()` | Bearer | query: `limit`, `cursor` | 2026-08-13, `200` |
-| `GET /api/search` | `itd.search.all()` | Bearer | query: `q` → пользователи и хештеги | 2026-08-13, `200` |
+| `GET /api/hashtags` | `itd.hashtags.search()` | необязательно | query: `q`, `limit` | 2026-08-22, `200` |
+| `GET /api/hashtags/trending` | `itd.hashtags.trending()` | необязательно | query: `limit` | 2026-08-22, `200` |
+| `GET /api/hashtags/{tag}/posts` | `itd.hashtags.posts()`, `iteratePosts()` | необязательно | query: `limit`, `cursor` | 2026-08-22, `200` |
+| `GET /api/search` | `itd.search.all()` | необязательно | query: `q` → пользователи и хештеги | 2026-08-22, `200` |
 
 ## Уведомления и события
 
@@ -143,11 +145,11 @@
 
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
-| `GET /api/platform/version` | `itd.platform.version()` | нет | карта клиентов с `minVersion`, `latestVersion`, `updateUrl` | 2026-08-13, `200` |
-| `GET /api/platform/changelog` | `itd.platform.changelog()` | Bearer | ответ: список изменений | 2026-08-13, `200` |
-| `GET /api/platform/announcements` | `itd.platform.announcements()` | Bearer | ответ: `announcements[]` | 2026-08-13, `200` |
-| `GET /api/v1/portal` | `itd.platform.portal()` | Bearer | ответ: данные портала | 2026-08-13, `200` |
-| `GET /api/status` | `itd.platform.status()` | нет | отдельный status host; ответ: состояние сервисов | 2026-08-13, `200` |
+| `GET /api/platform/version` | `itd.platform.version()` | нет | карта клиентов с `minVersion`, `latestVersion`, `updateUrl` | 2026-08-22, `200` |
+| `GET /api/platform/changelog` | `itd.platform.changelog()` | необязательно | ответ: список изменений | 2026-08-22, `200` |
+| `GET /api/platform/announcements` | `itd.platform.announcements()` | необязательно | ответ: `announcements[]` | 2026-08-22, `200` |
+| `GET /api/v1/portal` | `itd.platform.portal()` | необязательно | ответ: данные портала | 2026-08-22, `200` |
+| `GET /api/status` | `itd.platform.status()` | нет | отдельный status host; ответ: состояние сервисов | 2026-08-22, `200` |
 
 ## Телеметрия
 
