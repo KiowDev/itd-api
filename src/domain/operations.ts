@@ -57,7 +57,6 @@ export const OPERATIONS = freezeOperations({
   'users.createProfile': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'users.get': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
   'users.checkUsername': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
-  'users.search': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
   'users.whoToFollow': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
   'users.topClans': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
   'users.follow': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'users.follow' },
@@ -135,7 +134,6 @@ export const OPERATIONS = freezeOperations({
     bucket: 'notifications',
   },
 
-  'hashtags.search': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'hashtags' },
   'hashtags.trending': {
     method: 'GET',
     retrySafety: RetrySafety.Safe,

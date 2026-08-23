@@ -142,7 +142,7 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 | `shop.consents.record` | `shop.consents.record` | 15 |
 | `auth` | `auth.signUp`, `auth.signIn`, `auth.verifyOtp`, `auth.resendOtp`, `auth.logout`, `auth.forgotPassword`, `auth.resetPassword`, `auth.changePassword`, `auth.sessions`, `auth.revokeSession`, `auth.revokeOtherSessions` | 35 |
 | `auth.refresh` | `auth.refresh` | 25 |
-| `users` | `users.me`, `users.get`, `users.checkUsername`, `users.search`, `users.whoToFollow`, `users.topClans`, `users.followers`, `users.following`, `users.blocked`, `users.getPrivacy`, `users.pins` | 40 |
+| `users` | `users.me`, `users.get`, `users.checkUsername`, `users.whoToFollow`, `users.topClans`, `users.followers`, `users.following`, `users.blocked`, `users.getPrivacy`, `users.pins` | 40 |
 | `users.updateMe` | `users.updateMe` | 3 |
 | `users.follow` | `users.follow`, `users.unfollow` | 7 |
 | `feed` | `posts.list` | 90 |
@@ -157,7 +157,7 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 | `files.upload` | `files.upload` | 15 |
 | `files.remove` | `files.remove` | 15 |
 | `notifications` | `notifications.list`, `notifications.count`, `notifications.getSettings`, `events.notifications.poll.updates`, `events.notifications.poll.unread` | 40 |
-| `hashtags` | `hashtags.search`, `hashtags.posts` | 50 |
+| `hashtags` | `hashtags.posts` | 50 |
 | `hashtags.trending` | `hashtags.trending` | 13 |
 | `search` | `search.all` | 25 |
 | `verification.status` | `verification.status` | 6 |

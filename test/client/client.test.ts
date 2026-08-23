@@ -648,12 +648,6 @@ describe('пользователи', () => {
     expect(await itd.users.checkUsername('новое_имя')).toBe(true);
   });
 
-  it('достаёт список из поля users', async () => {
-    const { itd } = makeClient([json({ data: { users: [{ id: 'u1' }, { id: 'u2' }] } })]);
-
-    expect(await itd.users.search('привет')).toHaveLength(2);
-  });
-
   it('читает активный значок как строку', async () => {
     const { itd } = makeClient([json({ data: { pins: [{ slug: 'a' }], activePin: 'a' } })]);
 

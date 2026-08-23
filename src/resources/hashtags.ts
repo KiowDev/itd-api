@@ -15,9 +15,6 @@ import {
 const HASHTAG_POSTS = pageOperation<Post>('hashtags.posts', (body) =>
   readCursorPage<Post>(body, 'posts'),
 );
-const HASHTAGS_SEARCH = defineBuiltInOperation<Hashtag[]>('hashtags.search', (body) =>
-  pickArray<Hashtag>(body, 'hashtags'),
-);
 const HASHTAGS_TRENDING = defineBuiltInOperation<Hashtag[]>('hashtags.trending', (body) =>
   pickArray<Hashtag>(body, 'hashtags'),
 );
@@ -42,23 +39,6 @@ export class HashtagsResource extends BaseResource {
     start: (p) => (p.cursor ? { cursor: p.cursor } : {}),
     mode: PaginationMode.Cursor,
   });
-
-  /**
-   * Ищет хэштеги.
-   *
-   * Без строки запроса возвращает общий список.
-   */
-  search(
-    query?: string,
-    params: { limit?: number } = {},
-    options: RequestOptions = {},
-  ): Promise<Hashtag[]> {
-    return this.http.execute(HASHTAGS_SEARCH, {
-      path: '/api/hashtags',
-      query: { q: query, limit: params.limit },
-      ...options,
-    });
-  }
 
   /** Загружает трендовые хэштеги. */
   trending(params: { limit?: number } = {}, options: RequestOptions = {}): Promise<Hashtag[]> {

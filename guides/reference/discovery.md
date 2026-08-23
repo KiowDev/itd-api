@@ -9,7 +9,8 @@
 ```ts
 all(query: string): Promise<SearchResult>
 ```
-Ищет пользователей и хэштеги одним запросом.
+Ищет пользователей и хэштеги одним запросом. Это единая точка поиска: отдельных методов
+поиска в `itd.users` и `itd.hashtags` нет.
 
 ```ts
 interface SearchResult {
@@ -19,11 +20,6 @@ interface SearchResult {
 ```
 
 ## Хэштеги — `itd.hashtags`
-
-```ts
-search(query?: string, params?: { limit?: number }): Promise<Hashtag[]>
-```
-Ищет хэштеги. Без строки запроса возвращает общий список.
 
 ```ts
 trending(params?: { limit?: number }): Promise<Hashtag[]>
@@ -44,14 +40,9 @@ interface HashtagPostsParams {
 }
 ```
 
-## Пользователи — `itd.users`
+## Рекомендации — `itd.users`
 
-Полное описание — в [Пользователи](./users.md#поиск-и-рекомендации).
-
-```ts
-itd.users.search(query: string, params?: { limit?: number }): Promise<UserSummary[]>
-```
-Поиск пользователей по строке.
+Полное описание — в [Пользователи](./users.md#рекомендации).
 
 ```ts
 itd.users.whoToFollow(): Promise<UserSummary[]>

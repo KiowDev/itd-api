@@ -19,7 +19,6 @@ const POST_CONTENT = [
   'posts.comments',
   'posts.stats',
   'comments.replies',
-  'hashtags.search',
   'hashtags.trending',
   'hashtags.posts',
   'search.all',
@@ -52,7 +51,6 @@ const PROFILE = [
   'users.me',
   'users.get',
   'users.checkUsername',
-  'users.search',
   'users.whoToFollow',
   'users.topClans',
   'users.followers',
@@ -74,7 +72,6 @@ const PROFILE = [
 const FOLLOWING = [
   'users.me',
   'users.get',
-  'users.search',
   'users.whoToFollow',
   'users.followers',
   'users.following',
@@ -87,7 +84,6 @@ const FOLLOWING = [
 const BLOCKS = [
   'users.me',
   'users.get',
-  'users.search',
   'users.whoToFollow',
   'users.followers',
   'users.following',

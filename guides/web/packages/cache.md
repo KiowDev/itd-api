@@ -175,11 +175,11 @@ clientB.use(shared);
 | Раздел | Операции |
 |---|---|
 | Auth | `auth.sessions` |
-| Users | `users.me`, `users.get`, `users.checkUsername`, `users.search`, `users.whoToFollow`, `users.topClans`, `users.followers`, `users.following`, `users.blocked`, `users.getPrivacy`, `users.pins`, `users.followStatus` |
+| Users | `users.me`, `users.get`, `users.checkUsername`, `users.whoToFollow`, `users.topClans`, `users.followers`, `users.following`, `users.blocked`, `users.getPrivacy`, `users.pins`, `users.followStatus` |
 | Posts | `posts.list`, `posts.get`, `posts.byUser`, `posts.likedByUser`, `posts.comments`, `posts.stats` |
 | Comments | `comments.replies` |
 | Notifications | `notifications.list`, `notifications.count`, `notifications.getSettings` |
-| Hashtags | `hashtags.search`, `hashtags.trending`, `hashtags.posts` |
+| Hashtags | `hashtags.trending`, `hashtags.posts` |
 | Search | `search.all` |
 | Files | `files.get` |
 | Subscription | `subscription.status`, `subscription.methods` |

@@ -42,9 +42,6 @@ const USER_LIST_OPERATIONS = {
 const USERS_CHECK_USERNAME = defineBuiltInOperation<boolean>('users.checkUsername', (body) =>
   pickBoolean(body, 'available'),
 );
-const USERS_SEARCH = defineBuiltInOperation<UserSummary[]>('users.search', (body) =>
-  pickArray<UserSummary>(body, 'users'),
-);
 const USERS_WHO_TO_FOLLOW = defineBuiltInOperation<UserSummary[]>('users.whoToFollow', (body) =>
   pickArray<UserSummary>(body, 'users'),
 );
@@ -239,19 +236,6 @@ export class UsersResource extends BaseResource {
     return this.http.execute(USERS_CHECK_USERNAME, {
       path: '/api/users/check-username',
       query: { username },
-      ...options,
-    });
-  }
-
-  /** Ищет пользователей по строке запроса. */
-  search(
-    query: string,
-    params: { limit?: number } = {},
-    options: RequestOptions = {},
-  ): Promise<UserSummary[]> {
-    return this.http.execute(USERS_SEARCH, {
-      path: '/api/users/search',
-      query: { q: query, limit: params.limit },
       ...options,
     });
   }

@@ -39,7 +39,6 @@
 | `POST /api/users/profile` | `itd.users.createProfile()` | Bearer | `username`, `displayName`, `avatar` | — |
 | `GET /api/users/{user}` | `itd.users.get()` | Bearer | id или username в path | 2026-08-13, `200` |
 | `GET /api/users/check-username` | `itd.users.checkUsername()` | необязательно | query: `username` | 2026-08-22, `200` |
-| `GET /api/users/search` | `itd.users.search()` | Bearer | query: `q`, `limit` | 2026-08-13, `200` |
 | `GET /api/users/suggestions/who-to-follow` | `itd.users.whoToFollow()` | Bearer | ответ: `users[]` | 2026-08-13, `200` |
 | `GET /api/users/stats/top-clans` | `itd.users.topClans()` | Bearer | ответ: `clans[]` | 2026-08-13, `200` |
 | `POST /api/users/{user}/follow` | `itd.users.follow()` | Bearer | id или username в path | 2026-08-13, `200` |
@@ -95,7 +94,6 @@
 
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
-| `GET /api/hashtags` | `itd.hashtags.search()` | необязательно | query: `q`, `limit` | 2026-08-22, `200` |
 | `GET /api/hashtags/trending` | `itd.hashtags.trending()` | необязательно | query: `limit` | 2026-08-22, `200` |
 | `GET /api/hashtags/{tag}/posts` | `itd.hashtags.posts()`, `iteratePosts()` | необязательно | query: `limit`, `cursor` | 2026-08-22, `200` |
 | `GET /api/search` | `itd.search.all()` | необязательно | query: `q` → пользователи и хештеги | 2026-08-22, `200` |

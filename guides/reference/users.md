@@ -134,14 +134,9 @@ removePin(): Promise<void>
 ```
 Выбирает / снимает активный значок.
 
-## Поиск и рекомендации
+## Рекомендации
 
 Также описаны в разделе [Поиск и обнаружение](./discovery.md).
-
-```ts
-search(query: string, params?: { limit?: number }): Promise<UserSummary[]>
-```
-Ищет пользователей по строке запроса.
 
 ```ts
 whoToFollow(): Promise<UserSummary[]>

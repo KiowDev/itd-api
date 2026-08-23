@@ -21,7 +21,6 @@ export const CACHE_OPERATIONS = freezeOperations([
 
   { id: 'users.me', category: 'users' },
   { id: 'users.checkUsername', category: 'users' },
-  { id: 'users.search', category: 'users' },
   { id: 'users.whoToFollow', category: 'users' },
   { id: 'users.topClans', category: 'users' },
   { id: 'users.followers', category: 'users' },
@@ -45,7 +44,6 @@ export const CACHE_OPERATIONS = freezeOperations([
   { id: 'notifications.count', category: 'notifications' },
   { id: 'notifications.getSettings', category: 'notifications' },
 
-  { id: 'hashtags.search', category: 'hashtags' },
   { id: 'hashtags.trending', category: 'hashtags' },
   { id: 'hashtags.posts', category: 'hashtags' },
 

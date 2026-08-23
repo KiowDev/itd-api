@@ -3,7 +3,7 @@ import { CACHE_OPERATIONS, cacheOperation, isCacheOperationId } from '../src/ind
 
 describe('каталог операций кэша', () => {
   it('находит операции по точному семантическому ID', () => {
-    expect(cacheOperation('users.search')?.id).toBe('users.search');
+    expect(cacheOperation('search.all')?.id).toBe('search.all');
     expect(cacheOperation('users.get')?.id).toBe('users.get');
     expect(cacheOperation('posts.byUser')?.id).toBe('posts.byUser');
     expect(cacheOperation('posts.get')?.id).toBe('posts.get');
