@@ -125,6 +125,8 @@ const CACHE_MUTATIONS = Object.freeze([
   { operationId: 'auth.refresh', invalidates: NOTHING },
   { operationId: 'auth.resendOtp', invalidates: NOTHING },
   { operationId: 'auth.forgotPassword', invalidates: NOTHING },
+  { operationId: 'auth.qrStart', invalidates: NOTHING },
+  { operationId: 'auth.qrClaim', invalidates: NOTHING },
   { operationId: 'auth.signUp', invalidates: CacheInvalidation.All },
   { operationId: 'auth.signIn', invalidates: CacheInvalidation.All },
   { operationId: 'auth.verifyOtp', invalidates: CacheInvalidation.All },
@@ -141,6 +143,7 @@ const CACHE_MUTATIONS = Object.freeze([
     invalidates: ['auth.sessions'],
     scope: CachePolicyScope.Account,
   },
+  { operationId: 'auth.captchaProvider', invalidates: NOTHING },
 
   // Посты и комментарии.
   { operationId: 'posts.create', invalidates: POST_CONTENT },

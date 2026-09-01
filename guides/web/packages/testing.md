@@ -125,8 +125,8 @@ console.log(last?.method, last?.path, last?.body);
 В обработчик поступают исходные данные. В сохранённой истории автоматически скрываются:
 
 - `Authorization`, `Cookie`, `Set-Cookie` и похожие заголовки;
-- query-параметры и поля JSON/форм с именами `token`, `password`, `otp`, `turnstile`,
-  `captcha` и `secret`;
+- query-параметры и поля JSON/форм с именами `token`, `password`, `otp`, `captcha`
+  и `secret`;
 - содержимое двоичного тела — сохраняется только размер.
 
 Таким образом, сообщение упавшего теста не печатает токен или пароль.

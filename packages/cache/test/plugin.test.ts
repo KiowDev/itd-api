@@ -95,6 +95,59 @@ describe('настройки', () => {
 });
 
 describe('TTL/LRU-кэш', () => {
+  it('не очищает кэш при создании и проверке QR-сессии', async () => {
+    const started = {
+      qrId: 'qr-1',
+      claimToken: 'claim-1',
+      payload: 'itd://qr/qr-1',
+      expiresIn: 90,
+      captchaRequired: false,
+    };
+    const { itd, calls } = makeClient((url, _init, call) => {
+      if (url.endsWith('/api/v1/auth/qr/start')) return json(started, 201);
+      if (url.endsWith('/api/v1/auth/qr/claim')) {
+        return json({ status: 'pending', expiresIn: 90 });
+      }
+      return postFromUrl(url, call);
+    });
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
+
+    const post = await itd.posts.get('1');
+    const qr = await itd.auth.startQrLogin();
+    await itd.auth.claimQrLogin({ qrId: qr.qrId, claimToken: qr.claimToken });
+    const cached = await itd.posts.get('1');
+
+    expect(cached).toEqual(post);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('не отдаёт старый кэш после успешного QR-входа в другой аккаунт', async () => {
+    const started = {
+      qrId: 'qr-1',
+      claimToken: 'claim-1',
+      payload: 'itd://qr/qr-1',
+      expiresIn: 90,
+      captchaRequired: false,
+    };
+    const accessToken = makeJwt({ sub: 'user-new', sid: 'session-new' });
+    const { itd, calls } = makeClient((url, _init, call) => {
+      if (url.endsWith('/api/v1/auth/qr/start')) return json(started, 201);
+      if (url.endsWith('/api/v1/auth/qr/claim')) {
+        return json({ status: 'authorized', accessToken });
+      }
+      return postFromUrl(url, call);
+    });
+    itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
+
+    const previous = await itd.posts.get('1');
+    const qr = await itd.auth.startQrLogin();
+    await itd.auth.claimQrLogin({ qrId: qr.qrId, claimToken: qr.claimToken });
+    const current = await itd.posts.get('1');
+
+    expect(current).not.toEqual(previous);
+    expect(calls).toHaveLength(4);
+  });
+
   it('поддерживает query и mutation подключаемого feature через метаданные операций', async () => {
     const { itd, calls } = makeClient((_url, init, call) =>
       json(init.method === 'POST' ? { sent: true } : { id: `chat-${call}` }),

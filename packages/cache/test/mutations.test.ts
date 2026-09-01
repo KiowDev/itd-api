@@ -23,6 +23,8 @@ describe('каталог мутаций', () => {
     'telemetry.dwell',
     'telemetry.interaction',
     'auth.refresh',
+    'auth.qrStart',
+    'auth.qrClaim',
   ] as const)('%s не затрагивает читающие операции', (operationId) => {
     expect(cacheMutation(operationId)?.invalidates).toEqual([]);
   });

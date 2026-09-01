@@ -65,7 +65,7 @@ mock.assertDone();
 
 Маршруты принимают параметры вида `/api/posts/:postId`. Обработчик получает разобранные
 query-параметры, заголовки, JSON, `FormData`, текст и двоичное тело. История в
-`mock.requests` скрывает токены, cookie, пароли, OTP и Turnstile-токены.
+`mock.requests` скрывает токены, cookie, пароли, OTP и доказательства капчи.
 `sseResponse()` создаёт настоящий поток Server-Sent Events для проверки SSE-разбора.
 
 ## Моки логических операций
