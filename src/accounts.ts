@@ -43,7 +43,9 @@ export interface AccountFeature<TApi = unknown> {
  * Опции конструктора {@link ItdAccounts}.
  *
  * Всё, что понимает `ItdClient`, кроме `auth` и `deviceId`: они у каждого аккаунта свои
- * и задаются в {@link ItdAccounts.addAccount}. Обычный `TokenStorage` клиента здесь заменён
+ * и задаются в {@link ItdAccounts.addAccount}. Остальное достаётся каждому клиенту —
+ * источник токена капчи, заданный здесь, работает для всех аккаунтов. Обычный `TokenStorage`
+ * клиента здесь заменён
  * общей опцией {@link ItdAccountsOptions.storage} типа {@link MultiTokenStorage}; контейнер
  * сам выдаёт каждому клиенту изолированный срез по имени. Общий `deviceId` особенно вреден —
  * сервер различает по нему записи в списке сессий, и один на всех сложил бы все аккаунты
@@ -173,6 +175,8 @@ function assertAccountsActive(accounts: ItdAccounts, action: string): void {
  *
  * await using accounts = new ItdAccounts({
  *   storage: new FileMultiTokenStorage('./.itd-sessions.json'),
+ *   // Общие опции достаются каждому аккаунту: один источник токена капчи на всех.
+ *   captcha: createCaptchaSolver(),
  *   rateLimit: { concurrency: 4 },
  * });
  *
@@ -180,9 +184,7 @@ function assertAccountsActive(accounts: ItdAccounts, action: string): void {
  * await accounts.restore();
  *
  * if (!accounts.has('kiow')) {
- *   accounts.addAccount('kiow', {
- *     auth: { email, password, captcha: createCaptchaSolver() },
- *   });
+ *   accounts.addAccount('kiow', { auth: { email, password } });
  * }
  *
  * await accounts.account('kiow').posts.create({ content: 'привет' });
@@ -284,9 +286,7 @@ export class ItdAccounts {
    *
    * @example
    * ```ts
-   * accounts.addAccount('bot', {
-   *   auth: { email, password, captcha: createCaptchaSolver() },
-   * });
+   * accounts.addAccount('bot', { auth: { email, password } });
    * accounts.addAccount('reader', { auth: '<accessToken>' });
    * accounts.addAccount('через-прокси', { fetch: proxyFetch('socks5://…') });
    * ```

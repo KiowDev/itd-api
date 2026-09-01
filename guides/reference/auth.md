@@ -5,10 +5,13 @@
 сценариев входа. Полное руководство — [Авторизация](../authentication/).
 
 Капчу требуют `signIn()`, `signUp()` и `forgotPassword()` (и надстройки над ними), а
-`claimQrLogin()` может запросить её отдельным статусом. Доказательство передаётся одним полем
-`captcha: { type, token }`; имя поля запроса SDK подставляет сам. Активного провайдера
-сообщает `captchaProvider()`, токены одноразовые. В Node оба виджета решает
+`claimQrLogin()` может запросить её отдельным статусом. Токен эти методы берут из опции
+клиента `captcha`; поле `captcha: { type, token }` передаётся, только когда токен уже на
+руках. Имя поля запроса SDK подставляет сам. Активного провайдера сообщает
+`captchaProvider()`, токены одноразовые. В Node виджеты проходит
 [`@itd-api/captcha`](/packages/captcha).
+
+Без источника и без токена запрос всё равно уходит на сервер: требовать ли капчу, решает он.
 
 Остальным методам капча не нужна. `refresh()`, `check()`, `logout()` и работа с сессиями
 обходятся без неё, поэтому [готовые токены из браузера](../authentication/#токены-из-браузера)
@@ -45,18 +48,18 @@ check(): Promise<AuthState>
 ## Вход и регистрация
 
 ```ts
-signUp(credentials: CaptchaCredentials): Promise<string>
+signUp(credentials: CredentialsWithCaptcha): Promise<string>
 ```
 Регистрирует аккаунт и запускает подтверждение по коду. Возвращает `flowToken` для `verifyOtp()`.
 
 ```ts
-signIn(credentials: CaptchaCredentials): Promise<SignInResult>
+signIn(credentials: CredentialsWithCaptcha): Promise<SignInResult>
 ```
 Выполняет вход. При успехе токен сохраняется в клиенте автоматически. Если сервер потребовал
 код, вернётся `{ status: 'otp_required', flowToken }`.
 
 ```ts
-signInWithOtp(input: CaptchaCredentials & { getOtp: () => string | Promise<string> }): Promise<string>
+signInWithOtp(input: CredentialsWithCaptcha & { getOtp: () => string | Promise<string> }): Promise<string>
 ```
 Полный вход с подтверждением: код запрашивается функцией `getOtp`, остальное — само. Возвращает
 `accessToken`.
@@ -104,8 +107,10 @@ claimQrLogin(input: QrLoginClaimInput): Promise<QrLoginClaim>
 ```
 
 Проверяет и завершает QR-вход. При `authorized` клиент автоматически сохраняет access token
-и cookie новой сессии. При `captcha_required` повторите вызов с `captcha`. В серверной среде
-cookie QR-сессии хранятся отдельно; в браузере ими управляет сам браузер.
+и cookie новой сессии. После `captcha_required` следующий вызов добавит токен капчи сам —
+из опции клиента либо из аргумента вызова. До просьбы сервера токен не запрашивается:
+опрос идёт в цикле, и поднимать браузер на каждую проверку было бы напрасно. В серверной
+среде cookie QR-сессии хранятся отдельно; в браузере ими управляет сам браузер.
 
 ## Сессия
 
@@ -204,11 +209,11 @@ interface CaptchaToken {
   field?: CaptchaField;       // по умолчанию — CAPTCHA_FIELDS[type]
 }
 
-type CaptchaCredentials = Credentials & { captcha: CaptchaToken };
+type CredentialsWithCaptcha = Credentials & { captcha?: CaptchaToken };
 
 interface ForgotPasswordInput {
   email: string;
-  captcha: CaptchaToken;
+  captcha?: CaptchaToken;
 }
 
 interface ResetPasswordInput {

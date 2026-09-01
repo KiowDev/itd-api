@@ -32,7 +32,6 @@ import {
   SignInStatus,
 } from '../operations/auth.js';
 import { AUTH_PATHS, type AuthManager } from '../session/auth.js';
-import { captchaBody } from '../session/captcha.js';
 import { openQrLoginStream } from '../session/qr-stream.js';
 import { BaseResource } from './base.js';
 
@@ -43,10 +42,11 @@ export interface Credentials {
 }
 
 /**
- * Учётные данные вместе с доказательством капчи.
+ * Учётные данные вместе с токеном капчи.
  *
- * Какой виджет сейчас требует сервер, сообщает {@link AuthResource.captchaProvider};
- * в Node токен получает `@itd-api/captcha`. Токен одноразовый и живёт несколько минут.
+ * Токен нужен, только когда у клиента не задана опция `captcha`: с ней клиент получает его
+ * сам. Какой виджет сейчас требует сервер, сообщает {@link AuthResource.captchaProvider};
+ * в Node токен добывает `@itd-api/captcha`. Токен одноразовый и живёт несколько минут.
  *
  * @example
  * ```ts
@@ -56,15 +56,15 @@ export interface Credentials {
  * await itd.auth.signIn({ email, password, captcha: { type: provider, token, field } });
  * ```
  */
-export type CaptchaCredentials = Credentials & { captcha: CaptchaToken };
+export type CredentialsWithCaptcha = Credentials & { captcha?: CaptchaToken | undefined };
 
 /** Запрос письма для сброса пароля. Капча обязательна, как и при входе. */
 export interface ForgotPasswordInput {
   email: string;
-  captcha: CaptchaToken;
+  captcha?: CaptchaToken | undefined;
 }
 
-/** Секреты QR-сессии и необязательная капча для завершения входа. */
+/** Секреты QR-сессии и капча для завершения входа. */
 export interface QrLoginClaimInput {
   qrId: string;
   claimToken: string;
@@ -118,6 +118,8 @@ export {
 interface QrCookieFlow {
   cookies: CookieJar;
   expiresAt: number | undefined;
+  /** Сервер потребовал капчу для этой сессии — в ответе `start` либо на прошлой проверке. */
+  captchaRequired: boolean;
 }
 
 /**
@@ -154,7 +156,11 @@ export class AuthResource extends BaseResource {
     this.#pruneQrFlows();
     const existing = this.#qrFlows.get(qrId);
     if (existing) return existing;
-    const flow = { cookies: this.#auth.createCookieFlow(false), expiresAt: undefined };
+    const flow = {
+      cookies: this.#auth.createCookieFlow(false),
+      expiresAt: undefined,
+      captchaRequired: false,
+    };
     this.#qrFlows.set(qrId, flow);
     return flow;
   }
@@ -212,7 +218,7 @@ export class AuthResource extends BaseResource {
       ...options,
     });
     if (typeof result.qrId === 'string' && result.qrId !== '') {
-      const flow = { cookies, expiresAt: undefined };
+      const flow = { cookies, expiresAt: undefined, captchaRequired: false };
       this.#touchQrFlow(flow, result.expiresIn);
       this.#qrFlows.set(result.qrId, flow);
     }
@@ -222,9 +228,9 @@ export class AuthResource extends BaseResource {
   /**
    * Проверяет QR-сессию и завершает вход после подтверждения на другом устройстве.
    *
-   * До подтверждения возвращает промежуточный статус. Если сервер потребовал капчу,
-   * повторите вызов с `captcha` — тип берётся из {@link captchaProvider}.
-   * Полученный `accessToken` автоматически сохраняется в клиенте.
+   * До подтверждения возвращает промежуточный статус. Токен капчи добывается, только когда
+   * сервер о ней попросил — статусом `captcha_required` на прошлой проверке, — либо когда
+   * передан в сам вызов. Полученный `accessToken` автоматически сохраняется в клиенте.
    */
   async claimQrLogin(
     input: QrLoginClaimInput,
@@ -234,9 +240,10 @@ export class AuthResource extends BaseResource {
     const flow = this.#qrFlow(input.qrId);
     try {
       const { captcha, ...rest } = input;
+      const needsCaptcha = captcha !== undefined || flow.captchaRequired;
       const result = await this.http.execute(AUTH_QR_CLAIM, {
         path: AUTH_PATHS.qrClaim,
-        body: { ...rest, ...(captcha ? captchaBody(captcha) : {}) },
+        body: { ...rest, ...(needsCaptcha ? await this.#auth.captchaBody(captcha) : {}) },
         skipAuth: true,
         skipAuthRefresh: true,
         cookieJar: flow.cookies,
@@ -244,6 +251,7 @@ export class AuthResource extends BaseResource {
       });
 
       this.#touchQrFlow(flow, result.expiresIn);
+      if (result.status === QrLoginStatus.CaptchaRequired) flow.captchaRequired = true;
       if (result.status === QrLoginStatus.Authorized) {
         await this.#auth.commitAuthFlow(result.accessToken, flow.cookies, revision);
         this.#qrFlows.delete(input.qrId);
@@ -296,11 +304,11 @@ export class AuthResource extends BaseResource {
    *
    * @returns `flowToken`, который нужно передать в {@link verifyOtp}
    */
-  signUp(credentials: CaptchaCredentials, options: RequestOptions = {}): Promise<string> {
+  async signUp(credentials: CredentialsWithCaptcha, options: RequestOptions = {}): Promise<string> {
     const { captcha, ...rest } = credentials;
     return this.http.execute(AUTH_SIGN_UP, {
       path: AUTH_PATHS.signUp,
-      body: { ...rest, ...captchaBody(captcha) },
+      body: { ...rest, ...(await this.#auth.captchaBody(captcha)) },
       skipAuth: true,
       skipAuthRefresh: true,
       ...options,
@@ -315,18 +323,19 @@ export class AuthResource extends BaseResource {
    *
    * При успешном входе токен сохраняется в клиенте автоматически.
    *
-   * @param credentials email, пароль и обязательный токен капчи — см. {@link CaptchaCredentials}
+   * @param credentials email, пароль и токен капчи — см. {@link CredentialsWithCaptcha}
    */
   async signIn(
-    credentials: CaptchaCredentials,
+    credentials: CredentialsWithCaptcha,
     options: RequestOptions = {},
   ): Promise<SignInResult> {
     const { captcha, ...rest } = credentials;
     const revision = this.#auth.revision();
     const cookies = this.#auth.createCookieFlow(false);
+    const body = { ...rest, ...(await this.#auth.captchaBody(captcha)) };
     const result = await this.http.execute(AUTH_SIGN_IN, {
       path: AUTH_PATHS.signIn,
-      body: { ...rest, ...captchaBody(captcha) },
+      body,
       skipAuth: true,
       skipAuthRefresh: true,
       cookieJar: cookies,
@@ -398,7 +407,7 @@ export class AuthResource extends BaseResource {
    * ```
    */
   async signInWithOtp(
-    input: CaptchaCredentials & { getOtp: () => string | Promise<string> },
+    input: CredentialsWithCaptcha & { getOtp: () => string | Promise<string> },
     options: RequestOptions = {},
   ): Promise<string> {
     const { getOtp, ...credentials } = input;
@@ -491,10 +500,10 @@ export class AuthResource extends BaseResource {
    *
    * @returns `flowToken`, который нужно передать в {@link resetPassword}
    */
-  forgotPassword(input: ForgotPasswordInput, options: RequestOptions = {}): Promise<string> {
+  async forgotPassword(input: ForgotPasswordInput, options: RequestOptions = {}): Promise<string> {
     return this.http.execute(AUTH_FORGOT_PASSWORD, {
       path: AUTH_PATHS.forgotPassword,
-      body: { email: input.email, ...captchaBody(input.captcha) },
+      body: { email: input.email, ...(await this.#auth.captchaBody(input.captcha)) },
       skipAuth: true,
       skipAuthRefresh: true,
       ...options,

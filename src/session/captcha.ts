@@ -2,14 +2,9 @@ import { ItdConfigError } from '../core/errors.js';
 import { isRecord } from '../core/validate.js';
 import { CAPTCHA_FIELDS, type CaptchaProvider, type CaptchaToken } from '../operations/auth.js';
 import { CaptchaChoice, type CaptchaField, type CaptchaType } from '../types/enums.js';
-import type { CaptchaOptions } from './options.js';
+import type { CaptchaSolver } from './options.js';
 
-/**
- * Капча при входе по логину и паролю.
- *
- * При `CaptchaChoice.Auto` тип виджета и имя поля приходят от сервера; названный тип
- * решается без запроса, а поле берётся из настройки или из {@link CAPTCHA_FIELDS}.
- */
+/** Капча запросов, которые её требуют: входа, регистрации, сброса пароля и QR-подтверждения. */
 
 /** Готовый фрагмент тела запроса: имя поля и токен в нём. */
 export type CaptchaBody = Record<string, string>;
@@ -21,28 +16,56 @@ function requireCaptchaText(value: unknown, field: string): void {
 }
 
 /**
- * Проверяет форму блока `auth.captcha`.
+ * Проверяет форму источника токена и приводит его к объекту.
  *
- * Отсутствие источника токена ошибкой не считается: до входа по паролю дело может и не
- * дойти. О нехватке сообщит {@link resolveCaptchaBody} в момент входа.
+ * Сам объект сохраняется как есть: `getToken` вызывается на нём, чтобы источнику остался
+ * доступен собственный `this`.
  *
  * @throws {ItdConfigError} при некорректных значениях
  */
-export function validateCaptchaOptions(captcha: unknown): void {
+export function resolveCaptchaSolver(captcha: unknown): CaptchaSolver | undefined {
+  if (captcha === undefined) return undefined;
+
+  if (typeof captcha === 'function') {
+    return { getToken: captcha as CaptchaSolver['getToken'] };
+  }
+
+  if (!isRecord(captcha)) {
+    throw new ItdConfigError('captcha должен быть функцией либо объектом с getToken');
+  }
+
+  const { getToken, type, field } = captcha as Record<string, unknown>;
+
+  if (typeof getToken !== 'function') {
+    throw new ItdConfigError('captcha.getToken должен быть функцией');
+  }
+  requireCaptchaText(type, 'captcha.type');
+  requireCaptchaText(field, 'captcha.field');
+
+  return captcha as unknown as CaptchaSolver;
+}
+
+/**
+ * Проверяет форму готового токена капчи.
+ *
+ * @param path имя опции или аргумента для текста ошибки
+ * @throws {ItdConfigError} если токен или его тип не указаны
+ */
+export function validateCaptchaToken(captcha: unknown, path: string): void {
   if (captcha === undefined) return;
   if (!isRecord(captcha)) {
-    throw new ItdConfigError('auth.captcha должен быть объектом');
+    throw new ItdConfigError(`${path} должен быть объектом { type, token }`);
   }
 
-  const { type, token, getToken, field } = captcha as Record<string, unknown>;
+  const { type, token, field } = captcha as Record<string, unknown>;
 
-  requireCaptchaText(type, 'auth.captcha.type');
-  requireCaptchaText(token, 'auth.captcha.token');
-  requireCaptchaText(field, 'auth.captcha.field');
-
-  if (getToken !== undefined && typeof getToken !== 'function') {
-    throw new ItdConfigError('auth.captcha.getToken должен быть функцией');
+  if (typeof token !== 'string' || token.trim() === '') {
+    throw new ItdConfigError(`${path}.token должен быть непустой строкой`);
   }
+  if (typeof type !== 'string' || type.trim() === '') {
+    throw new ItdConfigError(`${path}.type должен быть непустой строкой`);
+  }
+  requireCaptchaText(field, `${path}.field`);
 }
 
 /** Разбирает ответ `GET /api/v1/auth/captcha/provider` для автоматического входа. */
@@ -69,71 +92,53 @@ function resolveField(type: CaptchaType, configured: CaptchaField | undefined): 
   if (field) return field;
 
   throw new ItdConfigError(
-    `Неизвестно, в каком поле сервер ждёт токен капчи «${type}». Передайте auth.captcha.field ` +
-      `либо оставьте auth.captcha.type = ${CaptchaChoice.Auto}, чтобы поле назвал сервер.`,
+    `Неизвестно, в каком поле сервер ждёт токен капчи «${type}». Передайте captcha.field ` +
+      `либо оставьте captcha.type = ${CaptchaChoice.Auto}, чтобы поле назвал сервер.`,
   );
 }
 
-/** Спрашивает свежий токен, затем берёт разовый. */
-async function resolveToken(captcha: CaptchaOptions, type: CaptchaType): Promise<string> {
-  const fresh = await captcha.getToken?.(type);
-  const token = fresh || captcha.token;
-  if (token) return token;
+/** Спрашивает токен у источника и убеждается, что он непустой. */
+async function requireSolvedToken(solver: CaptchaSolver, type: CaptchaType): Promise<string> {
+  const token = await solver.getToken(type);
+  if (typeof token === 'string' && token.trim() !== '') return token;
 
   throw new ItdConfigError(
-    `Источник капчи не вернул токен для провайдера «${type}». Проверьте auth.captcha.getToken.`,
+    `Источник капчи не вернул токен для провайдера «${type}». Проверьте captcha.getToken.`,
   );
 }
 
 /**
- * Готовит фрагмент тела запроса с токеном капчи.
+ * Готовит фрагмент тела запроса, взяв токен у источника.
  *
  * При `CaptchaChoice.Auto` провайдер спрашивается у сервера — тогда и тип виджета,
- * и имя поля приходят оттуда. Явно названный тип решается без этого запроса.
+ * и имя поля приходят оттуда. Явно названный тип обходится без этого запроса.
  *
  * @param askProvider как спросить активного провайдера; вызывается, только если это нужно
- * @throws {ItdConfigError} если капча не настроена или токен не получен
+ * @throws {ItdConfigError} если токен получить не удалось
  */
-export async function resolveCaptchaBody(
-  captcha: CaptchaOptions | undefined,
+export async function solveCaptchaBody(
+  solver: CaptchaSolver,
   askProvider: () => Promise<CaptchaProvider>,
 ): Promise<CaptchaBody> {
-  // Проверка до запроса провайдера: без источника токена вход всё равно не состоится.
-  if (!captcha?.token && !captcha?.getToken) {
-    throw new ItdConfigError(
-      'Вход по email и паролю требует токен капчи. Передайте auth.captcha.getToken — источник ' +
-        'свежего токена — либо разовый auth.captcha.token. В Node токен получает пакет ' +
-        '@itd-api/captcha.',
-    );
-  }
-
-  const choice = captcha.type ?? CaptchaChoice.Auto;
+  const choice = solver.type ?? CaptchaChoice.Auto;
 
   if (choice === CaptchaChoice.Auto) {
     const { provider, field } = await askProvider();
-    return { [field]: await resolveToken(captcha, provider) };
+    return { [field]: await requireSolvedToken(solver, provider) };
   }
 
-  return { [resolveField(choice, captcha.field)]: await resolveToken(captcha, choice) };
+  return { [resolveField(choice, solver.field)]: await requireSolvedToken(solver, choice) };
 }
 
 /**
- * Готовит фрагмент тела для разового вызова с готовым доказательством.
+ * Готовит фрагмент тела из готового токена.
  *
- * Поле берётся из самого доказательства либо из умолчания провайдера; запроса к серверу нет.
+ * Поле берётся из самого токена либо из умолчания провайдера; запроса к серверу нет.
  *
- * @throws {ItdConfigError} если доказательство неполное
+ * @throws {ItdConfigError} если токен или его тип не указаны
  */
 export function captchaBody(captcha: CaptchaToken): CaptchaBody {
-  if (!isRecord(captcha)) {
-    throw new ItdConfigError('captcha должен быть объектом { type, token }');
-  }
-  if (typeof captcha.token !== 'string' || captcha.token.trim() === '') {
-    throw new ItdConfigError('captcha.token должен быть непустой строкой');
-  }
-  if (typeof captcha.type !== 'string' || captcha.type.trim() === '') {
-    throw new ItdConfigError('captcha.type должен быть непустой строкой');
-  }
+  validateCaptchaToken(captcha, 'captcha');
 
   return { [resolveField(captcha.type, captcha.field)]: captcha.token };
 }

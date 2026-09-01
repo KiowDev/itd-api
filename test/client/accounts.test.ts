@@ -906,7 +906,8 @@ describe('события', () => {
       json({ accessToken: makeJwt({ sub: 'user-1' }) }),
     ]);
     accounts.addAccount('kiow', {
-      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
+      auth: { email: 'a@b.c', password: 'p' },
+      captcha: () => 'cap',
     });
 
     const signIn = vi.fn();

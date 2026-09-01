@@ -158,6 +158,7 @@ interface ItdClientOptions {
   baseUrl?: string;                      // по умолчанию https://xn--d1ah4a.com
   services?: Record<string, string | Omit<ServiceDefinition, 'name'>>;
   auth?: AuthInput;                      // см. ниже
+  captcha?: CaptchaSolverInput;          // откуда брать токен капчи, когда сервер её требует
   storage?: TokenStorage;                // по умолчанию MemoryTokenStorage
   autoRefresh?: boolean;                 // обновлять токен заранее и при 401; по умолчанию true
   reloginOnRefreshFailure?: boolean;     // повторный вход при неудаче refresh; по умолчанию true
@@ -181,13 +182,15 @@ interface ItdClientOptions {
 interface CredentialsAuth {
   email: string;
   password: string;
-  captcha?: CaptchaOptions;
+  captcha?: CaptchaToken;     // разовый токен: тратится на один вход
 }
 
-interface CaptchaOptions {
+// Опция клиента `captcha` — источник токенов, а не готовый токен.
+type CaptchaSolverInput = CaptchaSolver | ((type: CaptchaType) => string | Promise<string>);
+
+interface CaptchaSolver {
+  getToken(type: CaptchaType): string | Promise<string>;
   type?: CaptchaChoice;       // 'auto' (по умолчанию) | 'itd' | 'cloudflare'
-  token?: string;             // разовый токен
-  getToken?: (type: CaptchaType) => string | Promise<string>;
   field?: CaptchaField;       // только при явном type
 }
 

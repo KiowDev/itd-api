@@ -13,7 +13,7 @@ import { CaptchaError, CaptchaFailure } from '../src/errors.js';
 import type { CaptchaHandler } from '../src/handler.js';
 import { launchBrowser, resolveLaunchOptions } from '../src/launch.js';
 import { ITD_CAPTCHA_SITE_KEY } from '../src/providers/itd.js';
-import { TURNSTILE_SITE_KEY } from '../src/providers/turnstile.js';
+import { TURNSTILE_SITE_KEY, turnstile } from '../src/providers/turnstile.js';
 import { createCaptchaSolver, solveCaptcha } from '../src/solve.js';
 import { CaptchaType } from '../src/types.js';
 
@@ -442,6 +442,44 @@ describe('createCaptchaSolver', () => {
     const token = await solver.getToken(CaptchaType.Itd);
 
     expect(token).toBe('TOKEN');
+    expect(solver.type).toBeUndefined();
     expect(page.servedBody).toContain(ITD_CAPTCHA_SITE_KEY);
+  });
+
+  it('закреплённый тип решается всегда, что бы ни попросил клиент', async () => {
+    const page = new FakePage({ tokenAfterClicks: 0 });
+    const solver = createCaptchaSolver({
+      type: CaptchaType.Cloudflare,
+      browser: new FakeBrowser(page),
+    });
+
+    await solver.getToken(CaptchaType.Itd);
+
+    // Закреплённый тип клиент читает заранее и запрашивает именно его; аргумент здесь лишний.
+    expect(solver.type).toBe(CaptchaType.Cloudflare);
+    expect(page.servedBody).toContain(TURNSTILE_SITE_KEY);
+  });
+
+  it('принимает готового провайдера с его настройками', async () => {
+    const page = new FakePage({ tokenAfterClicks: 0 });
+    const solver = createCaptchaSolver({
+      type: turnstile({ sitekey: '0xOWN' }),
+      browser: new FakeBrowser(page),
+    });
+
+    await solver.getToken(CaptchaType.Cloudflare);
+
+    expect(solver.type).toBe(CaptchaType.Cloudflare);
+    expect(page.servedBody).toContain('0xOWN');
+  });
+
+  it('передаёт клиенту имя поля для закреплённого типа', () => {
+    const solver = createCaptchaSolver({ type: CaptchaType.Cloudflare, field: 'c7f2' });
+
+    expect(solver.field).toBe('c7f2');
+  });
+
+  it('отвергает незнакомый тип и поле без типа сразу при создании', () => {
+    expect(() => createCaptchaSolver({ type: 'hcaptcha' })).toThrow(TypeError);
   });
 });

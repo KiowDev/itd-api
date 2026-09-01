@@ -363,10 +363,10 @@ export type { NotificationsApi } from './notifications-api.js';
 export type { ItdClientOptions } from './options.js';
 export type {
   AuthResource,
-  CaptchaCredentials,
   CaptchaProvider,
   CaptchaToken,
   Credentials,
+  CredentialsWithCaptcha,
   ForgotPasswordInput,
   QrLoginClaim,
   QrLoginClaimInput,
@@ -455,7 +455,8 @@ export {
 } from './session/multi-storage.js';
 export type {
   AuthInput,
-  CaptchaOptions,
+  CaptchaSolver,
+  CaptchaSolverInput,
   CredentialsAuth,
   SessionOptions,
 } from './session/options.js';

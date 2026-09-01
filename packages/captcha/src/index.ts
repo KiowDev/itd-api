@@ -9,9 +9,8 @@
  * страницей с одним виджетом. Домен при этом настоящий, поэтому его проверка проходит,
  * а форма входа и пароль в браузере не участвуют.
  *
- * Поддерживаются оба виджета итд.com — собственная капча ИТД и Cloudflare Turnstile;
- * какой из них требуется сейчас, клиент выясняет сам. Свой провайдер добавляется реализацией
- * {@link CaptchaHandler}.
+ * Поддерживаются оба виджета итд.com — собственная капча ИТД и Cloudflare Turnstile.
+ * Сервер принимает любой: по умолчанию решается активный, а `type` закрепляет нужный.
  *
  * @example
  * ```ts
@@ -21,11 +20,9 @@
  *
  * const itd = new ItdClient({
  *   storage: new FileTokenStorage('./.itd-session.json'),
- *   auth: {
- *     email: process.env.ITD_EMAIL,
- *     password: process.env.ITD_PASSWORD,
- *     captcha: createCaptchaSolver(),
- *   },
+ *   auth: { email: process.env.ITD_EMAIL, password: process.env.ITD_PASSWORD },
+ *   // Без type клиент спрашивает активного провайдера у сервера.
+ *   captcha: createCaptchaSolver({ type: CaptchaType.Cloudflare }),
  * });
  * ```
  *
@@ -49,5 +46,10 @@ export {
   type TurnstileOptions,
   turnstile,
 } from './providers/turnstile.js';
-export { type CaptchaSolver, createCaptchaSolver, solveCaptcha } from './solve.js';
+export {
+  type CaptchaSolver,
+  type CaptchaSolverOptions,
+  createCaptchaSolver,
+  solveCaptcha,
+} from './solve.js';
 export { CaptchaType, type Loose, type Theme, type WidgetState } from './types.js';

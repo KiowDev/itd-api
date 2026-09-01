@@ -740,6 +740,32 @@ describe('авторизация', () => {
     expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toMatchObject({ token: 'captcha-token' });
   });
 
+  it('добывает токен капчи QR-входа только после отказа сервера', async () => {
+    const getToken = vi.fn().mockResolvedValue('свежая');
+    const { itd, mock } = makeClient(
+      [
+        json({ status: 'captcha_required', expiresIn: 100 }),
+        json({ provider: 'itd', field: 'token' }),
+        json({ status: 'authorized', accessToken: 'qr-token' }),
+      ],
+      { auth: undefined, captcha: { getToken } },
+    );
+
+    await itd.auth.claimQrLogin({ qrId: 'qr-c', claimToken: 'claim-c' });
+
+    // Опрос статуса идёт в цикле: решать капчу до просьбы сервера значило бы поднимать
+    // браузер на каждую проверку.
+    expect(getToken).not.toHaveBeenCalled();
+
+    await itd.auth.claimQrLogin({ qrId: 'qr-c', claimToken: 'claim-c' });
+
+    expect(JSON.parse(mock.calls[2]?.body ?? '{}')).toEqual({
+      qrId: 'qr-c',
+      claimToken: 'claim-c',
+      token: 'свежая',
+    });
+  });
+
   it.each(['pending', 'scanned', 'captcha_required', 'rejected'] as const)(
     'возвращает промежуточный статус QR claim: %s',
     async (status) => {
@@ -934,6 +960,71 @@ describe('авторизация', () => {
     expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer signed-in');
   });
 
+  it('берёт токен капчи входа из опции клиента', async () => {
+    const getToken = vi.fn().mockResolvedValue('свежая');
+    const { itd, mock } = makeClient(
+      [json({ provider: 'cloudflare', field: 'turnstileToken' }), json({ accessToken: 'in' })],
+      { auth: undefined, captcha: { getToken } },
+    );
+
+    await itd.auth.signIn({ email: 'a@b.c', password: 'p' });
+
+    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Cloudflare);
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      password: 'p',
+      turnstileToken: 'свежая',
+    });
+  });
+
+  it('токен из вызова важнее источника', async () => {
+    const getToken = vi.fn();
+    const { itd, mock } = makeClient([json({ accessToken: 'in' })], {
+      auth: undefined,
+      captcha: { getToken },
+    });
+
+    await itd.auth.signIn({
+      email: 'a@b.c',
+      password: 'p',
+      captcha: { type: CaptchaType.Itd, token: 'своя' },
+    });
+
+    expect(getToken).not.toHaveBeenCalled();
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}').token).toBe('своя');
+  });
+
+  it('добывает токен капчи для регистрации и сброса пароля', async () => {
+    const getToken = vi.fn().mockResolvedValue('свежая');
+    const { itd, mock } = makeClient(
+      [
+        json({ provider: 'itd', field: 'token' }),
+        json({ flowToken: 'signup' }),
+        json({ provider: 'itd', field: 'token' }),
+        json({ flowToken: 'reset' }),
+      ],
+      { auth: undefined, captcha: { getToken } },
+    );
+
+    await itd.auth.signUp({ email: 'a@b.c', password: 'p' });
+    await itd.auth.forgotPassword({ email: 'a@b.c' });
+
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}').token).toBe('свежая');
+    expect(JSON.parse(mock.calls[3]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      token: 'свежая',
+    });
+  });
+
+  it('без источника и токена отправляет вход как есть', async () => {
+    const { itd, mock } = makeClient([json({ accessToken: 'in' })], { auth: undefined });
+
+    await itd.auth.signIn({ email: 'a@b.c', password: 'p' });
+
+    expect(mock.calls.some((call) => call.url.endsWith('/captcha/provider'))).toBe(false);
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({ email: 'a@b.c', password: 'p' });
+  });
+
   it('сообщает о требовании кода подтверждения', async () => {
     const { itd } = makeClient([json({ flowToken: 'flow-1' })], { auth: undefined });
 
@@ -1113,7 +1204,8 @@ describe('очередь и авторизация', () => {
           : json({ data: { ok: true } });
       },
       {
-        auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
+        auth: { email: 'a@b.c', password: 'p' },
+        captcha: () => 'cap',
         rateLimit: { concurrency: 1 },
       },
     );

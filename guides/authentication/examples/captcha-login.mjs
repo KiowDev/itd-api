@@ -33,14 +33,14 @@ const itd = new ItdClient({
   auth: {
     email: process.env.ITD_EMAIL,
     password: process.env.ITD_PASSWORD,
-
-    // Функция, а не готовая строка: токен одноразовый и живёт несколько минут, поэтому
-    // клиент спрашивает свежий перед каждой попыткой входа — в том числе через сутки,
-    // когда сессия истечёт и понадобится войти заново.
-    captcha: createCaptchaSolver({
-      logger: (message) => console.log(`[captcha] ${message}`),
-    }),
   },
+
+  // Источник токена, а не готовая строка: токен одноразовый и живёт несколько минут,
+  // поэтому клиент спрашивает свежий перед каждой попыткой входа — в том числе через
+  // сутки, когда сессия истечёт и понадобится войти заново.
+  captcha: createCaptchaSolver({
+    logger: (message) => console.log(`[captcha] ${message}`),
+  }),
 });
 
 itd.on('signIn', () => console.log('Вход выполнен, сессия сохранена'));

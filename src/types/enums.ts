@@ -135,10 +135,10 @@ export const CaptchaType = Object.freeze({
 export type CaptchaType = Loose<(typeof CaptchaType)[keyof typeof CaptchaType]>;
 
 /**
- * Какую капчу решать при входе по логину и паролю.
+ * Какую капчу проходить при входе по логину и паролю.
  *
  * `CaptchaChoice.Auto` — спросить сервер перед каждым входом; названный провайдер
- * решается без этого запроса.
+ * обходится без этого запроса.
  */
 export const CaptchaChoice = Object.freeze({
   /** Провайдера называет сервер. */

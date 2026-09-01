@@ -19,11 +19,19 @@ import {
   AUTH_REFRESH,
   AUTH_SIGN_IN,
   type CaptchaProvider,
+  type CaptchaToken,
   SignInStatus,
 } from '../operations/auth.js';
-import { readCaptchaProvider, resolveCaptchaBody, validateCaptchaOptions } from './captcha.js';
+import {
+  type CaptchaBody,
+  captchaBody,
+  readCaptchaProvider,
+  resolveCaptchaSolver,
+  solveCaptchaBody,
+  validateCaptchaToken,
+} from './captcha.js';
 import { readTokenMetadata, type TokenMetadata } from './jwt.js';
-import type { AuthInput, CredentialsAuth, SessionOptions } from './options.js';
+import type { AuthInput, CaptchaSolver, CredentialsAuth, SessionOptions } from './options.js';
 import { copySession, type ItdSession, MemoryTokenStorage, type TokenStorage } from './storage.js';
 
 /** Запас до истечения токена на очередь и выполнение запроса. */
@@ -41,6 +49,7 @@ export interface SessionConfig {
   useCookieJar: boolean;
   logger: Logger | undefined;
   auth: AuthInput | undefined;
+  captcha: CaptchaSolver | undefined;
   storage: TokenStorage;
   deviceId: string | undefined;
   autoRefresh: boolean;
@@ -113,10 +122,7 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
       throw new ItdConfigError('auth.password должен быть непустой строкой');
     }
 
-    // Отсутствие капчи — не ошибка конфигурации: сессия может быть восстановлена из
-    // хранилища, и до входа по паролю дело вообще не дойдёт. Ошибка возникнет в момент
-    // входа, где её текст может объяснить, что именно нужно сделать.
-    validateCaptchaOptions(captcha);
+    validateCaptchaToken(captcha, 'auth.captcha');
 
     return { ...auth };
   }
@@ -164,6 +170,7 @@ export function resolveSessionConfig(
   return {
     ...runtime,
     auth: validateAuth(options.auth),
+    captcha: resolveCaptchaSolver(options.captcha),
     storage: resolveStorage(options.storage),
     deviceId: options.deviceId,
     autoRefresh: options.autoRefresh ?? true,
@@ -398,6 +405,8 @@ export class AuthManager implements AuthProvider {
    */
   #authEpoch = 0;
   #externalReadGeneration = 0;
+  /** Разовый токен из `auth.captcha` тратится ровно на один запрос. */
+  #configCaptchaSpent = false;
   #disposed = false;
   #persistence: Promise<void> = Promise.resolve();
 
@@ -1132,6 +1141,43 @@ export class AuthManager implements AuthProvider {
     return promise;
   }
 
+  /**
+   * Готовит фрагмент тела с токеном капчи для запроса, который её требует.
+   *
+   * Источники в порядке убывания приоритета: токен, переданный в сам вызов; разовый токен
+   * из `auth.captcha`; опция `captcha`. Когда ни одного нет, фрагмент пустой: нужна ли
+   * капча этому запросу, решает сервер.
+   *
+   * @param explicit готовый токен, переданный в вызов
+   * @throws {ItdConfigError} если токен неполный или источник его не вернул
+   */
+  async captchaBody(explicit?: CaptchaToken | undefined): Promise<CaptchaBody> {
+    if (explicit) return captchaBody(explicit);
+
+    const configured = this.#takeConfiguredCaptcha();
+    if (configured) return captchaBody(configured);
+
+    const solver = this.#config.captcha;
+    if (solver) return solveCaptchaBody(solver, () => this.#resolveCaptchaProvider());
+
+    this.#config.logger?.debug(
+      'Запрос уходит без токена капчи: не передан аргумент captcha и не задана опция captcha',
+    );
+    return {};
+  }
+
+  /** Отдаёт разовый токен из `auth.captcha`, помечая его потраченным. */
+  #takeConfiguredCaptcha(): CaptchaToken | undefined {
+    if (this.#configCaptchaSpent) return undefined;
+
+    const auth = this.#config.auth;
+    const captcha = isRecord(auth) ? (auth as CredentialsAuth).captcha : undefined;
+    if (!captcha) return undefined;
+
+    this.#configCaptchaSpent = true;
+    return captcha;
+  }
+
   /** Спрашивает у сервера активного провайдера и поле, в котором он ждёт токен. */
   async #resolveCaptchaProvider(): Promise<CaptchaProvider> {
     const provider: unknown = await this.#http.execute(AUTH_CAPTCHA_PROVIDER, {
@@ -1144,9 +1190,7 @@ export class AuthManager implements AuthProvider {
   }
 
   async #performSignIn(credentials: CredentialsAuth, revision: number): Promise<string | null> {
-    const captcha = await resolveCaptchaBody(credentials.captcha, () =>
-      this.#resolveCaptchaProvider(),
-    );
+    const captcha = await this.captchaBody();
     const flowCookies = new CookieJar();
 
     // Через общий pipeline: плагины, повторы и очередь сохраняются, а слой авторизации

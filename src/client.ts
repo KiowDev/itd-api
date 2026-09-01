@@ -105,8 +105,9 @@ export function createManagedClient(
  * const itd = new ItdClient({
  *   // `auth` не обязателен: когда хранилище уже содержит сессию, токен берётся оттуда,
  *   // а истёкший продлевается сам. Здесь он нужен на первый запуск.
- *   // Вход по паролю требует токена капчи — см. CaptchaOptions.
- *   auth: { email, password, captcha: createCaptchaSolver() },
+ *   auth: { email, password },
+ *   // Капчу входа решает пакет @itd-api/captcha — см. CaptchaSolver.
+ *   captcha: createCaptchaSolver(),
  *   storage: new FileTokenStorage('./.itd-session.json'),
  *   rateLimit: { concurrency: 4, rps: 8 },
  * });

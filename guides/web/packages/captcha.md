@@ -2,7 +2,7 @@
 
 [![Версия @itd-api/captcha в npm](https://img.shields.io/npm/v/%40itd-api%2Fcaptcha?logo=npm)](https://www.npmjs.com/package/@itd-api/captcha)
 
-Получает токены собственной капчи ИТД и Cloudflare Turnstile для входа через [`itd-api`](/quickstart/). Активного провайдера выбирает сервер.
+Получает токены собственной капчи ИТД и Cloudflare Turnstile для входа через [`itd-api`](/quickstart/). Сервер принимает обе: виджет выбираете вы либо он сам.
 
 [API из TSDoc](/api/generated/captcha/)
 
@@ -10,13 +10,14 @@
 
 ## Когда пакет не нужен
 
-Капча участвует только в самом входе по паролю — ни продление сессии, ни обычные запросы,
-ни событийные соединения её не требуют. Пакет незачем ставить, если:
+Капча участвует во входе по паролю, регистрации, сбросе пароля и подтверждении QR-входа —
+ни продление сессии, ни обычные запросы, ни событийные соединения её не требуют. Пакет
+незачем ставить, если:
 
 - сессия уже сохранена в `FileTokenStorage` — клиент продлевает её сам;
 - токены можно [скопировать из браузера](/authentication/#токены-из-браузера), где вы уже вошли: DevTools отдают и access token, и cookie `refresh_token`;
 - access token выдаёт серверное приложение или хранилище секретов — тогда подойдёт `auth: { getToken }`;
-- токен капчи приходит из своего источника — `auth.captcha.getToken` принимает любую функцию.
+- токен капчи приходит из своего источника — опция клиента `captcha` принимает любую функцию.
 
 ## Установка
 
@@ -39,68 +40,42 @@ import { createCaptchaSolver } from '@itd-api/captcha';
 
 const itd = new ItdClient({
   storage: new FileTokenStorage('./.itd-session.json'),
-  auth: {
-    email: process.env.ITD_EMAIL!,
-    password: process.env.ITD_PASSWORD!,
-    captcha: createCaptchaSolver(),
-  },
+  auth: { email: process.env.ITD_EMAIL!, password: process.env.ITD_PASSWORD! },
+  captcha: createCaptchaSolver(),
 });
 ```
 
-`createCaptchaSolver()` отдаёт `getToken(type)`. Перед каждым входом клиент читает активного
-провайдера и просит решить именно его виджет, поэтому переключение провайдера сервером
-переживается без правок кода. Передаётся функция, а не готовый токен: токен одноразовый и
-живёт несколько минут. Браузер поднимается на время одного вызова и сразу закрывается.
+Клиент спрашивает токен каждый раз, когда сервер требует капчу; браузер поднимается на
+время одного вызова и сразу закрывается. Тот же источник, заданный контейнеру
+`ItdAccounts`, достаётся каждому аккаунту.
 
-Решить капчу без клиента — тип называется явно:
+### Какую капчу проходить
+
+Сервер принимает обе. Без настройки источник следует за сервером: клиент спрашивает
+активного провайдера и просит пройти именно его виджет, так что переключение провайдера
+переживается без правок кода.
+
+Нужен конкретный виджет — назовите его, и лишнего запроса к серверу не будет:
+
+```ts
+import { createCaptchaSolver, CaptchaType } from '@itd-api/captcha';
+
+createCaptchaSolver({ type: CaptchaType.Cloudflare }); // всегда Turnstile
+createCaptchaSolver({ type: CaptchaType.Itd }); // всегда капча ИТД
+```
+
+Незнакомый тип отвергается при создании, а не в момент входа.
+
+Имя поля, в котором сервер ждёт токен, клиент при закреплённом типе берёт из своей таблицы.
+Если сервер его переименовал, назовите поле сами: `createCaptchaSolver({ type, field: 'c7f2' })`.
+
+### Один токен без клиента
 
 ```ts
 import { solveCaptcha, CaptchaType } from '@itd-api/captcha';
 
 const token = await solveCaptcha(CaptchaType.Itd);
 ```
-
-Провайдера с другими настройками собирает его фабрика:
-
-```ts
-import { solveCaptcha, itdCaptcha, turnstile } from '@itd-api/captcha';
-
-const forRegistration = await solveCaptcha(itdCaptcha({ action: 'register' }));
-const withOwnKey = await solveCaptcha(turnstile({ sitekey: '0x…' }), { headless: true });
-```
-
-## Свой провайдер
-
-Новый виджет добавляется реализацией `CaptchaHandler` — менять пакет не нужно. Перехват
-навигации, ожидание, клик по чекбоксу и повторы одинаковы для всех виджетов и уже сделаны;
-описать нужно только то, чем виджет отличается:
-
-```ts
-import { solveCaptcha, type CaptchaHandler } from '@itd-api/captcha';
-
-const myCaptcha: CaptchaHandler = {
-  type: 'my-captcha',
-  label: 'моей капчи',
-  // Страница отдаётся вместо настоящей по адресу из `origin`, поэтому виджет видит верный домен.
-  buildPage: ({ theme }) => `<!doctype html>…<div id="widget" data-theme="${theme}"></div>…`,
-  // По этому селектору видно, что виджет отрисовался.
-  widgetReadySelector: '#widget',
-  // Насколько правее левого края контейнера чекбокс: клик идёт по координатам.
-  checkboxOffsetX: 30,
-  readState: (page) =>
-    page.evaluate(() => {
-      const field = document.querySelector('#my-token') as { value?: string } | null;
-      return { token: field?.value || null, error: null };
-    }),
-  // Повтор не поможет — например, ключ не разрешён для домена.
-  isPermanentWidgetError: (code) => code === 'domain-mismatch',
-};
-
-const token = await solveCaptcha(myCaptcha);
-```
-
-Такой обработчик подставляется и в клиент: `captcha: { type: 'my-captcha', getToken: () =>
-solveCaptcha(myCaptcha), field: 'myToken' }`.
 
 ## Запуск на сервере
 
@@ -157,19 +132,11 @@ CDP), а не программной установкой значения, — 
 | `launch` | — | Свой запуск браузера. Заменяет все параметры запуска. |
 | `contextOptions` | `locale: 'ru-RU'`, окно 1280×800 | Настройки контекста. Заменяют стандартные целиком. |
 | `logger` | — | Функция для вывода хода решения, например `console.debug`. |
-
-Ключ, назначение токена и адрес виджета — настройки конкретного провайдера, поэтому задаются
-в его фабрике:
-
-| Фабрика | Параметр | По умолчанию | Что делает |
-| --- | --- | --- | --- |
-| `itdCaptcha` | `sitekey` | ключ итд.com | Публичный ключ виджета. |
-| `itdCaptcha` | `action` | `'login'` | Назначение токена: `login`, `register`, `password_reset`. |
-| `itdCaptcha` | `captchaOrigin` | `https://captcha.xn--d1ah4a.com` | Базовый адрес виджета. |
-| `turnstile` | `sitekey` | ключ итд.com | Публичный ключ виджета. |
+| `type` | — | Какую капчу проходить всегда. Только для `createCaptchaSolver`. |
+| `field` | — | Поле тела запроса для закреплённого типа. Только вместе с `type`. |
 
 ```ts
-await solveCaptcha(itdCaptcha({ action: 'password_reset' }), { timeout: 90_000 });
+createCaptchaSolver({ type: CaptchaType.Itd, timeout: 90_000, headless: true });
 ```
 
 Свой драйвер:

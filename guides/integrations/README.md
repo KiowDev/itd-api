@@ -6,7 +6,7 @@
 | Пакет | Точка подключения |
 |---|---|
 | [`@itd-api/proxy`](/packages/proxy) | `ItdClientOptions.fetch`, `WebSocketTransport.webSocketImpl` |
-| [`@itd-api/captcha`](/packages/captcha) | `auth.captcha.getToken` |
+| [`@itd-api/captcha`](/packages/captcha) | `captcha` |
 
 ## Браузер и CORS
 
@@ -63,24 +63,23 @@ ITD_TOKEN=<accessToken> ITD_PROXY=socks5://127.0.0.1:1080 \
 
 ## Капча
 
-`@itd-api/captcha` получает одноразовый токен капчи и передаёт его механизму входа. Решает
+`@itd-api/captcha` получает одноразовый токен капчи и отдаёт его клиенту. Решает
 оба провайдера, а какой сейчас нужен, определяет SDK:
 
 ```ts
 import { createCaptchaSolver } from '@itd-api/captcha';
 
 const itd = new ItdClient({
-  auth: {
-    email,
-    password,
-    captcha: createCaptchaSolver(),
-  },
+  auth: { email, password },
+  captcha: createCaptchaSolver(),
 });
 ```
 
-Свой источник токена подставляется тем же полем: `captcha: { getToken: (type) => … }`.
+Свой источник подставляется тем же полем: `captcha: (type) => …`. Заданный контейнеру
+`ItdAccounts`, он достаётся каждому аккаунту.
 
-Капча нужна только самому входу по паролю. Если аккаунт уже открыт в браузере, токены
+Капча нужна входу по паролю, регистрации, сбросу пароля и — по требованию сервера —
+подтверждению QR-входа. Если аккаунт уже открыт в браузере, токены
 проще [скопировать оттуда](../authentication/#токены-из-браузера) — тогда ни этот пакет,
 ни Playwright не понадобятся.
 

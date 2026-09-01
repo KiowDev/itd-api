@@ -9,15 +9,14 @@ import { FileMultiTokenStorage } from 'itd-api/node';
 
 const accounts = new ItdAccounts({
   storage: new FileMultiTokenStorage('./.itd-sessions.json'),
+  captcha: createCaptchaSolver(),
   rateLimit: { concurrency: 4 },
 });
 
 await accounts.restore();
 
 if (!accounts.has('kiow')) {
-  accounts.addAccount('kiow', {
-    auth: { email, password, captcha: createCaptchaSolver() },
-  });
+  accounts.addAccount('kiow', { auth: { email, password } });
 }
 
 const itd = accounts.account('kiow');

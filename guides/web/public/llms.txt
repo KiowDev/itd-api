@@ -12,12 +12,12 @@ The linked documentation is written in Russian. Start with the guides and the cu
 
 ## Guides
 
-- [Authentication and Sessions](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/authentication/README.md): access and refresh tokens, email/password sign-in, Turnstile, OTP, and session storage.
+- [Authentication and Sessions](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/authentication/README.md): access and refresh tokens, email/password sign-in, QR sign-in, captcha, OTP, and session storage.
 - [Client Configuration](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/configuration/README.md): timeouts, cancellation, retries, request queues, rate limits, services, hooks, and shutdown.
 - [Real-Time Notifications](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/events/README.md): SSE, polling, handlers, filters, routing, and reconnection.
 - [Multiple Accounts](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/multi-accounts/README.md): the `ItdAccounts` container, shared settings, separate sessions, and storage.
 - [Text Markup](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/text-markup/README.md): the markup builder, Markdown, HTML, spans, links, and post formatting.
-- [Integrations](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/integrations/README.md): browser usage and CORS, HTTP/SOCKS5 proxies, and Turnstile.
+- [Integrations](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/integrations/README.md): browser usage and CORS, HTTP/SOCKS5 proxies, and captcha.
 - [Plugins](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/plugins/README.md): cache and crypto plugins, custom plugin creation, interceptors, and lifecycle.
 - [Feature Modules](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/features/README.md): adding domain-specific API modules to the client and integrating them with authentication.
 
