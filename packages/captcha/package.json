@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/captcha",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Токен капчи (собственная ИТД или Cloudflare Turnstile) для входа в itd-api через локальный браузер",
   "repository": {
     "type": "git",
