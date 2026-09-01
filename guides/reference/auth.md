@@ -4,15 +4,35 @@
 клиент авторизуется сам через опцию `auth` конструктора; эти методы нужны для ручных
 сценариев входа. Полное руководство — [Авторизация](../authentication/).
 
-Капчу требуют только три метода — `signIn()`, `signUp()` и `forgotPassword()` (и надстройки
-над ними: `signInWithOtp()`, `resetPasswordWithOtp()`): без поля `turnstileToken` сервер
-отвечает `422`. Токен выдаёт виджет Cloudflare Turnstile, и работает он только на домене
-итд.com: ключ `TURNSTILE_SITE_KEY` привязан к нему, на чужом origin Cloudflare отвечает
-ошибкой `110200`. В Node токен умеет добывать [`@itd-api/turnstile`](/packages/turnstile).
+Капчу требуют `signIn()`, `signUp()` и `forgotPassword()` (и надстройки над ними), а
+`claimQrLogin()` может запросить её отдельным статусом. Доказательство передаётся одним полем
+`captcha: { type, token }`; имя поля запроса SDK подставляет сам. Активного провайдера
+сообщает `captchaProvider()`, токены одноразовые. В Node оба виджета решает
+[`@itd-api/captcha`](/packages/captcha).
 
 Остальным методам капча не нужна. `refresh()`, `check()`, `logout()` и работа с сессиями
 обходятся без неё, поэтому [готовые токены из браузера](../authentication/#токены-из-браузера)
-или сохранённая сессия позволяют вообще не встречаться с Turnstile.
+или сохранённая сессия позволяют вообще не встречаться с капчей.
+
+## Провайдер капчи
+
+```ts
+captchaProvider(): Promise<CaptchaProvider>
+```
+
+Возвращает `{ provider: 'itd', field: 'token' }` либо
+`{ provider: 'cloudflare', field: 'turnstileToken' }`. Оба значения сервер вправе сменить,
+поэтому `field` берётся из ответа, а не выводится из провайдера.
+
+Автологину через опцию `auth` этот вызов не нужен — клиент делает его сам. Ручному входу
+он подсказывает, какой виджет решать:
+
+```ts
+const { provider, field } = await itd.auth.captchaProvider();
+const token = await solveCaptcha(provider);
+
+await itd.auth.signIn({ email, password, captcha: { type: provider, token, field } });
+```
 
 ## Состояние авторизации
 
@@ -50,6 +70,42 @@ verifyOtp(input: Credentials & { otp: string; flowToken: string }): Promise<stri
 resendOtp(input: { email: string; flowToken: string }): Promise<void>
 ```
 Отправляет код подтверждения повторно.
+
+## QR-вход
+
+```ts
+startQrLogin(): Promise<QrLoginStart>
+```
+
+Создаёт изолированную короткоживущую QR-сессию. `payload` нужно закодировать в QR-код;
+`claimToken` нельзя включать в QR-код или передавать сканирующему устройству.
+`captchaRequired` предупреждает, что для завершения понадобится капча; свежий токен лучше
+получать после `approved`, а не при показе QR-кода.
+
+```ts
+streamQrLogin(
+  input: { qrId: string; claimToken: string },
+  onEvent: (event: QrLoginStreamEvent) => void | Promise<void>,
+  options?: { signal?: AbortSignal },
+): Promise<void>
+```
+
+Доставляет простые SSE-события `pending`, `scanned`, `approved`, `rejected`. После
+`approved` вызовите `claimQrLogin()`; поток сам токен не возвращает. Отмена выполняется
+стандартным `AbortSignal`.
+
+Метод делает одну попытку подключения. Если первое событие не пришло за 3 секунды либо поток
+закрылся, остановите его и вызывайте `claimQrLogin()` раз в 2 секунды. После `approved`
+вызовите `claimQrLogin()` сразу. Опрос прекращается на `authorized`, `captcha_required`,
+`rejected`, при истечении QR-сессии или закрытии экрана.
+
+```ts
+claimQrLogin(input: QrLoginClaimInput): Promise<QrLoginClaim>
+```
+
+Проверяет и завершает QR-вход. При `authorized` клиент автоматически сохраняет access token
+и cookie новой сессии. При `captcha_required` повторите вызов с `captcha`. В серверной среде
+cookie QR-сессии хранятся отдельно; в браузере ими управляет сам браузер.
 
 ## Сессия
 
@@ -142,13 +198,17 @@ interface Credentials {
   password: string;
 }
 
-interface CaptchaCredentials extends Credentials {
-  turnstileToken: string;                // одноразовый, живёт несколько минут
+interface CaptchaToken {
+  type: CaptchaType;          // 'itd' | 'cloudflare' | новый от сервера
+  token: string;
+  field?: CaptchaField;       // по умолчанию — CAPTCHA_FIELDS[type]
 }
+
+type CaptchaCredentials = Credentials & { captcha: CaptchaToken };
 
 interface ForgotPasswordInput {
   email: string;
-  turnstileToken: string;
+  captcha: CaptchaToken;
 }
 
 interface ResetPasswordInput {
@@ -163,6 +223,25 @@ type SignInResult =
   | { status: 'otp_required'; flowToken: string | undefined };
 
 const SignInStatus = { Authenticated: 'authenticated', OtpRequired: 'otp_required' } as const;
+
+interface CaptchaProvider {
+  provider: CaptchaType;
+  field: CaptchaField;
+}
+
+const CaptchaType = { Itd: 'itd', Cloudflare: 'cloudflare' } as const;
+const CaptchaField = { Itd: 'token', Cloudflare: 'turnstileToken' } as const;
+const CAPTCHA_FIELDS = { itd: 'token', cloudflare: 'turnstileToken' } as const;
+
+interface QrLoginStart {
+  qrId: string; claimToken: string; payload: string;
+  expiresIn: number; captchaRequired: boolean;
+}
+
+type QrLoginStreamEvent = {
+  status: 'pending' | 'scanned' | 'approved' | 'rejected';
+  expiresIn?: number;
+};
 ```
 
 Связанные: [`AuthInput`](./client.md#авторизация-authinput) (как клиент получает доступ),

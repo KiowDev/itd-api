@@ -1,12 +1,12 @@
 import { defineConfig } from 'vitepress';
 import cacheSidebar from './api/generated/cache/typedoc-sidebar.json';
+import captchaSidebar from './api/generated/captcha/typedoc-sidebar.json';
 import coreSidebar from './api/generated/core/typedoc-sidebar.json';
 import cryptoSidebar from './api/generated/crypto/typedoc-sidebar.json';
 import hydrateSidebar from './api/generated/hydrate/typedoc-sidebar.json';
 import nodeSidebar from './api/generated/node/typedoc-sidebar.json';
 import proxySidebar from './api/generated/proxy/typedoc-sidebar.json';
 import testingSidebar from './api/generated/testing/typedoc-sidebar.json';
-import turnstileSidebar from './api/generated/turnstile/typedoc-sidebar.json';
 import webSidebar from './api/generated/web/typedoc-sidebar.json';
 import packageJson from '../../package.json';
 
@@ -110,7 +110,7 @@ const packagesSidebar = [
     text: 'Пакеты',
     items: [
       { text: 'Обзор', link: '/packages/' },
-      { text: '@itd-api/turnstile', link: '/packages/turnstile' },
+      { text: '@itd-api/captcha', link: '/packages/captcha' },
       { text: '@itd-api/proxy', link: '/packages/proxy' },
       { text: '@itd-api/cache', link: '/packages/cache' },
       { text: '@itd-api/hydrate', link: '/packages/hydrate' },
@@ -141,7 +141,7 @@ const apiEntriesSidebar = [
       { text: 'itd-api', link: '/api/generated/core/' },
       { text: 'itd-api/node', link: '/api/generated/node/' },
       { text: 'itd-api/web', link: '/api/generated/web/' },
-      { text: '@itd-api/turnstile', link: '/api/generated/turnstile/' },
+      { text: '@itd-api/captcha', link: '/api/generated/captcha/' },
       { text: '@itd-api/proxy', link: '/api/generated/proxy/' },
       { text: '@itd-api/cache', link: '/api/generated/cache/' },
       { text: '@itd-api/hydrate', link: '/api/generated/hydrate/' },
@@ -274,10 +274,10 @@ export default defineConfig({
         '/api/generated/proxy/',
         proxySidebar,
       ),
-      '/api/generated/turnstile/': apiSidebar(
-        '@itd-api/turnstile',
-        '/api/generated/turnstile/',
-        turnstileSidebar,
+      '/api/generated/captcha/': apiSidebar(
+        '@itd-api/captcha',
+        '/api/generated/captcha/',
+        captchaSidebar,
       ),
       '/api/': apiEntriesSidebar,
       '/': guideSidebar,

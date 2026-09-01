@@ -10,19 +10,23 @@
 
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
-| `POST /api/v1/auth/sign-up` | `itd.auth.signUp()` | нет | `email`, `password`, `turnstileToken` → `flowToken` | — |
-| `POST /api/v1/auth/sign-in` | `itd.auth.signIn()` | нет | `email`, `password`, `turnstileToken` → access token или `flowToken` | — |
+| `GET /api/v1/auth/captcha/provider` | `itd.auth.captchaProvider()` | нет | активный провайдер и поле `token` либо `turnstileToken` | 2026-09-01, `200` |
+| `POST /api/v1/auth/sign-up` | `itd.auth.signUp()` | нет | `email`, `password`, подтверждение капчи → `flowToken` | — |
+| `POST /api/v1/auth/sign-in` | `itd.auth.signIn()` | нет | `email`, `password`, подтверждение капчи → access token или `flowToken` | — |
 | `POST /api/v1/auth/verify-otp` | `itd.auth.verifyOtp()` | нет | `email`, `password`, `otp`, `flowToken` → access token | — |
 | `POST /api/v1/auth/resend-otp` | `itd.auth.resendOtp()` | нет | `email`, `flowToken` | — |
 | `POST /api/v1/auth/refresh` | `itd.auth.refresh()` | refresh cookie | ответ: access token | — |
 | `POST /api/v1/auth/logout` | `itd.auth.logout()`, `itd.auth.logoutAll()` | Bearer + refresh cookie | body отсутствует | — |
-| `POST /api/v1/auth/forgot-password` | `itd.auth.forgotPassword()` | нет | `email`, `turnstileToken` → `flowToken` | — |
+| `POST /api/v1/auth/forgot-password` | `itd.auth.forgotPassword()` | нет | `email`, подтверждение капчи → `flowToken` | — |
 | `POST /api/v1/auth/reset-password` | `itd.auth.resetPassword()` | нет | `email`, `newPassword`, `otp`, `flowToken` | — |
 | `POST /api/v1/auth/change-password` | `itd.auth.changePassword()` | Bearer | `currentPassword`, `newPassword` | — |
 | `GET /api/profile` | `itd.auth.check()` | необязательно | ответ: `authenticated`, `banned`, `user` | 2026-08-22, `200` |
 | `GET /api/v1/auth/sessions` | `itd.auth.sessions()` | Bearer | ответ: `sessions[]` | 2026-08-13, `200` |
-| `DELETE /api/v1/auth/sessions/{sessionId}` | `itd.auth.revokeSession()` | Bearer | идентификатор сессии в path | — |
+| `DELETE /api/v1/auth/sessions/{sessionId}` | `itd.auth.revokeSession()` | Bearer | идентификатор сессии в пути | — |
 | `DELETE /api/v1/auth/sessions` | `itd.auth.revokeOtherSessions()`, `itd.auth.logoutAll()` | Bearer | завершение остальных сессий | — |
+| `POST /api/v1/auth/qr/start` | `itd.auth.startQrLogin()` | нет | новая QR-сессия: `qrId`, `claimToken`, `payload`, `expiresIn`, `captchaRequired` | 2026-09-01, `201` |
+| `POST /api/v1/auth/qr/stream` | `itd.auth.streamQrLogin()` | нет | `qrId`, `claimToken` → SSE-статусы QR-сессии | 2026-09-01, `200` |
+| `POST /api/v1/auth/qr/claim` | `itd.auth.claimQrLogin()` | нет | секреты QR, при необходимости подтверждение капчи → статус или access token | 2026-09-01, `200` |
 
 `signInWithOtp()` объединяет `sign-in` и `verify-otp`,
 `resetPasswordWithOtp()` — `forgot-password` и `reset-password`, поэтому

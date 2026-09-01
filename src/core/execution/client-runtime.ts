@@ -326,6 +326,8 @@ export function createClientRuntime<A extends AuthProvider>(
         fetch: config.fetch,
         clock: config.clock,
         logger: config.logger,
+        signal: lifetime.signal,
+        assertActive: (action: string) => internals.assertActive?.(action),
         baseHeaders: async (url: string) => {
           const headers = await transport.platformHeaders(url);
           for (const [name, value] of Object.entries(service?.headers ?? {})) {

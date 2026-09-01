@@ -102,7 +102,7 @@ import { ItdClient } from 'itd-api';
 | Пакет | Назначение | Среда | npm | Документация |
 |---|---|---|---|---|
 | `itd-api` | полный SDK для итд.com | Node.js 18+, браузер, Bun, Deno, React Native | [npm](https://www.npmjs.com/package/itd-api) | [быстрый старт](https://kiowdev.github.io/itd-api/quickstart/) |
-| `@itd-api/turnstile` | получение Turnstile-токена в локальном браузере | Node.js 18+, Bun, Deno + драйвер браузера | [npm](https://www.npmjs.com/package/@itd-api/turnstile) | [документация](https://kiowdev.github.io/itd-api/packages/turnstile) |
+| `@itd-api/captcha` | получение токена капчи (ИТД и Turnstile) в локальном браузере | Node.js 18+, Bun, Deno + драйвер браузера | [npm](https://www.npmjs.com/package/@itd-api/captcha) | [документация](https://kiowdev.github.io/itd-api/packages/captcha) |
 | `@itd-api/proxy` | прокси-транспорт для HTTP и WebSocket | Node.js 18+, Bun, Deno | [npm](https://www.npmjs.com/package/@itd-api/proxy) | [документация](https://kiowdev.github.io/itd-api/packages/proxy) |
 | `@itd-api/cache` | TTL/LRU-кэш и дедупликация запросов | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/cache) | [документация](https://kiowdev.github.io/itd-api/packages/cache) |
 | `@itd-api/hydrate` | методы действий на моделях API | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/hydrate) | [документация](https://kiowdev.github.io/itd-api/packages/hydrate) |
@@ -114,12 +114,12 @@ import { ItdClient } from 'itd-api';
 | Раздел | Содержание |
 |---|---|
 | [Быстрый старт](https://kiowdev.github.io/itd-api/quickstart/) | создание клиента, чтение и публикация, пагинация, ошибки |
-| [Авторизация](https://kiowdev.github.io/itd-api/authentication/) | токены, Turnstile, OTP, refresh и хранение сессии |
+| [Авторизация](https://kiowdev.github.io/itd-api/authentication/) | токены, капча, OTP, refresh и хранение сессии |
 | [Конфигурация](https://kiowdev.github.io/itd-api/configuration/) | таймауты, повторы, очереди, сервисы, хуки и жизненный цикл |
 | [Несколько аккаунтов](https://kiowdev.github.io/itd-api/multi-accounts/) | `ItdAccounts`, общее хранилище и отдельные сессии |
 | [Разметка текста](https://kiowdev.github.io/itd-api/text-markup/) | spans, автоматическая разметка и отображение |
 | [События](https://kiowdev.github.io/itd-api/events/) | обновления, обработчики, фильтры, маршрутизация и переподключение |
-| [Интеграции](https://kiowdev.github.io/itd-api/integrations/) | browser proxy и Turnstile |
+| [Интеграции](https://kiowdev.github.io/itd-api/integrations/) | прокси и автоматическое получение токенов капчи |
 | [Плагины](https://kiowdev.github.io/itd-api/plugins/) | cache, crypto и создание плагина |
 | [Справочник API](https://kiowdev.github.io/itd-api/reference/) | ресурсы, методы, типы, ошибки и билдеры |
 
@@ -129,7 +129,7 @@ import { ItdClient } from 'itd-api';
 |---|---|
 | Node.js 18+ | полная, включая файловую точку входа `itd-api/node` |
 | Bun, Deno | полная |
-| Браузер | кроме файловой системы; хранилище сессии — `itd-api/web`; для основного API нужен server-side proxy из-за CORS |
+| Браузер | кроме файловой системы; хранилище сессии — `itd-api/web`; для основного API нужен серверный прокси из-за CORS |
 | React Native | полная; поток переключается на периодический опрос без потокового чтения |
 
 TypeScript 5.0+. Пакет проверяется в Node.js 18, 20, 22, 24 и 26, а корректность
@@ -150,10 +150,11 @@ Bearer-токен автоматически передаётся только �
 | `https://xn--d1ah4a.com` (`итд.com`) | REST API, авторизация и события | да, для защищённых REST-методов и событий |
 | `https://xn--80a7abcbg.xn--d1ah4a.com` (`статус.итд.com`) | публичное состояние сервисов | нет |
 
-Опциональный `@itd-api/turnstile` дополнительно загружает виджет с
-`https://challenges.cloudflare.com`; пакет не передаёт пароль странице браузера.
+Опциональный `@itd-api/captcha` дополнительно загружает виджет капчи —
+с `https://captcha.xn--d1ah4a.com` (ИТД) или `https://challenges.cloudflare.com`
+(Turnstile); пакет не передаёт пароль странице браузера.
 `@itd-api/cache` и `@itd-api/crypto` сами не создают сетевые запросы, а
-`@itd-api/proxy` использует только адрес proxy, заданный пользователем.
+`@itd-api/proxy` использует только адрес прокси, заданный пользователем.
 
 Пользовательские настройки меняют границу доверия:
 
@@ -161,7 +162,7 @@ Bearer-токен автоматически передаётся только �
 |---|---|
 | `baseUrl` | становится основным API-хостом; на него идут авторизация, сессия, защищённые запросы и события |
 | `fetch` | получает URL, заголовки и тело всех запросов клиента; передавайте только доверенную реализацию |
-| `proxyFetch(...)` | направляет запросы через указанный вами proxy, которому будут доступны соединения с API |
+| `proxyFetch(...)` | направляет запросы через указанный вами прокси, которому будут доступны соединения с API |
 | `defineService({ auth: true })` | явно разрешает отправлять Bearer-токен на хост этого сервиса |
 | `request({ baseUrl })` | внешний хост не получает Bearer автоматически; `skipAuth: false` явно разрешает его передачу |
 

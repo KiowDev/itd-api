@@ -1,0 +1,22 @@
+name: Публикация @itd-api/captcha в npm
+
+# Запускается при пуше тега вида captcha-v1.2.3.
+# Порядок выпуска:
+#   npm version patch --workspace @itd-api/captcha --no-git-tag-version
+#   git commit -am "@itd-api/captcha 0.0.2"
+#   git tag -a captcha-v0.0.2 -m "@itd-api/captcha 0.0.2"
+#   git push --follow-tags
+on:
+  push:
+    tags: ['captcha-v*']
+
+jobs:
+  release:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release-workspace.yml
+    with:
+      package_name: '@itd-api/captcha'
+      package_path: packages/captcha
+      tag_prefix: captcha-v

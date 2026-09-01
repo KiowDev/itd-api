@@ -16,6 +16,7 @@ import type {
 import type { ErrorContextHook, FileInput, RequestContext } from '../../src/index.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
+import { CaptchaType } from '../../src/types/enums.js';
 import { makeJwt } from '../helpers/jwt.js';
 import {
   createHangingFetch,
@@ -682,6 +683,226 @@ describe('комментарии', () => {
 });
 
 describe('авторизация', () => {
+  it('получает выбранный сервером captcha-провайдер', async () => {
+    const { itd, mock } = makeClient([json({ provider: 'itd', field: 'token' })], {
+      auth: undefined,
+    });
+
+    await expect(itd.auth.captchaProvider()).resolves.toEqual({ provider: 'itd', field: 'token' });
+    expect(mock.calls[0]?.method).toBe('GET');
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/captcha/provider');
+    expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
+  });
+
+  it('создаёт QR-вход и проверяет его состояние', async () => {
+    const started = {
+      qrId: 'qr-1',
+      claimToken: 'claim-1',
+      payload: 'itd://login/qr-1',
+      expiresIn: 120,
+      captchaRequired: false,
+    };
+    const { itd, mock } = makeClient([json(started), json({ status: 'scanned', expiresIn: 90 })], {
+      auth: undefined,
+    });
+
+    await expect(itd.auth.startQrLogin()).resolves.toEqual(started);
+    await expect(
+      itd.auth.claimQrLogin({ qrId: started.qrId, claimToken: started.claimToken }),
+    ).resolves.toEqual({ status: 'scanned', expiresIn: 90 });
+
+    expect(mock.calls.map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
+      'POST /api/v1/auth/qr/start',
+      'POST /api/v1/auth/qr/claim',
+    ]);
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+      qrId: 'qr-1',
+      claimToken: 'claim-1',
+    });
+  });
+
+  it('сохраняет accessToken, полученный через QR-вход', async () => {
+    const { itd, mock } = makeClient(
+      [json({ status: 'authorized', accessToken: 'qr-token' }), json({ id: 'u1' })],
+      { auth: undefined },
+    );
+
+    await expect(
+      itd.auth.claimQrLogin({
+        qrId: 'qr-1',
+        claimToken: 'claim-1',
+        captcha: { type: CaptchaType.Itd, token: 'captcha-token' },
+      }),
+    ).resolves.toEqual({ status: 'authorized', accessToken: 'qr-token' });
+
+    await itd.users.me();
+    expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer qr-token');
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toMatchObject({ token: 'captcha-token' });
+  });
+
+  it.each(['pending', 'scanned', 'captcha_required', 'rejected'] as const)(
+    'возвращает промежуточный статус QR claim: %s',
+    async (status) => {
+      const result = { status, expiresIn: 60 };
+      const { itd } = makeClient([json(result)], { auth: undefined });
+
+      await expect(
+        itd.auth.claimQrLogin({ qrId: 'qr-status', claimToken: 'claim-status' }),
+      ).resolves.toEqual(result);
+    },
+  );
+
+  it('не стирает refresh-cookie активной сессии при запуске QR-входа', async () => {
+    const started = {
+      qrId: 'qr-session',
+      claimToken: 'claim-session',
+      payload: 'itd://login/qr-session',
+      expiresIn: 120,
+      captchaRequired: false,
+    };
+    const { itd, mock } = makeClient([json(started), json({ accessToken: 'refreshed' })], {
+      auth: { accessToken: 'old', refreshToken: 'live-refresh' },
+    });
+
+    await itd.auth.startQrLogin();
+    await itd.auth.refresh();
+
+    expect(mock.calls[1]?.headers.get('cookie')).toContain('refresh_token=live-refresh');
+  });
+
+  it('переносит только cookie QR-потока из start в claim', async () => {
+    const started = {
+      qrId: 'qr-cookie',
+      claimToken: 'claim-cookie',
+      payload: 'itd://login/qr-cookie',
+      expiresIn: 120,
+      captchaRequired: false,
+    };
+    const { itd, mock } = makeClient(
+      [
+        json(started, { headers: { 'set-cookie': 'qr_flow=flow-1; Path=/api/v1/auth' } }),
+        json({ status: 'pending', expiresIn: 110 }),
+      ],
+      { auth: { accessToken: 'old', refreshToken: 'live-refresh' } },
+    );
+
+    await itd.auth.startQrLogin();
+    await itd.auth.claimQrLogin({ qrId: started.qrId, claimToken: started.claimToken });
+
+    expect(mock.calls[1]?.headers.get('cookie')).toContain('qr_flow=flow-1');
+    expect(mock.calls[1]?.headers.get('cookie')).not.toContain('live-refresh');
+  });
+
+  it('принимает refresh-cookie авторизованного QR-потока', async () => {
+    const { itd } = makeClient(
+      [
+        json(
+          { status: 'authorized', accessToken: 'qr-access' },
+          { headers: { 'set-cookie': 'refresh_token=qr-refresh; Path=/api/v1/auth' } },
+        ),
+      ],
+      { auth: { accessToken: 'old', refreshToken: 'old-refresh' } },
+    );
+
+    await itd.auth.claimQrLogin({ qrId: 'qr-new', claimToken: 'claim-new' });
+
+    const cookies = (await itd.getSession())?.cookies ?? [];
+    expect(cookies.some((cookie) => cookie.includes('refresh_token=qr-refresh'))).toBe(true);
+    expect(cookies.some((cookie) => cookie.includes('old-refresh'))).toBe(false);
+  });
+
+  it('не повторяет одноразовый QR claim после ошибки сервера', async () => {
+    const { itd, mock } = makeClient(
+      () => json({ error: { code: 'UNKNOWN_ERROR' } }, { status: 500 }),
+      {
+        auth: undefined,
+        retry: { attempts: 2, baseDelay: 0, jitter: 0 },
+      },
+    );
+
+    await expect(
+      itd.auth.claimQrLogin({ qrId: 'qr-once', claimToken: 'claim-once' }),
+    ).rejects.toMatchObject({ status: 500 });
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('доставляет события короткого QR stream', async () => {
+    const response = new Response(
+      'data: {"status":"scanned","expiresIn":120}\n\n' +
+        'event: message\r\ndata: {"status":"approved","expiresIn":120}\r\n\r\n',
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+    const { itd, mock } = makeClient([response], { auth: undefined });
+    const events: unknown[] = [];
+
+    await itd.auth.streamQrLogin({ qrId: 'qr-stream', claimToken: 'claim-stream' }, (event) => {
+      events.push(event);
+    });
+
+    expect(events).toEqual([
+      { status: 'scanned', expiresIn: 120 },
+      { status: 'approved', expiresIn: 120 },
+    ]);
+    expect(mock.calls[0]).toMatchObject({ method: 'POST', credentials: 'include' });
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/qr/stream');
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+      qrId: 'qr-stream',
+      claimToken: 'claim-stream',
+    });
+  });
+
+  it('переносит cookie QR-сессии из start в stream', async () => {
+    const event = () =>
+      new Response('data: {"status":"pending","expiresIn":90}\n\n', {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    const started = {
+      qrId: 'qr-policy',
+      claimToken: 'claim-policy',
+      payload: 'itd://login/qr-policy',
+      expiresIn: 90,
+      captchaRequired: false,
+    };
+    const server = makeClient(
+      [json(started, { headers: { 'set-cookie': 'qr_flow=flow-1; Path=/api/v1/auth' } }), event()],
+      { auth: undefined },
+    );
+
+    await server.itd.auth.startQrLogin();
+    const input = { qrId: started.qrId, claimToken: started.claimToken };
+    await server.itd.auth.streamQrLogin(input, () => {});
+
+    expect(server.mock.calls[1]?.headers.get('cookie')).toContain('qr_flow=flow-1');
+  });
+
+  it('отменяет открытый QR stream по signal', async () => {
+    const response = new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+      headers: { 'content-type': 'text/event-stream' },
+    });
+    const { itd } = makeClient([response], { auth: undefined });
+    const controller = new AbortController();
+    const pending = itd.auth.streamQrLogin(
+      { qrId: 'qr-stream', claimToken: 'claim-stream' },
+      () => {},
+      { signal: controller.signal },
+    );
+
+    controller.abort();
+
+    await expect(pending).rejects.toBeInstanceOf(ItdAbortError);
+  });
+
+  it('не открывает QR stream после dispose клиента', async () => {
+    const { itd, mock } = makeClient([], { auth: undefined });
+    const auth = itd.auth;
+    await itd.dispose();
+
+    await expect(
+      auth.streamQrLogin({ qrId: 'qr-stream', claimToken: 'claim-stream' }, () => {}),
+    ).rejects.toBeInstanceOf(ItdStateError);
+    expect(mock.callCount).toBe(0);
+  });
+
   it('проверяет состояние авторизации без обязательного токена', async () => {
     const { itd, mock } = makeClient([json({ authenticated: false, banned: false, user: null })], {
       auth: undefined,
@@ -702,7 +923,11 @@ describe('авторизация', () => {
       auth: undefined,
     });
 
-    const result = await itd.auth.signIn({ email: 'a@b.c', password: 'p', turnstileToken: 'cap' });
+    const result = await itd.auth.signIn({
+      email: 'a@b.c',
+      password: 'p',
+      captcha: { type: CaptchaType.Cloudflare, token: 'cap' },
+    });
 
     expect(result).toEqual({ status: 'authenticated', accessToken: 'signed-in' });
     await itd.users.me();
@@ -712,12 +937,13 @@ describe('авторизация', () => {
   it('сообщает о требовании кода подтверждения', async () => {
     const { itd } = makeClient([json({ flowToken: 'flow-1' })], { auth: undefined });
 
-    expect(await itd.auth.signIn({ email: 'a@b.c', password: 'p', turnstileToken: 'cap' })).toEqual(
-      {
-        status: 'otp_required',
-        flowToken: 'flow-1',
-      },
-    );
+    expect(
+      await itd.auth.signIn({
+        email: 'a@b.c',
+        password: 'p',
+        captcha: { type: CaptchaType.Cloudflare, token: 'cap' },
+      }),
+    ).toEqual({ status: 'otp_required', flowToken: 'flow-1' });
   });
 
   it('проходит полный вход с кодом', async () => {
@@ -729,7 +955,7 @@ describe('авторизация', () => {
     const token = await itd.auth.signInWithOtp({
       email: 'a@b.c',
       password: 'p',
-      turnstileToken: 'cap',
+      captcha: { type: CaptchaType.Cloudflare, token: 'cap' },
       getOtp: () => '123456',
     });
 
@@ -756,7 +982,11 @@ describe('авторизация', () => {
     const onTokens = vi.fn();
     itd.on('tokens', onTokens);
 
-    await itd.auth.signIn({ email: 'a@b.c', password: 'p', turnstileToken: 'cap' });
+    await itd.auth.signIn({
+      email: 'a@b.c',
+      password: 'p',
+      captcha: { type: CaptchaType.Cloudflare, token: 'cap' },
+    });
 
     expect(onTokens).toHaveBeenCalledWith({ accessToken: 'новый' });
   });
@@ -786,7 +1016,7 @@ describe('авторизация', () => {
 
     await itd.auth.resetPasswordWithOtp({
       email: 'a@b.c',
-      turnstileToken: 'cap',
+      captcha: { type: CaptchaType.Cloudflare, token: 'cap' },
       newPassword: 'Xx12345678!',
       getOtp: () => '123456',
     });
@@ -874,18 +1104,26 @@ describe('очередь и авторизация', () => {
 
   it('отложенный вход проходит через общий pipeline без deadlock', async () => {
     const { itd, mock } = makeClient(
-      (request) =>
-        request.url.endsWith('/sign-in')
+      (request) => {
+        if (request.url.endsWith('/captcha/provider')) {
+          return json({ provider: 'cloudflare', field: 'turnstileToken' });
+        }
+        return request.url.endsWith('/sign-in')
           ? json({ accessToken: 'at' })
-          : json({ data: { ok: true } }),
+          : json({ data: { ok: true } });
+      },
       {
-        auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+        auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
         rateLimit: { concurrency: 1 },
       },
     );
 
     await expect(itd.users.me()).resolves.toEqual({ ok: true });
-    expect(mock.calls[0]?.url).toContain('/sign-in');
+    expect(mock.calls.map((call) => call.url)).toEqual([
+      expect.stringContaining('/captcha/provider'),
+      expect.stringContaining('/sign-in'),
+      expect.stringContaining('/users/me'),
+    ]);
   });
 });
 

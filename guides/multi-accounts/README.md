@@ -16,7 +16,7 @@ await accounts.restore();
 
 if (!accounts.has('kiow')) {
   accounts.addAccount('kiow', {
-    auth: { email, password, getTurnstileToken },
+    auth: { email, password, captcha: createCaptchaSolver() },
   });
 }
 

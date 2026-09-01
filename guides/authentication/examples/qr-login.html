@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QR-вход через itd-api</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+
+      body {
+        max-width: 42rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+      }
+
+      form,
+      section {
+        display: grid;
+        gap: 0.75rem;
+        margin-block: 1.5rem;
+      }
+
+      input,
+      button {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 0.75rem;
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      canvas {
+        width: min(20rem, 100%);
+        height: auto;
+        padding: 1rem;
+        background: white;
+        border-radius: 0.75rem;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      #status {
+        min-height: 1.5rem;
+        white-space: pre-wrap;
+      }
+
+      .note {
+        color: #777;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>QR-вход</h1>
+    <p class="note">
+      Для запуска из репозитория выполните <code>npm run example:qr</code>. Локальный сервер
+      раздаст эту страницу, предоставит обратный прокси к API и при необходимости получит
+      токен капчи через <code>@itd-api/captcha</code>.
+    </p>
+
+    <form id="start-form">
+      <label for="base-url">Base URL</label>
+      <input
+        id="base-url"
+        name="baseUrl"
+        type="url"
+        placeholder="http://localhost:8787"
+        required
+      />
+      <button type="submit">Получить QR-код</button>
+    </form>
+
+    <section id="qr" hidden>
+      <canvas aria-label="QR-код для входа"></canvas>
+      <div>Осталось: <span id="expires-in"></span></div>
+    </section>
+
+    <p id="status" role="status">QR-код ещё не запрошен.</p>
+
+    <script type="module">
+      import QRCode from 'https://esm.sh/qrcode@1.5.4';
+      import {
+        ItdClient,
+        QrLoginStatus,
+        QrLoginStreamStatus,
+        isItdApiError,
+      } from '../../../dist/index.js';
+
+      const form = document.querySelector('#start-form');
+      const baseUrlInput = document.querySelector('#base-url');
+      const qrSection = document.querySelector('#qr');
+      const qrCanvas = qrSection.querySelector('canvas');
+      const expiresIn = document.querySelector('#expires-in');
+      const status = document.querySelector('#status');
+
+      baseUrlInput.value =
+        new URLSearchParams(location.search).get('baseUrl') ?? `${location.origin}/itd-api`;
+
+      let activeClient;
+      let attemptController;
+      let expiryTimer;
+      let countdownTimer;
+
+      const qrInput = (qr) => ({ qrId: qr.qrId, claimToken: qr.claimToken });
+
+      function setStatus(message) {
+        status.textContent = message;
+      }
+
+      function stopTimers() {
+        clearTimeout(expiryTimer);
+        clearInterval(countdownTimer);
+      }
+
+      function stopAttempt() {
+        attemptController?.abort();
+        attemptController = undefined;
+        stopTimers();
+      }
+
+      function startExpiry(expiresInSeconds, controller) {
+        const expiresAt = Date.now() + expiresInSeconds * 1000;
+        const update = () => {
+          const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+          expiresIn.textContent = `${seconds} с`;
+        };
+
+        update();
+        countdownTimer = setInterval(update, 250);
+        expiryTimer = setTimeout(() => {
+          if (attemptController !== controller) return;
+          setStatus('Срок действия QR-кода истёк. Запросите новый.');
+          controller.abort();
+          stopTimers();
+        }, expiresInSeconds * 1000);
+      }
+
+      function delay(ms, signal) {
+        return new Promise((resolve, reject) => {
+          if (signal.aborted) {
+            reject(signal.reason);
+            return;
+          }
+
+          const onAbort = () => {
+            clearTimeout(timer);
+            reject(signal.reason);
+          };
+          const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+          }, ms);
+          signal.addEventListener('abort', onAbort, { once: true });
+        });
+      }
+
+      function isTerminalQrError(error) {
+        return (
+          isItdApiError(error) &&
+          error.hasCode('QR_EXPIRED', 'QR_ALREADY_USED', 'QR_TOKEN_MISMATCH')
+        );
+      }
+
+      async function pollClaim(client, qr, signal) {
+        while (!signal.aborted) {
+          await delay(2_000, signal);
+          const result = await client.auth.claimQrLogin(qrInput(qr), { signal });
+
+          if (result.status === QrLoginStatus.Pending) setStatus('Ожидаем сканирования…');
+          if (result.status === QrLoginStatus.Scanned) setStatus('QR-код отсканирован…');
+          if (
+            result.status !== QrLoginStatus.Pending &&
+            result.status !== QrLoginStatus.Scanned
+          ) {
+            return result;
+          }
+        }
+      }
+
+      async function waitForClaim(client, qr, signal) {
+        let approved = false;
+        let rejected = false;
+        const streamController = new AbortController();
+        const stopStream = () => streamController.abort();
+        signal.addEventListener('abort', stopStream, { once: true });
+
+        let firstEventTimer = setTimeout(stopStream, 3_000);
+        try {
+          await client.auth.streamQrLogin(
+            qrInput(qr),
+            (event) => {
+              clearTimeout(firstEventTimer);
+              firstEventTimer = undefined;
+
+              if (event.status === QrLoginStreamStatus.Pending) {
+                setStatus('Ожидаем сканирования…');
+              } else if (event.status === QrLoginStreamStatus.Scanned) {
+                setStatus('QR-код отсканирован. Подтвердите вход в приложении…');
+              } else if (event.status === QrLoginStreamStatus.Approved) {
+                approved = true;
+                stopStream();
+              } else if (event.status === QrLoginStreamStatus.Rejected) {
+                rejected = true;
+                stopStream();
+              }
+            },
+            { signal: streamController.signal },
+          );
+        } catch (error) {
+          if (signal.aborted) throw signal.reason;
+          if (isTerminalQrError(error)) throw error;
+          // Сбой streamQrLogin() не мешает продолжить через claimQrLogin().
+        } finally {
+          clearTimeout(firstEventTimer);
+          signal.removeEventListener('abort', stopStream);
+        }
+
+        if (rejected) return { status: QrLoginStatus.Rejected };
+
+        if (approved) {
+          const result = await client.auth.claimQrLogin(qrInput(qr), { signal });
+          if (
+            result.status !== QrLoginStatus.Pending &&
+            result.status !== QrLoginStatus.Scanned
+          ) {
+            return result;
+          }
+        }
+
+        setStatus('Поток закрыт. Проверяем состояние раз в 2 секунды…');
+        return pollClaim(client, qr, signal);
+      }
+
+      async function getCaptcha(client, signal) {
+        const provider = await client.auth.captchaProvider({ signal });
+        setStatus(`Получаем токен капчи (${provider.provider})…`);
+        const response = await fetch('/captcha', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ type: provider.provider }),
+          signal,
+        });
+        const body = await response.json();
+        if (!response.ok || typeof body.token !== 'string') {
+          throw new Error(body.error ?? 'Сервер не вернул токен капчи');
+        }
+        return { type: provider.provider, field: provider.field, token: body.token };
+      }
+
+      async function finishAuthorization(client, qr, result, controller, captchaAttempted = false) {
+        if (result.status === QrLoginStatus.CaptchaRequired) {
+          if (captchaAttempted) throw new Error('Сервер не принял полученный токен капчи');
+          const captcha = await getCaptcha(client, controller.signal);
+          const claimed = await client.auth.claimQrLogin(
+            { ...qrInput(qr), captcha },
+            { signal: controller.signal },
+          );
+          await finishAuthorization(client, qr, claimed, controller, true);
+          return;
+        }
+
+        if (result.status === QrLoginStatus.Rejected) {
+          stopTimers();
+          setStatus('Вход отклонён на сканирующем устройстве.');
+          return;
+        }
+
+        if (result.status !== QrLoginStatus.Authorized) return;
+
+        stopTimers();
+        const user = await client.users.me();
+        if (attemptController === controller) attemptController = undefined;
+        setStatus(`Авторизация завершена: ${user.displayName} (@${user.username}).`);
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        stopAttempt();
+        await activeClient?.close();
+
+        qrSection.hidden = true;
+        setStatus('Создаём QR-сессию…');
+
+        const controller = new AbortController();
+        attemptController = controller;
+        const client = new ItdClient({
+          baseUrl: baseUrlInput.value,
+          mode: 'browser',
+        });
+        activeClient = client;
+
+        try {
+          const qr = await client.auth.startQrLogin({ signal: controller.signal });
+          if (attemptController !== controller) return;
+
+          await QRCode.toCanvas(qrCanvas, qr.payload, {
+            errorCorrectionLevel: 'M',
+            margin: 1,
+            width: 320,
+          });
+          qrSection.hidden = false;
+          setStatus(
+            qr.captchaRequired
+              ? 'Отсканируйте QR-код. После подтверждения понадобится капча.'
+              : 'Отсканируйте QR-код официальным приложением.',
+          );
+          startExpiry(qr.expiresIn, controller);
+
+          const result = await waitForClaim(client, qr, controller.signal);
+          if (result && attemptController === controller) {
+            await finishAuthorization(client, qr, result, controller);
+          }
+        } catch (error) {
+          if (controller.signal.aborted || attemptController !== controller) return;
+          stopTimers();
+          setStatus(
+            isItdApiError(error)
+              ? `Ошибка API: ${error.code} (${error.status})`
+              : `Ошибка: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      });
+
+    </script>
+  </body>
+</html>

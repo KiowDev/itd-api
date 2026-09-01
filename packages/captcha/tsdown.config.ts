@@ -10,8 +10,8 @@ export default defineConfig({
   target: 'es2022',
   platform: 'node',
 
-  // При platform: 'node' tsdown по умолчанию даёт ESM расширение .mjs. Пакет уже
-  // опубликован с `type: module` и путями на ./dist/index.js — оставляем их.
+  // При platform: 'node' tsdown по умолчанию даёт ESM расширение .mjs. Пакет опубликован
+  // с `type: module` и путями на ./dist/index.js — оставляем их.
   fixedExtension: false,
 
   deps: {

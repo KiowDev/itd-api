@@ -117,6 +117,7 @@
     "prebuild": "npm run sync-version",
     "build": "tsdown",
     "dev": "tsdown --watch",
+    "example:qr": "npm run build && npm run build --workspace @itd-api/captcha && node guides/authentication/examples/qr-login-server.mjs",
     "test": "vitest run",
     "test:all": "npm run test && npm run test --workspaces --if-present",
     "test:watch": "vitest",

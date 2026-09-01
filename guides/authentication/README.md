@@ -11,7 +11,7 @@
 new ItdClient({ auth: '<accessToken>' });                       // разовый скрипт
 new ItdClient({ auth: { accessToken, refreshToken } });          // токены из браузера
 new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') }); // сохранённая сессия
-new ItdClient({ auth: { email, password, getTurnstileToken } }); // вход паролем
+new ItdClient({ auth: { email, password, captcha: createCaptchaSolver() } }); // вход паролем
 new ItdClient({ auth: { getToken: () => vault.read() } });       // токен из внешнего источника
 new ItdClient();                                                 // только публичные методы
 ```
@@ -26,27 +26,23 @@ new ItdClient();                                                 // только
 | **access token** | ответ `sign-in`, `verify-otp` или `refresh` | 15 минут                                      | подставляется в `Authorization: Bearer` каждого защищённого запроса |
 | **refresh token** | cookie `refresh_token` (`HttpOnly`, путь `/api/v1/auth`) | до 30 суток, обновляется при каждом продлении | получить новый access token без пароля и без капчи |
 | `deviceId` | заводится клиентом при первом запросе | должен пережить перезапуск                    | заголовок `X-Device-Id`; сервер различает по нему устройства в списке сессий |
-| **Turnstile token** | виджет Cloudflare в браузере | несколько минут, одноразовый                  | нужен **только** для входа, регистрации и сброса пароля |
+| **токен капчи** | активный виджет ИТД или Cloudflare | несколько минут, одноразовый               | нужен **только** для входа, регистрации и сброса пароля |
 
 Если токен истечёт в ближайшие 30 секунд, клиент продлит сессию до защищённого запроса.
 Если срок из токена прочитать нельзя, обновление по-прежнему запускается после `401`.
 
-### Как это работает в рантайме
+### Как это работает
 
 1. Истекающий токен обновляется до защищённого запроса.
 2. Клиент подставляет актуальный access token в защищённый запрос.
-3. Сервер всё же ответил `401` → клиент делает `POST /api/v1/auth/refresh`; refresh-токен уходит
-   туда cookie, тело запроса сервер игнорирует.
-4. В ответе приходит новый access token, а в `Set-Cookie` — **новый refresh-токен**:
+3. Если сервер отвечает `401`, клиент делает `POST /api/v1/auth/refresh`; refresh token
+   передаётся в cookie, тело запроса сервер игнорирует.
+4. В ответе приходит новый access token, а в `Set-Cookie` — **новый refresh token**:
    прежний в этот момент гасится.
 5. Клиент сохраняет сессию и при необходимости повторяет исходный запрос.
 6. Параллельные запросы ждут одного продления.
 7. Продлить нечем или сервер отказал → ошибка приходит вызывающему коду и в событие
    `authError`.
-
-Капча участвует ровно в одном шаге — входе по паролю. Продление, обычные запросы и события
-её не требуют, поэтому один раз полученная сессия избавляет от Turnstile на всё время
-своей жизни.
 
 ## Выберите способ
 
@@ -55,8 +51,8 @@ new ItdClient();                                                 // только
 | Разовый скрипт, токен под рукой | `auth: '<accessToken>'` |
 | Аккаунт есть, вход удобно сделать руками в браузере | [токены из DevTools](#токены-из-браузера) |
 | Долгоживущий процесс, вход уже был | [`storage`](#хранение-сессии) |
-| Токен выдаёт ваш backend, vault или другое приложение | [`auth: { getToken }`](#токен-из-внешнего-источника) |
-| Автоматический вход по email и паролю в Node | [`@itd-api/turnstile`](#node-браузер-добывает-токен-сам) |
+| Токен выдаёт серверное приложение, хранилище секретов или другой процесс | [`auth: { getToken }`](#токен-из-внешнего-источника) |
+| Автоматический вход по email и паролю в Node | [`@itd-api/captcha`](#node-браузер-добывает-токен-сам) — решает оба провайдера |
 
 ## Токены из браузера
 
@@ -90,7 +86,7 @@ const { authenticated, user } = await itd.auth.check();
 console.log(authenticated ? `Вошли как @${user?.username}` : 'Токен не подошёл');
 ```
 
-Есть только refresh-токен? Access token клиент добудет сам:
+Есть только refresh token? Access token клиент получит сам:
 
 ```ts
 const itd = new ItdClient({ storage: new FileTokenStorage('./.itd-session.json') });
@@ -112,11 +108,11 @@ await itd.auth.refresh();
 
 В браузере передавать refresh-токен строкой бессмысленно: cookie помечена `HttpOnly`,
 выставить её из JavaScript нельзя, и продление там работает только на той, что поставил
-сам сервер вашему origin.
+сам сервер для домена приложения.
 
 ## Токен из внешнего источника
 
-Если токен добывает и обновляет кто-то другой — ваш backend, secret manager, соседний
+Если токен добывает и обновляет кто-то другой — серверное приложение, хранилище секретов, соседний
 процесс, — отдайте клиенту функцию. Её спрашивают перед каждым запросом, поэтому источник
 сам решает, когда обновлять значение:
 
@@ -128,75 +124,95 @@ new ItdClient({ auth: { getToken: () => vault.read() } });
 
 ## Вход по email и паролю
 
-### Почему нужен Turnstile
+### Почему нужна капча
 
-`POST /api/v1/auth/sign-in`, `/sign-up` и `/forgot-password` требуют поле `turnstileToken` —
-без него сервер отвечает `422`. Это капча Cloudflare Turnstile: токен выдаёт только её
-виджет, загруженный в браузере на домене итд.com. Программно «сгенерировать» его нельзя —
-проверку проходит браузер, а сервер потом сверяет результат с Cloudflare.
+`POST /api/v1/auth/sign-in`, `/sign-up` и `/forgot-password` требуют одноразовое
+подтверждение капчи. `GET /api/v1/auth/captcha/provider` сообщает активный вариант:
+провайдера (`itd` или `cloudflare`) и поле запроса, в котором сервер ждёт токен. И то, и
+другое сервер вправе сменить, поэтому автологин спрашивает его перед каждой попыткой входа
+и кладёт токен ровно в названное поле.
 
-Отсюда и устройство библиотеки: `itd-api` — клиент API, он не открывает браузеров и не
-решает капчу. Он лишь просит токен у вас, а способ его получить вы выбираете сами. Отсюда же
-и отдельный пакет `@itd-api/turnstile`: Playwright весит десятки мегабайт и нужен далеко не
-всем, поэтому в зависимостях основного пакета ему не место.
+Основной пакет принимает готовый токен, но не запускает браузер. `@itd-api/captcha` решает
+оба виджета — собственный ИТД и Cloudflare Turnstile — и подключается отдельно.
 
 Капча нужна **только в момент входа**. Продление сессии, любой обычный запрос и события
 её не требуют, а [сохранённая сессия](#хранение-сессии) или
 [токены из браузера](#токены-из-браузера) обходятся без неё вовсе.
 
 Токен одноразовый и живёт несколько минут, поэтому клиент принимает **функцию** его
-получения (`getTurnstileToken`) и спрашивает свежий перед каждой попыткой входа. Готовая
-строка `turnstileToken` тоже принимается, но годится ровно на один вход.
+получения — `captcha.getToken` — и зовёт её перед каждой попыткой входа, передавая имя
+провайдера. Готовый `captcha.token` тоже принимается, но годится ровно на один вход.
 
 ### Node: браузер добывает токен сам
 
 ```bash
-npm i @itd-api/turnstile patchright
+npm i @itd-api/captcha patchright
 npx patchright install chromium
 ```
 
 ```ts
 import { ItdClient } from 'itd-api';
 import { FileTokenStorage } from 'itd-api/node';
-import { createTurnstileSolver } from '@itd-api/turnstile';
+import { createCaptchaSolver } from '@itd-api/captcha';
 
 const itd = new ItdClient({
   storage: new FileTokenStorage('./.itd-session.json'),
   auth: {
     email: process.env.ITD_EMAIL!,
     password: process.env.ITD_PASSWORD!,
-    getTurnstileToken: createTurnstileSolver(),
+    // SDK читает активного провайдера и просит решить именно его виджет.
+    captcha: createCaptchaSolver(),
   },
 });
 ```
 
-Пакет не заходит на сайт: навигация на итд.com перехватывается, и виджет рисуется на
-подставной странице — origin при этом настоящий, иначе Cloudflare отказал бы в проверке.
+Пакет не заходит на сайт: навигация на итд.com перехватывается, и виджет отображается на
+подставной странице с доменом итд.com.
 Пароль в браузер не попадает: форма входа не участвует, вход выполняет сам `itd-api`.
 Со `storage` браузер понадобится только при первом запуске. Подробности, работа на сервере
-без графической оболочки и Docker — в [документации пакета](/packages/turnstile).
+без графической оболочки и Docker — в [документации пакета](/packages/captcha).
 
 Драйвер браузера берётся тот, что установлен: `patchright`, `playwright` или
 `playwright-core`. Рабочие связки перечислены в разделе
-[Совместимость](/packages/turnstile#совместимость).
+[Совместимость](/packages/captcha#совместимость).
 
 > [!NOTE]
-> Нарисовать виджет на собственной странице не выйдет: ключ `TURNSTILE_SITE_KEY` привязан
-> к домену итд.com, и на чужом origin Cloudflare отвечает ошибкой `110200`. Экспорт ключа
-> пригодится только коду, который выполняется на самом итд.com, — например расширению
-> браузера. Всем остальным остаются токены из браузера, сохранённая сессия или
-> `@itd-api/turnstile`.
+> Нарисовать виджет на собственной странице не выйдет: ключи виджетов привязаны к домену
+> итд.com, и на другом домене проверка завершается ошибкой (Cloudflare — кодом `110200`).
+> Экспорт `TURNSTILE_SITE_KEY` пригодится только коду, который выполняется на самом
+> итд.com, — например расширению браузера. Всем остальным остаются токены из браузера,
+> сохранённая сессия или `@itd-api/captcha`.
 
 ### Свой источник токена
 
-`getTurnstileToken` — обычная функция, возвращающая строку. Подойдёт любой сервис решения
-капчи, собственный headless-браузер или ручной ввод:
+`getToken` — обычная функция: получает имя провайдера, возвращает строку токена. Подойдёт
+сервис решения, собственный браузер без интерфейса или ручной ввод:
 
 ```ts
+import { CaptchaType } from 'itd-api';
+
 new ItdClient({
-  auth: { email, password, getTurnstileToken: () => captchaSolver.solve() },
+  auth: {
+    email,
+    password,
+    captcha: {
+      getToken: (type) =>
+        type === CaptchaType.Itd ? itdCaptchaSolver.solve() : cloudflareSolver.solve(),
+    },
+  },
 });
 ```
+
+Если провайдер известен заранее, назовите его — тогда SDK не станет спрашивать сервер перед
+каждым входом:
+
+```ts
+captcha: { type: CaptchaType.Cloudflare, getToken: () => cloudflareSolver.solve() }
+```
+
+При явном `type` поле запроса берётся из умолчаний SDK. Если сервер его переименовал,
+укажите имя сами: `captcha: { type, getToken, field: 'c7f2' }`. При `CaptchaChoice.Auto`
+(значение по умолчанию) этого не требуется — поле называет сам сервер.
 
 ### Если сервер потребует код из письма
 
@@ -205,16 +221,19 @@ new ItdClient({
 Используйте методы с `getOtp`:
 
 ```ts
+const { provider, field } = await itd.auth.captchaProvider();
+const captcha = { type: provider, token: await solveCaptcha(provider), field };
+
 await itd.auth.signInWithOtp({
   email,
   password,
-  turnstileToken,
+  captcha,
   getOtp: () => rl.question('Код из письма: '),
 });
 
 await itd.auth.resetPasswordWithOtp({
   email,
-  turnstileToken,
+  captcha,
   newPassword,
   getOtp: () => rl.question('Код из письма: '),
 });
@@ -301,8 +320,8 @@ itd.on('authError', ({ error }) => {
 
 | Что видно | Причина | Что делать |
 |---|---|---|
-| `ItdConfigError` «требует токен капчи» | вход по паролю без `turnstileToken` и без `getTurnstileToken` | передать источник токена или войти [токенами из браузера](#токены-из-браузера) |
-| `422` на `signIn` | токен капчи просрочен или уже использован | передавать `getTurnstileToken` функцией, а не готовой строкой |
+| `ItdConfigError` о капче ИТД или Turnstile | нет источника для выбранного сервером провайдера | передать функцию получения токена или войти [токенами из браузера](#токены-из-браузера) |
+| `422` на `signIn` | токен капчи просрочен или уже использован | передавать функцию получения свежего токена, а не готовую строку |
 | `{ status: 'otp_required' }` | сервер требует код из письма | `signInWithOtp()` |
 | `SESSION_EXPIRED` | продлевать нечем: нет ни cookie `is_auth`, ни refresh-токена | войти заново или передать `refreshToken` |
 | `REFRESH_TOKEN_MISSING` | refresh-токен не дошёл до сервера | сохранять и восстанавливать cookie вместе с сессией — это делает любое штатное хранилище |
@@ -324,7 +343,7 @@ await itd.auth.revokeOtherSessions();
 
 ## Частые вопросы
 
-**Нужен ли Turnstile при каждом запуске?** Нет. Только при входе по паролю. Со `storage`
+**Нужна ли капча при каждом запуске?** Нет. Только при входе по паролю. Со `storage`
 вход происходит один раз, дальше сессия продлевается сама.
 
 **Можно ли обойтись без браузера совсем?** Да: один раз скопируйте
@@ -344,23 +363,29 @@ cookie, которую JavaScript не видит. Метод отвечает �
 ## Примеры
 
 - [`examples/bot-with-session.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/authentication/examples/bot-with-session.mjs) — ручной токен
-  Turnstile при первом входе и сохранение сессии.
-- [`examples/turnstile-login.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/authentication/examples/turnstile-login.mjs) — автоматическое
-  получение Turnstile через браузер.
+  активного провайдера капчи при первом входе и сохранение сессии.
+- [`examples/captcha-login.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/authentication/examples/captcha-login.mjs) — автоматическое
+  получение токена капчи через браузер (оба провайдера).
 - [`examples/browser-tokens.mjs`](https://github.com/KiowDev/itd-api/blob/main/guides/authentication/examples/browser-tokens.mjs) — сессия из токенов,
   скопированных в DevTools; капча не участвует.
+- [`examples/qr-login.html`](https://github.com/KiowDev/itd-api/blob/main/guides/authentication/examples/qr-login.html) —
+  QR-вход в браузере через `streamQrLogin()` с переходом на опрос. Запускается вместе с
+  локальным обратным прокси; капча при необходимости решается на нём через `@itd-api/captcha`.
 
 Запуск из корня:
 
 ```bash
-ITD_EMAIL=you@example.com ITD_PASSWORD=secret ITD_TURNSTILE=... \
+ITD_EMAIL=you@example.com ITD_PASSWORD=secret ITD_CAPTCHA=... \
   node guides/authentication/examples/bot-with-session.mjs
 
 ITD_EMAIL=you@example.com ITD_PASSWORD=secret \
-  node guides/authentication/examples/turnstile-login.mjs
+  node guides/authentication/examples/captcha-login.mjs
 
 ITD_ACCESS_TOKEN=eyJ... ITD_REFRESH_TOKEN=... \
   node guides/authentication/examples/browser-tokens.mjs
+
+npx patchright install chromium # один раз
+npm run example:qr
 ```
 
 ## Связанные разделы
@@ -369,4 +394,4 @@ ITD_ACCESS_TOKEN=eyJ... ITD_REFRESH_TOKEN=... \
 - [Методы `itd.auth`](../reference/auth.md)
 - [Опции клиента](../reference/client.md#опции-конструктора)
 - [Несколько аккаунтов](../multi-accounts/)
-- [`@itd-api/turnstile`](/packages/turnstile)
+- [`@itd-api/captcha`](/packages/captcha)

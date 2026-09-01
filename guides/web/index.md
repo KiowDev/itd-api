@@ -67,7 +67,7 @@ features:
     linkText: Настроить события
   - icon: +
     title: Расширяемая архитектура
-    details: Подключайте cache, hydrate, crypto, proxy и Turnstile или создавайте собственные расширения поверх публичного API.
+    details: Подключайте пакеты кэша, моделей, шифрования, прокси и капчи или создавайте собственные расширения поверх публичного API.
     link: /packages/
     linkText: Посмотреть пакеты
 ---
@@ -99,8 +99,8 @@ console.log(`@${me.username}: ${me.followersCount}`);</code></pre>
       вынесены в небольшие самостоятельные пакеты.
     </p>
     <div class="package-grid">
-      <a class="package-card" href="./packages/turnstile">
-        <code>@itd-api/turnstile</code>
+      <a class="package-card" href="./packages/captcha">
+        <code>@itd-api/captcha</code>
         <p>Токен капчи для входа по логину и паролю — через локальный браузер.</p>
       </a>
       <a class="package-card" href="./packages/proxy">

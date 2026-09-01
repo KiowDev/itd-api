@@ -180,7 +180,9 @@ function assertAccountsActive(accounts: ItdAccounts, action: string): void {
  * await accounts.restore();
  *
  * if (!accounts.has('kiow')) {
- *   accounts.addAccount('kiow', { auth: { email, password, getTurnstileToken } });
+ *   accounts.addAccount('kiow', {
+ *     auth: { email, password, captcha: createCaptchaSolver() },
+ *   });
  * }
  *
  * await accounts.account('kiow').posts.create({ content: 'привет' });
@@ -282,7 +284,9 @@ export class ItdAccounts {
    *
    * @example
    * ```ts
-   * accounts.addAccount('bot', { auth: { email, password, getTurnstileToken } });
+   * accounts.addAccount('bot', {
+   *   auth: { email, password, captcha: createCaptchaSolver() },
+   * });
    * accounts.addAccount('reader', { auth: '<accessToken>' });
    * accounts.addAccount('через-прокси', { fetch: proxyFetch('socks5://…') });
    * ```

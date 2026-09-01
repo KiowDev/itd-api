@@ -21,7 +21,7 @@
 
 | Пакет | Назначение |
 |---|---|
-| [`@itd-api/turnstile`](./generated/turnstile/) | получение Turnstile-токена в локальном браузере |
+| [`@itd-api/captcha`](./generated/captcha/) | получение токена капчи (ИТД и Turnstile) в локальном браузере |
 | [`@itd-api/proxy`](./generated/proxy/) | прокси-транспорт для HTTP и WebSocket |
 | [`@itd-api/cache`](./generated/cache/) | кэширование и дедупликация запросов |
 | [`@itd-api/hydrate`](./generated/hydrate/) | методы действий на моделях API |

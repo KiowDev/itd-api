@@ -1,5 +1,5 @@
 import type { Browser, DriverModule, LaunchOptions } from './driver.js';
-import { TurnstileError, TurnstileFailure } from './errors.js';
+import { CaptchaError, CaptchaFailure } from './errors.js';
 
 /**
  * Аргументы запуска Chromium.
@@ -61,8 +61,8 @@ async function loadDriver(requested?: string): Promise<{ driver: string; module:
     }
   }
 
-  throw new TurnstileError(
-    TurnstileFailure.DriverMissing,
+  throw new CaptchaError(
+    CaptchaFailure.DriverMissing,
     requested
       ? `Драйвер ${requested} не установлен.`
       : 'Не найден драйвер браузера. Установите его командой: npm i patchright && npx patchright install chromium. ' +
@@ -136,10 +136,9 @@ export function resolveLaunchOptions(options: BrowserOptions, driver = ''): Laun
 /**
  * Поднимает браузер по настройкам.
  *
- * Тем же путём, что и {@link solveTurnstile}: те же флаги, тот же порядок драйверов.
- * Пригодится, чтобы поднять браузер один раз на несколько токенов и передать его
- * в `browser`, — и чтобы проверять связки драйвера и сборки ровно в том виде,
- * в каком их поднимает пакет.
+ * Тем же путём, что и солверы: те же флаги, тот же порядок драйверов. Пригодится, чтобы
+ * поднять браузер один раз на несколько токенов и передать его в `browser`, — и чтобы
+ * проверять связки драйвера и сборки ровно в том виде, в каком их поднимает пакет.
  */
 export async function launchBrowser(options: BrowserOptions): Promise<Browser> {
   if (options.launch) return options.launch();
@@ -162,8 +161,8 @@ export async function launchBrowser(options: BrowserOptions): Promise<Browser> {
         ? ' Если это сервер без графической оболочки, запустите процесс через xvfb-run -a.'
         : '';
 
-    throw new TurnstileError(
-      TurnstileFailure.LaunchFailed,
+    throw new CaptchaError(
+      CaptchaFailure.LaunchFailed,
       `Не удалось запустить браузер: ${error instanceof Error ? error.message : String(error)}.${hint}`,
     );
   }

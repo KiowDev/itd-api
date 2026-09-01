@@ -14,6 +14,10 @@ export interface ClientConnection {
   readonly fetch: typeof fetch;
   readonly clock: ItdClock;
   readonly logger: Logger | undefined;
+  /** Терминальная отмена владельца соединения. @internal */
+  readonly signal?: AbortSignal | undefined;
+  /** Проверяет, что владелец соединения ещё принимает новые операции. @internal */
+  readonly assertActive?: ((action: string) => void) | undefined;
 
   /** Заголовки платформы и сервиса без Bearer-токена. */
   baseHeaders(url: string): Promise<Headers>;

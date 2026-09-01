@@ -1,13 +1,13 @@
 {
-  "name": "@itd-api/turnstile",
+  "name": "@itd-api/captcha",
   "version": "0.1.0",
-  "description": "Получение токена Cloudflare Turnstile для входа в itd-api через локальный браузер",
+  "description": "Токен капчи (собственная ИТД или Cloudflare Turnstile) для входа в itd-api через локальный браузер",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KiowDev/itd-api.git",
-    "directory": "packages/turnstile"
+    "directory": "packages/captcha"
   },
-  "homepage": "https://kiowdev.github.io/itd-api/packages/turnstile",
+  "homepage": "https://kiowdev.github.io/itd-api/packages/captcha",
   "bugs": {
     "url": "https://github.com/KiowDev/itd-api/issues"
   },
@@ -16,10 +16,11 @@
     "itd",
     "итд",
     "itd-api",
+    "captcha",
     "turnstile",
     "cloudflare",
     "playwright",
-    "captcha"
+    "patchright"
   ],
   "license": "MIT",
   "type": "module",

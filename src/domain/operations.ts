@@ -29,6 +29,7 @@ function freezeOperations<const T extends Record<string, ItdOperationDefinition>
  */
 export const OPERATIONS = freezeOperations({
   'auth.check': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'auth.captchaProvider': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'auth' },
   'auth.signUp': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
   'auth.signIn': { method: 'POST', retrySafety: RetrySafety.Safe, bucket: 'auth' },
   'auth.verifyOtp': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
@@ -45,6 +46,12 @@ export const OPERATIONS = freezeOperations({
     retrySafety: RetrySafety.Unsafe,
     bucket: 'auth',
   },
+  'auth.qrStart': {
+    method: 'POST',
+    retrySafety: RetrySafety.Unsafe,
+    bucket: 'auth.qrStart',
+  },
+  'auth.qrClaim': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth.qrClaim' },
 
   'users.me': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'users' },
   'users.updateMe': {

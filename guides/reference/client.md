@@ -181,8 +181,14 @@ interface ItdClientOptions {
 interface CredentialsAuth {
   email: string;
   password: string;
-  turnstileToken?: string;
-  getTurnstileToken?: () => string | Promise<string>;
+  captcha?: CaptchaOptions;
+}
+
+interface CaptchaOptions {
+  type?: CaptchaChoice;       // 'auto' (по умолчанию) | 'itd' | 'cloudflare'
+  token?: string;             // разовый токен
+  getToken?: (type: CaptchaType) => string | Promise<string>;
+  field?: CaptchaField;       // только при явном type
 }
 
 type AuthInput =

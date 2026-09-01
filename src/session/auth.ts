@@ -14,7 +14,14 @@ import type { Logger } from '../core/options.js';
 import { createDeviceId } from '../core/runtime.js';
 import { isRecord, requireOptionalBoolean } from '../core/validate.js';
 import type { UserId } from '../models/common.js';
-import { AUTH_REFRESH, AUTH_SIGN_IN, SignInStatus } from '../operations/auth.js';
+import {
+  AUTH_CAPTCHA_PROVIDER,
+  AUTH_REFRESH,
+  AUTH_SIGN_IN,
+  type CaptchaProvider,
+  SignInStatus,
+} from '../operations/auth.js';
+import { readCaptchaProvider, resolveCaptchaBody, validateCaptchaOptions } from './captcha.js';
 import { readTokenMetadata, type TokenMetadata } from './jwt.js';
 import type { AuthInput, CredentialsAuth, SessionOptions } from './options.js';
 import { copySession, type ItdSession, MemoryTokenStorage, type TokenStorage } from './storage.js';
@@ -94,11 +101,10 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
   }
 
   if ('email' in auth || 'password' in auth) {
-    const { email, password, turnstileToken, getTurnstileToken } = auth as {
+    const { email, password, captcha } = auth as {
       email?: unknown;
       password?: unknown;
-      turnstileToken?: unknown;
-      getTurnstileToken?: unknown;
+      captcha?: unknown;
     };
     if (typeof email !== 'string' || email.trim() === '') {
       throw new ItdConfigError('auth.email должен быть непустой строкой');
@@ -106,19 +112,12 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
     if (typeof password !== 'string' || password === '') {
       throw new ItdConfigError('auth.password должен быть непустой строкой');
     }
-    if (getTurnstileToken !== undefined && typeof getTurnstileToken !== 'function') {
-      throw new ItdConfigError('auth.getTurnstileToken должен быть функцией');
-    }
-    if (
-      turnstileToken !== undefined &&
-      (typeof turnstileToken !== 'string' || turnstileToken.trim() === '')
-    ) {
-      throw new ItdConfigError('auth.turnstileToken должен быть непустой строкой');
-    }
 
     // Отсутствие капчи — не ошибка конфигурации: сессия может быть восстановлена из
     // хранилища, и до входа по паролю дело вообще не дойдёт. Ошибка возникнет в момент
     // входа, где её текст может объяснить, что именно нужно сделать.
+    validateCaptchaOptions(captcha);
+
     return { ...auth };
   }
 
@@ -187,6 +186,7 @@ export function createItdAuth(options: SessionOptions, deps: AuthProviderDeps): 
 
 /** Пути эндпоинтов авторизации. */
 export const AUTH_PATHS = {
+  captchaProvider: '/api/v1/auth/captcha/provider',
   signUp: '/api/v1/auth/sign-up',
   signIn: '/api/v1/auth/sign-in',
   verifyOtp: '/api/v1/auth/verify-otp',
@@ -197,6 +197,9 @@ export const AUTH_PATHS = {
   resetPassword: '/api/v1/auth/reset-password',
   changePassword: '/api/v1/auth/change-password',
   sessions: '/api/v1/auth/sessions',
+  qrStart: '/api/v1/auth/qr/start',
+  qrClaim: '/api/v1/auth/qr/claim',
+  qrStream: '/api/v1/auth/qr/stream',
 } as const;
 
 /**
@@ -207,14 +210,15 @@ export const AUTH_PATHS = {
  *
  * Ключ привязан к домену: на чужом origin Cloudflare отказывает виджету с кодом `110200`.
  * Поэтому отрисовать его может только код, выполняемый на самом итд.com. Остальным
- * подходит `@itd-api/turnstile`, готовый токен из другого источника или вовсе вход
+ * подходит `@itd-api/captcha`, готовый токен из другого источника или вовсе вход
  * без капчи — по сохранённой сессии либо по токенам, взятым в браузере.
  *
  * @example
  * ```ts
  * turnstile.render('#captcha', {
  *   sitekey: TURNSTILE_SITE_KEY,
- *   callback: (turnstileToken) => itd.auth.signIn({ email, password, turnstileToken }),
+ *   callback: (token) =>
+ *     itd.auth.signIn({ email, password, captcha: { type: CaptchaType.Cloudflare, token } }),
  * });
  * ```
  */
@@ -787,6 +791,24 @@ export class AuthManager implements AuthProvider {
     expectedRevision = this.#authEpoch,
     cookies?: CookieJar,
   ): Promise<boolean> {
+    return this.#storeAccessToken(accessToken, expectedRevision, cookies, false);
+  }
+
+  /** Атомарно принимает токен и cookie завершённого входа как новую сессию. @internal */
+  async commitAuthFlow(
+    accessToken: string,
+    cookies: CookieJar,
+    expectedRevision = this.#authEpoch,
+  ): Promise<boolean> {
+    return this.#storeAccessToken(accessToken, expectedRevision, cookies, true);
+  }
+
+  async #storeAccessToken(
+    accessToken: string,
+    expectedRevision: number,
+    cookies: CookieJar | undefined,
+    replaceSession: boolean,
+  ): Promise<boolean> {
     this.#assertActive();
     if (typeof accessToken !== 'string' || accessToken.trim() === '') {
       throw new ItdConfigError('accessToken должен быть непустой строкой');
@@ -798,7 +820,7 @@ export class AuthManager implements AuthProvider {
     this.#invalidateInFlight();
     this.#transitionAuth(accessToken);
     const saved = this.#saveSession({
-      ...(this.#session ?? {}),
+      ...(replaceSession ? {} : (this.#session ?? {})),
       accessToken,
       obtainedAt: this.#config.clock.now(),
     });
@@ -1110,38 +1132,28 @@ export class AuthManager implements AuthProvider {
     return promise;
   }
 
-  /**
-   * Берёт токен капчи для входа.
-   *
-   * `getTurnstileToken` приоритетнее готовой строки: токен Turnstile одноразовый и живёт
-   * несколько минут, поэтому при повторном входе через сутки годится только свежий.
-   */
-  async #resolveTurnstileToken(credentials: CredentialsAuth): Promise<string> {
-    if (credentials.getTurnstileToken) {
-      const token = await credentials.getTurnstileToken();
-      if (token) return token;
-    }
+  /** Спрашивает у сервера активного провайдера и поле, в котором он ждёт токен. */
+  async #resolveCaptchaProvider(): Promise<CaptchaProvider> {
+    const provider: unknown = await this.#http.execute(AUTH_CAPTCHA_PROVIDER, {
+      path: AUTH_PATHS.captchaProvider,
+      skipAuth: true,
+      skipAuthRefresh: true,
+    });
 
-    if (credentials.turnstileToken) return credentials.turnstileToken;
-
-    throw new ItdConfigError(
-      'Вход по email и паролю требует токен капчи Cloudflare Turnstile: без него сервер ' +
-        'отвечает 422. Передайте auth.getTurnstileToken (источник свежего токена) либо ' +
-        'разовый auth.turnstileToken. Ключ виджета — TURNSTILE_SITE_KEY. В Node токен умеет ' +
-        'добывать отдельный пакет: npm i @itd-api/turnstile, затем ' +
-        'getTurnstileToken: createTurnstileSolver().',
-    );
+    return readCaptchaProvider(provider);
   }
 
   async #performSignIn(credentials: CredentialsAuth, revision: number): Promise<string | null> {
-    const turnstileToken = await this.#resolveTurnstileToken(credentials);
+    const captcha = await resolveCaptchaBody(credentials.captcha, () =>
+      this.#resolveCaptchaProvider(),
+    );
     const flowCookies = new CookieJar();
 
     // Через общий pipeline: плагины, повторы и очередь сохраняются, а слой авторизации
     // пропускается, потому что токена ещё нет.
     const result = await this.#http.execute(AUTH_SIGN_IN, {
       path: AUTH_PATHS.signIn,
-      body: { email: credentials.email, password: credentials.password, turnstileToken },
+      body: { email: credentials.email, password: credentials.password, ...captcha },
       skipAuth: true,
       skipAuthRefresh: true,
       cookieJar: flowCookies,

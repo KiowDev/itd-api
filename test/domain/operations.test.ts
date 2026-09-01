@@ -32,6 +32,9 @@ describe('каталог операций', () => {
     expect(operationMethod('posts.get')).toBe('GET');
     expect(operationMethod('comments.update')).toBe('PATCH');
     expect(operationMethod('auth.revokeSession')).toBe('DELETE');
+    expect(operationMethod('auth.captchaProvider')).toBe('GET');
+    expect(operationMethod('auth.qrStart')).toBe('POST');
+    expect(operationMethod('auth.qrClaim')).toBe('POST');
   });
 
   it('служит единым источником retry safety', () => {
@@ -39,6 +42,8 @@ describe('каталог операций', () => {
     expect(operationRetrySafety('users.updateMe')).toBe(RetrySafety.Idempotent);
     expect(operationRetrySafety('auth.signIn')).toBe(RetrySafety.Safe);
     expect(operationRetrySafety('auth.refresh')).toBe(RetrySafety.Unsafe);
+    expect(operationRetrySafety('auth.qrStart')).toBe(RetrySafety.Unsafe);
+    expect(operationRetrySafety('auth.qrClaim')).toBe(RetrySafety.Unsafe);
     expect(operationRetrySafety('posts.create')).toBe(RetrySafety.Unsafe);
   });
 
@@ -91,6 +96,14 @@ describe('карта серверных счётчиков частоты', () =
     expect(operationBucket('events.notifications.poll.unread')).toBe(
       operationBucket('notifications.count'),
     );
+  });
+
+  it('разводит измеренные счётчики QR-входа', () => {
+    expect(operationBucket('auth.captchaProvider')).toBe('auth');
+    expect(operationBucket('auth.qrStart')).toBe('auth.qrStart');
+    expect(operationBucket('auth.qrClaim')).toBe('auth.qrClaim');
+    expect(BUCKET_LIMITS[operationBucket('auth.qrStart')]).toBe(40);
+    expect(BUCKET_LIMITS[operationBucket('auth.qrClaim')]).toBe(300);
   });
 
   it('разделяет измеренные счётчики доставки магазина', () => {

@@ -13,7 +13,7 @@ import type { SessionOptions } from './session/options.js';
  * @example
  * ```ts
  * const itd = new ItdClient({
- *   auth: { email, password, getTurnstileToken },   // SessionOptions
+ *   auth: { email, password, captcha: createCaptchaSolver() }, // SessionOptions
  *   rateLimit: { concurrency: 4, rps: 8 },          // RuntimeOptions
  * });
  * ```

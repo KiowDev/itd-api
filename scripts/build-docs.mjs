@@ -67,10 +67,10 @@ const builds = [
     out: 'guides/web/api/generated/proxy',
   },
   {
-    name: '@itd-api/turnstile',
-    entryPoint: 'packages/turnstile/src/index.ts',
-    tsconfig: 'packages/turnstile/tsconfig.json',
-    out: 'guides/web/api/generated/turnstile',
+    name: '@itd-api/captcha',
+    entryPoint: 'packages/captcha/src/index.ts',
+    tsconfig: 'packages/captcha/tsconfig.json',
+    out: 'guides/web/api/generated/captcha',
     intentionallyNotExported: ['Mouse', 'ElementHandle', 'Route'],
   },
 ];

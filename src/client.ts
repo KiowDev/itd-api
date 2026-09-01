@@ -105,8 +105,8 @@ export function createManagedClient(
  * const itd = new ItdClient({
  *   // `auth` не обязателен: когда хранилище уже содержит сессию, токен берётся оттуда,
  *   // а истёкший продлевается сам. Здесь он нужен на первый запуск.
- *   // Вход по паролю требует токена капчи — см. AuthInput и TURNSTILE_SITE_KEY.
- *   auth: { email, password, getTurnstileToken },
+ *   // Вход по паролю требует токена капчи — см. CaptchaOptions.
+ *   auth: { email, password, captcha: createCaptchaSolver() },
  *   storage: new FileTokenStorage('./.itd-session.json'),
  *   rateLimit: { concurrency: 4, rps: 8 },
  * });
@@ -129,7 +129,10 @@ export class ItdClient {
 
   /** Авторизация, сессии и пароли. */
   get auth(): AuthResource {
-    this.#auth ??= new AuthResource(this.#runtime.http, { auth: this.#runtime.auth });
+    this.#auth ??= new AuthResource(this.#runtime.http, {
+      auth: this.#runtime.auth,
+      connection: this.#runtime.connection(),
+    });
     return this.#auth;
   }
 

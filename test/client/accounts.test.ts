@@ -901,9 +901,12 @@ describe('своё хранилище', () => {
 
 describe('события', () => {
   it('ретранслирует события авторизации с именем аккаунта', async () => {
-    const { accounts } = makeAccounts([json({ accessToken: makeJwt({ sub: 'user-1' }) })]);
+    const { accounts } = makeAccounts([
+      json({ provider: 'cloudflare', field: 'turnstileToken' }),
+      json({ accessToken: makeJwt({ sub: 'user-1' }) }),
+    ]);
     accounts.addAccount('kiow', {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
     });
 
     const signIn = vi.fn();

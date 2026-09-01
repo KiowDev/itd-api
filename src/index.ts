@@ -364,12 +364,26 @@ export type { ItdClientOptions } from './options.js';
 export type {
   AuthResource,
   CaptchaCredentials,
+  CaptchaProvider,
+  CaptchaToken,
   Credentials,
   ForgotPasswordInput,
+  QrLoginClaim,
+  QrLoginClaimInput,
+  QrLoginStart,
+  QrLoginStreamEvent,
+  QrLoginStreamInput,
+  QrLoginStreamListener,
+  QrLoginStreamOptions,
   ResetPasswordInput,
   SignInResult,
 } from './resources/auth.js';
-export { SignInStatus } from './resources/auth.js';
+export {
+  CAPTCHA_FIELDS,
+  QrLoginStatus,
+  QrLoginStreamStatus,
+  SignInStatus,
+} from './resources/auth.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export type {
   FilesResource,
@@ -439,7 +453,12 @@ export {
   type MultiTokenStorageAdapterOptions,
   scopedTokenStorage,
 } from './session/multi-storage.js';
-export type { AuthInput, CredentialsAuth, SessionOptions } from './session/options.js';
+export type {
+  AuthInput,
+  CaptchaOptions,
+  CredentialsAuth,
+  SessionOptions,
+} from './session/options.js';
 // Платформенные хранилища живут в своих точках входа: `FileTokenStorage` требует `node:fs`
 // и потому не может попасть в нейтральный бандл, а Web Storage backend вынесены
 // в `itd-api/web`, чтобы их молчаливый откат в память выбирали осознанно.
@@ -477,6 +496,9 @@ export type { Loose } from './types/enums.js';
 export {
   AccessType,
   AttachmentType,
+  CaptchaChoice,
+  CaptchaField,
+  CaptchaType,
   CommentSort,
   FeedTab,
   IncidentKind,

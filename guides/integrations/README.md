@@ -1,12 +1,12 @@
 # Интеграции
 
 Готовые интеграции добавляют поддержку прокси-серверов и автоматическое получение
-Turnstile-токенов.
+токенов капчи.
 
 | Пакет | Точка подключения |
 |---|---|
 | [`@itd-api/proxy`](/packages/proxy) | `ItdClientOptions.fetch`, `WebSocketTransport.webSocketImpl` |
-| [`@itd-api/turnstile`](/packages/turnstile) | `auth.getTurnstileToken` |
+| [`@itd-api/captcha`](/packages/captcha) | `auth.captcha.getToken` |
 
 ## Браузер и CORS
 
@@ -61,21 +61,24 @@ ITD_TOKEN=<accessToken> ITD_PROXY=socks5://127.0.0.1:1080 \
   node guides/integrations/examples/proxy.mjs
 ```
 
-## Turnstile
+## Капча
 
-`@itd-api/turnstile` получает одноразовый токен капчи и передаёт его механизму входа:
+`@itd-api/captcha` получает одноразовый токен капчи и передаёт его механизму входа. Решает
+оба провайдера, а какой сейчас нужен, определяет SDK:
 
 ```ts
-import { createTurnstileSolver } from '@itd-api/turnstile';
+import { createCaptchaSolver } from '@itd-api/captcha';
 
 const itd = new ItdClient({
   auth: {
     email,
     password,
-    getTurnstileToken: createTurnstileSolver(),
+    captcha: createCaptchaSolver(),
   },
 });
 ```
+
+Свой источник токена подставляется тем же полем: `captcha: { getToken: (type) => … }`.
 
 Капча нужна только самому входу по паролю. Если аккаунт уже открыт в браузере, токены
 проще [скопировать оттуда](../authentication/#токены-из-браузера) — тогда ни этот пакет,
@@ -88,5 +91,5 @@ const itd = new ItdClient({
 
 - [Конфигурация `baseUrl` и `fetch`](../configuration/#baseurl-fetch-и-proxy)
 - [`@itd-api/proxy`](/packages/proxy)
-- [`@itd-api/turnstile`](/packages/turnstile)
+- [`@itd-api/captcha`](/packages/captcha)
 - [Авторизация и сессии](../authentication/)

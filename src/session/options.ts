@@ -1,20 +1,49 @@
+import type { CaptchaChoice, CaptchaField, CaptchaType } from '../types/enums.js';
 import type { TokenStorage } from './storage.js';
+
+/**
+ * Как проходить капчу при входе по логину и паролю.
+ *
+ * Токен одноразовый и живёт несколько минут, поэтому долгоживущему клиенту нужен не готовый
+ * токен, а его источник: {@link CaptchaOptions.getToken} спрашивается перед каждым входом.
+ * В Node источником служит `@itd-api/captcha` — `captcha: createCaptchaSolver()`.
+ */
+export interface CaptchaOptions {
+  /**
+   * Какую капчу решать. По умолчанию `CaptchaChoice.Auto` — провайдера называет сервер.
+   *
+   * Явно названный провайдер экономит запрос `captcha/provider` перед каждым входом, но
+   * перестаёт работать, если сервер переключится на другой виджет.
+   */
+  type?: CaptchaChoice | undefined;
+  /** Разовый токен. Для повторного входа после истечения сессии не подойдёт. */
+  token?: string | undefined;
+  /**
+   * Источник свежего токена. Спрашивается перед каждым входом.
+   *
+   * Получает имя провайдера, чью капчу нужно решить, и возвращает токен.
+   */
+  getToken?: ((type: CaptchaType) => string | Promise<string>) | undefined;
+  /**
+   * Поле тела запроса, в котором сервер ждёт токен.
+   *
+   * Учитывается только при явно названном {@link CaptchaOptions.type}: при
+   * `CaptchaChoice.Auto` поле называет сам сервер, и его слово точнее. Пригодится,
+   * если сервер переименовал поле, а версия SDK об этом ещё не знает.
+   */
+  field?: CaptchaField | undefined;
+}
 
 /**
  * Вход по логину и паролю.
  *
- * Вход требует токен капчи Cloudflare Turnstile, поэтому полностью автоматическим он быть
- * не может: капчу должен решить кто-то снаружи. Токен одноразовый и живёт несколько минут,
- * так что долгоживущему клиенту нужен `getTurnstileToken` — он спрашивается заново перед
- * каждой попыткой входа. Одиночный `turnstileToken` годится для разового скрипта.
+ * Вход требует токен капчи — см. {@link CaptchaOptions}.
  */
 export interface CredentialsAuth {
   email: string;
   password: string;
-  /** Разовый токен капчи. Для повторного входа после истечения сессии не подойдёт. */
-  turnstileToken?: string | undefined;
-  /** Источник свежего токена капчи. Спрашивается перед каждым входом. */
-  getTurnstileToken?: (() => string | Promise<string>) | undefined;
+  /** Как проходить капчу. Без неё вход по паролю не начнётся. */
+  captcha?: CaptchaOptions | undefined;
 }
 
 /**
@@ -31,7 +60,7 @@ export interface CredentialsAuth {
  * ```ts
  * new ItdClient({ auth: '<accessToken>' });                    // разовый вызов
  * new ItdClient({ auth: { accessToken, refreshToken } });      // восстановить сессию
- * new ItdClient({ auth: { email, password, getTurnstileToken } });  // залогиниться самому
+ * new ItdClient({ auth: { email, password, captcha: createCaptchaSolver() } });  // вход по паролю
  * new ItdClient({ auth: { getToken: () => vault.read() } });   // токен из внешнего источника
  * ```
  */

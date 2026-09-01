@@ -2,14 +2,14 @@
  * Бот на Node: вход по логину и паролю, сохранение сессии, публикация с опросом.
  *
  * Запуск:
- *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret ITD_TURNSTILE=... \
+ *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret ITD_CAPTCHA=... \
  *     node guides/authentication/examples/bot-with-session.mjs
  *
- * Вход требует токен капчи Cloudflare Turnstile. Виджет работает только на домене итд.com,
- * поэтому вручную токен добывают там же: DevTools → Network → запрос sign-in на странице
- * входа → поле `turnstileToken` в теле запроса. Он одноразовый и живёт несколько минут.
+ * Активный провайдер капчи меняется на сервере. Одноразовый токен можно взять на итд.com:
+ * DevTools → Network → запрос sign-in на странице входа → поле `token` (капча ИТД) либо
+ * `turnstileToken` (Cloudflare). Передайте его как ITD_CAPTCHA.
  *
- * Возни меньше в соседних примерах: `turnstile-login.mjs` добывает токен сам, а
+ * Возни меньше в соседних примерах: `captcha-login.mjs` добывает токен сам, а
  * `browser-tokens.mjs` вовсе обходится без капчи — берёт готовую сессию из браузера.
  *
  * Дальше сессия сохраняется в `.itd-session.json`, и повторный вход не понадобится:
@@ -53,16 +53,19 @@ async function ensureSignedIn() {
     if (!isItdApiError(error) || error.status !== 401) throw error;
   }
 
-  if (!process.env.ITD_TURNSTILE) {
-    throw new Error('Сохранённая сессия не подошла — нужен новый токен капчи в ITD_TURNSTILE');
+  if (!process.env.ITD_CAPTCHA) {
+    throw new Error('Сохранённая сессия не подошла — нужен свежий токен в ITD_CAPTCHA');
   }
+
+  // Провайдер и поле запроса меняются на сервере, поэтому спрашиваем их перед входом.
+  const { provider, field } = await itd.auth.captchaProvider();
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     await itd.auth.signInWithOtp({
       email: process.env.ITD_EMAIL,
       password: process.env.ITD_PASSWORD,
-      turnstileToken: process.env.ITD_TURNSTILE,
+      captcha: { type: provider, token: process.env.ITD_CAPTCHA, field },
       getOtp: () => rl.question('Код из письма: '),
     });
   } finally {

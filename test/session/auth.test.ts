@@ -15,6 +15,7 @@ import {
   type ItdSession,
   MemoryTokenStorage,
 } from '../../src/session/storage.js';
+import { CaptchaType } from '../../src/types/enums.js';
 import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
@@ -23,8 +24,21 @@ function makeAuth(
   handler: MockHandler | Response[],
   options: ItdClientOptions = {},
   onAccountChange?: () => void,
+  captchaProvider?: unknown,
 ) {
-  const mock = createMockFetch(handler);
+  let handlerCall = 0;
+  const resolve: MockHandler = Array.isArray(handler)
+    ? (_request, index) => {
+        const response = handler[index];
+        if (!response) throw new Error(`мок не готов к вызову №${index + 1}`);
+        return response;
+      }
+    : handler;
+  const mock = createMockFetch((request) =>
+    request.url.endsWith('/captcha/provider')
+      ? json(captchaProvider ?? { provider: 'cloudflare', field: 'turnstileToken' })
+      : resolve(request, handlerCall++),
+  );
   const resolved: ItdClientOptions = {
     baseUrl: 'https://itd.test',
     fetch: mock.fetch,
@@ -211,11 +225,11 @@ describe('получение токена', () => {
 describe('отложенный вход по логину и паролю', () => {
   it('входит при первом обращении за токеном', async () => {
     const { auth, mock } = makeAuth([json({ accessToken: 'new-token' })], {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
     });
 
     expect(await auth.token()).toBe('new-token');
-    expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/sign-in');
+    expect(mock.calls[1]?.url).toBe('https://itd.test/api/v1/auth/sign-in');
   });
 
   it('входит до первого защищённого запроса', async () => {
@@ -224,7 +238,7 @@ describe('отложенный вход по логину и паролю', () =
         request.url.endsWith('/sign-in')
           ? json({ accessToken: 'new-token' })
           : json({ data: { ok: true } }),
-      { auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' } },
+      { auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } } },
     );
 
     await expect(http.request({ method: 'GET', path: '/api/protected' })).resolves.toEqual({
@@ -232,39 +246,40 @@ describe('отложенный вход по логину и паролю', () =
     });
 
     expect(mock.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/api/v1/auth/captcha/provider',
       '/api/v1/auth/sign-in',
       '/api/protected',
     ]);
-    expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer new-token');
+    expect(mock.calls[2]?.headers.get('authorization')).toBe('Bearer new-token');
   });
 
   it('объединяет параллельные входы в один запрос', async () => {
     const { auth, mock } = makeAuth(() => json({ accessToken: 'new-token' }), {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
     });
 
     await Promise.all([auth.token(), auth.token(), auth.token()]);
 
-    expect(mock.callCount).toBe(1);
+    expect(mock.callCount).toBe(2);
   });
 
   it('повторяет idempotent вход при временной транспортной ошибке', async () => {
     const { auth, mock } = makeAuth(
       [json({ error: 'temporary' }, { status: 500 }), json({ accessToken: 'new-token' })],
       {
-        auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+        auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
         retry: { attempts: 2, baseDelay: 0, jitter: 0 },
       },
     );
 
     await expect(auth.token()).resolves.toBe('new-token');
-    expect(mock.callCount).toBe(2);
+    expect(mock.callCount).toBe(3);
   });
 
   it('показывает отложенный вход плагинам', async () => {
     const paths: string[] = [];
     const { auth, config, plugins } = makeAuth([json({ accessToken: 'new-token' })], {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
     });
 
     plugins.add(
@@ -282,13 +297,13 @@ describe('отложенный вход по логину и паролю', () =
 
     await auth.token();
 
-    expect(paths).toEqual(['/api/v1/auth/sign-in']);
+    expect(paths).toEqual(['/api/v1/auth/captcha/provider', '/api/v1/auth/sign-in']);
   });
 
   it('использует единый публичный контракт auth.signIn внутри сессии', async () => {
     const seen: unknown[] = [];
     const { auth, config, plugins } = makeAuth([json({ accessToken: 'new-token' })], {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
     });
     plugins.add(
       {
@@ -311,7 +326,7 @@ describe('отложенный вход по логину и паролю', () =
   it('объясняет, что при запросе OTP автоматический вход невозможен', async () => {
     // Сервер вместо токена просит подтверждение — отвечаем так на любой запрос.
     const { auth } = makeAuth(() => json({ flowToken: 'f' }), {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
     });
 
     const error = await auth.token().catch((e: unknown) => e);
@@ -631,7 +646,7 @@ describe('предварительное обновление токена', () 
           ? json({ accessToken: 'unexpected-sign-in' })
           : json({ data: { ok: true } }),
       {
-        auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+        auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
         clock: fixedClock(now),
       },
     );
@@ -868,7 +883,7 @@ describe('гонка выхода и запоздавшего обновлени
         await gate;
         return json({ accessToken: 'late-sign-in' });
       },
-      { auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' } },
+      { auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } } },
     );
 
     const signingIn = auth.token();
@@ -1030,12 +1045,12 @@ describe('идентификатор устройства', () => {
 describe('капча при входе по паролю', () => {
   it('уходит в теле запроса', async () => {
     const { auth, mock } = makeAuth([json({ accessToken: 't' })], {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'капча' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'капча' } },
     });
 
     await auth.token();
 
-    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
       email: 'a@b.c',
       password: 'p',
       turnstileToken: 'капча',
@@ -1043,26 +1058,150 @@ describe('капча при входе по паролю', () => {
   });
 
   it('спрашивается заново перед каждым входом', async () => {
-    const getTurnstileToken = vi.fn().mockReturnValueOnce('первая').mockReturnValueOnce('вторая');
+    const getToken = vi.fn().mockReturnValueOnce('первая').mockReturnValueOnce('вторая');
     const { auth, mock } = makeAuth(() => json({ accessToken: 't' }), {
-      auth: { email: 'a@b.c', password: 'p', getTurnstileToken },
+      auth: { email: 'a@b.c', password: 'p', captcha: { getToken } },
     });
 
     await auth.token();
     await auth.clear();
     await auth.token();
 
-    expect(JSON.parse(mock.calls[1]?.body ?? '{}').turnstileToken).toBe('вторая');
+    expect(JSON.parse(mock.calls[3]?.body ?? '{}').turnstileToken).toBe('вторая');
+    expect(mock.calls.filter((call) => call.url.endsWith('/captcha/provider'))).toHaveLength(2);
   });
 
-  it('без токена капчи вход не начинается', async () => {
+  it('передаёт источнику провайдера, выбранного сервером', async () => {
+    const getToken = vi.fn().mockResolvedValue('itd-proof');
+    const { auth, mock } = makeAuth(
+      [json({ accessToken: 't' })],
+      { auth: { email: 'a@b.c', password: 'p', captcha: { getToken } } },
+      undefined,
+      { provider: 'itd', field: 'token' },
+    );
+
+    await auth.token();
+
+    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Itd);
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      password: 'p',
+      token: 'itd-proof',
+    });
+  });
+
+  it('кладёт токен в поле, которое назвал сервер', async () => {
+    // Имя поля сервер может сменить как анти-бот-меру: берём его слово, а не свою таблицу.
+    const { auth, mock } = makeAuth(
+      [json({ accessToken: 't' })],
+      { auth: { email: 'a@b.c', password: 'p', captcha: { token: 'капча' } } },
+      undefined,
+      { provider: 'itd', field: 'c7f2' },
+    );
+
+    await auth.token();
+
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      password: 'p',
+      c7f2: 'капча',
+    });
+  });
+
+  it('доверяет источнику решение о незнакомом провайдере', async () => {
+    const getToken = vi.fn().mockResolvedValue('proof');
+    const { auth, mock } = makeAuth(
+      [json({ accessToken: 't' })],
+      { auth: { email: 'a@b.c', password: 'p', captcha: { getToken } } },
+      undefined,
+      { provider: 'hcaptcha', field: 'hToken' },
+    );
+
+    await auth.token();
+
+    expect(getToken).toHaveBeenCalledExactlyOnceWith('hcaptcha');
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}').hToken).toBe('proof');
+  });
+
+  it('останавливается, если сервер не назвал ни провайдера, ни поля', async () => {
+    const getToken = vi.fn();
+    const { auth, mock } = makeAuth(
+      [],
+      { auth: { email: 'a@b.c', password: 'p', captcha: { getToken } } },
+      undefined,
+      { active: true },
+    );
+
+    await expect(auth.token()).rejects.toThrow(/неподдерживаемую конфигурацию капчи/);
+    expect(getToken).not.toHaveBeenCalled();
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('не спрашивает провайдера, когда тип капчи назван явно', async () => {
+    const getToken = vi.fn().mockResolvedValue('itd-proof');
+    const { auth, mock } = makeAuth([json({ accessToken: 't' })], {
+      auth: {
+        email: 'a@b.c',
+        password: 'p',
+        captcha: { type: CaptchaType.Itd, getToken },
+      },
+    });
+
+    await auth.token();
+
+    expect(mock.calls.some((call) => call.url.endsWith('/captcha/provider'))).toBe(false);
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      password: 'p',
+      token: 'itd-proof',
+    });
+  });
+
+  it('при явном типе кладёт токен в указанное поле', async () => {
+    const { auth, mock } = makeAuth([json({ accessToken: 't' })], {
+      auth: {
+        email: 'a@b.c',
+        password: 'p',
+        captcha: { type: CaptchaType.Itd, token: 'капча', field: 'c7f2' },
+      },
+    });
+
+    await auth.token();
+
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}').c7f2).toBe('капча');
+  });
+
+  it('требует поле для незнакомого типа капчи', async () => {
+    const { auth, mock } = makeAuth([], {
+      auth: { email: 'a@b.c', password: 'p', captcha: { type: 'hcaptcha', token: 'капча' } },
+    });
+
+    await expect(auth.token()).rejects.toThrow(/auth\.captcha\.field/);
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('без источника токена вход не начинается и запрос не тратится', async () => {
     const { auth, mock } = makeAuth([], { auth: { email: 'a@b.c', password: 'p' } });
 
     const error = await auth.token().catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ItdConfigError);
-    expect((error as Error).message).toMatch(/Turnstile/);
+    expect((error as Error).message).toMatch(/auth\.captcha\.getToken/);
     expect(mock.callCount).toBe(0);
+  });
+
+  it('проверяет форму блока капчи при создании клиента', () => {
+    const auth = { email: 'a@b.c', password: 'p' };
+
+    expect(() => makeAuth([], { auth: { ...auth, captcha: 'капча' as never } })).toThrow(
+      ItdConfigError,
+    );
+    expect(() => makeAuth([], { auth: { ...auth, captcha: { token: '' } } })).toThrow(
+      ItdConfigError,
+    );
+    expect(() =>
+      makeAuth([], { auth: { ...auth, captcha: { getToken: 'нет' as never } } }),
+    ).toThrow(ItdConfigError);
   });
 });
 
@@ -1162,18 +1301,18 @@ describe('повторный вход после неудачного обнов
   it('входит заново, если есть логин и пароль', async () => {
     const { auth, mock } = makeAuth(
       [json({ code: 'SESSION_EXPIRED' }, { status: 401 }), json({ accessToken: 'after-signin' })],
-      { auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' } },
+      { auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } } },
     );
     // Сессия уже есть, иначе обновление даже не начнётся.
     await auth.setSession({ accessToken: 'old-token', refreshToken: 'r' });
 
     expect(await auth.refresh()).toBe('after-signin');
-    expect(mock.calls[1]?.url).toBe('https://itd.test/api/v1/auth/sign-in');
+    expect(mock.calls[2]?.url).toBe('https://itd.test/api/v1/auth/sign-in');
   });
 
   it('reloginOnRefreshFailure: false отключает повторный вход', async () => {
     const { auth, mock } = makeAuth([json({ code: 'SESSION_EXPIRED' }, { status: 401 })], {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
       reloginOnRefreshFailure: false,
     });
     await auth.setSession({ accessToken: 'old-token', refreshToken: 'r' });
@@ -1413,7 +1552,7 @@ describe('конкурентная инициализация на холодн�
 describe('события', () => {
   it('сообщает о новом токене и о входе', async () => {
     const { auth } = makeAuth([json({ accessToken: 'new-token' })], {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
     });
 
     const tokens = vi.fn();
@@ -1459,7 +1598,7 @@ describe('идентификатор владельца сессии', () => {
     const token = makeJwt({ sub: 'user-2' });
     const storage = new MemoryTokenStorage();
     const { auth } = makeAuth([json({ accessToken: token })], {
-      auth: { email: 'a@b.c', password: 'p', turnstileToken: 'cap' },
+      auth: { email: 'a@b.c', password: 'p', captcha: { token: 'cap' } },
       storage,
     });
 

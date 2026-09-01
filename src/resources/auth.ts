@@ -1,13 +1,18 @@
-import { ItdConfigError } from '../core/errors.js';
+import type { ClientConnection } from '../core/connection.js';
+import type { CookieJar } from '../core/cookies.js';
+import { ItdConfigError, isItdApiError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
 import type { Session } from '../models/account.js';
 import type { AuthState } from '../models/users.js';
 import {
+  AUTH_CAPTCHA_PROVIDER,
   AUTH_CHANGE_PASSWORD,
   AUTH_CHECK,
   AUTH_FORGOT_PASSWORD,
   AUTH_LOGOUT,
+  AUTH_QR_CLAIM,
+  AUTH_QR_START,
   AUTH_RESEND_OTP,
   AUTH_RESET_PASSWORD,
   AUTH_REVOKE_OTHER_SESSIONS,
@@ -16,10 +21,19 @@ import {
   AUTH_SIGN_IN,
   AUTH_SIGN_UP,
   AUTH_VERIFY_OTP,
+  type CaptchaProvider,
+  type CaptchaToken,
+  type QrLoginClaim,
+  type QrLoginStart,
+  QrLoginStatus,
+  type QrLoginStreamEvent,
+  QrLoginStreamStatus,
   type SignInResult,
   SignInStatus,
 } from '../operations/auth.js';
-import { AUTH_PATHS, type AuthManager, type TURNSTILE_SITE_KEY } from '../session/auth.js';
+import { AUTH_PATHS, type AuthManager } from '../session/auth.js';
+import { captchaBody } from '../session/captcha.js';
+import { openQrLoginStream } from '../session/qr-stream.js';
 import { BaseResource } from './base.js';
 
 /** Учётные данные для входа. */
@@ -29,21 +43,47 @@ export interface Credentials {
 }
 
 /**
- * Учётные данные вместе с токеном капчи.
+ * Учётные данные вместе с доказательством капчи.
  *
- * `turnstileToken` обязателен: без него сервер отвечает `VALIDATION_ERROR`, с недействительным —
- * `TURNSTILE_VERIFICATION_FAILED`. Токен даёт виджет Cloudflare Turnstile с ключом
- * {@link TURNSTILE_SITE_KEY}; он одноразовый и живёт несколько минут.
+ * Какой виджет сейчас требует сервер, сообщает {@link AuthResource.captchaProvider};
+ * в Node токен получает `@itd-api/captcha`. Токен одноразовый и живёт несколько минут.
+ *
+ * @example
+ * ```ts
+ * const { provider, field } = await itd.auth.captchaProvider();
+ * const token = await solveCaptcha(provider);
+ *
+ * await itd.auth.signIn({ email, password, captcha: { type: provider, token, field } });
+ * ```
  */
-export interface CaptchaCredentials extends Credentials {
-  turnstileToken: string;
-}
+export type CaptchaCredentials = Credentials & { captcha: CaptchaToken };
 
 /** Запрос письма для сброса пароля. Капча обязательна, как и при входе. */
 export interface ForgotPasswordInput {
   email: string;
-  turnstileToken: string;
+  captcha: CaptchaToken;
 }
+
+/** Секреты QR-сессии и необязательная капча для завершения входа. */
+export interface QrLoginClaimInput {
+  qrId: string;
+  claimToken: string;
+  captcha?: CaptchaToken | undefined;
+}
+
+/** Секреты QR-сессии для потокового наблюдения. */
+export interface QrLoginStreamInput {
+  qrId: string;
+  claimToken: string;
+}
+
+/** Управление временем жизни потокового запроса. */
+export interface QrLoginStreamOptions {
+  signal?: AbortSignal | undefined;
+}
+
+/** Обработчик одного события QR-потока. */
+export type QrLoginStreamListener = (event: QrLoginStreamEvent) => void | Promise<void>;
 
 /**
  * Установка нового пароля.
@@ -58,9 +98,27 @@ export interface ResetPasswordInput {
   newPassword: string;
 }
 
-export type { SignInResult, SignInStatus as SignInStatusValue } from '../operations/auth.js';
-/** Чем закончился вход: сразу токеном или запросом кода подтверждения. */
-export { SignInStatus } from '../operations/auth.js';
+export type {
+  CaptchaProvider,
+  CaptchaToken,
+  QrLoginClaim,
+  QrLoginStart,
+  QrLoginStreamEvent,
+  SignInResult,
+  SignInStatus as SignInStatusValue,
+} from '../operations/auth.js';
+/** Состояния обычного входа и QR-входа. */
+export {
+  CAPTCHA_FIELDS,
+  QrLoginStatus,
+  QrLoginStreamStatus,
+  SignInStatus,
+} from '../operations/auth.js';
+
+interface QrCookieFlow {
+  cookies: CookieJar;
+  expiresAt: number | undefined;
+}
 
 /**
  * Результат входа.
@@ -76,10 +134,44 @@ export { SignInStatus } from '../operations/auth.js';
  */
 export class AuthResource extends BaseResource {
   readonly #auth: AuthManager;
+  readonly #connection: ClientConnection;
+  readonly #qrFlows = new Map<string, QrCookieFlow>();
 
-  constructor(http: HttpClient, deps: { auth: AuthManager }) {
+  constructor(http: HttpClient, deps: { auth: AuthManager; connection: ClientConnection }) {
     super(http);
     this.#auth = deps.auth;
+    this.#connection = deps.connection;
+  }
+
+  #pruneQrFlows(): void {
+    const now = this.#connection.clock.now();
+    for (const [qrId, flow] of this.#qrFlows) {
+      if (flow.expiresAt !== undefined && flow.expiresAt <= now) this.#qrFlows.delete(qrId);
+    }
+  }
+
+  #qrFlow(qrId: string): QrCookieFlow {
+    this.#pruneQrFlows();
+    const existing = this.#qrFlows.get(qrId);
+    if (existing) return existing;
+    const flow = { cookies: this.#auth.createCookieFlow(false), expiresAt: undefined };
+    this.#qrFlows.set(qrId, flow);
+    return flow;
+  }
+
+  #touchQrFlow(flow: QrCookieFlow, expiresIn: number | undefined): void {
+    if (typeof expiresIn !== 'number' || !Number.isFinite(expiresIn)) return;
+    const expiresAt = this.#connection.clock.now() + Math.max(0, expiresIn) * 1_000;
+    flow.expiresAt = flow.expiresAt === undefined ? expiresAt : Math.min(flow.expiresAt, expiresAt);
+  }
+
+  #forgetTerminalQrError(qrId: string, error: unknown): void {
+    if (
+      isItdApiError(error) &&
+      error.hasCode('QR_EXPIRED', 'QR_ALREADY_USED', 'QR_TOKEN_MISMATCH')
+    ) {
+      this.#qrFlows.delete(qrId);
+    }
   }
 
   /**
@@ -95,14 +187,120 @@ export class AuthResource extends BaseResource {
   }
 
   /**
+   * Узнаёт активного провайдера капчи и поле токена.
+   *
+   * Сервер может переключить провайдера или переименовать поле без выпуска новой версии SDK.
+   * Автоматическому входу этот вызов не нужен — клиент делает его сам.
+   */
+  captchaProvider(options: RequestOptions = {}): Promise<CaptchaProvider> {
+    return this.http.execute(AUTH_CAPTCHA_PROVIDER, {
+      path: AUTH_PATHS.captchaProvider,
+      skipAuth: true,
+      skipAuthRefresh: true,
+      ...options,
+    });
+  }
+
+  /** Создаёт короткоживущую сессию QR-входа. */
+  async startQrLogin(options: RequestOptions = {}): Promise<QrLoginStart> {
+    const cookies = this.#auth.createCookieFlow(false);
+    const result = await this.http.execute(AUTH_QR_START, {
+      path: AUTH_PATHS.qrStart,
+      skipAuth: true,
+      skipAuthRefresh: true,
+      cookieJar: cookies,
+      ...options,
+    });
+    if (typeof result.qrId === 'string' && result.qrId !== '') {
+      const flow = { cookies, expiresAt: undefined };
+      this.#touchQrFlow(flow, result.expiresIn);
+      this.#qrFlows.set(result.qrId, flow);
+    }
+    return result;
+  }
+
+  /**
+   * Проверяет QR-сессию и завершает вход после подтверждения на другом устройстве.
+   *
+   * До подтверждения возвращает промежуточный статус. Если сервер потребовал капчу,
+   * повторите вызов с `captcha` — тип берётся из {@link captchaProvider}.
+   * Полученный `accessToken` автоматически сохраняется в клиенте.
+   */
+  async claimQrLogin(
+    input: QrLoginClaimInput,
+    options: RequestOptions = {},
+  ): Promise<QrLoginClaim> {
+    const revision = this.#auth.revision();
+    const flow = this.#qrFlow(input.qrId);
+    try {
+      const { captcha, ...rest } = input;
+      const result = await this.http.execute(AUTH_QR_CLAIM, {
+        path: AUTH_PATHS.qrClaim,
+        body: { ...rest, ...(captcha ? captchaBody(captcha) : {}) },
+        skipAuth: true,
+        skipAuthRefresh: true,
+        cookieJar: flow.cookies,
+        ...options,
+      });
+
+      this.#touchQrFlow(flow, result.expiresIn);
+      if (result.status === QrLoginStatus.Authorized) {
+        await this.#auth.commitAuthFlow(result.accessToken, flow.cookies, revision);
+        this.#qrFlows.delete(input.qrId);
+      } else if (result.status === QrLoginStatus.Rejected) {
+        this.#qrFlows.delete(input.qrId);
+      }
+      return result;
+    } catch (error) {
+      this.#forgetTerminalQrError(input.qrId, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Слушает состояния QR-входа до закрытия ответа или отмены `signal`.
+   *
+   * Событие `approved` означает, что подтверждение завершено: после него вызовите
+   * {@link claimQrLogin}, чтобы получить и сохранить access token.
+   */
+  async streamQrLogin(
+    input: QrLoginStreamInput,
+    onEvent: QrLoginStreamListener,
+    options: QrLoginStreamOptions = {},
+  ): Promise<void> {
+    if (typeof onEvent !== 'function') {
+      throw new ItdConfigError('onEvent QR-потока должен быть функцией');
+    }
+
+    const flow = this.#qrFlow(input.qrId);
+    try {
+      await openQrLoginStream(
+        this.#connection,
+        flow.cookies,
+        input,
+        async (event) => {
+          this.#touchQrFlow(flow, event.expiresIn);
+          if (event.status === QrLoginStreamStatus.Rejected) this.#qrFlows.delete(input.qrId);
+          await onEvent(event);
+        },
+        options.signal,
+      );
+    } catch (error) {
+      this.#forgetTerminalQrError(input.qrId, error);
+      throw error;
+    }
+  }
+
+  /**
    * Регистрирует аккаунт и запускает подтверждение по коду.
    *
    * @returns `flowToken`, который нужно передать в {@link verifyOtp}
    */
   signUp(credentials: CaptchaCredentials, options: RequestOptions = {}): Promise<string> {
+    const { captcha, ...rest } = credentials;
     return this.http.execute(AUTH_SIGN_UP, {
       path: AUTH_PATHS.signUp,
-      body: credentials,
+      body: { ...rest, ...captchaBody(captcha) },
       skipAuth: true,
       skipAuthRefresh: true,
       ...options,
@@ -123,11 +321,12 @@ export class AuthResource extends BaseResource {
     credentials: CaptchaCredentials,
     options: RequestOptions = {},
   ): Promise<SignInResult> {
+    const { captcha, ...rest } = credentials;
     const revision = this.#auth.revision();
     const cookies = this.#auth.createCookieFlow(false);
     const result = await this.http.execute(AUTH_SIGN_IN, {
       path: AUTH_PATHS.signIn,
-      body: credentials,
+      body: { ...rest, ...captchaBody(captcha) },
       skipAuth: true,
       skipAuthRefresh: true,
       cookieJar: cookies,
@@ -135,7 +334,7 @@ export class AuthResource extends BaseResource {
     });
 
     if (result.status === SignInStatus.Authenticated) {
-      await this.#auth.setAccessToken(result.accessToken, revision, cookies);
+      await this.#auth.commitAuthFlow(result.accessToken, cookies, revision);
     } else {
       this.#auth.commitCookieFlow(cookies, revision);
     }
@@ -162,7 +361,7 @@ export class AuthResource extends BaseResource {
       ...options,
     });
 
-    await this.#auth.setAccessToken(accessToken, revision, cookies);
+    await this.#auth.commitAuthFlow(accessToken, cookies, revision);
     return accessToken;
   }
 
@@ -295,7 +494,7 @@ export class AuthResource extends BaseResource {
   forgotPassword(input: ForgotPasswordInput, options: RequestOptions = {}): Promise<string> {
     return this.http.execute(AUTH_FORGOT_PASSWORD, {
       path: AUTH_PATHS.forgotPassword,
-      body: input,
+      body: { email: input.email, ...captchaBody(input.captcha) },
       skipAuth: true,
       skipAuthRefresh: true,
       ...options,
@@ -328,7 +527,7 @@ export class AuthResource extends BaseResource {
    * ```ts
    * await itd.auth.resetPasswordWithOtp({
    *   email,
-   *   turnstileToken,
+   *   captcha: { type: provider, token, field },
    *   newPassword,
    *   getOtp: () => rl.question('Код из письма: '),
    * });
@@ -341,17 +540,12 @@ export class AuthResource extends BaseResource {
     },
     options: RequestOptions = {},
   ): Promise<void> {
-    const flowToken = await this.forgotPassword(
-      { email: input.email, turnstileToken: input.turnstileToken },
-      options,
-    );
+    const { getOtp, newPassword, ...request } = input;
+    const flowToken = await this.forgotPassword(request, options);
 
-    const otp = await input.getOtp();
+    const otp = await getOtp();
 
-    await this.resetPassword(
-      { email: input.email, otp, flowToken, newPassword: input.newPassword },
-      options,
-    );
+    await this.resetPassword({ email: input.email, otp, flowToken, newPassword }, options);
   }
 
   /**

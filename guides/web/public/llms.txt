@@ -56,7 +56,7 @@ The linked documentation is written in Russian. Start with the guides and the cu
 ## Additional Packages
 
 - [Package Overview](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/index.md): purpose, runtime support, and role of each package in the ecosystem.
-- [@itd-api/turnstile](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/turnstile.md): obtaining Turnstile tokens in a local browser.
+- [@itd-api/captcha](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/captcha.md): obtaining captcha tokens (ITD and Turnstile) in a local browser.
 - [@itd-api/proxy](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/proxy.md): HTTP and WebSocket traffic through HTTP, HTTPS, and SOCKS5 proxies.
 - [@itd-api/cache](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/cache.md): TTL/LRU caching, request deduplication, and invalidation.
 - [@itd-api/hydrate](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/hydrate.md): action methods attached directly to API models.
@@ -69,7 +69,7 @@ The linked documentation is written in Russian. Start with the guides and the cu
 - [itd-api](https://kiowdev.github.io/itd-api/api/generated/core/): public classes, functions, interfaces, and types from the main package and the `itd-api/rest` and `itd-api/events` entry points.
 - [itd-api/node](https://kiowdev.github.io/itd-api/api/generated/node/): Node-specific file storage and file sources.
 - [itd-api/web](https://kiowdev.github.io/itd-api/api/generated/web/): browser session storage adapters.
-- [Additional Package APIs](https://kiowdev.github.io/itd-api/api/): generated signatures for `@itd-api/turnstile`, `proxy`, `cache`, `hydrate`, `crypto`, and `testing`.
+- [Additional Package APIs](https://kiowdev.github.io/itd-api/api/): generated signatures for `@itd-api/captcha`, `proxy`, `cache`, `hydrate`, `crypto`, and `testing`.
 
 ## Optional
 

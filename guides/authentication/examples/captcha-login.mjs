@@ -3,23 +3,27 @@
  *
  * Запуск:
  *   ITD_EMAIL=you@example.com ITD_PASSWORD=secret \
- *     node guides/authentication/examples/turnstile-login.mjs
+ *     node guides/authentication/examples/captcha-login.mjs
  *
- * В соседнем `bot-with-session.mjs` токен капчи приходится добывать руками и передавать
- * в ITD_TURNSTILE. Здесь его берёт `@itd-api/turnstile`: поднимает браузер, забирает токен
- * и закрывается. Установите отдельно, основному пакету он не нужен:
+ * В соседнем `bot-with-session.mjs` токен капчи приходится добывать руками. Здесь его берёт
+ * `@itd-api/captcha`: поднимает браузер, забирает токен и закрывается. Установите отдельно,
+ * основному пакету он не нужен:
  *
- *   npm i @itd-api/turnstile patchright
+ *   npm i @itd-api/captcha patchright
  *   npx patchright install chromium
  *
  * Браузер открывается с окном — так виджет проходится надёжнее. На сервере без графической
  * оболочки запускайте через
- * `xvfb-run -a node guides/authentication/examples/turnstile-login.mjs`.
+ * `xvfb-run -a node guides/authentication/examples/captcha-login.mjs`.
+ *
+ * Провайдера выбирает сервер: собственная капча ИТД или Cloudflare Turnstile. Клиент
+ * спрашивает активного перед входом и просит решить именно его виджет, поэтому вход
+ * переживает переключение провайдера без правок кода.
  */
 
 import { ItdClient, isItdApiError } from 'itd-api';
 import { FileTokenStorage } from 'itd-api/node';
-import { createTurnstileSolver } from '@itd-api/turnstile';
+import { createCaptchaSolver } from '@itd-api/captcha';
 
 const itd = new ItdClient({
   // Сессия переживает перезапуск, поэтому браузер поднимется только в первый раз —
@@ -33,8 +37,8 @@ const itd = new ItdClient({
     // Функция, а не готовая строка: токен одноразовый и живёт несколько минут, поэтому
     // клиент спрашивает свежий перед каждой попыткой входа — в том числе через сутки,
     // когда сессия истечёт и понадобится войти заново.
-    getTurnstileToken: createTurnstileSolver({
-      logger: (message) => console.log(`[turnstile] ${message}`),
+    captcha: createCaptchaSolver({
+      logger: (message) => console.log(`[captcha] ${message}`),
     }),
   },
 });

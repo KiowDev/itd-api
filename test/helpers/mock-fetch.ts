@@ -24,10 +24,14 @@ export interface MockFetch {
 
 /** Ответ с телом JSON. */
 export function json(body: unknown, init: ResponseInit = {}): Response {
+  const headers = new Headers({ 'content-type': 'application/json' });
+  new Headers(init.headers).forEach((value, name) => {
+    headers.set(name, value);
+  });
   return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
     ...init,
+    status: init.status ?? 200,
+    headers,
   });
 }
 

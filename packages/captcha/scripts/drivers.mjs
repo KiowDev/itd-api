@@ -6,6 +6,7 @@
  *
  *   node scripts/drivers.mjs                          — проверить все известные драйверы
  *   node scripts/drivers.mjs patchright playwright    — только названные
+ *   node scripts/drivers.mjs --itd                    — решать капчу ИТД (по умолчанию Turnstile)
  *   node scripts/drivers.mjs playwright --headless    — без окна
  *   node scripts/drivers.mjs playwright --chrome      — на установленном Google Chrome
  *   node scripts/drivers.mjs playwright --exec=C:\...\chrome.exe   — на своей сборке
@@ -19,7 +20,7 @@
  * Ненайденный драйвер пропускается, поэтому ставить их все необязательно.
  */
 
-import { launchBrowser, solveTurnstile, TurnstileFailure } from '@itd-api/turnstile';
+import { launchBrowser, solveCaptcha, CaptchaFailure, CaptchaType } from '@itd-api/captcha';
 
 /**
  * Что проверяется.
@@ -59,6 +60,8 @@ const headless = process.argv.includes('--headless');
 const channel = process.argv.includes('--chrome') ? 'chrome' : undefined;
 const executablePath = flag('--exec');
 const timeout = Number(flag('--timeout') ?? 40_000);
+const useItd = process.argv.includes('--itd');
+const type = useItd ? CaptchaType.Itd : CaptchaType.Cloudflare;
 
 const unknown = asked.filter((name) => !(name in DRIVERS));
 if (unknown.length > 0) {
@@ -82,14 +85,14 @@ for (const name of names) {
   const startedAt = Date.now();
 
   try {
-    // Браузер поднимается здесь, а не внутри solveTurnstile, чтобы отличить отсутствие
-    // драйвера от отказа виджета и показать версию браузера даже при успехе.
+    // Браузер поднимается здесь, а не внутри солвера, чтобы отличить отсутствие драйвера
+    // от отказа виджета и показать версию браузера даже при успехе.
     browser = launch
       ? await launch(launchOptions)
       : await launchBrowser({ ...launchOptions, driver: name });
   } catch (error) {
     const missing =
-      error?.reason === TurnstileFailure.DriverMissing ||
+      error?.reason === CaptchaFailure.DriverMissing ||
       /Cannot find (package|module)/i.test(String(error));
     results.push([name, missing ? '— не установлен' : `— не запустился: ${brief(error)}`]);
     continue;
@@ -98,7 +101,7 @@ for (const name of names) {
   const version = safeVersion(browser);
 
   try {
-    const token = await solveTurnstile({
+    const token = await solveCaptcha(type, {
       browser,
       timeout,
       attempts: 1,
@@ -128,7 +131,11 @@ function brief(error) {
     .slice(0, 100);
 }
 
-const mode = [headless ? 'без окна' : 'с окном', channel ? 'Google Chrome' : undefined]
+const mode = [
+  useItd ? 'капча ИТД' : 'Turnstile',
+  headless ? 'без окна' : 'с окном',
+  channel ? 'Google Chrome' : undefined,
+]
   .filter(Boolean)
   .join(', ');
 

@@ -19,6 +19,8 @@ export const BUCKET_LIMITS = Object.freeze({
   'files.get': 40,
   auth: 35,
   'auth.refresh': 25,
+  'auth.qrStart': 40,
+  'auth.qrClaim': 300,
   search: 25,
   'comments.like': 22,
   'files.upload': 15,

@@ -121,6 +121,47 @@ export const ReportReason = Object.freeze({
 } as const);
 export type ReportReason = (typeof ReportReason)[keyof typeof ReportReason];
 
+/**
+ * Провайдер капчи, которую сервер требует пройти при входе. Тип открытый.
+ *
+ * Активного сообщает `itd.auth.captchaProvider()`.
+ */
+export const CaptchaType = Object.freeze({
+  /** Собственная капча ИТД. */
+  Itd: 'itd',
+  /** Cloudflare Turnstile. */
+  Cloudflare: 'cloudflare',
+} as const);
+export type CaptchaType = Loose<(typeof CaptchaType)[keyof typeof CaptchaType]>;
+
+/**
+ * Какую капчу решать при входе по логину и паролю.
+ *
+ * `CaptchaChoice.Auto` — спросить сервер перед каждым входом; названный провайдер
+ * решается без этого запроса.
+ */
+export const CaptchaChoice = Object.freeze({
+  /** Провайдера называет сервер. */
+  Auto: 'auto',
+  Itd: CaptchaType.Itd,
+  Cloudflare: CaptchaType.Cloudflare,
+} as const);
+export type CaptchaChoice = Loose<(typeof CaptchaChoice)[keyof typeof CaptchaChoice]>;
+
+/**
+ * Поле тела запроса, в котором сервер ждёт токен капчи. Тип открытый.
+ *
+ * При `CaptchaChoice.Auto` имя берётся из ответа сервера; эти значения — умолчания
+ * для явно выбранного провайдера.
+ */
+export const CaptchaField = Object.freeze({
+  /** Поле собственной капчи ИТД. */
+  Itd: 'token',
+  /** Поле Cloudflare Turnstile. */
+  Cloudflare: 'turnstileToken',
+} as const);
+export type CaptchaField = Loose<(typeof CaptchaField)[keyof typeof CaptchaField]>;
+
 /** Состояние соединения событийного канала. */
 export const EventChannelStatus = Object.freeze({
   Connecting: 'connecting',
@@ -294,6 +335,8 @@ export const ItdErrorCode = Object.freeze({
   CAPTCHA_FAILED: 'CAPTCHA_FAILED',
   /** Капча не пройдена: токен Turnstile недействителен, просрочен или уже использован. */
   TURNSTILE_VERIFICATION_FAILED: 'TURNSTILE_VERIFICATION_FAILED',
+  /** Собственная captcha ИТД не подтвердила целостность проверки. */
+  INTEGRITY_CHECK_FAILED: 'INTEGRITY_CHECK_FAILED',
   OTP_INVALID: 'OTP_INVALID',
   /** `flowToken` неизвестен или просрочен — поток подтверждения нужно начинать заново. */
   INVALID_FLOW_TOKEN: 'INVALID_FLOW_TOKEN',
@@ -310,6 +353,12 @@ export const ItdErrorCode = Object.freeze({
   /** Cookie `refresh_token` есть, но сессии за ней уже нет: отозвана или истекла. */
   SESSION_NOT_FOUND: 'SESSION_NOT_FOUND',
   MISSING_FLOW_TOKEN: 'MISSING_FLOW_TOKEN',
+  QR_EXPIRED: 'QR_EXPIRED',
+  QR_TOKEN_MISMATCH: 'QR_TOKEN_MISMATCH',
+  QR_ALREADY_USED: 'QR_ALREADY_USED',
+  QR_NOT_SCANNED: 'QR_NOT_SCANNED',
+  USER_INACTIVE: 'USER_INACTIVE',
+  TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
   PROFILE_USERNAME_TAKEN: 'PROFILE_USERNAME_TAKEN',
   PROFILE_USERNAME_RESERVED: 'PROFILE_USERNAME_RESERVED',
   PROFILE_RESTRICTION_ACTIVE: 'PROFILE_RESTRICTION_ACTIVE',
