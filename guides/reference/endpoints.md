@@ -11,6 +11,7 @@
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `GET /api/v1/auth/captcha/provider` | `itd.auth.captchaProvider()` | нет | активный провайдер и поле `token` либо `turnstileToken` | 2026-09-01, `200` |
+| `GET /api/v1/auth/captcha/page` | `itd.auth.captchaPage()` | нет | активный провайдер, поле и адрес страницы виджета | 2026-09-02, `200` |
 | `POST /api/v1/auth/sign-up` | `itd.auth.signUp()` | нет | `email`, `password`, подтверждение капчи → `flowToken` | — |
 | `POST /api/v1/auth/sign-in` | `itd.auth.signIn()` | нет | `email`, `password`, подтверждение капчи → access token или `flowToken` | — |
 | `POST /api/v1/auth/verify-otp` | `itd.auth.verifyOtp()` | нет | `email`, `password`, `otp`, `flowToken` → access token | — |
@@ -27,6 +28,9 @@
 | `POST /api/v1/auth/qr/start` | `itd.auth.startQrLogin()` | нет | новая QR-сессия: `qrId`, `claimToken`, `payload`, `expiresIn`, `captchaRequired` | 2026-09-01, `201` |
 | `POST /api/v1/auth/qr/stream` | `itd.auth.streamQrLogin()` | нет | `qrId`, `claimToken` → SSE-статусы QR-сессии | 2026-09-01, `200` |
 | `POST /api/v1/auth/qr/claim` | `itd.auth.claimQrLogin()` | нет | секреты QR, при необходимости подтверждение капчи → статус или access token | 2026-09-01, `200` |
+| `POST /api/v1/auth/qr/scan` | `itd.auth.scanQrLogin()` | мобильный Bearer | `qrId`, `secret` из кода → описание устройства, которое просит вход | 2026-09-02, `200` |
+| `POST /api/v1/auth/qr/approve` | `itd.auth.approveQrLogin()` | мобильный Bearer | `qrId`, `secret` из кода | 2026-09-02, `200` |
+| `POST /api/v1/auth/qr/reject` | `itd.auth.rejectQrLogin()` | мобильный Bearer | `qrId`, `secret` из кода | 2026-09-02, `401` без токена |
 
 `signInWithOtp()` объединяет `sign-in` и `verify-otp`,
 `resetPasswordWithOtp()` — `forgot-password` и `reset-password`, поэтому

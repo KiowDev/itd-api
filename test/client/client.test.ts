@@ -13,7 +13,12 @@ import type {
   EventTransportContext,
   EventTransportFrame,
 } from '../../src/events/transports/transport.js';
-import type { ErrorContextHook, FileInput, RequestContext } from '../../src/index.js';
+import type {
+  ErrorContextHook,
+  FileInput,
+  QrLoginTarget,
+  RequestContext,
+} from '../../src/index.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
 import { CaptchaType } from '../../src/types/enums.js';
@@ -691,6 +696,59 @@ describe('авторизация', () => {
     await expect(itd.auth.captchaProvider()).resolves.toEqual({ provider: 'itd', field: 'token' });
     expect(mock.calls[0]?.method).toBe('GET');
     expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/captcha/provider');
+    expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
+  });
+
+  it('подтверждает чужой QR-вход со своего устройства', async () => {
+    const target = {
+      client: 'Chrome',
+      clientVersion: null,
+      os: 'macOS',
+      osVersion: null,
+      deviceType: null,
+      ipAddress: '192.0.2.1',
+      ipCountry: 'RU',
+      ipCity: null,
+      requestedAt: '2026-09-01T20:00:00Z',
+      latitude: null,
+      longitude: null,
+      accuracyKm: null,
+      precision: null,
+    } satisfies QrLoginTarget;
+    const { itd, mock } = makeClient([json(target), noContent()]);
+    const secrets = { qrId: 'qr-scan', secret: 'from-code' };
+
+    await expect(itd.auth.scanQrLogin(secrets)).resolves.toEqual(target);
+    await itd.auth.approveQrLogin(secrets);
+
+    expect(mock.calls.map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
+      'POST /api/v1/auth/qr/scan',
+      'POST /api/v1/auth/qr/approve',
+    ]);
+    // Подтверждает тот, у кого уже есть сессия, — оба запроса идут с токеном.
+    expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer test-token');
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual(secrets);
+  });
+
+  it('отклоняет чужой QR-вход', async () => {
+    const { itd, mock } = makeClient([noContent()]);
+
+    await itd.auth.rejectQrLogin({ qrId: 'qr-reject', secret: 'from-code' });
+
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/qr/reject');
+    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+      qrId: 'qr-reject',
+      secret: 'from-code',
+    });
+  });
+
+  it('отдаёт адрес страницы виджета капчи', async () => {
+    const page = { provider: 'itd', field: 'token', url: 'https://итд.com/captcha?x=1' };
+    const { itd, mock } = makeClient([json(page)], { auth: undefined });
+
+    await expect(itd.auth.captchaPage()).resolves.toEqual(page);
+    expect(mock.calls[0]?.method).toBe('GET');
+    expect(mock.calls[0]?.url).toBe('https://itd.test/api/v1/auth/captcha/page');
     expect(mock.calls[0]?.headers.get('authorization')).toBeNull();
   });
 

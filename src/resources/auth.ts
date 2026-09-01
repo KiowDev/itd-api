@@ -3,15 +3,19 @@ import type { CookieJar } from '../core/cookies.js';
 import { ItdConfigError, isItdApiError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
-import type { Session } from '../models/account.js';
+import type { QrLoginTarget, Session } from '../models/account.js';
 import type { AuthState } from '../models/users.js';
 import {
+  AUTH_CAPTCHA_PAGE,
   AUTH_CAPTCHA_PROVIDER,
   AUTH_CHANGE_PASSWORD,
   AUTH_CHECK,
   AUTH_FORGOT_PASSWORD,
   AUTH_LOGOUT,
+  AUTH_QR_APPROVE,
   AUTH_QR_CLAIM,
+  AUTH_QR_REJECT,
+  AUTH_QR_SCAN,
   AUTH_QR_START,
   AUTH_RESEND_OTP,
   AUTH_RESET_PASSWORD,
@@ -21,6 +25,7 @@ import {
   AUTH_SIGN_IN,
   AUTH_SIGN_UP,
   AUTH_VERIFY_OTP,
+  type CaptchaPage,
   type CaptchaProvider,
   type CaptchaToken,
   type QrLoginClaim,
@@ -77,6 +82,19 @@ export interface QrLoginStreamInput {
   claimToken: string;
 }
 
+/**
+ * Секреты QR-кода со стороны сканирующего устройства.
+ *
+ * Оба значения лежат во fragment {@link QrLoginStart.payload} — ссылки вида
+ * `https://итд.com/qr#i=<qrId>&s=<secret>`, которую и кодирует QR-код. `secret` — не то же
+ * самое, что `claimToken`: этот секрет предъявляет тот, кто сканирует, а `claimToken` — тот,
+ * кто код показывает.
+ */
+export interface QrLoginSecrets {
+  qrId: string;
+  secret: string;
+}
+
 /** Управление временем жизни потокового запроса. */
 export interface QrLoginStreamOptions {
   signal?: AbortSignal | undefined;
@@ -98,7 +116,9 @@ export interface ResetPasswordInput {
   newPassword: string;
 }
 
+export type { QrLoginTarget } from '../models/account.js';
 export type {
+  CaptchaPage,
   CaptchaProvider,
   CaptchaToken,
   QrLoginClaim,
@@ -207,6 +227,22 @@ export class AuthResource extends BaseResource {
     });
   }
 
+  /**
+   * Узнаёт активного провайдера капчи вместе с адресом страницы виджета.
+   *
+   * То же, что {@link captchaProvider}, плюс `url` — готовая страница на домене итд.com,
+   * где ключ виджета действителен. Пригодится встроенному браузеру: открыть её и забрать
+   * токен, ничего не собирая самому.
+   */
+  captchaPage(options: RequestOptions = {}): Promise<CaptchaPage> {
+    return this.http.execute(AUTH_CAPTCHA_PAGE, {
+      path: AUTH_PATHS.captchaPage,
+      skipAuth: true,
+      skipAuthRefresh: true,
+      ...options,
+    });
+  }
+
   /** Создаёт короткоживущую сессию QR-входа. */
   async startQrLogin(options: RequestOptions = {}): Promise<QrLoginStart> {
     const cookies = this.#auth.createCookieFlow(false);
@@ -297,6 +333,54 @@ export class AuthResource extends BaseResource {
       this.#forgetTerminalQrError(input.qrId, error);
       throw error;
     }
+  }
+
+  /**
+   * Отмечает QR-код отсканированным и узнаёт, кого впускают.
+   *
+   * Обратная сторона QR-входа: этот и два соседних метода вызывает устройство, где сессия
+   * уже есть. Показывающая сторона увидит статус `scanned`, но вход ещё не состоится —
+   * его завершают {@link approveQrLogin} или {@link rejectQrLogin}.
+   *
+   * Сервер принимает только сессию, созданную мобильным клиентом. Обычный web access token
+   * отклоняется с кодом `QR_APPROVER_NOT_ALLOWED`, даже если добавить мобильные заголовки
+   * уже после выдачи токена.
+   *
+   * @param input секреты из отсканированного кода — см. {@link QrLoginSecrets}
+   * @returns описание устройства, которое просит вход
+   */
+  scanQrLogin(input: QrLoginSecrets, options: RequestOptions = {}): Promise<QrLoginTarget> {
+    return this.http.execute(AUTH_QR_SCAN, {
+      path: AUTH_PATHS.qrScan,
+      body: input,
+      ...options,
+    });
+  }
+
+  /**
+   * Подтверждает вход по QR-коду: показавшее код устройство получит access token.
+   *
+   * Осмысленно после {@link scanQrLogin} — человек должен увидеть, что подтверждает.
+   * Требует мобильную сессию, как и `scanQrLogin()`.
+   */
+  approveQrLogin(input: QrLoginSecrets, options: RequestOptions = {}): Promise<void> {
+    return this.voidOperation(AUTH_QR_APPROVE, {
+      path: AUTH_PATHS.qrApprove,
+      body: input,
+      ...options,
+    });
+  }
+
+  /**
+   * Отклоняет вход по QR-коду: показавшее код устройство получит статус `rejected`.
+   * Требует мобильную сессию, как и `scanQrLogin()`.
+   */
+  rejectQrLogin(input: QrLoginSecrets, options: RequestOptions = {}): Promise<void> {
+    return this.voidOperation(AUTH_QR_REJECT, {
+      path: AUTH_PATHS.qrReject,
+      body: input,
+      ...options,
+    });
   }
 
   /**

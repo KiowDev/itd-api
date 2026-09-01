@@ -237,6 +237,37 @@ describe('hydrateClient', () => {
     );
   });
 
+  it('подтверждает QR-вход прямо на описании устройства', async () => {
+    const mock = createMockFetch();
+    mock.post(
+      '/api/v1/auth/qr/scan',
+      apiResponse({ client: 'Chrome', ipCity: null, requestedAt: '2026-09-02' }),
+    );
+    mock.post('/api/v1/auth/qr/approve', apiResponse({}));
+
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+
+    const target = await itd.auth.scanQrLogin({ qrId: 'qr-1', secret: 'from-code' });
+    expect(target.client).toBe('Chrome');
+    expect(target.ipCity).toBeNull();
+
+    await target.approve();
+
+    // Секретов в ответе нет — действие берёт их из вызова, которым получено описание.
+    // Сам секрет в журнале запросов замаскирован, поэтому сверяется только его наличие.
+    const approve = mock.requests.at(-1);
+    expect(approve?.url).toContain('/api/v1/auth/qr/approve');
+    expect(approve?.body).toEqual({ qrId: 'qr-1', secret: expect.any(String) });
+  });
+
   it('поддерживает замороженные результаты плагинов', async () => {
     const mock = createMockFetch();
     mock.get('/api/posts/frozen', apiResponse(postFixture({ id: 'frozen' })));

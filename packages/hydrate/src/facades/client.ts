@@ -2,6 +2,7 @@ import type { ItdClient, NotificationEvents } from 'itd-api';
 import { createHydrationContext } from '../graph.js';
 import { isObject } from '../runtime/records.js';
 import { HydratableResource, type HydrateFlavor } from '../types.js';
+import { authFacade } from './auth.js';
 import { createNotificationEvents } from './events.js';
 import { resourceFacade } from './resource.js';
 
@@ -30,6 +31,7 @@ export function createClientFacade<Client extends ItdClient>(
         const cached = resources.get(key);
         if (cached !== undefined) return cached;
         let wrapped = resourceFacade(member, context);
+        if (key === HydratableResource.Auth) wrapped = authFacade(wrapped, context);
         if (key === HydratableResource.Notifications) {
           let eventFacade: unknown;
           wrapped = new Proxy(wrapped, {

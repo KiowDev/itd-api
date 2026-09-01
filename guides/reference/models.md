@@ -384,6 +384,25 @@ interface Session {
 }
 ```
 
+### QrLoginTarget
+
+Устройство, которое просит вход по QR-коду. Приходит из
+[`scanQrLogin()`](./auth.md#подтверждение-с-другого-устройства) на то устройство, которое код
+сканирует. Обязательно только время запроса: остальное сервер заполняет по мере того,
+как сумел определить.
+
+```ts
+interface QrLoginTarget {
+  client?: string | null; clientVersion?: string | null; // браузер или приложение
+  os?: string | null; osVersion?: string | null; deviceType?: string | null;
+  ipAddress?: string | null; ipCountry?: string | null; ipCity?: string | null;
+  requestedAt: IsoDate;
+  latitude?: number | null; longitude?: number | null;
+  accuracyKm?: number | null;                   // радиус, км
+  precision?: 'city' | 'country' | (string & {}) | null;
+}
+```
+
 ### Subscription
 
 ```ts

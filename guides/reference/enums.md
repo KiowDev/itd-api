@@ -93,6 +93,12 @@ Enum заданы парой «замороженный объект + одно�
 
 Чем закончился вход. `Authenticated` `'authenticated'` · `OtpRequired` `'otp_required'`.
 
+## QrLocationPrecision
+
+Насколько точно известно, откуда просят вход по QR-коду — поле `precision`
+в [`QrLoginTarget`](./models.md#qrlogintarget). Открытое.
+`City` `'city'` · `Country` `'country'`.
+
 ## Телеметрия
 
 Числовые коды протокола для методов `itd.telemetry.*`. Библиотека сама

@@ -1,7 +1,7 @@
 import { ItdConfigError } from '../core/errors.js';
 import { pickArray, pickString } from '../core/unwrap.js';
 import { defineBuiltInOperation } from '../domain/operations.js';
-import type { Session } from '../models/account.js';
+import type { QrLoginTarget, Session } from '../models/account.js';
 import type { AuthState } from '../models/users.js';
 import { CaptchaField, CaptchaType } from '../types/enums.js';
 import { passthroughOperation, voidOperation } from './common.js';
@@ -26,6 +26,16 @@ export type SignInResult =
 export interface CaptchaProvider {
   provider: CaptchaType;
   field: CaptchaField;
+}
+
+/**
+ * Активный провайдер капчи вместе с адресом готовой страницы виджета.
+ *
+ * Страница собрана на домене итд.com, поэтому ключ виджета на ней действителен: её открывают
+ * во встроенном браузере и забирают токен оттуда.
+ */
+export interface CaptchaPage extends CaptchaProvider {
+  url: string;
 }
 
 /**
@@ -101,6 +111,7 @@ function requireString(body: unknown, key: string, message: string): string {
 
 export const AUTH_CHECK = passthroughOperation<AuthState>('auth.check');
 export const AUTH_CAPTCHA_PROVIDER = passthroughOperation<CaptchaProvider>('auth.captchaProvider');
+export const AUTH_CAPTCHA_PAGE = passthroughOperation<CaptchaPage>('auth.captchaPage');
 export const AUTH_SIGN_UP = defineBuiltInOperation<string>('auth.signUp', (body) =>
   requireString(body, 'flowToken', 'Сервер не вернул flowToken при регистрации'),
 );
@@ -130,3 +141,6 @@ export const AUTH_REVOKE_SESSION = voidOperation('auth.revokeSession');
 export const AUTH_REVOKE_OTHER_SESSIONS = voidOperation('auth.revokeOtherSessions');
 export const AUTH_QR_START = passthroughOperation<QrLoginStart>('auth.qrStart');
 export const AUTH_QR_CLAIM = passthroughOperation<QrLoginClaim>('auth.qrClaim');
+export const AUTH_QR_SCAN = passthroughOperation<QrLoginTarget>('auth.qrScan');
+export const AUTH_QR_APPROVE = voidOperation('auth.qrApprove');
+export const AUTH_QR_REJECT = voidOperation('auth.qrReject');

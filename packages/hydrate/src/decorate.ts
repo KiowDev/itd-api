@@ -58,6 +58,22 @@ function createCommentReference(id: string, context: HydrationContext): AnyRecor
   return reference;
 }
 
+/**
+ * Привязывает готовый набор действий к модели, которую нельзя распознать по форме.
+ *
+ * Нужно там, где действия зависят не от полей ответа, а от того, каким вызовом он получен:
+ * например, описание устройства из `scanQrLogin()` подтверждается секретами кода,
+ * а в самом ответе их нет.
+ */
+export function decorateWith(
+  target: AnyRecord,
+  actions: Readonly<Record<string, ModelAction>>,
+  context: HydrationContext,
+): void {
+  bindModelContext(target, context);
+  defineActions(target, actions);
+}
+
 /** Привязывает действия распознанной модели к контексту клиента. */
 export function decorate(target: AnyRecord, kind: ModelKindValue, context: HydrationContext): void {
   bindModelContext(target, context);

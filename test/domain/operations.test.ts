@@ -100,10 +100,15 @@ describe('карта серверных счётчиков частоты', () =
 
   it('разводит измеренные счётчики QR-входа', () => {
     expect(operationBucket('auth.captchaProvider')).toBe('auth');
-    expect(operationBucket('auth.qrStart')).toBe('auth.qrStart');
+    expect(operationBucket('auth.captchaPage')).toBe('auth');
     expect(operationBucket('auth.qrClaim')).toBe('auth.qrClaim');
-    expect(BUCKET_LIMITS[operationBucket('auth.qrStart')]).toBe(40);
     expect(BUCKET_LIMITS[operationBucket('auth.qrClaim')]).toBe(300);
+
+    // Замер на живом API: показ кода и его подтверждение делят один счётчик на 40.
+    for (const id of ['auth.qrStart', 'auth.qrScan', 'auth.qrApprove', 'auth.qrReject'] as const) {
+      expect(operationBucket(id)).toBe('auth.qr');
+    }
+    expect(BUCKET_LIMITS[operationBucket('auth.qrStart')]).toBe(40);
   });
 
   it('разделяет измеренные счётчики доставки магазина', () => {

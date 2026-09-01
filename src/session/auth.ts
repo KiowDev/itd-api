@@ -194,6 +194,7 @@ export function createItdAuth(options: SessionOptions, deps: AuthProviderDeps): 
 /** Пути эндпоинтов авторизации. */
 export const AUTH_PATHS = {
   captchaProvider: '/api/v1/auth/captcha/provider',
+  captchaPage: '/api/v1/auth/captcha/page',
   signUp: '/api/v1/auth/sign-up',
   signIn: '/api/v1/auth/sign-in',
   verifyOtp: '/api/v1/auth/verify-otp',
@@ -207,6 +208,9 @@ export const AUTH_PATHS = {
   qrStart: '/api/v1/auth/qr/start',
   qrClaim: '/api/v1/auth/qr/claim',
   qrStream: '/api/v1/auth/qr/stream',
+  qrScan: '/api/v1/auth/qr/scan',
+  qrApprove: '/api/v1/auth/qr/approve',
+  qrReject: '/api/v1/auth/qr/reject',
 } as const;
 
 /**

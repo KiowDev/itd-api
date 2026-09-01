@@ -149,6 +149,21 @@ export const CaptchaChoice = Object.freeze({
 export type CaptchaChoice = Loose<(typeof CaptchaChoice)[keyof typeof CaptchaChoice]>;
 
 /**
+ * Насколько точно сервер определил, откуда просят вход по QR-коду. Тип открытый.
+ *
+ * Приходит в `QrLoginTarget.precision` рядом с координатами.
+ */
+export const QrLocationPrecision = Object.freeze({
+  /** Координаты города. */
+  City: 'city',
+  /** Координаты страны. */
+  Country: 'country',
+} as const);
+export type QrLocationPrecision = Loose<
+  (typeof QrLocationPrecision)[keyof typeof QrLocationPrecision]
+>;
+
+/**
  * Поле тела запроса, в котором сервер ждёт токен капчи. Тип открытый.
  *
  * При `CaptchaChoice.Auto` имя берётся из ответа сервера; эти значения — умолчания
@@ -357,6 +372,7 @@ export const ItdErrorCode = Object.freeze({
   QR_TOKEN_MISMATCH: 'QR_TOKEN_MISMATCH',
   QR_ALREADY_USED: 'QR_ALREADY_USED',
   QR_NOT_SCANNED: 'QR_NOT_SCANNED',
+  QR_APPROVER_NOT_ALLOWED: 'QR_APPROVER_NOT_ALLOWED',
   USER_INACTIVE: 'USER_INACTIVE',
   TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
   PROFILE_USERNAME_TAKEN: 'PROFILE_USERNAME_TAKEN',

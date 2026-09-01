@@ -52,10 +52,13 @@ type AppClient = HydrateFlavor<ItdClient>;
 | вложение | `isImage()`, `isVideo()`, `isAudio()` |
 | уведомление | `getPost()`, `comment` |
 | город доставки | `points()` |
+| устройство из `scanQrLogin()` | `approve()`, `reject()` |
 
 `getReplies()` загружает полную страницу ответов. Поле `comment.replies` по-прежнему содержит
 предварительно загруженные ответы из исходной модели.
 Проверки вложений одновременно сужают поле `type` в TypeScript.
+`approve()` и `reject()` помнят секреты кода, которым получено описание устройства, поэтому
+`{ qrId, secret }` повторять не нужно.
 
 Страницы, вложенные модели, `Paginator.next()`, `Paginator.pages()`, `collect()` и асинхронный
 перебор гидратируются автоматически:

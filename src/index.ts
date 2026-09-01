@@ -274,7 +274,7 @@ export {
   type UnknownNotificationUpdate,
   type UnreadCountUpdate,
 } from './events.js';
-export type { PaymentMethod, Session, Subscription } from './models/account.js';
+export type { PaymentMethod, QrLoginTarget, Session, Subscription } from './models/account.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
   Attachment,
@@ -363,6 +363,7 @@ export type { NotificationsApi } from './notifications-api.js';
 export type { ItdClientOptions } from './options.js';
 export type {
   AuthResource,
+  CaptchaPage,
   CaptchaProvider,
   CaptchaToken,
   Credentials,
@@ -370,6 +371,7 @@ export type {
   ForgotPasswordInput,
   QrLoginClaim,
   QrLoginClaimInput,
+  QrLoginSecrets,
   QrLoginStart,
   QrLoginStreamEvent,
   QrLoginStreamInput,
@@ -507,6 +509,7 @@ export {
   ItdErrorCode,
   LikesVisibility,
   NotificationType,
+  QrLocationPrecision,
   ReportReason,
   ReportTargetType,
   ServiceState,

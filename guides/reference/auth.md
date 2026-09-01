@@ -27,6 +27,14 @@ captchaProvider(): Promise<CaptchaProvider>
 `{ provider: 'cloudflare', field: 'turnstileToken' }`. Оба значения сервер вправе сменить,
 поэтому `field` берётся из ответа, а не выводится из провайдера.
 
+```ts
+captchaPage(): Promise<CaptchaPage>
+```
+
+То же самое плюс `url` — адрес готовой страницы виджета на домене итд.com, где ключ
+действителен. Пригодится встроенному браузеру: открыть её и забрать токен, ничего
+не собирая самому.
+
 Автологину через опцию `auth` этот вызов не нужен — клиент делает его сам. Ручному входу
 он подсказывает, какой виджет решать:
 
@@ -111,6 +119,35 @@ claimQrLogin(input: QrLoginClaimInput): Promise<QrLoginClaim>
 из опции клиента либо из аргумента вызова. До просьбы сервера токен не запрашивается:
 опрос идёт в цикле, и поднимать браузер на каждую проверку было бы напрасно. В серверной
 среде cookie QR-сессии хранятся отдельно; в браузере ими управляет сам браузер.
+
+### Подтверждение с другого устройства
+
+Три метода для устройства, где уже есть **мобильная** сессия: оно сканирует чужой код и решает
+его судьбу. Обычный web access token сервер отклоняет с `QR_APPROVER_NOT_ALLOWED`; добавить
+Android-заголовки после выдачи токена недостаточно — они должны участвовать уже во входе,
+который создал сессию. Все методы требуют Bearer и принимают `{ qrId, secret }` — оба значения
+лежат во fragment `payload` кода
+(ссылка вида `https://итд.com/qr#i=<qrId>&s=<secret>`). `secret` — не `claimToken`: первый
+предъявляет тот, кто сканирует, второй — тот, кто код показывает.
+
+```ts
+scanQrLogin(input: QrLoginSecrets): Promise<QrLoginTarget>
+approveQrLogin(input: QrLoginSecrets): Promise<void>
+rejectQrLogin(input: QrLoginSecrets): Promise<void>
+```
+
+`scanQrLogin()` отмечает код отсканированным и возвращает описание устройства, которое просит
+вход, — чтобы человек видел, кого впускает. Показывающая сторона получает при этом статус
+`scanned`; вход завершают `approveQrLogin()` или `rejectQrLogin()`.
+
+```ts
+const secrets = { qrId, secret }; // значения i и s из fragment отсканированного payload
+
+const target = await itd.auth.scanQrLogin(secrets);
+console.log(target.client, target.ipCity); // Chrome Москва
+
+await itd.auth.approveQrLogin(secrets);
+```
 
 ## Сессия
 
@@ -234,6 +271,10 @@ interface CaptchaProvider {
   field: CaptchaField;
 }
 
+interface CaptchaPage extends CaptchaProvider {
+  url: string;                // страница виджета на домене итд.com
+}
+
 const CaptchaType = { Itd: 'itd', Cloudflare: 'cloudflare' } as const;
 const CaptchaField = { Itd: 'token', Cloudflare: 'turnstileToken' } as const;
 const CAPTCHA_FIELDS = { itd: 'token', cloudflare: 'turnstileToken' } as const;
@@ -243,11 +284,19 @@ interface QrLoginStart {
   expiresIn: number; captchaRequired: boolean;
 }
 
+interface QrLoginSecrets {
+  qrId: string;               // параметр `i` из fragment payload
+  secret: string;             // параметр `s` из fragment payload
+}
+
 type QrLoginStreamEvent = {
   status: 'pending' | 'scanned' | 'approved' | 'rejected';
   expiresIn?: number;
 };
 ```
+
+[`QrLoginTarget`](./models.md#qrlogintarget) — устройство, которое просит вход; приходит
+из `scanQrLogin()`.
 
 Связанные: [`AuthInput`](./client.md#авторизация-authinput) (как клиент получает доступ),
 события авторизации `itd.on('tokens' | 'authError' | …)` — см. [Клиент](./client.md#события).

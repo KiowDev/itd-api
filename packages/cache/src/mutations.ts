@@ -127,6 +127,13 @@ const CACHE_MUTATIONS = Object.freeze([
   { operationId: 'auth.forgotPassword', invalidates: NOTHING },
   { operationId: 'auth.qrStart', invalidates: NOTHING },
   { operationId: 'auth.qrClaim', invalidates: NOTHING },
+  { operationId: 'auth.qrScan', invalidates: NOTHING },
+  {
+    operationId: 'auth.qrApprove',
+    invalidates: ['auth.sessions'],
+    scope: CachePolicyScope.Account,
+  },
+  { operationId: 'auth.qrReject', invalidates: NOTHING },
   { operationId: 'auth.signUp', invalidates: CacheInvalidation.All },
   { operationId: 'auth.signIn', invalidates: CacheInvalidation.All },
   { operationId: 'auth.verifyOtp', invalidates: CacheInvalidation.All },

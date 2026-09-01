@@ -86,6 +86,20 @@ const [city] = await itd.shop.delivery.cities('Москва', 'RU');
 const points = await city?.points();
 ```
 
+### QR-вход с другого устройства
+
+`scanQrLogin()` возвращает описание устройства, которое просит вход, с методами `approve()`
+и `reject()`. Секретов кода в ответе нет — действия берут их из самого вызова, поэтому
+повторять `{ qrId, secret }` не нужно. Сервер принимает эти операции только от мобильной
+сессии; обычный web access token не подходит:
+
+```ts
+const target = await itd.auth.scanQrLogin({ qrId, secret });
+
+console.log(target.client, target.ipCity);
+await target.approve(); // либо target.reject()
+```
+
 ## Страницы и перебор
 
 Гидратация охватывает вложенные посты, комментарии, авторов и вложения, а также все способы

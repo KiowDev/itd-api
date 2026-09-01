@@ -140,9 +140,9 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 | `shop.orders.requestAccessCode` | `shop.orders.requestAccessCode` | 4 |
 | `shop.orders.verifyAccessCode` | `shop.orders.verifyAccessCode` | 13 |
 | `shop.consents.record` | `shop.consents.record` | 15 |
-| `auth` | `auth.captchaProvider`, `auth.signUp`, `auth.signIn`, `auth.verifyOtp`, `auth.resendOtp`, `auth.logout`, `auth.forgotPassword`, `auth.resetPassword`, `auth.changePassword`, `auth.sessions`, `auth.revokeSession`, `auth.revokeOtherSessions` | 35 |
+| `auth` | `auth.captchaProvider`, `auth.captchaPage`, `auth.signUp`, `auth.signIn`, `auth.verifyOtp`, `auth.resendOtp`, `auth.logout`, `auth.forgotPassword`, `auth.resetPassword`, `auth.changePassword`, `auth.sessions`, `auth.revokeSession`, `auth.revokeOtherSessions` | 35 |
 | `auth.refresh` | `auth.refresh` | 25 |
-| `auth.qrStart` | `auth.qrStart` | 40 |
+| `auth.qr` | `auth.qrStart`, `auth.qrScan`, `auth.qrApprove`, `auth.qrReject` | 40 |
 | `auth.qrClaim` | `auth.qrClaim` | 300 |
 | `users` | `users.me`, `users.get`, `users.checkUsername`, `users.whoToFollow`, `users.topClans`, `users.followers`, `users.following`, `users.blocked`, `users.getPrivacy`, `users.pins` | 40 |
 | `users.updateMe` | `users.updateMe` | 3 |

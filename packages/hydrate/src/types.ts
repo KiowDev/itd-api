@@ -2,6 +2,7 @@ import type {
   Actor,
   Attachment,
   Author,
+  AuthResource,
   Comment,
   CommentReplyTo,
   CommentsResource,
@@ -30,6 +31,7 @@ import type {
   PostsResource,
   Profile,
   PublicProfile,
+  QrLoginTarget,
   ShopDeliveryCity,
   ShopDeliveryPoint,
   ShopDeliveryResource,
@@ -189,6 +191,14 @@ export interface HydratedNotificationActions {
   readonly comment?: HydratedCommentReference;
 }
 
+/** Действия над устройством, которое просит вход по QR-коду. */
+export interface HydratedQrLoginTargetActions {
+  /** Подтверждает вход: устройство, показавшее код, получит access token. */
+  approve(...args: TailParameters<AuthResource['approveQrLogin']>): Promise<void>;
+  /** Отклоняет вход. */
+  reject(...args: TailParameters<AuthResource['rejectQrLogin']>): Promise<void>;
+}
+
 /** Действия над городом доставки. */
 export interface HydratedShopDeliveryCityActions {
   /** Загружает пункты выдачи в городе. */
@@ -256,6 +266,12 @@ export type HydratedNotification<T extends Notification = Notification> = Hydrat
 export type HydratedShopDeliveryCity<T extends ShopDeliveryCity = ShopDeliveryCity> = HydratedModel<
   T,
   HydratedShopDeliveryCityActions
+>;
+
+/** Устройство, которое просит вход по QR-коду, с методами подтверждения и отказа. */
+export type HydratedQrLoginTarget<T extends QrLoginTarget = QrLoginTarget> = HydratedModel<
+  T,
+  HydratedQrLoginTargetActions
 >;
 
 /** Страница, элементы которой получили методы гидратации. */
@@ -428,6 +444,19 @@ export type HydratedNotificationsResource<Resource extends ItdClient['notificati
 };
 
 /**
+ * API авторизации, где `scanQrLogin()` возвращает устройство с методами подтверждения.
+ *
+ * Секреты кода приходят аргументом вызова, а не полем ответа, поэтому действия появляются
+ * только у результата этого метода.
+ */
+export type HydratedAuthResource<Resource extends ItdClient['auth']> = Omit<
+  HydratedResource<Resource>,
+  'scanQrLogin'
+> & {
+  scanQrLogin(...args: Parameters<Resource['scanQrLogin']>): Promise<HydratedQrLoginTarget>;
+};
+
+/**
  * Вариант клиента с гидратированными результатами ресурсов.
  *
  * @example
@@ -443,5 +472,9 @@ export type HydrateFlavor<Client extends ItdClient = ItdClient> = Omit<
     ? Client[Key] extends ItdClient['notifications']
       ? HydratedNotificationsResource<Client[Key]>
       : never
-    : HydratedResource<Client[Key]>;
+    : Key extends 'auth'
+      ? Client[Key] extends ItdClient['auth']
+        ? HydratedAuthResource<Client[Key]>
+        : never
+      : HydratedResource<Client[Key]>;
 };
