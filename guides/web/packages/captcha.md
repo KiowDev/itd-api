@@ -180,9 +180,25 @@ createCaptchaSolver({
 
 ## Совместимость
 
-Виджет пропускает не всякий браузер. Собственная капча ИТД проходится и на свежих сборках
-Chromium; Cloudflare Turnstile — только на Chromium 147–149 (на 150+ он отказывает — это
-ограничение Cloudflare, не пакета). Таблица пересобирается скриптом `scripts/drivers.mjs`:
+Таблица ниже показывает выдачу токена Cloudflare Turnstile на разных версиях драйверов и браузеров.
+
+| Драйвер                                               | Версия и конфигурация                                  | Браузер | Turnstile | Проверено |
+|-------------------------------------------------------|--------------------------------------------------------| --- | --- | --- |
+| `patchright`                                          | 1.62.2, штатная сборка                                 | Chromium 151 | ✕ Нет | 02.09.2026 |
+|                                                       | 1.62.2, `executablePath`                               | Chromium 148 · 149 | ✓ Работает | 02.09.2026 |
+|                                                       | 1.59.4 · 1.60.2 · 1.61.1, штатные сборки               | Chromium 147 · 148 · 149 | ✓ Работает | 05.08.2026 |
+| `playwright`                                          | 1.62.1, штатная сборка                                 | Chromium 151 | ✕ Нет | 02.09.2026 |
+|                                                       | 1.62.1, `executablePath`                               | Chromium 148 · 149 | ✓ Работает | 02.09.2026 |
+|                                                       | 1.60.0 · 1.61.0, штатные сборки                        | Chromium 148 · 149 | ✓ Работает | 05.08.2026 |
+| `playwright-core`                                     | 1.62.1, `executablePath`                               | Chromium 149 | ✓ Работает | 02.09.2026 |
+| `camoufox-js`                                         | 0.12.0, `playwright-core` 1.60.0, `contextOptions: {}` | Camoufox 152.0.4-beta.29 | ✓ С окном и headless | 02.09.2026 |
+|                                                       | 0.11.5, `contextOptions: {}`                           | Camoufox 152 | ✓ Работает | 05.08.2026 |
+| `rebrowser-playwright`                                | 1.48.2 · 1.49.1 · 1.52.0, `executablePath`             | Chromium 149 | ✕ Нет | 02.09.2026 |
+| `playwright-extra` + `puppeteer-extra-plugin-stealth` | 4.3.6 + 2.11.2, `playwright` 1.62.1, `executablePath`  | Chromium 149 | ✕ Нет | 02.09.2026 |
+
+Собственная капча ИТД менее требовательна: ее можно получить любым подходящим драйвером и версией браузера.
+
+Таблица проверяется скриптом `scripts/drivers.mjs` из исходников пакета:
 
 ```sh
 npm i --no-save patchright playwright camoufox-js
@@ -190,6 +206,7 @@ node scripts/drivers.mjs            # Turnstile
 node scripts/drivers.mjs --itd      # капча ИТД
 ```
 
-Сборка приезжает вместе с версией драйвера, ею и выбирается — `npm i playwright@1.61`.
-Поставленная отдельно тоже годится: `npx @puppeteer/browsers install chrome@149.0.7827.55`
-и путь в `executablePath`. Версию запущенного браузера пакет называет в сообщении о таймауте.
+Штатная сборка приезжает вместе с версией драйвера. Другую можно поставить командой
+`npx @puppeteer/browsers install chrome@149.0.7827.55` и передать путь в `executablePath`.
+Версия драйвера сама по себе не гарантирует результат: например, `playwright` 1.62.1 не
+проходит Turnstile на штатном Chromium 151, но проходит на Chromium 148 и 149.
