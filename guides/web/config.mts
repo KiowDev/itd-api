@@ -31,6 +31,7 @@ const guideSidebar = [
       { text: 'Интеграции', link: '/integrations/' },
       { text: 'Плагины', link: '/plugins/' },
       { text: 'Подключаемые модули', link: '/features/' },
+      { text: 'Интерактивный пример', link: 'https://itd-api-demo.vercel.app/' },
     ],
   },
   {
