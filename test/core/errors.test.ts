@@ -107,6 +107,20 @@ describe('parseErrorBody', () => {
     expect(parsed.message).toBe('<html>502 Bad Gateway</html>');
   });
 
+  it('распознаёт машинный код в текстовом теле', () => {
+    const parsed = parseErrorBody('  NOT_FOUND\n', 404, 'Not Found');
+
+    expect(parsed.code).toBe('NOT_FOUND');
+    expect(parsed.message).toBe('NOT_FOUND');
+  });
+
+  it('не принимает обычный текст за машинный код', () => {
+    const parsed = parseErrorBody('Not found', 404, 'Not Found');
+
+    expect(parsed.code).toBe('UNKNOWN_ERROR');
+    expect(parsed.message).toBe('Not found');
+  });
+
   it('понимает форму, которой отвечает сервер на неверный токен', () => {
     // Реальный ответ 401: поле error — строка, а не объект.
     const parsed = parseErrorBody({ error: 'Invalid token' }, 401);
@@ -179,6 +193,19 @@ describe('createApiError', () => {
 
     expect(error).toBeInstanceOf(ItdNotFoundError);
     expect(error.message).toBe('Post not found');
+  });
+
+  it('распознаёт текстовый NOT_FOUND, которым отвечает отсутствующий роут', () => {
+    const error = createApiError({
+      ...ctx,
+      status: 404,
+      statusText: 'Not Found',
+      body: 'NOT_FOUND',
+    });
+
+    expect(error).toBeInstanceOf(ItdNotFoundError);
+    expect(error.code).toBe(ItdErrorCode.NOT_FOUND);
+    expect(error.message).toBe('NOT_FOUND');
   });
 
   it('форма отказа проверки становится ошибкой валидации', () => {

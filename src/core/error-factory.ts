@@ -27,6 +27,16 @@ export interface ParsedErrorBody {
 }
 
 /**
+ * Отличает строковый машинный код (`NOT_FOUND`) от обычного текста и HTML страницы прокси.
+ * Ограничение длины не даёт случайно принять большое служебное тело за код ошибки.
+ */
+function readPlainTextErrorCode(value: string): ItdErrorCode | undefined {
+  return value.length <= 128 && /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/.test(value)
+    ? (value as ItdErrorCode)
+    : undefined;
+}
+
+/**
  * Сводит ошибки по полям к единой форме `{ поле: [сообщения] }`.
  *
  * Понимает две документированные формы:
@@ -79,9 +89,10 @@ export function parseErrorBody(body: unknown, status: number, statusText = ''): 
 
   // Не-JSON: HTML от прокси, простой текст, пустое тело.
   if (typeof body === 'string') {
+    const message = asString(body.trim()) ?? fallbackMessage;
     return {
-      code: 'UNKNOWN_ERROR',
-      message: asString(body.trim()) ?? fallbackMessage,
+      code: readPlainTextErrorCode(message) ?? 'UNKNOWN_ERROR',
+      message,
       detail: undefined,
       title: undefined,
       fieldErrors: {},
@@ -221,7 +232,7 @@ const CODE_TO_CLASS: Record<string, new (init: never) => ItdApiError> = {
   ACCOUNT_INVALID_CREDENTIALS: ItdAuthError,
   ACCESS_DENIED: ItdForbiddenError,
   ENTITY_NOT_FOUND: ItdNotFoundError,
-  // Сервер отвечает именно так: `{ error: { code: 'NOT_FOUND', message: 'Post not found' } }`.
+  // Приходит как JSON-код либо как text/plain тело `NOT_FOUND`.
   NOT_FOUND: ItdNotFoundError,
   ENTITY_ALREADY_EXISTS: ItdConflictError,
 };

@@ -1103,13 +1103,17 @@ describe('капча при входе по паролю', () => {
     });
   });
 
-  it('при 404 NOT_FOUND определения провайдера использует Cloudflare', async () => {
+  it('при текстовом 404 NOT_FOUND определения провайдера использует Cloudflare', async () => {
     const getToken = vi.fn().mockResolvedValue('cloudflare-proof');
     const { auth, mock } = makeAuth(
       [json({ accessToken: 't' })],
       { auth: credentials, captcha: { getToken } },
       undefined,
-      json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, { status: 404 }),
+      new Response('NOT_FOUND', {
+        status: 404,
+        statusText: 'Not Found',
+        headers: { 'content-type': 'text/plain;charset=utf-8' },
+      }),
     );
 
     await expect(auth.token()).resolves.toBe('t');
