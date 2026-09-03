@@ -36,7 +36,9 @@ function makeAuth(
     : handler;
   const mock = createMockFetch((request) =>
     request.url.endsWith('/captcha/provider')
-      ? json(captchaProvider ?? { provider: 'cloudflare', field: 'turnstileToken' })
+      ? captchaProvider instanceof Response
+        ? captchaProvider.clone()
+        : json(captchaProvider ?? { provider: 'cloudflare', field: 'turnstileToken' })
       : resolve(request, handlerCall++),
   );
   const resolved: ItdClientOptions = {
@@ -1099,6 +1101,42 @@ describe('капча при входе по паролю', () => {
       password: 'p',
       token: 'itd-proof',
     });
+  });
+
+  it('при 404 NOT_FOUND определения провайдера использует Cloudflare', async () => {
+    const getToken = vi.fn().mockResolvedValue('cloudflare-proof');
+    const { auth, mock } = makeAuth(
+      [json({ accessToken: 't' })],
+      { auth: credentials, captcha: { getToken } },
+      undefined,
+      json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, { status: 404 }),
+    );
+
+    await expect(auth.token()).resolves.toBe('t');
+
+    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Cloudflare);
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+      email: 'a@b.c',
+      password: 'p',
+      turnstileToken: 'cloudflare-proof',
+    });
+  });
+
+  it('не скрывает другие ошибки определения провайдера', async () => {
+    const getToken = vi.fn();
+    const { auth, mock } = makeAuth(
+      [],
+      { auth: credentials, captcha: { getToken } },
+      undefined,
+      json({ error: { code: 'ENTITY_NOT_FOUND', message: 'Not found' } }, { status: 404 }),
+    );
+
+    const error = await auth.token().catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ItdApiError);
+    expect((error as ItdApiError).code).toBe('ENTITY_NOT_FOUND');
+    expect(getToken).not.toHaveBeenCalled();
+    expect(mock.callCount).toBe(1);
   });
 
   it('кладёт токен в поле, которое назвал сервер', async () => {

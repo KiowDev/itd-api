@@ -8,7 +8,7 @@ import {
   REFRESH_COOKIE_PATH,
 } from '../core/cookies.js';
 import { Emitter, reportListenerError } from '../core/emitter.js';
-import { ItdAuthError, ItdConfigError, ItdStateError } from '../core/errors.js';
+import { ItdAuthError, ItdConfigError, ItdStateError, isItdApiError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { Logger } from '../core/options.js';
 import { createDeviceId } from '../core/runtime.js';
@@ -22,6 +22,7 @@ import {
   type CaptchaToken,
   SignInStatus,
 } from '../operations/auth.js';
+import { CaptchaField, CaptchaType, ItdErrorCode } from '../types/enums.js';
 import {
   type CaptchaBody,
   captchaBody,
@@ -1184,13 +1185,23 @@ export class AuthManager implements AuthProvider {
 
   /** Спрашивает у сервера активного провайдера и поле, в котором он ждёт токен. */
   async #resolveCaptchaProvider(): Promise<CaptchaProvider> {
-    const provider: unknown = await this.#http.execute(AUTH_CAPTCHA_PROVIDER, {
-      path: AUTH_PATHS.captchaProvider,
-      skipAuth: true,
-      skipAuthRefresh: true,
-    });
+    try {
+      const provider: unknown = await this.#http.execute(AUTH_CAPTCHA_PROVIDER, {
+        path: AUTH_PATHS.captchaProvider,
+        skipAuth: true,
+        skipAuthRefresh: true,
+      });
 
-    return readCaptchaProvider(provider);
+      return readCaptchaProvider(provider);
+    } catch (error) {
+      if (isItdApiError(error) && error.status === 404 && error.code === ItdErrorCode.NOT_FOUND) {
+        this.#config.logger?.warn(
+          'Сервер отключил определение провайдера капчи; используется Cloudflare Turnstile',
+        );
+        return { provider: CaptchaType.Cloudflare, field: CaptchaField.Cloudflare };
+      }
+      throw error;
+    }
   }
 
   async #performSignIn(credentials: CredentialsAuth, revision: number): Promise<string | null> {
