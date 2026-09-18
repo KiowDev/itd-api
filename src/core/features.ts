@@ -17,7 +17,7 @@ import {
   identityResult,
   type OperationAnnotations,
   type OperationContract,
-  type OperationMethod,
+  OperationMethod,
   RetrySafety,
 } from './operation.js';
 import type { Logger, RateLimitBucketOverride, RawRequestOptions } from './options.js';
@@ -333,7 +333,7 @@ export class FeatureRegistry {
           `feature «${featureName}»: операция «${localName}» должна быть объектом`,
         );
       }
-      const methods: readonly OperationMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+      const methods: readonly OperationMethod[] = Object.values(OperationMethod);
       if (!methods.includes(definition.method)) {
         throw new ItdConfigError(
           `feature «${featureName}»: операция «${localName}» содержит неизвестный HTTP-метод`,

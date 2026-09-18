@@ -17,6 +17,8 @@ import {
   createAuthPreflightMiddleware,
   createAuthPreparationMiddleware,
   createAuthRecoveryMiddleware,
+  createDecodeMiddleware,
+  createPluginsMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
   createServicesMiddleware,
@@ -33,6 +35,7 @@ import { Transport } from './transport.js';
 /** Имена стадий обработки запроса в порядке выполнения. @internal */
 export const ClientRuntimeStage = Object.freeze({
   OperationPlugins: 'operation_plugins',
+  Decode: 'decode',
   Services: 'services',
   AuthPreflight: 'auth_preflight',
   Retry: 'retry',
@@ -200,19 +203,22 @@ export function createClientRuntime<A extends AuthProvider>(
     }
   };
 
-  transport = new Transport(
-    { ...config, hooks: config.hooks },
-    {
-      // Заголовки читаются и при `pacing: 'off'`: на темп они там не влияют, но остаются
-      // единственным источником для rateLimitState().
-      onRateLimit: queues ? observeRateLimit : undefined,
-      cookies: config.useCookieJar ? jar : undefined,
-      getDeviceId: () => auth.deviceId(),
-      lifetimeSignal: lifetime.signal,
-    },
-  );
+  transport = new Transport(config, {
+    // Заголовки читаются и при `pacing: 'off'`: на темп они там не влияют, но остаются
+    // единственным источником для rateLimitState().
+    onRateLimit: queues ? observeRateLimit : undefined,
+    cookies: config.useCookieJar ? jar : undefined,
+    getDeviceId: () => auth.deviceId(),
+  });
 
-  const stages: PipelineStage[] = [
+  /** Стадии логической операции: выполняются один раз на вызов метода. */
+  const operationStages: PipelineStage[] = [
+    { name: ClientRuntimeStage.OperationPlugins, middleware: createPluginsMiddleware(plugins) },
+    { name: ClientRuntimeStage.Decode, middleware: createDecodeMiddleware() },
+  ];
+
+  /** Стадии исполнения: от выбора сервиса до транспортной попытки. */
+  const executionStages: PipelineStage[] = [
     {
       name: ClientRuntimeStage.Services,
       middleware: createServicesMiddleware(services),
@@ -227,7 +233,7 @@ export function createClientRuntime<A extends AuthProvider>(
         clock: config.clock,
         catalog,
         retry: config.retry,
-        rateLimitDelays: config.rateLimit?.retryDelays ?? [],
+        rateLimitDelays: config.rateLimit?.retryDelays,
         pauseQueue: queues ? (ms, request) => queueFor(request)?.pause(ms) : undefined,
         hooks: config.hooks,
         logger: config.logger,
@@ -247,7 +253,7 @@ export function createClientRuntime<A extends AuthProvider>(
   ];
 
   if (queues) {
-    stages.push({
+    executionStages.push({
       name: ClientRuntimeStage.Queue,
       middleware: createQueueMiddleware((request, task) => {
         const queue = queueFor(request);
@@ -256,21 +262,24 @@ export function createClientRuntime<A extends AuthProvider>(
     });
   }
 
-  stages.push({
-    name: ClientRuntimeStage.Attempt,
-    middleware: createAttemptMiddleware(),
-  });
+  executionStages.push(
+    { name: ClientRuntimeStage.Attempt, middleware: createAttemptMiddleware() },
+    {
+      name: ClientRuntimeStage.AuthHeaders,
+      middleware: createAuthHeadersMiddleware({ currentHeaders: () => auth.currentHeaders() }),
+    },
+  );
 
-  stages.push({
-    name: ClientRuntimeStage.AuthHeaders,
-    middleware: createAuthHeadersMiddleware({ currentHeaders: () => auth.currentHeaders() }),
-  });
-
-  const handler = composePipeline(
-    stages.map(({ middleware }) => middleware),
+  const execution = composePipeline(
+    executionStages.map(({ middleware }) => middleware),
     transport.send,
   );
-  const clientHandler: RequestHandler = (request) => {
+
+  /**
+   * Проверки между стадиями операции и исполнения: обёртка плагина уже могла изменить запрос,
+   * а после начала `dispose()` завершаются только служебные запросы финализации.
+   */
+  const guardedExecution: RequestHandler = (request) => {
     try {
       if (!isDisposeCleanupRequest(request)) {
         internals.assertActive?.('выполнить новый запрос');
@@ -286,14 +295,18 @@ export function createClientRuntime<A extends AuthProvider>(
     } catch (error) {
       return Promise.reject(error);
     }
-    return handler(request);
+    return execution(request);
   };
 
+  const handler = composePipeline(
+    operationStages.map(({ middleware }) => middleware),
+    guardedExecution,
+  );
+
   const http = new HttpClient({
-    handler: clientHandler,
-    plugins,
+    handler,
     baseUrl: config.baseUrl,
-    timeout: config.timeout,
+    deadline: config.deadline,
     clock: config.clock,
     lifetimeSignal: lifetime.signal,
     hooks: config.hooks,
@@ -303,8 +316,8 @@ export function createClientRuntime<A extends AuthProvider>(
   // вместо отдельного pipeline с постепенно расходящимся порядком стадий.
   auth = internals.auth({ config, http, cookies: jar });
   const stageOrder = Object.freeze([
-    ClientRuntimeStage.OperationPlugins,
-    ...stages.map(({ name }) => name),
+    ...operationStages.map(({ name }) => name),
+    ...executionStages.map(({ name }) => name),
     ClientRuntimeStage.Transport,
   ]);
 

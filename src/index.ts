@@ -11,10 +11,9 @@ export type {
   AccountFeature,
   AddAccountOptions,
   ItdAccountsOptions,
-  RateLimitScope,
   RemoveAccountOptions,
 } from './accounts.js';
-export { createAccounts, ItdAccounts } from './accounts.js';
+export { createAccounts, ItdAccounts, RateLimitScope } from './accounts.js';
 // Билдеры: фабрики — обычные функции, классы отдаются только как типы,
 // поэтому единственная точка входа — фабрика. Подробности — в builders/base.ts.
 export type { BuilderInput, ItdBuilder } from './builders/base.js';
@@ -104,6 +103,7 @@ export {
   isItdServerError,
   isItdStateError,
   isItdValidationError,
+  TimeoutBudget,
 } from './core/errors.js';
 export type {
   ClientFeature,
@@ -132,7 +132,7 @@ export {
   type FeatureOperationId,
   type OperationAnnotations,
   type OperationMetadata,
-  type OperationMethod,
+  OperationMethod,
   RetrySafety,
 } from './core/operation.js';
 // Опции разделены по слоям: RuntimeOptions нужны generic-ядру, SessionOptions — сессии,

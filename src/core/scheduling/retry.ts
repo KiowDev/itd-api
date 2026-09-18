@@ -6,6 +6,7 @@ import {
   ItdFileError,
   ItdNetworkError,
   ItdTimeoutError,
+  TimeoutBudget,
 } from '../errors.js';
 import type { PipelineRequest } from '../execution/pipeline.js';
 import { RetrySafety } from '../operation.js';
@@ -40,7 +41,7 @@ export function resolveRetryPolicy(
   catalog: OperationCatalog,
 ): RetryPolicy {
   let retrySafety: RetrySafety;
-  const known = catalog.retrySafetyOf(request.operationId);
+  const known = catalog.definitionOf(request.operationId)?.retrySafety;
 
   if (request.retrySafety !== undefined) {
     retrySafety = request.retrySafety;
@@ -63,15 +64,26 @@ export function resolveRetryPolicy(
 }
 
 /**
+ * Ошибка, после которой повтор невозможен в принципе: отмена либо истёкший общий срок операции.
+ * Таймаут отдельной попытки сюда не входит — он повторяется как сетевой сбой.
+ */
+function isTerminal(error: unknown): boolean {
+  return (
+    error instanceof ItdAbortError ||
+    (error instanceof ItdTimeoutError && error.budget === TimeoutBudget.Deadline)
+  );
+}
+
+/**
  * Стоит ли повторять запрос после этой ошибки.
  *
  * `429` гарантирует, что операция не была обработана, поэтому допускает даже unsafe retry.
- * Обрыв сети, timeout и `5xx` такой гарантии не дают и требуют safe/idempotent операции.
+ * Обрыв сети, таймаут попытки и `5xx` такой гарантии не дают и требуют safe/idempotent операции.
  * Ошибка подготовки файла возникает до обращения к серверу и потому зависит только от
  * собственного признака retryable и повторяемости тела.
  */
 function isRetryable(error: unknown, policy: RetryPolicy): boolean {
-  if (error instanceof ItdAbortError || !policy.bodyReplayable) return false;
+  if (isTerminal(error) || !policy.bodyReplayable) return false;
 
   // Неизвестное runtime-значение (например, из JavaScript без типов) должно вести себя
   // консервативно, а не случайно разрешать повтор unsafe-операции.
@@ -119,7 +131,7 @@ export function createRetryScheduler(
 ): RetryScheduler {
   return (error, retryAttempt, policy) => {
     if (retryAttempt >= options.attempts) return undefined;
-    if (error instanceof ItdAbortError || !policy.bodyReplayable) return undefined;
+    if (isTerminal(error) || !policy.bodyReplayable) return undefined;
 
     if (options.shouldRetry) {
       return options.shouldRetry(error, retryAttempt, policy)

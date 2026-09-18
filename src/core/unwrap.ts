@@ -26,16 +26,6 @@ export function unwrapData(body: unknown): unknown {
   return (body as { data: unknown }).data;
 }
 
-/**
- * Обычный объект — не `null`, не массив.
- *
- * Живёт здесь, а не в каждом разборщике ответа: одна и та же проверка нужна и фабрике
- * ошибок, и приведению уведомлений.
- */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** Непустая строка либо `undefined`. Отличается от {@link pickString} тем, что берёт значение, а не поле. */
 export function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;

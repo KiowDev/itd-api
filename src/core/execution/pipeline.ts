@@ -2,33 +2,114 @@ import type { OperationId } from '../../domain/operations.js';
 import type { CookieJar } from '../cookies.js';
 import type { OperationRequestOptions } from '../options.js';
 
+/*
+ * Служебное состояние конвейера хранится в объекте запроса под символьными ключами.
+ * Символы перечислимы: spread-копии слоёв переносят их дальше, а `Object.entries` и
+ * `JSON.stringify` в пользовательском коде — например в ключе кэша — их не видят.
+ */
 const REQUEST_ATTEMPT_STATE = Symbol('itd-api.request-attempt-state');
 const REQUEST_QUEUE_KEY = Symbol('itd-api.request-queue-key');
 const REQUEST_AUTH_RECOVERY_STATE = Symbol('itd-api.request-auth-recovery-state');
 const REQUEST_ERROR_OBSERVATION_STATE = Symbol('itd-api.request-error-observation-state');
+const REQUEST_LIFECYCLE_SIGNAL = Symbol('itd-api.request-lifecycle-signal');
+const REQUEST_READER = Symbol('itd-api.request-reader');
 const DISPOSE_CLEANUP_REQUEST = Symbol('itd-api.dispose-cleanup-request');
 
 interface RequestAttemptState {
   value: number;
 }
 
+/** Преобразует разобранное тело HTTP-ответа в результат операции. */
+export type OperationReader = (
+  body: unknown,
+  request: Readonly<OperationRequestOptions>,
+) => unknown;
+
 interface RequestAuthRecoveryState {
   recovered: boolean;
   preparationErrors: Set<unknown>;
 }
 
-interface RequestErrorObservationState {
+/**
+ * Учёт вызовов `onError` одной логической операции.
+ *
+ * `errors` — ошибки, уже переданные хуку. `abortReported` — отмена операции уже передана
+ * хуку одним из уровней: верхней границей операции либо транспортной попыткой, которую
+ * отмена застала. Второй уровень тот же хук не вызывает.
+ */
+interface RequestErrorReportingState {
   errors: Set<unknown>;
-  lifecycleAbortedDuringNotification: boolean;
+  abortReported: boolean;
 }
 
 type InternalPipelineRequest = PipelineRequest & {
   [REQUEST_ATTEMPT_STATE]?: RequestAttemptState;
   [REQUEST_QUEUE_KEY]?: RequestQueueKey;
   [REQUEST_AUTH_RECOVERY_STATE]?: RequestAuthRecoveryState;
-  [REQUEST_ERROR_OBSERVATION_STATE]?: RequestErrorObservationState;
+  [REQUEST_ERROR_OBSERVATION_STATE]?: RequestErrorReportingState;
+  [REQUEST_LIFECYCLE_SIGNAL]?: AbortSignal;
+  [REQUEST_READER]?: OperationReader;
   [DISPOSE_CLEANUP_REQUEST]?: true;
 };
+
+/**
+ * Привязывает к запросу функцию чтения контракта операции. У `raw`-запроса её нет.
+ * Стадия плагинов переносит её на запрос, собранный обёрткой заново.
+ *
+ * @internal
+ */
+export function withOperationReader<T extends PipelineRequestInput>(
+  request: T,
+  read: OperationReader,
+): T {
+  return { ...request, [REQUEST_READER]: read } as T;
+}
+
+/** Функция чтения контракта операции, если запрос её несёт. @internal */
+export function operationReaderOf(request: PipelineRequest): OperationReader | undefined {
+  return (request as InternalPipelineRequest)[REQUEST_READER];
+}
+
+/**
+ * Переносит служебное состояние логической операции на запрос, который обёртка плагина
+ * могла собрать заново: функцию чтения, право финализации после `dispose()` и учёт
+ * уже переданных в `onError` ошибок.
+ *
+ * @internal
+ */
+export function withOperationState(
+  prepared: PipelineRequest,
+  source: PipelineRequest,
+): PipelineRequest {
+  const from = source as InternalPipelineRequest;
+  const to = { ...prepared } as InternalPipelineRequest;
+  if (from[REQUEST_READER] !== undefined) to[REQUEST_READER] = from[REQUEST_READER];
+  if (from[DISPOSE_CLEANUP_REQUEST]) to[DISPOSE_CLEANUP_REQUEST] = true;
+  if (from[REQUEST_ERROR_OBSERVATION_STATE] !== undefined) {
+    to[REQUEST_ERROR_OBSERVATION_STATE] = from[REQUEST_ERROR_OBSERVATION_STATE];
+  }
+  return to;
+}
+
+/**
+ * Сохраняет общий сигнал логической операции до стадии плагинов.
+ *
+ * Transformer получает запрос с пользовательским `signal`; слои ниже плагинов — с общим
+ * сигналом операции.
+ *
+ * @internal
+ */
+export function withLifecycleSignal(
+  request: PipelineRequest,
+  signal: AbortSignal,
+): PipelineRequest {
+  return { ...request, [REQUEST_LIFECYCLE_SIGNAL]: signal } as InternalPipelineRequest;
+}
+
+/** Общий сигнал операции, сохранённый {@link withLifecycleSignal}. @internal */
+export function lifecycleSignalOf(request: PipelineRequest): AbortSignal | undefined {
+  return (request as InternalPipelineRequest)[REQUEST_LIFECYCLE_SIGNAL];
+}
 
 /** Возвращает общее для всех retry состояние восстановления авторизации. @internal */
 export function requestAuthRecoveryState(request: PipelineRequest): RequestAuthRecoveryState {
@@ -40,43 +121,43 @@ export function requestAuthRecoveryState(request: PipelineRequest): RequestAuthR
   return state;
 }
 
-/** Создаёт общую для копий логического запроса отметку вызова `onError`. @internal */
-export function trackRequestErrorObservation(request: PipelineRequest): void {
+/** Создаёт общий для копий логического запроса учёт вызовов `onError`. @internal */
+export function trackRequestErrorReporting(request: PipelineRequest): void {
   const internal = request as InternalPipelineRequest;
-  internal[REQUEST_ERROR_OBSERVATION_STATE] ??= {
-    errors: new Set(),
-    lifecycleAbortedDuringNotification: false,
-  };
+  internal[REQUEST_ERROR_OBSERVATION_STATE] ??= { errors: new Set(), abortReported: false };
+}
+
+function errorReportingState(request: PipelineRequest): RequestErrorReportingState {
+  trackRequestErrorReporting(request);
+  return (request as InternalPipelineRequest)[
+    REQUEST_ERROR_OBSERVATION_STATE
+  ] as RequestErrorReportingState;
 }
 
 /** Отмечает, что ошибка логического запроса уже была передана в `onError`. @internal */
-export function markRequestErrorObserved(request: PipelineRequest, error: unknown): void {
-  trackRequestErrorObservation(request);
-  const state = (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE];
-  state?.errors.add(error);
+export function markRequestErrorReported(request: PipelineRequest, error: unknown): void {
+  errorReportingState(request).errors.add(error);
 }
 
 /** Была ли конкретная ошибка этой логической операции уже передана в `onError`. @internal */
-export function wasRequestErrorObserved(request: PipelineRequest, error: unknown): boolean {
+export function wasRequestErrorReported(request: PipelineRequest, error: unknown): boolean {
   return (
     (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE]?.errors.has(error) ??
     false
   );
 }
 
-/** Отмечает отмену lifecycle во время уже начатого локального `onError`. @internal */
-export function markRequestErrorNotificationAborted(request: PipelineRequest): void {
-  trackRequestErrorObservation(request);
-  const state = (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE];
-  if (state) state.lifecycleAbortedDuringNotification = true;
-}
-
-/** Нужно ли верхней границе не запускать тот же `onError` повторно после отмены. @internal */
-export function wasRequestErrorNotificationAborted(request: PipelineRequest): boolean {
-  return (
-    (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE]
-      ?.lifecycleAbortedDuringNotification ?? false
-  );
+/**
+ * Отмечает, что отмена операции передана в `onError`.
+ *
+ * @returns `false`, если это уже сделал другой уровень — повторно вызывать хук не нужно
+ * @internal
+ */
+export function claimAbortReport(request: PipelineRequest): boolean {
+  const state = errorReportingState(request);
+  if (state.abortReported) return false;
+  state.abortReported = true;
+  return true;
 }
 
 /** Тело, заново подготовленное для одной транспортной попытки. */
@@ -102,10 +183,9 @@ export type RequestBodyFactory = (
 /**
  * Описание запроса внутри конвейера.
  *
- * Отличается от публичного {@link RawRequestOptions} одним служебным полем: слои конвейера
- * должны уметь дописать заголовки так, чтобы пользовательские `headers` всё равно остались
- * важнее. Смешивать их в одном объекте нельзя — тогда слой авторизации перебивал бы
- * `Authorization`, заданный вызывающим кодом вручную.
+ * Отличается от публичного {@link RawRequestOptions} служебными полями. Главное из них —
+ * `layerHeaders`: слои конвейера дописывают заголовки так, чтобы пользовательские `headers`
+ * остались важнее, иначе слой авторизации перебивал бы `Authorization`, заданный вручную.
  */
 export interface PipelineRequest extends OperationRequestOptions {
   /** Изолированный cookie jar конкретного auth-flow. @internal */
@@ -191,8 +271,8 @@ export function requestQueueKey(
 }
 
 /** Помечает запрос как часть внутренней финализации уже начатого `dispose()`. @internal */
-export function markDisposeCleanupRequest(request: PipelineRequestInput): PipelineRequestInput {
-  return { ...request, [DISPOSE_CLEANUP_REQUEST]: true } as PipelineRequestInput;
+export function markDisposeCleanupRequest<T extends PipelineRequestInput>(request: T): T {
+  return { ...request, [DISPOSE_CLEANUP_REQUEST]: true } as T;
 }
 
 /** Разрешено ли запросу завершать внутреннюю очистку после `dispose()`. @internal */

@@ -2,7 +2,7 @@ import { DEFAULT_STATUS_BASE_URL, STATUS_SERVICE } from '../core/config.js';
 import type { ClientFeature, FeatureContext } from '../core/features.js';
 import { RetrySafety } from '../core/operation.js';
 import type { RequestOptions } from '../core/options.js';
-import { isRecord } from '../core/unwrap.js';
+import { isRecord } from '../core/validate.js';
 import { utcStampToIso } from '../domain/time.js';
 import type { PlatformStatus, ServiceStatus } from '../models/status.js';
 

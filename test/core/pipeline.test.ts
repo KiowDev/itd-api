@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { systemClock } from '../../src/core/clock.js';
 import { resolveRuntimeConfig } from '../../src/core/config.js';
 import { ItdAbortError, ItdAuthError } from '../../src/core/errors.js';
 import {
@@ -6,12 +7,19 @@ import {
   createAuthHeadersMiddleware,
   createAuthPreparationMiddleware,
   createAuthRecoveryMiddleware,
+  createDecodeMiddleware,
+  createPluginsMiddleware,
   createQueueMiddleware,
   createRetryMiddleware,
 } from '../../src/core/execution/middleware.js';
-import type { PipelineRequest } from '../../src/core/execution/pipeline.js';
+import {
+  type PipelineRequest,
+  withLifecycleSignal,
+  withOperationReader,
+} from '../../src/core/execution/pipeline.js';
 import { Transport, type TransportDeps } from '../../src/core/execution/transport.js';
 import { RetrySafety } from '../../src/core/operation.js';
+import { PluginRegistry } from '../../src/core/plugins/registry.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
@@ -40,7 +48,6 @@ function makeTransport(
     cookies: deps.cookies ?? undefined,
     getDeviceId: deps.getDeviceId,
     onRateLimit: deps.onRateLimit,
-    lifetimeSignal: deps.lifetimeSignal,
   });
 
   return { transport, mock, config };
@@ -403,5 +410,79 @@ describe('слой повторов', () => {
       }),
     ).rejects.toThrow(ItdAbortError);
     expect(mock.callCount).toBe(1);
+  });
+});
+
+describe('стадии операции', () => {
+  function withOperationStages(handler: MockHandler | Response[]) {
+    const { transport, mock } = makeTransport(handler);
+    const plugins = new PluginRegistry({
+      shutdownTimeout: 0,
+      clock: systemClock,
+      operationMetadata: () => undefined,
+    });
+    const handlerFn = composePipeline(
+      [createPluginsMiddleware(plugins), createDecodeMiddleware()],
+      transport.send,
+    );
+    return { plugins, mock, request: (o: PipelineRequest) => handlerFn(o) };
+  }
+
+  it('decode применяет функцию чтения контракта к разобранному телу', async () => {
+    const { request } = withOperationStages([json({ data: { value: 2 } })]);
+    const read = (body: unknown) => (body as { value: number }).value * 10;
+
+    await expect(
+      request(
+        withOperationReader(
+          { operationId: 'users.me', method: 'GET', path: '/api/users/me' },
+          read,
+        ),
+      ),
+    ).resolves.toBe(20);
+  });
+
+  it('raw-запрос без функции чтения отдаёт тело как есть', async () => {
+    const { request } = withOperationStages([json({ data: { value: 2 } })]);
+
+    await expect(
+      request({ operationId: 'raw', method: 'GET', path: '/api/ping' }),
+    ).resolves.toEqual({ value: 2 });
+  });
+
+  it('обёртка плагина, собравшая запрос заново, не теряет функцию чтения и lifecycle', async () => {
+    const { plugins, request } = withOperationStages([json({ data: { value: 3 } })]);
+    const lifecycle = new AbortController().signal;
+    let seenSignal: AbortSignal | undefined;
+    plugins.add(
+      {
+        name: 'rebuild',
+        install({ operations }) {
+          operations.use((current, next) => {
+            seenSignal = current.signal;
+            // Object.fromEntries отбрасывает символьные ключи — как это сделал бы чужой код.
+            return next(Object.fromEntries(Object.entries(current)) as typeof current);
+          });
+        },
+      },
+      { baseUrl: 'https://itd.test', logger: undefined },
+    );
+    const read = (body: unknown) => (body as { value: number }).value + 1;
+    const userSignal = new AbortController().signal;
+
+    await expect(
+      request(
+        withLifecycleSignal(
+          withOperationReader(
+            { operationId: 'users.me', method: 'GET', path: '/api/users/me', signal: userSignal },
+            read,
+          ),
+          lifecycle,
+        ),
+      ),
+    ).resolves.toBe(4);
+    // Обёртка видит пользовательский signal, а не служебный lifecycle.
+    expect(seenSignal).toBe(userSignal);
+    await plugins.dispose();
   });
 });

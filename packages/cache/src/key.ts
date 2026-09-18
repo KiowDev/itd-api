@@ -13,6 +13,7 @@ const OMITTED_FIELDS = new Set([
   'skipAuth',
   'signal',
   'timeout',
+  'deadline',
   'retry',
   'retrySafety',
   'skipQueue',

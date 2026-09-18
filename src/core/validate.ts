@@ -1,19 +1,27 @@
 import { ItdConfigError } from './errors.js';
 
 /**
- * Проверки, общие для резолверов конфигурации.
+ * Проверки, общие для резолверов конфигурации и разборщиков ответов.
  *
  * Настройки исполнения и настройки сессии разбираются в разных модулях, но сообщать
  * об ошибке должны одинаково: пользователю всё равно, какой слой отверг его значение.
  */
 
-/** Похоже ли значение на объект настроек, а не на массив или `null`. */
-export function isRecord(value: unknown): boolean {
+/** Обычный объект — не `null`, не массив. Сужает тип: для разбора значений неизвестной формы. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** @throws {ItdConfigError} если значение задано и не является неотрицательным числом */
-export function requirePositive(value: number, name: string): number {
+/**
+ * Та же проверка без сужения типа: для уже типизированных настроек, где сужение до индексной
+ * сигнатуры стёрло бы объявленные поля.
+ */
+export function isObjectLike(value: unknown): boolean {
+  return isRecord(value);
+}
+
+/** @throws {ItdConfigError} если значение не является неотрицательным конечным числом */
+export function requireNonNegative(value: number, name: string): number {
   if (!Number.isFinite(value) || value < 0) {
     throw new ItdConfigError(`${name} должен быть неотрицательным числом, получено: ${value}`);
   }

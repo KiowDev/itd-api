@@ -163,7 +163,8 @@ interface ItdClientOptions {
   autoRefresh?: boolean;                 // обновлять токен заранее и при 401; по умолчанию true
   reloginOnRefreshFailure?: boolean;     // повторный вход при неудаче refresh; по умолчанию true
   fetch?: typeof fetch;                  // своя реализация: Deno, RN, тесты, прокси
-  timeout?: number;                      // по умолчанию 30000; 0 — без ограничения
+  timeout?: number;                      // срок одной попытки; по умолчанию 30000; 0 — без ограничения
+  deadline?: number;                     // срок операции целиком; по умолчанию без ограничения
   shutdownTimeout?: number;              // сколько close()/dispose() ждут чужой код; 10000
   retry?: RetryOptions | false;
   rateLimit?: RateLimitOptions | false;

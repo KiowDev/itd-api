@@ -12,7 +12,7 @@ import { ItdAuthError, ItdConfigError, ItdStateError, isItdApiError } from '../c
 import type { HttpClient } from '../core/execution/http.js';
 import type { Logger } from '../core/options.js';
 import { createDeviceId } from '../core/runtime.js';
-import { isRecord, requireOptionalBoolean } from '../core/validate.js';
+import { isObjectLike, isRecord, requireOptionalBoolean } from '../core/validate.js';
 import type { UserId } from '../models/common.js';
 import {
   AUTH_CAPTCHA_PROVIDER,
@@ -136,7 +136,7 @@ function validateAuth(auth: AuthInput | undefined): AuthInput | undefined {
 
 function resolveStorage(storage: TokenStorage | undefined): TokenStorage {
   if (storage === undefined) return new MemoryTokenStorage();
-  if (!isRecord(storage)) throw new ItdConfigError('storage должен быть объектом TokenStorage');
+  if (!isObjectLike(storage)) throw new ItdConfigError('storage должен быть объектом TokenStorage');
 
   for (const method of ['get', 'set', 'clear'] as const) {
     if (typeof storage[method] !== 'function') {
@@ -156,7 +156,7 @@ export function resolveSessionConfig(
   options: SessionOptions,
   runtime: Pick<SessionConfig, 'baseUrl' | 'clock' | 'useCookieJar' | 'logger'>,
 ): SessionConfig {
-  if (!isRecord(options)) throw new ItdConfigError('опции клиента должны быть объектом');
+  if (!isObjectLike(options)) throw new ItdConfigError('опции клиента должны быть объектом');
 
   requireOptionalBoolean(options.autoRefresh, 'autoRefresh');
   requireOptionalBoolean(options.reloginOnRefreshFailure, 'reloginOnRefreshFailure');
@@ -1176,7 +1176,8 @@ export class AuthManager implements AuthProvider {
     if (this.#configCaptchaSpent) return undefined;
 
     const auth = this.#config.auth;
-    const captcha = isRecord(auth) ? (auth as CredentialsAuth).captcha : undefined;
+    const captcha =
+      typeof auth === 'object' && auth !== null && 'email' in auth ? auth.captcha : undefined;
     if (!captcha) return undefined;
 
     this.#configCaptchaSpent = true;

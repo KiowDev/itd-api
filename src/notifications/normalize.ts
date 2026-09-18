@@ -1,4 +1,5 @@
-import { asString, isRecord } from '../core/unwrap.js';
+import { asString } from '../core/unwrap.js';
+import { isRecord } from '../core/validate.js';
 import type { Notification } from '../models/notifications.js';
 import type { Actor } from '../models/users.js';
 import { canonicalNotificationType } from './type-map.js';

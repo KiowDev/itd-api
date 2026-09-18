@@ -175,9 +175,9 @@ describe('получение токена', () => {
     expect(auth.currentHeaders()).toEqual({ Authorization: 'Bearer newer' });
   });
 
-  it('общий timeout прерывает ожидание внешнего getToken до сети', async () => {
+  it('общий deadline прерывает ожидание внешнего getToken до сети', async () => {
     const { http, mock } = makeAuth([], {
-      timeout: 10,
+      deadline: 10,
       auth: { getToken: () => new Promise<string>(() => {}) },
     });
 

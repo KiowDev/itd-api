@@ -103,7 +103,7 @@ describe('каталог операций как точка инъекции', (
     const patched = makeRuntime(
       responses(),
       { retry },
-      catalogWith({ retrySafetyOf: () => 'safe' }),
+      catalogWith({ definitionOf: () => ({ method: 'POST', retrySafety: 'safe' }) }),
     );
     await expect(
       patched.runtime.http.execute(passthroughOperation('posts.create'), { path: '/api/posts' }),
@@ -116,7 +116,7 @@ describe('каталог операций как точка инъекции', (
     const { runtime, mock } = makeRuntime(
       [json({ data: {} })],
       {},
-      catalogWith({ methodOf: () => 'PATCH' }),
+      catalogWith({ definitionOf: () => ({ method: 'PATCH', retrySafety: 'safe' }) }),
     );
 
     // Встроенный каталог отправил бы users.me через GET.

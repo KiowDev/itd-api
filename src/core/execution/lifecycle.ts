@@ -1,21 +1,39 @@
 import type { ItdClock } from '../clock.js';
-import { ItdAbortError, ItdTimeoutError } from '../errors.js';
+import { ItdAbortError, type ItdError, ItdTimeoutError } from '../errors.js';
 
 export interface RequestAbortScope {
   signal: AbortSignal;
-  timedOut(): boolean;
+  /** Ошибка истёкшего срока, если сигнал сработал по таймеру. */
+  expired(): ItdError | undefined;
+  /** Снимает таймер срока, оставляя связь с отменой вызова и владельца. */
+  disarm(): void;
   cleanup(): void;
 }
 
-/** Объединяет отмену вызова, завершение клиента и общий таймаут логической операции. @internal */
+/** Срок ожидания области отмены и ошибка, которой он истекает. */
+export interface AbortScopeExpiry {
+  /** Срок в миллисекундах; `0` — без срока. */
+  after: number;
+  /** Создаёт ошибку истёкшего срока: она становится `signal.reason`. */
+  error: () => ItdError;
+}
+
+/**
+ * Объединяет отмену вызова, завершение владельца и срок ожидания в один сигнал.
+ *
+ * Истечение срока отменяет сигнал ошибкой из `expiry.error`; она же становится
+ * `signal.reason`.
+ *
+ * @internal
+ */
 export function createRequestAbortScope(
   signal: AbortSignal | undefined,
   lifetimeSignal: AbortSignal | undefined,
-  timeout: number,
   clock: ItdClock,
+  expiry?: AbortScopeExpiry,
 ): RequestAbortScope {
   const controller = new AbortController();
-  let timeoutReached = false;
+  let expired: ItdError | undefined;
 
   const link = (source: AbortSignal | undefined): (() => void) | undefined => {
     if (!source) return undefined;
@@ -29,25 +47,38 @@ export function createRequestAbortScope(
   };
 
   const detach = [link(signal), link(lifetimeSignal)];
-  const cancelTimer =
-    timeout > 0
+  let cancelTimer =
+    expiry && expiry.after > 0
       ? clock.schedule(() => {
-          timeoutReached = true;
-          controller.abort();
-        }, timeout)
+          cancelTimer = undefined;
+          if (controller.signal.aborted) return;
+          expired = expiry.error();
+          controller.abort(expired);
+        }, expiry.after)
       : undefined;
+
+  const disarm = () => {
+    cancelTimer?.();
+    cancelTimer = undefined;
+  };
 
   return {
     signal: controller.signal,
-    timedOut: () => timeoutReached,
+    expired: () => expired,
+    disarm,
     cleanup: () => {
-      cancelTimer?.();
+      disarm();
       for (const remove of detach) remove?.();
     },
   };
 }
 
-/** Прерывает только ожидание; исходный промис может корректно завершить общую фоновую работу. @internal */
+/**
+ * Прерывает только ожидание: исходный промис может корректно завершить фоновую работу,
+ * а его позднее отклонение не станет необработанным.
+ *
+ * @internal
+ */
 export function waitForRequest<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) {
     void promise.catch(() => {});
@@ -65,23 +96,28 @@ export function waitForRequest<T>(promise: Promise<T>, signal: AbortSignal): Pro
   });
 }
 
-/** Возвращает публичную ошибку, соответствующую причине остановки операции. @internal */
+/**
+ * Возвращает публичную ошибку, соответствующую причине остановки ожидания.
+ *
+ * Истёкший срок отдаёт ошибку, созданную таймером области. Отмена с причиной-ошибкой
+ * библиотеки (истёкший срок родительской области) отдаёт саму причину; прочая отмена
+ * оборачивается в {@link ItdAbortError}.
+ *
+ * @internal
+ */
 export function requestAbortError(
   scope: RequestAbortScope,
-  request: { timeout: number; method: string; path: string },
+  request: { method: string; path: string },
   fallback: unknown,
 ): unknown {
-  if (scope.timedOut()) {
-    return new ItdTimeoutError({
-      timeout: request.timeout,
-      method: request.method.toUpperCase(),
-      path: request.path,
-    });
-  }
-  if (scope.signal.aborted && !(fallback instanceof ItdAbortError)) {
-    return new ItdAbortError(`Запрос ${request.method.toUpperCase()} ${request.path} отменён`, {
-      cause: scope.signal.reason,
-    });
-  }
-  return fallback;
+  const expired = scope.expired();
+  if (expired) return expired;
+  if (!scope.signal.aborted) return fallback;
+
+  const reason: unknown = scope.signal.reason;
+  if (reason instanceof ItdTimeoutError) return reason;
+  if (fallback instanceof ItdAbortError) return fallback;
+  return new ItdAbortError(`Запрос ${request.method.toUpperCase()} ${request.path} отменён`, {
+    cause: reason,
+  });
 }

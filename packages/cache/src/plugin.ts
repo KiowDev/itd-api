@@ -385,6 +385,7 @@ export function cache(options: CacheOptions): CachePlugin {
           config.deduplicate &&
           request.signal === undefined &&
           request.timeout === undefined &&
+          request.deadline === undefined &&
           existing
         ) {
           const loaded = await existing.promise;
@@ -445,7 +446,8 @@ export function cache(options: CacheOptions): CachePlugin {
         mode === CacheModes.Default &&
         config.deduplicate &&
         request.signal === undefined &&
-        request.timeout === undefined;
+        request.timeout === undefined &&
+        request.deadline === undefined;
       const entry: PendingEntry = {
         accountScope: identity.accountScope,
         operation: operation.id,

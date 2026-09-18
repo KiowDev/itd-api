@@ -75,13 +75,18 @@ export class PluginRegistry {
 
   /** Проверяет добавление без вызова `install()`. @internal */
   assertCanAdd(plugin: ClientPlugin): void {
+    this.#orderWith(plugin);
+  }
+
+  /** Проверяет плагин и возвращает порядок обёрток вместе с ним. */
+  #orderWith(plugin: ClientPlugin): ClientPlugin[] {
     validatePluginDefinition(plugin);
     if (this.#removing.has(plugin.name)) {
       throw new ItdConfigError(
         `плагин «${plugin.name}» ещё отключается; дождитесь завершения unuse() или dispose()`,
       );
     }
-    orderPluginDefinitions([...this.#ordered.map((entry) => entry.plugin), plugin]);
+    return orderPluginDefinitions([...this.#ordered.map((entry) => entry.plugin), plugin]);
   }
 
   /** Проверяет удаление без изменения реестра. @internal */
@@ -103,8 +108,7 @@ export class PluginRegistry {
    * @throws {ItdConfigError} если плагин задан неверно, уже подключён или нарушает зависимости
    */
   add(plugin: ClientPlugin, context: Omit<PluginApi, 'operations' | 'attempts'>): void {
-    this.assertCanAdd(plugin);
-    const ordered = orderPluginDefinitions([...this.#ordered.map((entry) => entry.plugin), plugin]);
+    const ordered = this.#orderWith(plugin);
     const transformers: OperationTransformer[] = [];
     const interceptors: AttemptInterceptor[] = [];
     const register = <T>(values: T[], value: T, kind: string): (() => void) => {

@@ -42,16 +42,8 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
     return this.#base.defaultBucket;
   }
 
-  definitionOf(id: string) {
+  definitionOf(id: string): OperationDefinition | undefined {
     return this.#operations.get(id) ?? this.#base.definitionOf(id);
-  }
-
-  retrySafetyOf(id: string) {
-    return this.#operations.get(id)?.retrySafety ?? this.#base.retrySafetyOf(id);
-  }
-
-  methodOf(id: string) {
-    return this.#operations.get(id)?.method ?? this.#base.methodOf(id);
   }
 
   bucketOf(id: string): string {
@@ -105,7 +97,7 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
       );
     }
 
-    if (this.#base.methodOf(id) !== undefined) {
+    if (this.#base.definitionOf(id) !== undefined) {
       throw new ItdConfigError(
         `feature «${owner}»: операция «${id}» уже существует в базовом каталоге`,
       );

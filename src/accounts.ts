@@ -26,7 +26,13 @@ import {
 import type { TokenStorage } from './session/storage.js';
 
 /** Как аккаунты делят между собой очередь запросов. */
-export type RateLimitScope = 'account' | 'shared';
+export const RateLimitScope = Object.freeze({
+  /** У каждого аккаунта своя очередь. */
+  Account: 'account',
+  /** Одна очередь на всех — умолчание. */
+  Shared: 'shared',
+} as const);
+export type RateLimitScope = (typeof RateLimitScope)[keyof typeof RateLimitScope];
 
 /**
  * Фабрика подключаемого модуля для клиентов {@link ItdAccounts}.
@@ -224,24 +230,23 @@ export class ItdAccounts {
   constructor(options: ItdAccountsOptions = {}) {
     const { storage, plugins, features, rateLimitScope, ...base } = options;
 
-    if (
-      rateLimitScope !== undefined &&
-      rateLimitScope !== 'account' &&
-      rateLimitScope !== 'shared'
-    ) {
-      throw new ItdConfigError("rateLimitScope должен быть 'account' или 'shared'");
+    const scopes: readonly RateLimitScope[] = Object.values(RateLimitScope);
+    if (rateLimitScope !== undefined && !scopes.includes(rateLimitScope)) {
+      throw new ItdConfigError(`rateLimitScope должен быть одним из ${scopes.join(', ')}`);
     }
 
     this.#base = base;
     this.#storage = storage ?? new MemoryMultiTokenStorage();
     this.#plugins = orderPluginDefinitions(plugins ?? []);
     this.#features = resolveAccountFeatures(features);
-    this.#rateLimitScope = rateLimitScope ?? 'shared';
+    this.#rateLimitScope = rateLimitScope ?? RateLimitScope.Shared;
 
     // Общая очередь заводится сразу: проверить опции лучше при создании контейнера,
     // а не при добавлении первого аккаунта.
     const rateLimit =
-      this.#rateLimitScope === 'shared' ? resolveRateLimit(base.rateLimit, ITD_CATALOG) : undefined;
+      this.#rateLimitScope === RateLimitScope.Shared
+        ? resolveRateLimit(base.rateLimit, ITD_CATALOG)
+        : undefined;
     this.#queues = rateLimit
       ? new RequestQueuePool(rateLimit, base.clock ?? systemClock)
       : undefined;
@@ -305,7 +310,7 @@ export class ItdAccounts {
       );
     }
     if (
-      this.#rateLimitScope === 'shared' &&
+      this.#rateLimitScope === RateLimitScope.Shared &&
       options.rateLimit !== undefined &&
       options.rateLimit !== false
     ) {

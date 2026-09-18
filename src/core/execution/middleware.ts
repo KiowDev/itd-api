@@ -2,9 +2,15 @@ import type { AuthProvider } from '../auth-provider.js';
 import type { OperationCatalog } from '../catalog.js';
 import { type ItdClock, systemClock } from '../clock.js';
 import { type ResolvedRetryOptions, resolveRetry } from '../config.js';
-import { ItdAbortError, isItdApiError, isItdRateLimitError } from '../errors.js';
+import {
+  ItdAbortError,
+  type ItdRateLimitError,
+  isItdApiError,
+  isItdRateLimitError,
+} from '../errors.js';
 import type { ClientHooks, Logger, RequestOptions } from '../options.js';
 import { dispatchRequestHook } from '../plugins/hooks.js';
+import type { PluginRegistry } from '../plugins/registry.js';
 import {
   createRetryScheduler,
   type RetryPolicy,
@@ -17,13 +23,19 @@ import { waitForRequest } from './lifecycle.js';
 import {
   beginTransportAttempt,
   currentTransportAttempt,
+  lifecycleSignalOf,
+  operationReaderOf,
   type PipelineRequest,
   type RequestHandler,
   type RequestMiddleware,
   requestAuthRecoveryState,
   trackRequestAttempts,
   withLayerHeaders,
+  withOperationState,
 } from './pipeline.js';
+
+/** Сигнал для запроса без lifecycle: никогда не срабатывает. */
+const IDLE_SIGNAL = new AbortController().signal;
 
 /** Ожидание повтора, которое уважает отмену запроса. */
 function sleep(clock: ItdClock, ms: number, signal?: AbortSignal): Promise<void> {
@@ -46,6 +58,44 @@ function sleep(clock: ItdClock, ms: number, signal?: AbortSignal): Promise<void>
 }
 
 /**
+ * Слой плагинов: обёртки логической операции.
+ *
+ * Transformer видит запрос и результат по одному разу, независимо от повторов и обновления
+ * авторизации, и получает запрос с пользовательским `signal`; слои ниже — с общим сигналом
+ * операции. Служебное состояние операции переносится на запрос, собранный обёрткой заново.
+ * Здесь же к операции привязывается снимок attempt interceptors; сами они выполняются
+ * транспортом на каждой попытке.
+ */
+export function createPluginsMiddleware(plugins: Pick<PluginRegistry, 'run'>): RequestMiddleware {
+  return (request, next) => {
+    const lifecycle = lifecycleSignalOf(request) ?? request.signal;
+    return plugins.run(
+      request,
+      (prepared) =>
+        next({
+          ...withOperationState(prepared as PipelineRequest, request),
+          ...(lifecycle ? { signal: lifecycle } : {}),
+        }),
+      lifecycle ?? IDLE_SIGNAL,
+    );
+  };
+}
+
+/**
+ * Слой контракта операции: превращает разобранное тело ответа в публичный результат.
+ *
+ * Обёртки операции получают готовый результат метода, а не форму ответа сервера. У
+ * `raw`-запроса функции чтения нет, тело возвращается как есть.
+ */
+export function createDecodeMiddleware(): RequestMiddleware {
+  return async (request, next) => {
+    const body = await next(request);
+    const read = operationReaderOf(request);
+    return read ? read(body, request) : body;
+  };
+}
+
+/**
  * Слой очереди: ограничение конкурентности и частоты.
  *
  * Должен стоять непосредственно вокруг одной транспортной попытки: тогда ожидание retry
@@ -60,13 +110,6 @@ export function createQueueMiddleware(
     request.skipQueue ? next(request) : schedule(request, () => next(request));
 }
 
-/**
- * Слой плагинов.
- *
- * Стоит снаружи повторов и очереди: operation transformers видят запрос и ответ по одному
- * разу, иначе, например, текст поста зашифруется дважды. Здесь же к операции привязывается
- * snapshot attempt interceptors; сами они выполняются транспортом на каждой попытке.
- */
 /**
  * Слой сервисов.
  *
@@ -225,8 +268,12 @@ export interface RetryMiddlewareDeps {
    *
    * Живут отдельно от `retry`: сервер не присылает `Retry-After`, и экспоненциальный откат
    * тут бесполезен — окно измеряется десятками секунд. Не зависят от `retry.attempts`.
+   * Длина лестницы ограничивает число повторов и тогда, когда паузу называет сервер, а её
+   * самая длинная ступень — саму паузу: `Retry-After` дольше не соблюдается, повтора нет.
+   * Пустая лестница — повторов после `429` нет. `undefined` — очереди нет, и `429` уходит
+   * обычной политике `retry` как рядовая ошибка.
    */
-  rateLimitDelays: readonly number[];
+  rateLimitDelays: readonly number[] | undefined;
   /**
    * Придерживает очередь запроса на паузу `429`. `undefined`, если очереди нет.
    *
@@ -259,32 +306,31 @@ function resolveBackoff(
  * Слой повторов.
  *
  * Ответ `429` обрабатывается отдельно от прочих ошибок лестницей пауз и с придержанием
- * всей очереди; сетевые сбои и `5xx` — экспоненциальным откатом. Настройка `retry`
- * у отдельного запроса имеет приоритет над глобальной.
+ * всей очереди; сетевые сбои, таймаут попытки и `5xx` — экспоненциальным откатом.
+ * Настройка `retry` у отдельного запроса имеет приоритет над глобальной.
  */
 export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddleware {
   const globalScheduler = deps.retry ? createRetryScheduler(deps.retry) : undefined;
+  const ladder = deps.rateLimitDelays;
+  const ladderCeiling = ladder && ladder.length > 0 ? Math.max(...ladder) : 0;
 
-  const nextDelay = (
-    error: unknown,
-    retryAttempt: number,
+  /** Пауза по лестнице `429`; `undefined` — лестница пройдена или пауза сервера слишком велика. */
+  const ladderDelay = (
+    error: ItdRateLimitError,
     rateLimitAttempt: number,
     request: PipelineRequest,
     policy: RetryPolicy,
-    backoff: RetryScheduler | undefined,
   ): number | undefined => {
-    if (isItdRateLimitError(error)) {
-      if (!policy.bodyReplayable) return undefined;
-      // Пауза, названную сервером, соблюдаем точно; иначе берём очередной шаг лестницы.
-      const wait = error.retryAfter ?? deps.rateLimitDelays[rateLimitAttempt - 1];
-      if (wait === undefined) return undefined;
+    if (!ladder || !policy.bodyReplayable || rateLimitAttempt > ladder.length) return undefined;
+    if (error.retryAfter !== undefined && error.retryAfter > ladderCeiling) return undefined;
 
-      deps.pauseQueue?.(wait, request);
-      deps.logger?.debug(`лимит частоты, повтор ${rateLimitAttempt} через ${wait} мс`);
-      return wait;
-    }
+    // Паузу, названную сервером, соблюдаем точно; иначе берём очередной шаг лестницы.
+    const wait = error.retryAfter ?? ladder[rateLimitAttempt - 1];
+    if (wait === undefined) return undefined;
 
-    return backoff?.(error, retryAttempt, policy);
+    deps.pauseQueue?.(wait, request);
+    deps.logger?.debug(`лимит частоты, повтор ${rateLimitAttempt} через ${wait} мс`);
+    return wait;
   };
 
   return async (request, next) => {
@@ -299,21 +345,20 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
       try {
         return await next(trackedRequest);
       } catch (error) {
+        // Отменённую операцию не повторяют и о повторе не сообщают.
+        if (request.signal?.aborted) throw error;
+
         const transportAttempt = currentTransportAttempt(trackedRequest);
-        const rateLimited = isItdRateLimitError(error);
+        // Без очереди `429` — рядовая ошибка: её повторяет обычная политика в общий счёт попыток.
+        const rateLimited = ladder !== undefined && isItdRateLimitError(error);
         if (rateLimited) rateLimitAttempt += 1;
         else retryAttempt += 1;
 
         // Дальше идёт именно `trackedRequest`, а не исходный объект: он несёт запомненный
         // ключ очереди, и пауза попадает в тот же бакет, из которого запрос уходил.
-        const delay = nextDelay(
-          error,
-          retryAttempt,
-          rateLimitAttempt,
-          trackedRequest,
-          policy,
-          backoff,
-        );
+        const delay = rateLimited
+          ? ladderDelay(error, rateLimitAttempt, trackedRequest, policy)
+          : backoff?.(error, retryAttempt, policy);
         if (delay === undefined) throw error;
 
         const notification = dispatchRequestHook(deps.hooks, 'onRetry', {
@@ -340,6 +385,5 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
   };
 }
 
-/** Собирает обработчик из слоёв. Реэкспорт для удобства сборки в одном месте. */
 export { composePipeline } from './pipeline.js';
 export type { RequestHandler, RequestMiddleware };

@@ -2,7 +2,14 @@ import { ItdConfigError } from './errors.js';
 import type { OperationRequestOptions } from './options.js';
 
 /** HTTP-метод операции. */
-export type OperationMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export const OperationMethod = Object.freeze({
+  Get: 'GET',
+  Post: 'POST',
+  Put: 'PUT',
+  Patch: 'PATCH',
+  Delete: 'DELETE',
+} as const);
+export type OperationMethod = (typeof OperationMethod)[keyof typeof OperationMethod];
 
 /** ID операции подключаемого модуля: `<featureName>.<operationName>`. */
 export type FeatureOperationId<

@@ -395,7 +395,7 @@ describe('дедупликация', () => {
     expect(a).not.toBe(b);
   });
 
-  it('не объединяет запросы с signal или отдельным timeout', async () => {
+  it('не объединяет запросы с signal, отдельным timeout или deadline', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
     itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
 
@@ -407,8 +407,12 @@ describe('дедупликация', () => {
       itd.posts.get('2', { timeout: 1_000 }),
       itd.posts.get('2', { timeout: 2_000 }),
     ]);
+    await Promise.all([
+      itd.posts.get('3', { deadline: 1_000 }),
+      itd.posts.get('3', { deadline: 2_000 }),
+    ]);
 
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(6);
   });
 
   it('не сохраняет ошибку', async () => {

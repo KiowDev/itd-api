@@ -47,7 +47,6 @@ function makeTransport(
     cookies: deps.cookies ?? undefined,
     getDeviceId: deps.getDeviceId,
     onRateLimit: deps.onRateLimit,
-    lifetimeSignal: deps.lifetimeSignal,
   });
 
   return { transport, mock, config };
@@ -250,7 +249,6 @@ describe('Transport: ошибки', () => {
       cookies: undefined,
       getDeviceId: undefined,
       onRateLimit: undefined,
-      lifetimeSignal: undefined,
     });
 
     await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
@@ -279,7 +277,6 @@ describe('Transport: ошибки', () => {
       cookies: undefined,
       getDeviceId: undefined,
       onRateLimit: undefined,
-      lifetimeSignal: undefined,
     });
     const controller = new AbortController();
 
@@ -331,7 +328,6 @@ describe('Transport: ошибки', () => {
       cookies: undefined,
       getDeviceId: undefined,
       onRateLimit: undefined,
-      lifetimeSignal: undefined,
     });
     const controller = new AbortController();
     controller.abort();
@@ -365,7 +361,6 @@ describe('Transport: ошибки', () => {
       cookies: undefined,
       getDeviceId: undefined,
       onRateLimit: undefined,
-      lifetimeSignal: undefined,
     });
     const controller = new AbortController();
 

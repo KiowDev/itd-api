@@ -354,24 +354,49 @@ export class ItdNetworkError extends ItdError {
   }
 }
 
-/** Истёк таймаут запроса, заданный опцией `timeout`. */
+/** Какой бюджет времени исчерпан. */
+export const TimeoutBudget = Object.freeze({
+  /** Срок одной транспортной попытки — опция `timeout`. */
+  Attempt: 'attempt',
+  /** Общий срок логической операции — опция `deadline`. */
+  Deadline: 'deadline',
+} as const);
+export type TimeoutBudget = (typeof TimeoutBudget)[keyof typeof TimeoutBudget];
+
+/**
+ * Истёк срок, заданный опцией `timeout` (одна попытка) или `deadline` (операция целиком).
+ *
+ * Истёкший `timeout` для safe- и idempotent-операций повторяется; истёкший `deadline` —
+ * нет.
+ */
 export class ItdTimeoutError extends ItdError {
-  /** Значение таймаута в миллисекундах. */
+  /** Истёкший срок в миллисекундах. */
   readonly timeout: number;
   /** HTTP-метод запроса. */
   readonly method: string;
   /** Путь запроса без базового URL. */
   readonly path: string;
+  /** Какой из двух сроков истёк. */
+  readonly budget: TimeoutBudget;
 
-  constructor(init: { timeout: number; method: string; path: string }) {
+  constructor(init: {
+    timeout: number;
+    method: string;
+    path: string;
+    budget?: TimeoutBudget | undefined;
+  }) {
+    const budget = init.budget ?? TimeoutBudget.Attempt;
     super(
       ItdErrorKind.Timeout,
-      `Запрос ${init.method} ${init.path} превысил таймаут ${init.timeout} мс`,
+      budget === TimeoutBudget.Attempt
+        ? `Запрос ${init.method} ${init.path} превысил таймаут попытки ${init.timeout} мс`
+        : `Запрос ${init.method} ${init.path} превысил общий срок ${init.timeout} мс`,
     );
     this.name = 'ItdTimeoutError';
     this.timeout = init.timeout;
     this.method = init.method;
     this.path = init.path;
+    this.budget = budget;
   }
 }
 

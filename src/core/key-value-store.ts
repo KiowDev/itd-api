@@ -1,4 +1,5 @@
 import { ItdConfigError } from './errors.js';
+import { isObjectLike, isRecord } from './validate.js';
 
 /** Синхронный или асинхронный результат операции хранилища. */
 export type KeyValueStoreResult<T> = T | Promise<T>;
@@ -46,13 +47,9 @@ export interface RecordKeyValueStoreSource<T> {
   delete?(): KeyValueStoreResult<void>;
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function requireStore(value: unknown): asserts value is KeyValueStore<unknown> {
   const store = value as KeyValueStore<unknown>;
-  if (!isRecord(store)) throw new ItdConfigError('KeyValueStore должен быть объектом');
+  if (!isObjectLike(store)) throw new ItdConfigError('KeyValueStore должен быть объектом');
   for (const method of ['get', 'set', 'delete'] as const) {
     if (typeof store[method] !== 'function') {
       throw new ItdConfigError(`KeyValueStore.${method} должен быть функцией`);
@@ -173,7 +170,7 @@ export function withCodec<T, Stored>(
 ): KeyValueStore<T> {
   requireStore(store);
   if (
-    !isRecord(codec) ||
+    !isObjectLike(codec) ||
     typeof codec.encode !== 'function' ||
     typeof codec.decode !== 'function'
   ) {
@@ -215,7 +212,7 @@ export function createRecordKeyValueStore<T>(
   source: RecordKeyValueStoreSource<T>,
 ): EnumerableKeyValueStore<T> {
   if (
-    !isRecord(source) ||
+    !isObjectLike(source) ||
     typeof source.read !== 'function' ||
     typeof source.write !== 'function'
   ) {

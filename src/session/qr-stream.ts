@@ -97,7 +97,7 @@ export async function openQrLoginStream(
   const path = AUTH_PATHS.qrStream;
   const method = 'POST';
   const url = joinUrl(connection.baseUrl, path);
-  const abort = createRequestAbortScope(signal, connection.signal, 0, connection.clock);
+  const abort = createRequestAbortScope(signal, connection.signal, connection.clock);
 
   try {
     const headers = await connection.baseHeaders(url);
@@ -125,7 +125,7 @@ export async function openQrLoginStream(
         path,
         cause: error,
       });
-      throw requestAbortError(abort, { timeout: 0, method, path }, failure);
+      throw requestAbortError(abort, { method, path }, failure);
     }
 
     cookies.setFromResponse(response.url || url, response);
@@ -152,7 +152,7 @@ export async function openQrLoginStream(
 
     await consumeQrLoginStream(response.body, onEvent, abort.signal);
   } catch (error) {
-    throw requestAbortError(abort, { timeout: 0, method, path }, error);
+    throw requestAbortError(abort, { method, path }, error);
   } finally {
     abort.cleanup();
   }

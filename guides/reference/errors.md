@@ -29,7 +29,7 @@ ItdError
 │  └─ ItdServerError            5xx — ошибка на стороне сервера
 ├─ ItdNetworkError        запрос не дошёл до сервера
 ├─ ItdFileError           не удалось получить или прочитать источник вложения
-├─ ItdTimeoutError        истёк таймаут
+├─ ItdTimeoutError        истёк срок попытки (timeout) или операции (deadline)
 ├─ ItdAbortError          отменён через AbortSignal
 ├─ ItdStateError          операция невозможна в текущем состоянии объекта
 └─ ItdConfigError         неверная конфигурация или аргументы (до обращения к сети; бросают билдеры)
@@ -69,7 +69,8 @@ class ItdApiError extends ItdError {
 подтверждения.
 
 `ItdNetworkError` / `ItdTimeoutError` содержат `method` и `path`; `ItdTimeoutError` — ещё
-и `timeout`.
+`timeout` (истёкший срок, мс) и `budget`: `'attempt'` для срока попытки, `'deadline'` для
+срока операции.
 
 ## `ItdFileError`
 

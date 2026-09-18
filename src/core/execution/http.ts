@@ -1,50 +1,71 @@
 import type { OperationId } from '../../domain/operations.js';
 import type { ItdClock } from '../clock.js';
+import { ItdTimeoutError, TimeoutBudget } from '../errors.js';
 import type { OperationContract } from '../operation.js';
 import type { ClientHooks } from '../options.js';
 import { dispatchRequestHook } from '../plugins/hooks.js';
-import type { PluginRegistry } from '../plugins/registry.js';
 import { buildQuery, joinUrl } from '../url.js';
 import { createRequestAbortScope, requestAbortError, waitForRequest } from './lifecycle.js';
 import {
+  claimAbortReport,
   identifyRequest,
   markDisposeCleanupRequest,
-  markRequestErrorObserved,
+  markRequestErrorReported,
   type PipelineRequest,
   type PipelineRequestInput,
   type RequestHandler,
-  trackRequestErrorObservation,
-  wasRequestErrorNotificationAborted,
-  wasRequestErrorObserved,
+  trackRequestErrorReporting,
+  wasRequestErrorReported,
+  withLifecycleSignal,
+  withOperationReader,
 } from './pipeline.js';
 
-/** Что нужно фасаду для работы. */
+/** Что нужно точке входа в конвейер. */
 export interface HttpClientDeps {
-  /** Готовый обработчик — вся цепочка слоёв поверх транспорта. */
+  /** Готовый обработчик — вся цепочка стадий поверх транспорта. */
   handler: RequestHandler;
-  plugins: PluginRegistry;
   baseUrl: string;
-  timeout: number;
+  /** Общий срок логической операции по умолчанию; `0` — без срока. */
+  deadline: number;
   clock: ItdClock;
   lifetimeSignal?: AbortSignal | undefined;
   hooks: ClientHooks;
   assertActive?: (() => void) | undefined;
 }
 
-/** Параметры операции без ID и метода, заданных её контрактом. @internal */
-export type HttpOperationOptions = Omit<PipelineRequest, 'operationId' | 'method'>;
+/** Параметры операции без полей, которые задаёт её контракт или проставляют стадии. @internal */
+export type HttpOperationOptions = Omit<
+  PipelineRequest,
+  'operationId' | 'method' | 'layerHeaders' | 'attempt'
+>;
+
+/** Собирает запрос конвейера из контракта операции и параметров вызова. */
+function operationRequest<T, TId extends OperationId>(
+  operation: OperationContract<T, TId>,
+  options: HttpOperationOptions,
+): PipelineRequest {
+  return withOperationReader(
+    {
+      ...options,
+      operationId: operation.id,
+      method: operation.method,
+      retrySafety: options.retrySafety ?? operation.retrySafety,
+    },
+    operation.read,
+  );
+}
 
 /**
  * Точка входа ресурсов в конвейер запросов.
  *
- * Принимает готовую цепочку обработки и предоставляет ресурсам методы `request`/`execute`.
- * О слоях и их порядке ресурсы не знают.
+ * Заводит общий lifecycle логической операции — отмену, освобождение клиента и `deadline`, —
+ * передаёт запрос собранной цепочке стадий и сообщает в `onError` об ошибках, которые
+ * не дошли до транспорта. О стадиях и их порядке ресурсы не знают.
  */
 export class HttpClient {
   readonly #handler: RequestHandler;
-  readonly #plugins: PluginRegistry;
   readonly #baseUrl: string;
-  readonly #timeout: number;
+  readonly #deadline: number;
   readonly #clock: ItdClock;
   readonly #lifetimeSignal: AbortSignal | undefined;
   readonly #hooks: ClientHooks;
@@ -52,34 +73,25 @@ export class HttpClient {
 
   constructor(deps: HttpClientDeps) {
     this.#handler = deps.handler;
-    this.#plugins = deps.plugins;
     this.#baseUrl = deps.baseUrl;
-    this.#timeout = deps.timeout;
+    this.#deadline = deps.deadline;
     this.#clock = deps.clock;
     this.#lifetimeSignal = deps.lifetimeSignal;
     this.#hooks = deps.hooks;
     this.#assertActive = deps.assertActive;
   }
 
-  /** Базовый URL, к которому обращается клиент. */
-  get baseUrl(): string {
-    return this.#baseUrl;
-  }
-
   /**
-   * Выполняет запрос к API через собранный конвейер.
+   * Выполняет низкоуровневый запрос через собранный конвейер.
    *
    * @typeParam T ожидаемая форма ответа после снятия обёртки `{ data: … }`
    * @throws {ItdApiError} если сервер ответил статусом ≥ 400
-   * @throws {ItdTimeoutError} если истёк таймаут
+   * @throws {ItdTimeoutError} если истёк `timeout` попытки или `deadline` операции
    * @throws {ItdAbortError} если запрос отменён через `signal`
    * @throws {ItdNetworkError} если запрос не дошёл до сервера
    */
   request<T = unknown>(options: PipelineRequestInput): Promise<T> {
-    const request = identifyRequest(options);
-    return this.#runWithLifecycle(request, (prepared) =>
-      this.#handler(prepared as PipelineRequest),
-    ) as Promise<T>;
+    return this.#run(identifyRequest(options)) as Promise<T>;
   }
 
   /** Выполняет контракт операции; `next()` плагина возвращает результат после `read`. */
@@ -87,22 +99,7 @@ export class HttpClient {
     operation: OperationContract<T, TId>,
     options: HttpOperationOptions,
   ): Promise<T> {
-    return this.#run(operation, options);
-  }
-
-  #run<T, TId extends OperationId>(
-    operation: OperationContract<T, TId>,
-    options: HttpOperationOptions,
-  ): Promise<T> {
-    const request = identifyRequest({
-      ...options,
-      operationId: operation.id,
-      method: operation.method,
-      retrySafety: options.retrySafety ?? operation.retrySafety,
-    });
-    return this.#runWithLifecycle(request, async (prepared) =>
-      operation.read(await this.#handler(prepared as PipelineRequest), prepared as PipelineRequest),
-    ) as Promise<T>;
+    return this.#run(operationRequest(operation, options)) as Promise<T>;
   }
 
   /** Выполняет внутреннюю операцию финализации после начала `ItdClient.dispose()`. @internal */
@@ -110,85 +107,80 @@ export class HttpClient {
     operation: OperationContract<T, TId>,
     options: HttpOperationOptions,
   ): Promise<T> {
-    const request = identifyRequest({
-      ...options,
-      operationId: operation.id,
-      method: operation.method,
-      retrySafety: options.retrySafety ?? operation.retrySafety,
-    });
-    return this.#runWithLifecycle(
-      request,
-      async (prepared) => {
-        const cleanupRequest = markDisposeCleanupRequest(prepared) as PipelineRequest;
-        return operation.read(await this.#handler(cleanupRequest), prepared as PipelineRequest);
-      },
+    return this.#run(
+      markDisposeCleanupRequest(operationRequest(operation, options)),
       true,
     ) as Promise<T>;
   }
 
-  async #runWithLifecycle(
-    request: PipelineRequest,
-    execute: (prepared: PipelineRequest) => Promise<unknown>,
-    allowDisposed = false,
-  ): Promise<unknown> {
+  async #run(request: PipelineRequest, allowDisposed = false): Promise<unknown> {
     if (!allowDisposed) this.#assertActive?.();
-    const timeout = request.timeout ?? this.#timeout;
-    const scope = createRequestAbortScope(
-      request.signal,
-      this.#lifetimeSignal,
-      timeout,
-      this.#clock,
-    );
-    const startedAt = this.#clock.now();
-    trackRequestErrorObservation(request);
-
-    try {
-      const pending = this.#plugins.run(
-        request,
-        (prepared) =>
-          execute({ ...(prepared as PipelineRequest), signal: scope.signal, timeout: 0 }),
-        scope.signal,
-      );
-      return await waitForRequest(Promise.resolve(pending), scope.signal);
-    } catch (error) {
-      const failure = requestAbortError(
-        scope,
-        { timeout, method: request.method, path: request.path },
-        error,
-      );
-      const alreadyReported =
-        wasRequestErrorObserved(request, error) ||
-        (scope.signal.aborted && wasRequestErrorNotificationAborted(request));
-      if (!alreadyReported) {
-        markRequestErrorObserved(request, error);
-        let headers: Headers;
-        try {
-          headers = new Headers({ ...request.layerHeaders, ...request.headers });
-        } catch {
-          headers = new Headers();
-        }
-        const notification = dispatchRequestHook(this.#hooks, 'onError', {
-          operationId: request.operationId,
-          signal: scope.signal,
+    const deadline = request.deadline ?? this.#deadline;
+    const scope = createRequestAbortScope(request.signal, this.#lifetimeSignal, this.#clock, {
+      after: deadline,
+      error: () =>
+        new ItdTimeoutError({
+          timeout: deadline,
           method: request.method.toUpperCase(),
           path: request.path,
-          url: joinUrl(request.baseUrl ?? this.#baseUrl, request.path) + buildQuery(request.query),
-          headers,
-          attempt: request.attempt ?? 1,
-          duration: this.#clock.now() - startedAt,
-          error: failure,
-        });
-        try {
-          await waitForRequest(notification, scope.signal);
-        } catch (hookError) {
-          // После отмены/таймаута onError остаётся уведомлением и не должен удерживать
-          // завершение операции. Его позднее отклонение уже поглощает waitForRequest.
-          if (!scope.signal.aborted) throw hookError;
-        }
+          budget: TimeoutBudget.Deadline,
+        }),
+    });
+    const startedAt = this.#clock.now();
+    const tracked = withLifecycleSignal(request, scope.signal);
+    trackRequestErrorReporting(tracked);
+
+    try {
+      return await waitForRequest(this.#handler(tracked), scope.signal);
+    } catch (error) {
+      const failure = requestAbortError(scope, request, error);
+      // Транспортная попытка сообщает о своих ошибках сама. Отмену операции сообщает тот
+      // уровень, который заметил её первым: попытка, если отмена застала её внутри хука,
+      // иначе — эта граница.
+      const reported =
+        wasRequestErrorReported(tracked, error) ||
+        wasRequestErrorReported(tracked, failure) ||
+        (scope.signal.aborted && !claimAbortReport(tracked));
+      if (!reported) {
+        markRequestErrorReported(tracked, error);
+        markRequestErrorReported(tracked, failure);
+        await this.#notifyError(request, scope.signal, startedAt, failure);
       }
       throw failure;
     } finally {
       scope.cleanup();
+    }
+  }
+
+  /** Сообщает об ошибке, которую транспорт не видел: очередь, авторизация, плагины, отмена. */
+  async #notifyError(
+    request: PipelineRequest,
+    signal: AbortSignal,
+    startedAt: number,
+    error: unknown,
+  ): Promise<void> {
+    let headers: Headers;
+    try {
+      headers = new Headers({ ...request.layerHeaders, ...request.headers });
+    } catch {
+      headers = new Headers();
+    }
+    const notification = dispatchRequestHook(this.#hooks, 'onError', {
+      operationId: request.operationId,
+      signal,
+      method: request.method.toUpperCase(),
+      path: request.path,
+      url: joinUrl(request.baseUrl ?? this.#baseUrl, request.path) + buildQuery(request.query),
+      headers,
+      attempt: request.attempt ?? 1,
+      duration: this.#clock.now() - startedAt,
+      error,
+    });
+    try {
+      await waitForRequest(notification, signal);
+    } catch (hookError) {
+      // После отмены onError остаётся уведомлением и не удерживает завершение операции.
+      if (!signal.aborted) throw hookError;
     }
   }
 }

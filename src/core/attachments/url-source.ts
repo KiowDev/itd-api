@@ -145,7 +145,7 @@ async function responseBlob(
     reader.releaseLock();
   }
 
-  return new Blob(chunks.map((chunk) => Uint8Array.from(chunk).buffer));
+  return new Blob(chunks as BlobPart[]);
 }
 
 /** Скачивает файл целиком с ограничением размера. @internal */

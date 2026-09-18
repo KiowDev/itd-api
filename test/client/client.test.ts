@@ -7,6 +7,7 @@ import {
   ItdNotFoundError,
   ItdStateError,
   ItdTimeoutError,
+  TimeoutBudget,
 } from '../../src/core/errors.js';
 import type {
   EventTransport,
@@ -24,6 +25,7 @@ import { TelemetryResource } from '../../src/resources/telemetry.js';
 import { CaptchaType } from '../../src/types/enums.js';
 import { makeJwt } from '../helpers/jwt.js';
 import {
+  abortError,
   createHangingFetch,
   createMockFetch,
   json,
@@ -84,8 +86,8 @@ describe('граница низкоуровневого запроса', () => {
     expect(mock.calls[0]?.url).toBe('https://itd.test/api/manual-feed');
   });
 
-  it('общий timeout охватывает operation plugin до transport', async () => {
-    const { itd, mock } = makeClient([], { timeout: 10 });
+  it('общий deadline охватывает operation plugin до transport', async () => {
+    const { itd, mock } = makeClient([], { deadline: 10 });
     itd.use({
       name: 'hanging-operation',
       install({ operations }) {
@@ -99,8 +101,8 @@ describe('граница низкоуровневого запроса', () => {
     expect(mock.callCount).toBe(0);
   });
 
-  it('передаёт operation plugin общий сигнал timeout и освобождает его операцию', async () => {
-    const { itd, mock } = makeClient([], { timeout: 10, shutdownTimeout: 30 });
+  it('передаёт operation plugin общий сигнал deadline и освобождает его операцию', async () => {
+    const { itd, mock } = makeClient([], { deadline: 10, shutdownTimeout: 30 });
     let pluginSignal: AbortSignal | undefined;
     itd.use({
       name: 'abort-aware-operation',
@@ -126,10 +128,10 @@ describe('граница низкоуровневого запроса', () => {
     await expect(itd.dispose()).resolves.toBeUndefined();
   });
 
-  it('общий timeout освобождает operation plugin при зависшем onRetry', async () => {
+  it('общий deadline освобождает operation plugin при зависшем onRetry', async () => {
     const onRetry = vi.fn(() => new Promise<void>(() => {}));
     const { itd } = makeClient(() => json({}, { status: 500 }), {
-      timeout: 10,
+      deadline: 10,
       shutdownTimeout: 30,
       retry: { attempts: 2, baseDelay: 0, jitter: 0 },
       hooks: { onRetry },
@@ -249,9 +251,9 @@ describe('граница низкоуровневого запроса', () => {
     expect(onError.mock.calls[1]?.[0].error).toBe(retryFailure);
   });
 
-  it('не удерживает timeout из-за зависшего onError', async () => {
+  it('не удерживает deadline из-за зависшего onError', async () => {
     const { itd } = makeClient([], {
-      timeout: 10,
+      deadline: 10,
       hooks: { onError: () => new Promise<void>(() => {}) },
     });
     itd.use({
@@ -273,7 +275,7 @@ describe('граница низкоуровневого запроса', () => {
       return new Promise<void>(() => {});
     });
     const { itd } = makeClient(() => json({}, { status: 500 }), {
-      timeout: 10,
+      deadline: 10,
       shutdownTimeout: 30,
       retry: false,
       hooks: { onError },
@@ -1715,6 +1717,224 @@ describe('общее поведение клиента', () => {
     await itd.posts.list();
 
     expect(calls).toBe(4);
+  });
+
+  it('лестница 429 не ограничена таймаутом попытки', async () => {
+    let calls = 0;
+    const { itd } = makeClient(
+      () => {
+        calls += 1;
+        return calls <= 3
+          ? json({ error: 'Too Many Requests' }, { status: 429 })
+          : json({ data: { posts: [], pagination: { hasMore: false } } });
+      },
+      {
+        // Суммарные паузы лестницы (70 мс) многократно превышают срок одной попытки.
+        timeout: 5,
+        rateLimit: { concurrency: 1, retryDelays: [10, 20, 40] },
+      },
+    );
+
+    await itd.posts.list();
+
+    expect(calls).toBe(4);
+  });
+
+  it('повторы по Retry-After ограничены длиной лестницы', async () => {
+    const { itd, mock } = makeClient(
+      () => json({ error: 'Too Many Requests' }, { status: 429, headers: { 'retry-after': '0' } }),
+      { rateLimit: { concurrency: 1, retryDelays: [10, 20] } },
+    );
+
+    await expect(itd.posts.list()).rejects.toMatchObject({ status: 429 });
+    // Первая попытка плюс две по лестнице — сколько бы сервер ни просил повторить.
+    expect(mock.callCount).toBe(3);
+  });
+
+  it('без очереди 429 с Retry-After повторяется обычной политикой retry', async () => {
+    let calls = 0;
+    const { itd } = makeClient(
+      () => {
+        calls += 1;
+        return calls === 1
+          ? json({ error: 'Too Many Requests' }, { status: 429, headers: { 'retry-after': '0' } })
+          : feedPage(['1'], null);
+      },
+      { rateLimit: false, retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
+    );
+
+    await expect(itd.posts.list()).resolves.toMatchObject({ items: [{ id: '1' }] });
+    expect(calls).toBe(2);
+  });
+
+  it('без очереди и без retry 429 отдаётся сразу', async () => {
+    const { itd, mock } = makeClient(
+      () => json({ error: 'Too Many Requests' }, { status: 429, headers: { 'retry-after': '0' } }),
+      { rateLimit: false, retry: false },
+    );
+
+    await expect(itd.posts.list()).rejects.toMatchObject({ status: 429 });
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('deadline ограничивает операцию целиком, включая лестницу 429', async () => {
+    const { itd, mock } = makeClient(() => json({ error: 'Too Many Requests' }, { status: 429 }), {
+      deadline: 25,
+      rateLimit: { concurrency: 1, retryDelays: [10, 20, 40] },
+    });
+
+    const error = await itd.posts.list().catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ItdTimeoutError);
+    expect(error).toMatchObject({ budget: TimeoutBudget.Deadline, timeout: 25 });
+    expect(mock.callCount).toBeLessThan(4);
+  });
+
+  it('таймаут попытки повторяется для safe-операции', async () => {
+    const { itd, mock } = makeClient(
+      (request, index) =>
+        index === 0
+          ? new Promise<Response>((_resolve, reject) => {
+              request.signal?.addEventListener('abort', () => reject(abortError()), {
+                once: true,
+              });
+            })
+          : feedPage(['1'], null),
+      { timeout: 10, retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
+    );
+
+    await expect(itd.posts.list()).resolves.toMatchObject({ items: [{ id: '1' }] });
+    expect(mock.callCount).toBe(2);
+  });
+
+  it('таймаут попытки отдаёт ItdTimeoutError с бюджетом попытки', async () => {
+    const { itd } = makeClient(
+      (request) =>
+        new Promise<Response>((_resolve, reject) => {
+          request.signal?.addEventListener('abort', () => reject(abortError()), { once: true });
+        }),
+      { timeout: 10 },
+    );
+
+    const error = await itd.posts.list().catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ItdTimeoutError);
+    expect(error).toMatchObject({ budget: TimeoutBudget.Attempt, timeout: 10 });
+  });
+
+  it('таймаут попытки не накрывает хук onError: медленный хук не подменяет ответ сервера', async () => {
+    const onError = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 30)));
+    const { itd } = makeClient(() => json({ code: 'UNKNOWN_ERROR' }, { status: 500 }), {
+      timeout: 10,
+      hooks: { onError },
+    });
+
+    await expect(itd.posts.list()).rejects.toMatchObject({ status: 500 });
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it('сообщает в onError один раз, когда deadline истекает во время fetch', async () => {
+    const onError = vi.fn();
+    const { itd } = makeClient(
+      (request) =>
+        new Promise<Response>((_resolve, reject) => {
+          // Настоящий fetch отклоняется на макрозадаче, а не в обработчике abort.
+          request.signal?.addEventListener(
+            'abort',
+            () => setTimeout(() => reject(abortError()), 0),
+            { once: true },
+          );
+        }),
+      { deadline: 10, hooks: { onError } },
+    );
+
+    const error = await itd.posts.list().catch((failure: unknown) => failure);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(error).toBeInstanceOf(ItdTimeoutError);
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls[0]?.[0].error).toBe(error);
+  });
+
+  it('сообщает в onError один раз при отмене пользователем во время fetch', async () => {
+    const onError = vi.fn();
+    const controller = new AbortController();
+    const { itd } = makeClient(
+      (request) =>
+        new Promise<Response>((_resolve, reject) => {
+          request.signal?.addEventListener(
+            'abort',
+            () => setTimeout(() => reject(abortError()), 0),
+            { once: true },
+          );
+        }),
+      { hooks: { onError } },
+    );
+
+    const pending = itd.posts.list({}, { signal: controller.signal });
+    setTimeout(() => controller.abort(), 5);
+    await expect(pending).rejects.toThrow(ItdAbortError);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls[0]?.[0].error).toBeInstanceOf(ItdAbortError);
+  });
+
+  it('после deadline не вызывает onRetry для safe-операции', async () => {
+    const onRetry = vi.fn();
+    const { itd } = makeClient(
+      (request) =>
+        new Promise<Response>((_resolve, reject) => {
+          request.signal?.addEventListener(
+            'abort',
+            () => setTimeout(() => reject(abortError()), 0),
+            { once: true },
+          );
+        }),
+      { deadline: 10, retry: { attempts: 3, baseDelay: 0, jitter: 0 }, hooks: { onRetry } },
+    );
+
+    await expect(itd.posts.list()).rejects.toThrow(ItdTimeoutError);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('не соблюдает Retry-After дольше самой длинной ступени лестницы', async () => {
+    const { itd, mock } = makeClient(
+      () =>
+        json({ error: 'Too Many Requests' }, { status: 429, headers: { 'retry-after': '3600' } }),
+      { rateLimit: { concurrency: 1, retryDelays: [10, 20] } },
+    );
+
+    await expect(itd.posts.list()).rejects.toMatchObject({ status: 429, retryAfter: 3_600_000 });
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('пустая лестница при включённой очереди отключает повторы после 429', async () => {
+    const { itd, mock } = makeClient(
+      () => json({ error: 'Too Many Requests' }, { status: 429, headers: { 'retry-after': '0' } }),
+      { rateLimit: { concurrency: 1, retryDelays: [] }, retry: { attempts: 3, baseDelay: 0 } },
+    );
+
+    await expect(itd.posts.list()).rejects.toMatchObject({ status: 429 });
+    expect(mock.callCount).toBe(1);
+  });
+
+  it('без очереди 429 входит в общий счёт попыток retry', async () => {
+    let calls = 0;
+    const { itd } = makeClient(
+      () => {
+        calls += 1;
+        return calls % 2 === 1
+          ? json({ code: 'UNKNOWN_ERROR' }, { status: 500 })
+          : json({ error: 'Too Many Requests' }, { status: 429, headers: { 'retry-after': '0' } });
+      },
+      { rateLimit: false, retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
+    );
+
+    await expect(itd.posts.list()).rejects.toMatchObject({ status: 429 });
+    expect(calls).toBe(2);
   });
 
   it('повторяет запрос при 500 и отдаёт результат', async () => {

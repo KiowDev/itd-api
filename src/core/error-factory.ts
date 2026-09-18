@@ -13,7 +13,8 @@ import {
   ItdValidationError,
 } from './errors.js';
 import { redactBody } from './redact.js';
-import { asString, isRecord } from './unwrap.js';
+import { asString } from './unwrap.js';
+import { isRecord } from './validate.js';
 
 /** Разобранное тело ошибки, приведённое к одной форме. */
 export interface ParsedErrorBody {

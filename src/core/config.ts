@@ -13,7 +13,7 @@ import { RuntimeMode, resolveFetch, shouldSendCredentials, shouldUseCookieJar } 
 import { RateLimitPacing } from './scheduling/pacing.js';
 import type { ServiceDefinition } from './services.js';
 import { normalizeBaseUrl } from './url.js';
-import { isRecord, requireOptionalBoolean, requirePositive } from './validate.js';
+import { isObjectLike, requireNonNegative, requireOptionalBoolean } from './validate.js';
 import { LIBRARY_VERSION } from './version.js';
 
 /** Базовый URL API итд.com. Домен записан в punycode: `итд.com`. */
@@ -100,7 +100,10 @@ export interface ResolvedRuntimeConfig {
   services: ServiceDefinition[];
   fetch: typeof fetch;
   clock: ItdClock;
+  /** Таймаут одной транспортной попытки. `0` — без срока. */
   timeout: number;
+  /** Общий срок логической операции. `0` — без срока. */
+  deadline: number;
   /** Срок ожидания чужого кода при остановке. `0` — без срока. */
   shutdownTimeout: number;
   retry: ResolvedRetryOptions | undefined;
@@ -119,7 +122,7 @@ export interface ResolvedRuntimeConfig {
 
 function resolveHeaders(headers: Record<string, string> | undefined): Record<string, string> {
   if (headers === undefined) return {};
-  if (!isRecord(headers)) throw new ItdConfigError('headers должен быть объектом строк');
+  if (!isObjectLike(headers)) throw new ItdConfigError('headers должен быть объектом строк');
 
   for (const [name, value] of Object.entries(headers)) {
     if (typeof value !== 'string') {
@@ -131,7 +134,7 @@ function resolveHeaders(headers: Record<string, string> | undefined): Record<str
 
 function resolveHooks(hooks: ClientHooks | undefined): ClientHooks {
   if (hooks === undefined) return {};
-  if (!isRecord(hooks)) throw new ItdConfigError('hooks должен быть объектом');
+  if (!isObjectLike(hooks)) throw new ItdConfigError('hooks должен быть объектом');
 
   for (const name of ['onRequest', 'onResponse', 'onError', 'onRetry'] as const) {
     if (hooks[name] !== undefined && typeof hooks[name] !== 'function') {
@@ -144,7 +147,8 @@ function resolveHooks(hooks: ClientHooks | undefined): ClientHooks {
 function resolveLogger(logger: RuntimeOptions['logger']): Logger | undefined {
   if (logger === undefined || logger === false) return undefined;
   if (logger === true) return consoleLogger();
-  if (!isRecord(logger)) throw new ItdConfigError('logger должен быть boolean или объектом Logger');
+  if (!isObjectLike(logger))
+    throw new ItdConfigError('logger должен быть boolean или объектом Logger');
 
   for (const method of ['debug', 'info', 'warn', 'error'] as const) {
     if (typeof logger[method] !== 'function') {
@@ -175,7 +179,7 @@ function consoleLogger(): Logger {
  */
 export function resolveRetry(retry: RuntimeOptions['retry']): ResolvedRetryOptions | undefined {
   if (retry === false) return undefined;
-  if (retry !== undefined && !isRecord(retry)) {
+  if (retry !== undefined && !isObjectLike(retry)) {
     throw new ItdConfigError('retry должен быть объектом или false');
   }
 
@@ -194,8 +198,8 @@ export function resolveRetry(retry: RuntimeOptions['retry']): ResolvedRetryOptio
     throw new ItdConfigError('retry.shouldRetry должен быть функцией');
   }
 
-  const baseDelay = requirePositive(options.baseDelay ?? 500, 'retry.baseDelay');
-  const maxDelay = requirePositive(options.maxDelay ?? 30_000, 'retry.maxDelay');
+  const baseDelay = requireNonNegative(options.baseDelay ?? 500, 'retry.baseDelay');
+  const maxDelay = requireNonNegative(options.maxDelay ?? 30_000, 'retry.maxDelay');
 
   // Одна попытка означает отсутствие повторов — очередь ретраев можно не поднимать.
   if (attempts === 1) return undefined;
@@ -274,13 +278,13 @@ function resolveBucketOverrides(
 ): Readonly<Record<string, RateLimitBucketOverride>> {
   const builtIn = catalog.bucketOverrides;
   if (overrides === undefined) return builtIn;
-  if (!isRecord(overrides)) {
+  if (!isObjectLike(overrides)) {
     throw new ItdConfigError('rateLimit.bucketOverrides должен быть объектом');
   }
 
   const resolved: Record<string, RateLimitBucketOverride> = { ...builtIn };
   for (const [name, override] of Object.entries(overrides)) {
-    if (!isRecord(override)) {
+    if (!isObjectLike(override)) {
       throw new ItdConfigError(`rateLimit.bucketOverrides.${name} должен быть объектом`);
     }
     assertKnownBucket(name, 'rateLimit.bucketOverrides', bucket, catalog);
@@ -322,7 +326,7 @@ export function resolveRateLimit(
   catalog: OperationCatalog,
 ): ResolvedRateLimitOptions | undefined {
   if (rateLimit === false) return undefined;
-  if (rateLimit !== undefined && !isRecord(rateLimit)) {
+  if (rateLimit !== undefined && !isObjectLike(rateLimit)) {
     throw new ItdConfigError('rateLimit должен быть объектом или false');
   }
 
@@ -348,7 +352,7 @@ export function resolveRateLimit(
   if (!Array.isArray(retryDelays)) {
     throw new ItdConfigError('rateLimit.retryDelays должен быть массивом чисел');
   }
-  for (const delay of retryDelays) requirePositive(delay, 'rateLimit.retryDelays');
+  for (const delay of retryDelays) requireNonNegative(delay, 'rateLimit.retryDelays');
   requireOptionalBoolean(rateLimit.buckets, 'rateLimit.buckets');
 
   if (rateLimit.bucket !== undefined && typeof rateLimit.bucket !== 'function') {
@@ -378,11 +382,11 @@ export function resolveRateLimit(
  */
 function resolveServices(services: RuntimeOptions['services']): ServiceDefinition[] {
   if (services === undefined) return [];
-  if (!isRecord(services)) throw new ItdConfigError('services должен быть объектом');
+  if (!isObjectLike(services)) throw new ItdConfigError('services должен быть объектом');
 
   return Object.entries(services).map(([name, value]) => {
     if (typeof value === 'string') return { name, baseUrl: value };
-    if (!isRecord(value)) {
+    if (!isObjectLike(value)) {
       throw new ItdConfigError(`services.${name} должен быть URL или объектом сервиса`);
     }
     return { ...value, name } as ServiceDefinition;
@@ -402,7 +406,7 @@ export function resolveRuntimeConfig(
   options: RuntimeOptions,
   catalog: OperationCatalog,
 ): ResolvedRuntimeConfig {
-  if (!isRecord(options)) throw new ItdConfigError('опции клиента должны быть объектом');
+  if (!isObjectLike(options)) throw new ItdConfigError('опции клиента должны быть объектом');
 
   const mode: RuntimeMode = options.mode ?? RuntimeMode.Auto;
 
@@ -412,8 +416,9 @@ export function resolveRuntimeConfig(
     );
   }
 
-  const timeout = requirePositive(options.timeout ?? DEFAULT_TIMEOUT, 'timeout');
-  const shutdownTimeout = requirePositive(
+  const timeout = requireNonNegative(options.timeout ?? DEFAULT_TIMEOUT, 'timeout');
+  const deadline = requireNonNegative(options.deadline ?? 0, 'deadline');
+  const shutdownTimeout = requireNonNegative(
     options.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT,
     'shutdownTimeout',
   );
@@ -442,6 +447,7 @@ export function resolveRuntimeConfig(
     fetch: resolveFetch(options.fetch),
     clock: options.clock ?? systemClock,
     timeout,
+    deadline,
     shutdownTimeout,
     retry: resolveRetry(options.retry),
     rateLimit: resolveRateLimit(options.rateLimit, catalog),

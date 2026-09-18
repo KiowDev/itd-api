@@ -109,6 +109,7 @@ export {
   isItdServerError,
   isItdStateError,
   isItdValidationError,
+  TimeoutBudget,
 } from './core/errors.js';
 export type {
   ClientFeature,
@@ -123,7 +124,7 @@ export {
   type FeatureOperationId,
   type OperationAnnotations,
   type OperationMetadata,
-  type OperationMethod,
+  OperationMethod,
   RetrySafety,
 } from './core/operation.js';
 export type {

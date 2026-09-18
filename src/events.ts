@@ -37,6 +37,7 @@ export {
   isItdRateLimitError,
   isItdStateError,
   isItdValidationError,
+  TimeoutBudget,
 } from './core/errors.js';
 export type { ClientHooks, Logger, RuntimeOptions } from './core/options.js';
 export { RuntimeMode } from './core/runtime.js';
