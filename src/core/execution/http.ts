@@ -13,6 +13,7 @@ import {
 } from './lifecycle.js';
 import {
   claimAbortReport,
+  currentTransportAttempt,
   identifyRequest,
   markDisposeCleanupRequest,
   markRequestErrorReported,
@@ -160,7 +161,7 @@ export class HttpClient {
         if (!reported) {
           markRequestErrorReported(tracked, error);
           markRequestErrorReported(tracked, failure);
-          await this.#notifyError(request, scope.signal, startedAt, failure);
+          await this.#notifyError(tracked, scope.signal, startedAt, failure);
         }
       }
       throw failure;
@@ -190,7 +191,7 @@ export class HttpClient {
       path: request.path,
       url: joinUrl(request.baseUrl ?? this.#baseUrl, request.path) + buildQuery(request.query),
       headers,
-      attempt: request.attempt ?? 1,
+      attempt: currentTransportAttempt(request) || 1,
       duration: this.#clock.now() - startedAt,
       error,
     });

@@ -287,11 +287,16 @@ describe('граница низкоуровневого запроса', () => {
       },
     });
 
-    await expect(itd.request({ method: 'GET', path: '/api/test' })).rejects.toThrow(
-      ItdTimeoutError,
-    );
-    expect(onError).toHaveBeenCalledOnce();
+    const error = await itd
+      .request({ method: 'GET', path: '/api/test' })
+      .catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ItdTimeoutError);
     expect(hookSignal?.aborted).toBe(true);
+    // Зависший хук получил ошибку попытки; истёкший срок сообщается отдельно и не ожидается.
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(onError.mock.calls[0]?.[0].error).toMatchObject({ status: 500 });
+    expect(onError.mock.calls[1]?.[0].error).toBe(error);
     await expect(itd.dispose()).resolves.toBeUndefined();
   });
 });
@@ -1878,6 +1883,104 @@ describe('общее поведение клиента', () => {
 
     expect(onError).toHaveBeenCalledOnce();
     expect(onError.mock.calls[0]?.[0].error).toBeInstanceOf(ItdAbortError);
+  });
+
+  it('сообщает в onError один раз при dispose() во время fetch', async () => {
+    const onError = vi.fn();
+    const { itd, mock } = makeClient(
+      (request) =>
+        new Promise<Response>((_resolve, reject) => {
+          request.signal?.addEventListener(
+            'abort',
+            () => setTimeout(() => reject(abortError()), 0),
+            { once: true },
+          );
+        }),
+      { hooks: { onError } },
+    );
+
+    const pending = itd.posts.list().catch((failure: unknown) => failure);
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+    await itd.dispose();
+    const error = await pending;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(error).toBeInstanceOf(ItdAbortError);
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls[0]?.[0].error).toBe(error);
+  });
+
+  it('таймаут попытки действует на fetch, который не слушает signal, и повторяется', async () => {
+    const { itd, mock } = makeClient(
+      (_request, index) =>
+        index === 0 ? new Promise<Response>(() => {}) : json({ data: { items: [] } }),
+      { timeout: 10, retry: { attempts: 2, baseDelay: 0, jitter: 0 } },
+    );
+
+    await expect(itd.posts.list()).resolves.toBeDefined();
+    expect(mock.callCount).toBe(2);
+  });
+
+  it('таймаут попытки действует на attempt interceptor, который не вызвал next()', async () => {
+    const { itd, mock } = makeClient([json({ data: { items: [] } })], { timeout: 10 });
+    itd.use({
+      name: 'hanging-attempt',
+      install({ attempts }) {
+        attempts.use(() => new Promise<Response>(() => {}));
+      },
+    });
+
+    const error = await itd.posts.list().catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ItdTimeoutError);
+    expect(error).toMatchObject({ budget: TimeoutBudget.Attempt, timeout: 10 });
+    expect(mock.callCount).toBe(0);
+  });
+
+  it('deadline, истёкший во время onError по ошибке попытки, тоже доходит до onError', async () => {
+    const seen: unknown[] = [];
+    const { itd } = makeClient(() => json({ error: 'boom' }, { status: 500 }), {
+      deadline: 10,
+      hooks: {
+        onError: async ({ error }) => {
+          seen.push(error);
+          await new Promise((resolve) => setTimeout(resolve, 40));
+        },
+      },
+    });
+
+    const error = await itd.posts.list().catch((failure: unknown) => failure);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(error).toBeInstanceOf(ItdTimeoutError);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ status: 500 });
+    expect(seen[1]).toBe(error);
+  });
+
+  it('onError верхней границы называет номер последней попытки', async () => {
+    const onError = vi.fn();
+    const { itd, mock } = makeClient(
+      (request, index) =>
+        index < 2
+          ? json({ error: 'boom' }, { status: 503 })
+          : new Promise<Response>((_resolve, reject) => {
+              request.signal?.addEventListener(
+                'abort',
+                () => setTimeout(() => reject(abortError()), 0),
+                { once: true },
+              );
+            }),
+      { deadline: 20, retry: { attempts: 5, baseDelay: 0, jitter: 0 }, hooks: { onError } },
+    );
+
+    const error = await itd.posts.list().catch((failure: unknown) => failure);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(error).toBeInstanceOf(ItdTimeoutError);
+    expect(mock.callCount).toBe(3);
+    expect(onError.mock.calls.map(([context]) => context.attempt)).toEqual([1, 2, 3]);
+    expect(onError.mock.calls[2]?.[0].error).toBe(error);
   });
 
   it('после deadline не вызывает onRetry для safe-операции', async () => {

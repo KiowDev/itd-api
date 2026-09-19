@@ -246,13 +246,15 @@ export class Transport {
 
       let response: Response;
       try {
-        response = await this.#fetch(attempt, headers, body, contextOf);
+        // Срок попытки действует и на `fetch`, который не слушает `signal`, и на перехватчик.
+        response = await waitForRequest(this.#fetch(attempt, headers, body, contextOf), signal);
       } catch (error) {
-        await this.#report(attempt, headers, error);
+        const failure = this.#abortedOr(attempt, error);
+        await this.#report(attempt, headers, failure);
         this.#config.logger?.warn(
-          `× ${attempt.method} ${request.path} (${this.#elapsed(attempt)} мс): ${describe(error)}`,
+          `× ${attempt.method} ${request.path} (${this.#elapsed(attempt)} мс): ${describe(failure)}`,
         );
-        throw error;
+        throw failure;
       }
 
       if (this.#deps.onRateLimit) {
@@ -513,7 +515,9 @@ export class Transport {
    * Сообщает хуку `onError` об ошибке попытки и отмечает её как переданную.
    *
    * Ожидание хука ограничено lifecycle операции; срок попытки на него не действует.
-   * Отмену операции сообщает уровень, заметивший её первым; второй уровень хук не вызывает.
+   * Если ошибка попытки — сама отмена операции, о ней сообщает тот уровень, который заметил
+   * её первым; второй хук не вызывает. Отмена, заставшая хук с другой ошибкой, остаётся за
+   * верхней границей операции.
    *
    * @throws ошибку самого хука, если операция не отменена
    */
@@ -537,8 +541,6 @@ export class Transport {
       return;
     }
 
-    const onAbort = () => claimAbortReport(request);
-    lifecycle?.addEventListener('abort', onAbort, { once: true });
     try {
       const pending = notify();
       await (lifecycle ? waitForRequest(pending, lifecycle) : pending);
@@ -546,8 +548,6 @@ export class Transport {
       if (lifecycle?.aborted) return;
       markRequestErrorReported(request, hookError);
       throw hookError;
-    } finally {
-      lifecycle?.removeEventListener('abort', onAbort);
     }
   }
 
