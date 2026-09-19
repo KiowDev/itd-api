@@ -14,9 +14,8 @@ const DEFAULT_ARGS = ['--disable-dev-shm-usage', '--disable-blink-features=Autom
 /**
  * Драйверы в порядке предпочтения.
  *
- * `patchright` впереди намеренно: он ставит собственную сборку Chromium, и та проходит
- * виджет там, где сборка из свежего Playwright уже нет. Если стоит только `playwright`,
- * ничего не меняется — берётся он.
+ * `patchright` впереди намеренно: проверенная связка `patchright@1.61.1` со штатным
+ * Chromium 149 проходит виджет. Если стоит только `playwright`, берётся он.
  */
 const DRIVERS = ['patchright', 'playwright', 'playwright-core'];
 
@@ -65,7 +64,7 @@ async function loadDriver(requested?: string): Promise<{ driver: string; module:
     CaptchaFailure.DriverMissing,
     requested
       ? `Драйвер ${requested} не установлен.`
-      : 'Не найден драйвер браузера. Установите его командой: npm i patchright && npx patchright install chromium. ' +
+      : 'Не найден драйвер браузера. Установите проверенную связку командой: npm i patchright@1.61.1 && npx patchright install chromium. ' +
           'Либо передайте свой запуск браузера через параметр launch.',
   );
 }

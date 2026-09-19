@@ -4,7 +4,7 @@
  * Нужен установленный драйвер браузера — в devDependencies его нет намеренно, чтобы
  * обычная установка не тянула сборку браузера ради ручного скрипта:
  *
- *   npm i --no-save patchright && npx patchright install chromium
+ *   npm i --no-save patchright@1.61.1 && npx patchright install chromium
  *
  *   node scripts/smoke.mjs              — решить активную капчу (её выбирает сервер)
  *   node scripts/smoke.mjs --itd        — принудительно капчу ИТД

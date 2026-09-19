@@ -143,7 +143,7 @@ new ItdClient({ auth: { getToken: () => vault.read() } });
 ### Node: браузер добывает токен сам
 
 ```bash
-npm i @itd-api/captcha patchright
+npm i @itd-api/captcha patchright@1.61.1
 npx patchright install chromium
 ```
 

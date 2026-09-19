@@ -9,7 +9,7 @@
  * `@itd-api/captcha`: поднимает браузер, забирает токен и закрывается. Установите отдельно,
  * основному пакету он не нужен:
  *
- *   npm i @itd-api/captcha patchright
+ *   npm i @itd-api/captcha patchright@1.61.1
  *   npx patchright install chromium
  *
  * Браузер открывается с окном — так виджет проходится надёжнее. На сервере без графической

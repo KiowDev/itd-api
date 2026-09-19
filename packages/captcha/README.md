@@ -21,7 +21,7 @@
 ## Установка
 
 ```sh
-npm i @itd-api/captcha patchright
+npm i @itd-api/captcha patchright@1.61.1
 npx patchright install chromium
 ```
 
@@ -179,36 +179,52 @@ createCaptchaSolver({
 
 ## Совместимость
 
-Таблица ниже показывает выдачу токена Cloudflare Turnstile на разных версиях драйверов и браузеров.
+Ниже — связки, на которых Cloudflare Turnstile выдал токен. Проверено 19.09.2026
+с окном, если не указано иное.
 
-| Драйвер                                               | Версия и конфигурация                                  | Браузер | Turnstile | Проверено |
-|-------------------------------------------------------|--------------------------------------------------------| --- | --- | --- |
-| `patchright`                                          | 1.62.2, штатная сборка                                 | Chromium 151 | ✕ Нет | 02.09.2026 |
-|                                                       | 1.62.2, `executablePath`                               | Chromium 148 · 149 | ✓ Работает | 02.09.2026 |
-|                                                       | 1.59.4 · 1.60.2 · 1.61.1, штатные сборки               | Chromium 147 · 148 · 149 | ✓ Работает | 05.08.2026 |
-| `playwright`                                          | 1.62.1, штатная сборка                                 | Chromium 151 | ✕ Нет | 02.09.2026 |
-|                                                       | 1.62.1, `executablePath`                               | Chromium 148 · 149 | ✓ Работает | 02.09.2026 |
-|                                                       | 1.60.0 · 1.61.0, штатные сборки                        | Chromium 148 · 149 | ✓ Работает | 05.08.2026 |
-| `playwright-core`                                     | 1.62.1, `executablePath`                               | Chromium 149 | ✓ Работает | 02.09.2026 |
-| `camoufox-js`                                         | 0.12.0, `playwright-core` 1.60.0, `contextOptions: {}` | Camoufox 152.0.4-beta.29 | ✓ С окном и headless | 02.09.2026 |
-|                                                       | 0.11.5, `contextOptions: {}`                           | Camoufox 152 | ✓ Работает | 05.08.2026 |
-| `rebrowser-playwright`                                | 1.48.2 · 1.49.1 · 1.52.0, `executablePath`             | Chromium 149 | ✕ Нет | 02.09.2026 |
-| `playwright-extra` + `puppeteer-extra-plugin-stealth` | 4.3.6 + 2.11.2, `playwright` 1.62.1, `executablePath`  | Chromium 149 | ✕ Нет | 02.09.2026 |
+| Драйвер | Версия и конфигурация | Браузер |
+|---|---|---|
+| `patchright` | 1.59.4 · 1.60.2 · 1.61.1, штатные сборки | Chromium 147 · 148 · 149 соответственно |
+| | 1.62.3 · 1.63.0, `executablePath` | Chromium 149 |
+| | 1.63.0, `executablePath` | Chromium 148 |
+| `playwright` | 1.60.0 · 1.61.0, штатные сборки | Chromium 148 · 149 соответственно |
+| | 1.62.1 · 1.63.0, `executablePath` | Chromium 149 |
+| `playwright-core` | 1.62.1 · 1.63.0, `executablePath` | Chromium 149 |
+| `camoufox-js` | 0.11.5 с окном · 0.12.0 с окном и headless, `contextOptions: {}` | Camoufox 152.0.4-beta.29 |
+| `rebrowser-playwright` | 1.48.2 · 1.49.1, `executablePath` | Chromium 149 |
+
+<details>
+<summary>Комбинации, не прошедшие проверку</summary>
+
+| Драйвер | Версия и конфигурация | Браузер | Результат |
+|---|---|---|---|
+| `patchright` | 1.62.3, штатная сборка | Chromium 151 | таймаут |
+| | 1.63.0, штатная сборка | Chrome for Testing 153 | таймаут |
+| | 1.63.0, `executablePath` | Google Chrome 152 | таймаут |
+| `playwright` | 1.62.1, штатная сборка | Chromium 151 | `600010`, таймаут |
+| | 1.63.0, штатная сборка | Chrome for Testing 153 | `600010`, таймаут |
+| | 1.63.0, `executablePath` | Google Chrome 152 | `600010`, таймаут |
+| `rebrowser-playwright` | 1.52.0, `executablePath` | Chromium 149 | `600010`, таймаут |
+| `playwright-extra` + `puppeteer-extra-plugin-stealth` | 4.3.6 + 2.11.2, `playwright` 1.62.1 · 1.63.0, `executablePath` | Chromium 149 | `600010`, таймаут |
+
+</details>
 
 Собственная капча ИТД менее требовательна: ее можно получить любым подходящим драйвером и версией браузера.
 
 Таблица проверяется скриптом `scripts/drivers.mjs` из исходников пакета:
 
 ```sh
-npm i --no-save patchright playwright camoufox-js
+npm i --no-save patchright playwright camoufox-js rebrowser-playwright \
+  playwright-extra puppeteer-extra-plugin-stealth
 node scripts/drivers.mjs            # Turnstile
 node scripts/drivers.mjs --itd      # капча ИТД
 ```
 
 Штатная сборка приезжает вместе с версией драйвера. Другую можно поставить командой
 `npx @puppeteer/browsers install chrome@149.0.7827.55` и передать путь в `executablePath`.
-Версия драйвера сама по себе не гарантирует результат: например, `playwright` 1.62.1 не
-проходит Turnstile на штатном Chromium 151, но проходит на Chromium 148 и 149.
+Версия драйвера сама по себе не гарантирует результат: например, `patchright` и
+`playwright` 1.63.0 не проходят Turnstile на штатном Chrome for Testing 153, но проходят
+на Chromium 149 через `executablePath`.
 
 ## Лицензия
 
