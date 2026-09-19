@@ -2,7 +2,7 @@ import { type ItdClock, systemClock } from '../core/clock.js';
 import type { ClientConnection } from '../core/connection.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from '../core/emitter.js';
 import { ItdAbortError, ItdConfigError } from '../core/errors.js';
-import type { Logger } from '../core/options.js';
+import { fallbackLogger, type Logger } from '../core/logger.js';
 import { EventChannelStatus } from '../types/enums.js';
 import {
   deferEventMiddleware,
@@ -190,6 +190,10 @@ export function resolveEventChannelOptions<C extends EventContext>(
   });
 }
 
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Общая механика потока событий: соединение, переподключение с задержкой, обновление
  * токена, реакция на среду, статусы и очередь обработчиков.
@@ -328,6 +332,7 @@ export class EventChannel<
 
   /** Закрывает соединение и отменяет запланированные попытки. */
   disconnect(): void {
+    const wasActive = this.#wanted;
     this.#wanted = false;
     this.#generation += 1;
     this.#starting = undefined;
@@ -345,6 +350,7 @@ export class EventChannel<
     this.#dispatcher.clearPending();
 
     this.#setStatus(EventChannelStatus.Disconnected);
+    if (wasActive) this.#deps.logger?.info('поток событий остановлен');
   }
 
   /**
@@ -383,6 +389,9 @@ export class EventChannel<
     this.#setStatus(EventChannelStatus.Error);
 
     const error = new Error('Обработчики не успевают за потоком: очередь обновлений переполнена');
+    this.#deps.logger?.warn(
+      'очередь обновлений потока переполнена; соединение восстановится, когда обработчики её разберут',
+    );
     void this.#dispatcher.drain().then(() => {
       if (this.#isCurrentGeneration(generation) && !this.#session) {
         this.#scheduleReconnect(error);
@@ -430,7 +439,7 @@ export class EventChannel<
       await task;
     } catch (error) {
       if (this.#deps.initializationRequired) throw error;
-      this.#deps.logger?.debug(`не удалось синхронизировать поток (${reason})`, error);
+      this.#deps.logger?.warn(`не удалось синхронизировать поток событий (${reason})`, error);
     }
   }
 
@@ -446,9 +455,13 @@ export class EventChannel<
           signal: session.controller.signal,
           onOpen: () => {
             if (!this.#isCurrentSession(session)) return;
+            const reconnected = this.#attempt > 0;
             this.#attempt = 0;
             session.resolveOpened();
             this.#setStatus(EventChannelStatus.Connected);
+            this.#deps.logger?.info(
+              reconnected ? 'поток событий переподключён' : 'поток событий подключён',
+            );
           },
           onEvent: (event) => {
             if (this.#isCurrentSession(session)) this.#handleEvent(session, event);
@@ -510,8 +523,7 @@ export class EventChannel<
       event === 'middlewareError'
         ? 'Ошибка в промежуточном обработчике потока'
         : 'Ошибка в обработчике обновления потока';
-    if (this.#deps.logger) this.#deps.logger.error(message, error);
-    else console.error(`[itd-api] ${message}`, error);
+    (this.#deps.logger ?? fallbackLogger).error(message, error);
   }
 
   #handleFailure(error: unknown): void {
@@ -554,6 +566,10 @@ export class EventChannel<
     const delay = reconnectDelay(this.#attempt, this.#options);
     this.#attempt += 1;
 
+    this.#deps.logger?.warn(
+      `поток событий оборван (${describe(error)}); ` +
+        `переподключение ${this.#attempt} из ${this.#maxAttempts} через ${delay} мс`,
+    );
     this.#emitEngine('error', { error, willReconnect: true });
     this.#emitEngine('reconnect', { attempt: this.#attempt, delay });
 
@@ -590,6 +606,10 @@ export class EventChannel<
     this.#detachEnvironment?.();
     this.#detachEnvironment = undefined;
 
+    this.#deps.logger?.warn(
+      `поток событий остановлен без переподключения (${describe(error)}); ` +
+        'для возобновления вызовите connect()',
+    );
     EVENT_CHANNEL_GIVEUP_HOOKS.get(this)?.();
     this.#emitEngine('error', { error, willReconnect: false });
     this.#emitEngine('giveup', undefined);

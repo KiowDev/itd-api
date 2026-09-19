@@ -1,4 +1,4 @@
-import { resolveOptions, type SolveOptions } from './options.js';
+import { type CaptchaLogger, resolveOptions, type SolveOptions } from './options.js';
 import { type CaptchaTarget, resolveHandler } from './providers/registry.js';
 import { runSolver } from './runner.js';
 import type { CaptchaType } from './types.js';
@@ -45,10 +45,25 @@ export interface CaptchaSolverOptions extends SolveOptions {
   field?: string | undefined;
 }
 
+/** Что клиент `itd-api` передаёт источнику при каждом обращении. */
+export interface CaptchaSolveContext {
+  /** Логгер клиента, если он включён. */
+  logger?: CaptchaLogger | undefined;
+}
+
+/** Без своего логгера источник пишет ход решения в логгер клиента. */
+function withClientLogger<T extends SolveOptions>(
+  options: T,
+  context: CaptchaSolveContext | undefined,
+): T {
+  if (options.logger || !context?.logger) return options;
+  return { ...options, logger: context.logger };
+}
+
 /** Источник токена капчи для опции `captcha` клиента `itd-api`. */
 export interface CaptchaSolver {
   /** Получает имя провайдера, чью капчу нужно пройти, и возвращает токен. */
-  getToken(type: CaptchaType): Promise<string>;
+  getToken(type: CaptchaType, context?: CaptchaSolveContext): Promise<string>;
   /** Тип, закреплённый за источником. Без него тип выбирает клиент. */
   readonly type?: CaptchaType | undefined;
   /** Поле тела запроса для закреплённого типа. */
@@ -81,7 +96,10 @@ export function createCaptchaSolver(options: CaptchaSolverOptions = {}): Captcha
   const { type, field, ...solveOptions } = options;
 
   if (type === undefined) {
-    return { getToken: (requested) => solveCaptcha(requested, solveOptions) };
+    return {
+      getToken: (requested, context) =>
+        solveCaptcha(requested, withClientLogger(solveOptions, context)),
+    };
   }
 
   // Обработчик собирается сразу: незнакомый тип должен разбираться при создании клиента,
@@ -92,6 +110,6 @@ export function createCaptchaSolver(options: CaptchaSolverOptions = {}): Captcha
   return {
     type: handler.type,
     ...(field === undefined ? {} : { field }),
-    getToken: () => runSolver(handler, resolved),
+    getToken: (_requested, context) => runSolver(handler, withClientLogger(resolved, context)),
   };
 }

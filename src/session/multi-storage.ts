@@ -7,6 +7,7 @@ import {
   isEnumerableKeyValueStore,
   MemoryKeyValueStore,
 } from '../core/key-value-store.js';
+import { fallbackLogger } from '../core/logger.js';
 import { copySession, type ItdSession, type TokenStorage } from './storage.js';
 
 /**
@@ -177,8 +178,8 @@ function readAccountName(encoded: string): string | undefined {
   try {
     return decodeURIComponent(encoded);
   } catch {
-    console.warn(
-      `[itd-api] запись хранилища пропущена: ключ ${JSON.stringify(encoded)} не декодируется`,
+    fallbackLogger.warn(
+      `запись хранилища пропущена: ключ ${JSON.stringify(encoded)} не декодируется`,
     );
     return undefined;
   }

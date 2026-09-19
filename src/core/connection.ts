@@ -1,5 +1,5 @@
 import type { ItdClock } from './clock.js';
-import type { Logger } from './options.js';
+import type { Logger } from './logger.js';
 
 /**
  * Разрешённое окружение одного долговременного соединения клиента.

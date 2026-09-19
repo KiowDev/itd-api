@@ -237,13 +237,59 @@ const itd = new ItdClient({
 автоматически. Если внешнему хосту действительно нужна текущая авторизация, разрешите
 её через `skipAuth: false`.
 
-## Хуки и логирование
+## Логирование
+
+По умолчанию клиент молчит. `logger: true` включает встроенный логгер поверх `console`
+с уровня `info`:
+
+```ts
+import { ItdClient, LogLevel } from 'itd-api';
+
+new ItdClient({ logger: true });           // info и выше
+new ItdClient({ logger: LogLevel.Debug }); // плюс каждый запрос и ответ
+new ItdClient({ logger: LogLevel.Warn });  // только проблемы
+```
+
+| Уровень | Что попадает |
+| --- | --- |
+| `debug` | каждый запрос и ответ, ожидание очереди |
+| `info` | вход, обновление токена, повторы, подключение потока событий, ход решения капчи |
+| `warn` | сетевые ошибки и ответы `≥ 400`, обрыв потока событий, отвергнутая сервером сессия |
+| `error` | исключения в ваших обработчиках событий |
+
+Токены и пароли маскируются до записи. Исключения из ваших обработчиков событий пишутся
+в консоль даже без `logger`.
+
+### Свой логгер
+
+Подходит любой объект с методами `debug`, `info`, `warn` и `error` — например winston или
+consola; уровни он фильтрует сам. Если у него есть `isLevelEnabled(level)`, как у winston
+и pino, детали для выключенных уровней не готовятся. К сообщению прилагается не больше
+одного аргумента: объект с деталями либо ошибка. Pino ждёт объект первым аргументом,
+поэтому ему нужен адаптер:
+
+```ts
+import pino from 'pino';
+
+const log = pino();
+new ItdClient({
+  logger: {
+    debug: (message, details) => log.debug(details, message),
+    info: (message, details) => log.info(details, message),
+    warn: (message, details) => log.warn(details, message),
+    error: (message, details) => log.error(details, message),
+  },
+});
+```
+
+Тот же логгер получают плагины через `PluginApi.logger` и источник капчи из `@itd-api/captcha`.
+
+## Хуки
 
 Хуки подходят для метрик, трассировки и дополнительных заголовков:
 
 ```ts
 const itd = new ItdClient({
-  logger: true,
   hooks: {
     onRequest: ({ headers }) => {
       headers.set('X-Trace-Id', crypto.randomUUID());
@@ -258,8 +304,7 @@ const itd = new ItdClient({
 });
 ```
 
-Хуки выполняются последовательно. Исключение из хука прерывает запрос. Встроенный `logger`
-маскирует известные поля с токенами и паролями.
+Хуки выполняются последовательно. Исключение из хука прерывает запрос.
 
 ## Завершение работы
 

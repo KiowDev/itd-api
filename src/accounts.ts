@@ -10,7 +10,7 @@ import { DEFAULT_BASE_URL, resolveRateLimit } from './core/config.js';
 import { Emitter, type Listener, reportListenerError, type Unsubscribe } from './core/emitter.js';
 import { ItdConfigError, ItdStateError } from './core/errors.js';
 import type { ClientFeature } from './core/features.js';
-import type { Logger } from './core/options.js';
+import { fallbackLogger, type Logger, resolveLogger } from './core/logger.js';
 import type { ClientPlugin } from './core/plugins/contracts.js';
 import { assertPluginRemovable, orderPluginDefinitions } from './core/plugins/order.js';
 import { RequestQueuePool } from './core/scheduling/rate-limit.js';
@@ -251,7 +251,7 @@ export class ItdAccounts {
       ? new RequestQueuePool(rateLimit, base.clock ?? systemClock)
       : undefined;
 
-    const logger = typeof base.logger === 'object' ? base.logger : undefined;
+    const logger = resolveLogger(base.logger);
     this.#logger = logger;
     this.#emitter = new Emitter<AccountEvents>((error) =>
       reportListenerError(logger, 'аккаунтов', error),
@@ -678,9 +678,7 @@ export class ItdAccounts {
 
   /** Не теряет ошибку фонового освобождения ресурсов, которого синхронный API не ждёт. */
   #reportCleanup(scope: string, error: unknown): void {
-    const message = `Не удалось освободить ресурсы после ${scope}`;
-    if (this.#logger) this.#logger.error(message, error);
-    else console.error(`[itd-api] ${message}`, error);
+    (this.#logger ?? fallbackLogger).error(`Не удалось освободить ресурсы после ${scope}`, error);
   }
 
   /** Ретранслирует события клиента наружу, добавляя к ним имя аккаунта. */

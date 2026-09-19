@@ -5,6 +5,16 @@ import type { Theme } from './types.js';
 /** Базовый URL сайта итд.com. Домен записан в punycode: `итд.com`. */
 export const DEFAULT_ORIGIN = 'https://xn--d1ah4a.com';
 
+/** Логгер хода решения. Совместим с `console` и с логгером клиента `itd-api`. */
+export interface CaptchaLogger {
+  debug(message: string, ...args: unknown[]): void;
+  info(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+}
+
+const LOGGER_METHODS = ['debug', 'info', 'warn', 'error'] as const;
+
 /**
  * Настройки получения токена, общие для любого виджета.
  *
@@ -33,8 +43,8 @@ export interface SolveOptions extends BrowserOptions {
    * которые собирают отпечаток браузера сами, навязанный `locale` мешает — им передайте `{}`.
    */
   contextOptions?: NewContextOptions | undefined;
-  /** Куда писать ход решения. Например `console.debug`. */
-  logger?: ((message: string) => void) | undefined;
+  /** Куда писать ход решения, например `console`. Без него — в логгер клиента `itd-api`. */
+  logger?: CaptchaLogger | undefined;
 }
 
 /** Настройки после подстановки умолчаний. @internal */
@@ -110,8 +120,15 @@ export function resolveOptions(options: SolveOptions): ResolvedOptions {
       throw new TypeError(`${name} должен быть непустой строкой`);
     }
   }
-  if (options.logger !== undefined && typeof options.logger !== 'function') {
-    throw new TypeError('logger должен быть функцией');
+  if (options.logger !== undefined) {
+    if (typeof options.logger !== 'object' || options.logger === null) {
+      throw new TypeError('logger должен быть объектом с методами debug, info, warn и error');
+    }
+    for (const method of LOGGER_METHODS) {
+      if (typeof options.logger[method] !== 'function') {
+        throw new TypeError(`logger.${method} должен быть функцией`);
+      }
+    }
   }
   if (
     options.contextOptions !== undefined &&

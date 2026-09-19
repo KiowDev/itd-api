@@ -1025,16 +1025,17 @@ describe('авторизация', () => {
     expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer signed-in');
   });
 
-  it('берёт токен капчи входа из опции клиента', async () => {
+  it('берёт токен капчи входа из опции клиента и передаёт источнику логгер', async () => {
     const getToken = vi.fn().mockResolvedValue('свежая');
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const { itd, mock } = makeClient(
       [json({ provider: 'cloudflare', field: 'turnstileToken' }), json({ accessToken: 'in' })],
-      { auth: undefined, captcha: { getToken } },
+      { auth: undefined, captcha: { getToken }, logger },
     );
 
     await itd.auth.signIn({ email: 'a@b.c', password: 'p' });
 
-    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Cloudflare);
+    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Cloudflare, { logger });
     expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
       email: 'a@b.c',
       password: 'p',

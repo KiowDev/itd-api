@@ -12,6 +12,7 @@ import {
 } from '../../src/core/errors.js';
 import type { PipelineRequest } from '../../src/core/execution/pipeline.js';
 import { Transport, type TransportDeps } from '../../src/core/execution/transport.js';
+import { LogLevel } from '../../src/core/logger.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import {
@@ -572,6 +573,23 @@ describe('Transport: хуки и логгер', () => {
     expect(logged).not.toContain('SECRET-TOKEN-BODY');
     expect(logged).not.toContain('тайна');
     expect(logged).toContain('Bearer');
+  });
+
+  it('без включённого debug не обходит тело ради маскирования', async () => {
+    // Тело с getter: сериализация читает его один раз, маскирование прочитало бы второй.
+    let reads = 0;
+    const body = {
+      get content() {
+        reads += 1;
+        return 'текст';
+      },
+    };
+    const { transport, mock } = makeTransport([json({})], { logger: LogLevel.Error });
+
+    await transport.send({ method: 'POST', path: '/api/posts', layerHeaders: {}, body });
+
+    expect(reads).toBe(1);
+    expect(mock.calls[0]?.body).toBe('{"content":"текст"}');
   });
 });
 

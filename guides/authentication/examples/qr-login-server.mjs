@@ -98,9 +98,7 @@ async function solveCaptchaRequest(request, response) {
 
   captchaRunning = true;
   try {
-    const token = await solveCaptcha(input.type, {
-      logger: (message) => console.log(`[капча] ${message}`),
-    });
+    const token = await solveCaptcha(input.type, { logger: console });
     sendJson(response, 200, { token });
   } catch (error) {
     console.error('[капча]', error);

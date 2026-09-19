@@ -48,7 +48,7 @@ const targets = chosen ?? [await activeProvider()];
 
 for (const type of targets) {
   const token = await timed(type, () =>
-    solveCaptcha(type, { headless, logger: (m) => console.log(`  ${m}`) }),
+    solveCaptcha(type, { headless, logger: console }),
   );
   if (verify) ok = (await checkSignIn(token, FIELDS[type] ?? 'token')) && ok;
 }

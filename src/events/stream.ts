@@ -3,7 +3,7 @@ import type { ItdClock } from '../core/clock.js';
 import type { ClientConnection } from '../core/connection.js';
 import type { Listener, Unsubscribe } from '../core/emitter.js';
 import { ItdConfigError } from '../core/errors.js';
-import type { Logger } from '../core/options.js';
+import type { Logger } from '../core/logger.js';
 import { supportsStreamingBody } from '../core/runtime.js';
 import { pickString } from '../core/unwrap.js';
 import type { NotificationEvent } from '../notifications/normalize.js';

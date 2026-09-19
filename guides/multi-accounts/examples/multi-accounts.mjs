@@ -20,7 +20,7 @@ const accounts = new ItdAccounts({
   // на всех; при своём прокси у каждого аккаунта добавьте rateLimitScope: 'account'.
   rateLimit: { concurrency: 4, rps: 8 },
 
-  // logger: true, // раскомментируйте, чтобы видеть каждый запрос (токены маскируются)
+  // logger: true, // раскомментируйте, чтобы видеть, что делает клиент (токены маскируются)
 });
 
 try {

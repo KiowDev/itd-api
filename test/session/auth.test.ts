@@ -1095,7 +1095,7 @@ describe('капча при входе по паролю', () => {
 
     await auth.token();
 
-    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Itd);
+    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Itd, { logger: undefined });
     expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
       email: 'a@b.c',
       password: 'p',
@@ -1118,7 +1118,9 @@ describe('капча при входе по паролю', () => {
 
     await expect(auth.token()).resolves.toBe('t');
 
-    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Cloudflare);
+    expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Cloudflare, {
+      logger: undefined,
+    });
     expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
       email: 'a@b.c',
       password: 'p',
@@ -1172,7 +1174,7 @@ describe('капча при входе по паролю', () => {
 
     await auth.token();
 
-    expect(getToken).toHaveBeenCalledExactlyOnceWith('hcaptcha');
+    expect(getToken).toHaveBeenCalledExactlyOnceWith('hcaptcha', { logger: undefined });
     expect(JSON.parse(mock.calls[1]?.body ?? '{}').hToken).toBe('proof');
   });
 

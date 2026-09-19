@@ -1,18 +1,11 @@
 import type { OperationId } from '../domain/operations.js';
 import type { ItdClock } from './clock.js';
+import type { Logger, LogLevel } from './logger.js';
 import type { RetrySafety } from './operation.js';
 import type { RuntimeMode } from './runtime.js';
 import type { RateLimitPacing } from './scheduling/pacing.js';
 import type { ServiceDefinition } from './services.js';
 import type { QueryParams } from './url.js';
-
-/** Логгер библиотеки. Совместим с `console`. */
-export interface Logger {
-  debug(message: string, ...args: unknown[]): void;
-  info(message: string, ...args: unknown[]): void;
-  warn(message: string, ...args: unknown[]): void;
-  error(message: string, ...args: unknown[]): void;
-}
 
 /** Настройки повторных попыток. */
 export interface RetryOptions {
@@ -263,8 +256,8 @@ export interface RuntimeOptions {
 
   /** Хуки запросов. */
   hooks?: ClientHooks | undefined;
-  /** Логгер. `true` — использовать `console`. */
-  logger?: Logger | boolean | undefined;
+  /** Логгер. `true` — консоль с уровня `info`, `LogLevel` — с указанного уровня, объект — свой. */
+  logger?: Logger | LogLevel | boolean | undefined;
 }
 
 /**

@@ -1,6 +1,13 @@
+import type { Logger } from '../core/logger.js';
 import type { CaptchaToken } from '../operations/auth.js';
 import type { CaptchaChoice, CaptchaField, CaptchaType } from '../types/enums.js';
 import type { TokenStorage } from './storage.js';
+
+/** Что клиент передаёт источнику токена капчи при каждом обращении. */
+export interface CaptchaSolveContext {
+  /** Логгер клиента, если он включён. */
+  logger: Logger | undefined;
+}
 
 /**
  * Источник токенов капчи.
@@ -11,7 +18,7 @@ import type { TokenStorage } from './storage.js';
  */
 export interface CaptchaSolver {
   /** Получает имя провайдера, чью капчу нужно пройти, и возвращает токен. */
-  getToken(type: CaptchaType): string | Promise<string>;
+  getToken(type: CaptchaType, context: CaptchaSolveContext): string | Promise<string>;
   /**
    * Какую капчу проходить. По умолчанию `CaptchaChoice.Auto` — провайдера называет сервер.
    *
@@ -30,7 +37,7 @@ export interface CaptchaSolver {
 }
 
 /** Источник токенов капчи: объект с `getToken` либо сама функция. */
-export type CaptchaSolverInput = CaptchaSolver | ((type: CaptchaType) => string | Promise<string>);
+export type CaptchaSolverInput = CaptchaSolver | CaptchaSolver['getToken'];
 
 /**
  * Вход по логину и паролю.

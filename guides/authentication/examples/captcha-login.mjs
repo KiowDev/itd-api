@@ -30,6 +30,9 @@ const itd = new ItdClient({
   // дальше клиент продлевает токен сам и до входа по паролю дело не доходит.
   storage: new FileTokenStorage('./.itd-session.json'),
 
+  // Вход, обновление токена и ход решения капчи — в консоль.
+  logger: true,
+
   auth: {
     email: process.env.ITD_EMAIL,
     password: process.env.ITD_PASSWORD,
@@ -38,9 +41,7 @@ const itd = new ItdClient({
   // Источник токена, а не готовая строка: токен одноразовый и живёт несколько минут,
   // поэтому клиент спрашивает свежий перед каждой попыткой входа — в том числе через
   // сутки, когда сессия истечёт и понадобится войти заново.
-  captcha: createCaptchaSolver({
-    logger: (message) => console.log(`[captcha] ${message}`),
-  }),
+  captcha: createCaptchaSolver(),
 });
 
 itd.on('signIn', () => console.log('Вход выполнен, сессия сохранена'));

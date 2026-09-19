@@ -33,7 +33,7 @@ export type { Browser, BrowserContext, NewContextOptions, Page } from './driver.
 export { CaptchaError, CaptchaFailure } from './errors.js';
 export type { CaptchaHandler } from './handler.js';
 export { type BrowserOptions, launchBrowser } from './launch.js';
-export { DEFAULT_ORIGIN, type SolveOptions } from './options.js';
+export { type CaptchaLogger, DEFAULT_ORIGIN, type SolveOptions } from './options.js';
 export {
   DEFAULT_CAPTCHA_ORIGIN,
   ITD_CAPTCHA_SITE_KEY,
@@ -47,6 +47,7 @@ export {
   turnstile,
 } from './providers/turnstile.js';
 export {
+  type CaptchaSolveContext,
   type CaptchaSolver,
   type CaptchaSolverOptions,
   createCaptchaSolver,

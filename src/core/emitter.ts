@@ -1,4 +1,4 @@
-import type { Logger } from './options.js';
+import { fallbackLogger, type Logger } from './logger.js';
 
 /** Обработчик события. */
 export type Listener<T> = (payload: T) => void;
@@ -85,11 +85,8 @@ export class Emitter<Events> {
 }
 
 /**
- * Сообщает об исключении из пользовательского обработчика события: пишет в логгер,
- * при его отсутствии — в консоль.
- *
- * Ошибка чужого обработчика не должна ронять библиотеку, но и пропадать молча ей нельзя:
- * иначе подписка, падающая на каждом событии, выглядит как её отсутствие.
+ * Сообщает об исключении из пользовательского обработчика события; без логгера —
+ * в {@link fallbackLogger}.
  *
  * @param scope о чьих событиях речь — попадает в текст сообщения
  *
@@ -100,7 +97,5 @@ export function reportListenerError(
   scope: string,
   error: unknown,
 ): void {
-  const message = `Ошибка в обработчике события ${scope}`;
-  if (logger) logger.error(message, error);
-  else console.error(`[itd-api] ${message}`, error);
+  (logger ?? fallbackLogger).error(`Ошибка в обработчике события ${scope}`, error);
 }

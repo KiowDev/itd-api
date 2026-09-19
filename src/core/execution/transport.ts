@@ -9,7 +9,8 @@ import {
   ItdTimeoutError,
   TimeoutBudget,
 } from '../errors.js';
-import type { ClientHooks, Logger, RequestContext } from '../options.js';
+import { isLevelEnabled, type Logger, LogLevel } from '../logger.js';
+import type { ClientHooks, RequestContext } from '../options.js';
 import { attemptInterceptorScope, runAttemptInterceptors } from '../plugins/attempts.js';
 import { dispatchRequestHook, hasRequestHook } from '../plugins/hooks.js';
 import { redactBody, redactHeaders } from '../redact.js';
@@ -239,10 +240,14 @@ export class Transport {
         }
       }
 
-      this.#config.logger?.debug(`→ ${attempt.method} ${request.path}`, {
-        headers: redactHeaders(headers),
-        body: request.bodyFactory ? '[повторяемое тело]' : redactBody(request.body),
-      });
+      // Маскирование обходит заголовки и копирует тело: без включённого debug оно не нужно.
+      const logger = this.#config.logger;
+      if (logger && isLevelEnabled(logger, LogLevel.Debug)) {
+        logger.debug(`→ ${attempt.method} ${request.path}`, {
+          headers: redactHeaders(headers),
+          body: request.bodyFactory ? '[повторяемое тело]' : redactBody(request.body),
+        });
+      }
 
       let response: Response;
       try {

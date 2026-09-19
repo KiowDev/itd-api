@@ -169,7 +169,7 @@ interface ItdClientOptions {
   retry?: RetryOptions | false;
   rateLimit?: RateLimitOptions | false;
   hooks?: ClientHooks;
-  logger?: Logger | boolean;             // true — писать в консоль (токены маскируются)
+  logger?: Logger | LogLevel | boolean;  // true — консоль с уровня info; LogLevel.Debug — каждый запрос
   headers?: Record<string, string>;
   deviceId?: string;                     // X-Device-Id; стабильный; иначе заведётся сам
   userAgent?: string | false;            // false — не слать; в браузере не действует

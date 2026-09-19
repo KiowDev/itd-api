@@ -8,7 +8,8 @@ import {
   isItdApiError,
   isItdRateLimitError,
 } from '../errors.js';
-import type { ClientHooks, Logger, RequestOptions } from '../options.js';
+import type { Logger } from '../logger.js';
+import type { ClientHooks, RequestOptions } from '../options.js';
 import { dispatchRequestHook, hasRequestHook } from '../plugins/hooks.js';
 import type { PluginRegistry } from '../plugins/registry.js';
 import {
@@ -339,7 +340,10 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
     if (wait === undefined) return undefined;
 
     deps.pauseQueue?.(wait, request);
-    deps.logger?.debug(`лимит частоты, повтор ${rateLimitAttempt} через ${wait} мс`);
+    deps.logger?.info(
+      `лимит частоты ${request.method.toUpperCase()} ${request.path}, ` +
+        `повтор ${rateLimitAttempt} через ${wait} мс`,
+    );
     return wait;
   };
 
@@ -388,7 +392,7 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
             await (request.signal ? waitForRequest(notification, request.signal) : notification);
           }
 
-          deps.logger?.debug(
+          deps.logger?.info(
             `повтор ${method} ${request.path}, попытка ${transportAttempt + 1} через ${delay} мс`,
           );
 

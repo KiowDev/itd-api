@@ -127,6 +127,7 @@ export {
   withCodec,
   withNamespace,
 } from './core/key-value-store.js';
+export { type Logger, LogLevel } from './core/logger.js';
 export type { ManagedClientResource } from './core/managed-resources.js';
 export {
   type FeatureOperationId,
@@ -140,7 +141,6 @@ export {
 export type {
   ClientHooks,
   ErrorContextHook,
-  Logger,
   OperationRequestOptions,
   PaginationOptions,
   RateLimitBucketContext,
@@ -457,6 +457,7 @@ export {
 } from './session/multi-storage.js';
 export type {
   AuthInput,
+  CaptchaSolveContext,
   CaptchaSolver,
   CaptchaSolverInput,
   CredentialsAuth,

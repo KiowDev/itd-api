@@ -10,7 +10,7 @@ import {
 import { Emitter, reportListenerError } from '../core/emitter.js';
 import { ItdAuthError, ItdConfigError, ItdStateError, isItdApiError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
-import type { Logger } from '../core/options.js';
+import type { Logger } from '../core/logger.js';
 import { createDeviceId } from '../core/runtime.js';
 import { isObjectLike, isRecord, requireOptionalBoolean } from '../core/validate.js';
 import type { UserId } from '../models/common.js';
@@ -839,6 +839,9 @@ export class AuthManager implements AuthProvider {
       obtainedAt: this.#config.clock.now(),
     });
     this.#emitter.emit('tokens', { accessToken });
+    this.#config.logger?.info(
+      `${replaceSession ? 'вход выполнен' : 'принят токен доступа'}${this.#describeUser(accessToken)}`,
+    );
     await saved;
     return true;
   }
@@ -898,6 +901,7 @@ export class AuthManager implements AuthProvider {
     const retained = this.#deviceId ? { deviceId: this.#deviceId } : null;
     this.#session = retained;
     this.#emitter.emit('signOut', undefined);
+    this.#config.logger?.info('сессия очищена');
     await this.#enqueuePersistence(async () => {
       await this.#config.storage.clear();
       if (retained) await this.#config.storage.set(copySession(retained));
@@ -924,6 +928,11 @@ export class AuthManager implements AuthProvider {
 
     // Восстанавливаем cookie: без них не выйдет обновить токен после перезапуска процесса.
     if (stored?.cookies) this.#jar.deserialize(stored.cookies);
+    if (stored?.accessToken) {
+      this.#config.logger?.info(
+        `сессия восстановлена из хранилища${this.#describeUser(stored.accessToken)}`,
+      );
+    }
 
     const fromConfig = this.#sessionFromConfig(this.#config.auth);
 
@@ -1081,6 +1090,7 @@ export class AuthManager implements AuthProvider {
       });
 
       this.#emitter.emit('tokens', { accessToken });
+      this.#config.logger?.info('токен доступа обновлён');
       await saved;
       if (this.#authEpoch !== expectation.epoch) return this.#currentAccessToken();
       return accessToken;
@@ -1088,6 +1098,9 @@ export class AuthManager implements AuthProvider {
       if (this.#authEpoch !== expectation.epoch) return this.#currentAccessToken();
       if (error instanceof ItdAuthError) {
         // Сессия недействительна — чистим её, иначе будем биться в стену на каждом запросе.
+        this.#config.logger?.warn(
+          `обновить сессию не удалось (${error.message}); сохранённая сессия удалена`,
+        );
         this.#invalidateInFlight();
         const clearedRevision = this.#authEpoch;
         this.#transitionAuth(undefined);
@@ -1163,7 +1176,11 @@ export class AuthManager implements AuthProvider {
     if (configured) return captchaBody(configured);
 
     const solver = this.#config.captcha;
-    if (solver) return solveCaptchaBody(solver, () => this.#resolveCaptchaProvider());
+    if (solver) {
+      return solveCaptchaBody(solver, () => this.#resolveCaptchaProvider(), {
+        logger: this.#config.logger,
+      });
+    }
 
     this.#config.logger?.debug(
       'Запрос уходит без токена капчи: не передан аргумент captcha и не задана опция captcha',
@@ -1239,8 +1256,15 @@ export class AuthManager implements AuthProvider {
     const saved = this.#saveSession({ accessToken, obtainedAt: this.#config.clock.now() });
     this.#emitter.emit('tokens', { accessToken });
     this.#emitter.emit('signIn', { accessToken });
+    this.#config.logger?.info(`вход по email и паролю выполнен${this.#describeUser(accessToken)}`);
     await saved;
 
     return accessToken;
+  }
+
+  /** Хвост сообщения журнала с идентификатором пользователя, если токен его содержит. */
+  #describeUser(accessToken: string): string {
+    const userId = this.#identityForToken(accessToken).userId;
+    return userId ? `: пользователь ${userId}` : '';
   }
 }

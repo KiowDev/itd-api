@@ -2,7 +2,7 @@ import { ItdConfigError } from '../core/errors.js';
 import { isRecord } from '../core/validate.js';
 import { CAPTCHA_FIELDS, type CaptchaProvider, type CaptchaToken } from '../operations/auth.js';
 import { CaptchaChoice, type CaptchaField, type CaptchaType } from '../types/enums.js';
-import type { CaptchaSolver } from './options.js';
+import type { CaptchaSolveContext, CaptchaSolver } from './options.js';
 
 /** Капча запросов, которые её требуют: входа, регистрации, сброса пароля и QR-подтверждения. */
 
@@ -98,8 +98,12 @@ function resolveField(type: CaptchaType, configured: CaptchaField | undefined): 
 }
 
 /** Спрашивает токен у источника и убеждается, что он непустой. */
-async function requireSolvedToken(solver: CaptchaSolver, type: CaptchaType): Promise<string> {
-  const token = await solver.getToken(type);
+async function requireSolvedToken(
+  solver: CaptchaSolver,
+  type: CaptchaType,
+  context: CaptchaSolveContext,
+): Promise<string> {
+  const token = await solver.getToken(type, context);
   if (typeof token === 'string' && token.trim() !== '') return token;
 
   throw new ItdConfigError(
@@ -114,20 +118,24 @@ async function requireSolvedToken(solver: CaptchaSolver, type: CaptchaType): Pro
  * и имя поля приходят оттуда. Явно названный тип обходится без этого запроса.
  *
  * @param askProvider как спросить активного провайдера; вызывается, только если это нужно
+ * @param context что источник получает вместе с типом капчи
  * @throws {ItdConfigError} если токен получить не удалось
  */
 export async function solveCaptchaBody(
   solver: CaptchaSolver,
   askProvider: () => Promise<CaptchaProvider>,
+  context: CaptchaSolveContext,
 ): Promise<CaptchaBody> {
   const choice = solver.type ?? CaptchaChoice.Auto;
 
   if (choice === CaptchaChoice.Auto) {
     const { provider, field } = await askProvider();
-    return { [field]: await requireSolvedToken(solver, provider) };
+    return { [field]: await requireSolvedToken(solver, provider, context) };
   }
 
-  return { [resolveField(choice, solver.field)]: await requireSolvedToken(solver, choice) };
+  return {
+    [resolveField(choice, solver.field)]: await requireSolvedToken(solver, choice, context),
+  };
 }
 
 /**

@@ -119,6 +119,7 @@ export type {
   FeatureOperationDefinition,
   FeatureRequestOptions,
 } from './core/features.js';
+export { type Logger, LogLevel } from './core/logger.js';
 export type { ManagedClientResource } from './core/managed-resources.js';
 export {
   type FeatureOperationId,
@@ -130,7 +131,6 @@ export {
 export type {
   ClientHooks,
   ErrorContextHook,
-  Logger,
   OperationRequestOptions,
   PaginationOptions,
   RateLimitBucketContext,

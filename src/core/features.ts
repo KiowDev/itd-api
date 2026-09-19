@@ -10,6 +10,7 @@ import type { ClientConnection } from './connection.js';
 import { ItdAbortError, ItdConfigError, ItdStateError } from './errors.js';
 import type { HttpClient } from './execution/http.js';
 import type { ExtensibleOperationCatalog } from './feature-catalog.js';
+import type { Logger } from './logger.js';
 import type { ManagedClientResource } from './managed-resources.js';
 import {
   defineOperation,
@@ -20,7 +21,7 @@ import {
   OperationMethod,
   RetrySafety,
 } from './operation.js';
-import type { Logger, RateLimitBucketOverride, RawRequestOptions } from './options.js';
+import type { RateLimitBucketOverride, RawRequestOptions } from './options.js';
 import { mergeService, type ServiceDefinition, type ServiceRegistry } from './services.js';
 
 /** Параметры запроса feature: маршрут задаёт ресурс, transport metadata — manifest. */

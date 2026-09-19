@@ -67,7 +67,8 @@ async function waitForToken(
   options: ResolvedOptions,
   browser: Browser,
 ): Promise<string> {
-  const deadline = Date.now() + options.timeout;
+  const startedAt = Date.now();
+  const deadline = startedAt + options.timeout;
 
   // Ожидание разметки необязательное: виджет её меняет, и привязываться жёстко нельзя.
   // Настоящий срок задаёт цикл ниже.
@@ -87,7 +88,7 @@ async function waitForToken(
     const state = await handler.readState(page);
 
     if (state.token) {
-      options.logger?.('токен получен');
+      options.logger?.info(`токен ${handler.label} получен за ${Date.now() - startedAt} мс`);
       return state.token;
     }
 
@@ -103,11 +104,13 @@ async function waitForToken(
 
       // Прочие коды временные: обрывать попытку рано, виджет пробует снова сам.
       lastError = state.error;
-      options.logger?.(`виджет сообщил об ошибке ${state.error}, ждём повтора`);
+      options.logger?.debug(
+        `виджет ${handler.label} сообщил об ошибке ${state.error}, ждём повтора`,
+      );
     }
 
     if (Date.now() >= nextClickAt && (await clickCheckbox(page, handler.checkboxOffsetX))) {
-      options.logger?.('клик по чекбоксу');
+      options.logger?.debug(`клик по чекбоксу ${handler.label}`);
       nextClickAt = Date.now() + CLICK_INTERVAL;
     }
 
@@ -205,19 +208,21 @@ export async function runSolver(
   handler: CaptchaHandler,
   options: ResolvedOptions,
 ): Promise<string> {
-  const browser = options.browser ?? (await launchBrowser(options));
   const owned = options.browser === undefined;
+  if (owned) options.logger?.info(`запуск браузера для ${handler.label}`);
+  const browser = options.browser ?? (await launchBrowser(options));
 
   try {
     for (let attempt = 1; attempt <= options.attempts; attempt++) {
       try {
-        options.logger?.(`попытка ${attempt} из ${options.attempts}`);
+        options.logger?.debug(`попытка ${attempt} из ${options.attempts} для ${handler.label}`);
         return await solveOnce(browser, handler, options);
       } catch (raw) {
         const error = toCaptchaError(raw, handler);
         if (isPermanent(error) || attempt === options.attempts) throw error;
-        options.logger?.(
-          `попытка ${attempt} не удалась: ${error instanceof Error ? error.message : String(error)}`,
+        options.logger?.warn(
+          `попытка ${attempt} из ${options.attempts} для ${handler.label} не удалась ` +
+            `(${error instanceof Error ? error.message : String(error)}), повтор`,
         );
       }
     }

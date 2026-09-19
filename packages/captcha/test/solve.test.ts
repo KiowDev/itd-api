@@ -427,6 +427,10 @@ describe('проверка настроек', () => {
     await expect(solveCaptcha(type, { theme: 'blue' as never })).rejects.toThrow(TypeError);
     await expect(solveCaptcha(type, { disableSandbox: 'yes' as never })).rejects.toThrow(TypeError);
     await expect(solveCaptcha(type, { logger: true as never })).rejects.toThrow(TypeError);
+    await expect(solveCaptcha(type, { logger: console.debug as never })).rejects.toThrow(TypeError);
+    await expect(solveCaptcha(type, { logger: { debug() {} } as never })).rejects.toThrow(
+      TypeError,
+    );
     await expect(solveCaptcha(type, { args: ['ok', 42] as never })).rejects.toThrow(TypeError);
     await expect(solveCaptcha(type, { contextOptions: 'ru' as never })).rejects.toThrow(TypeError);
     await expect(solveCaptcha(type, { driver: '' })).rejects.toThrow(TypeError);
@@ -481,5 +485,31 @@ describe('createCaptchaSolver', () => {
 
   it('отвергает незнакомый тип и поле без типа сразу при создании', () => {
     expect(() => createCaptchaSolver({ type: 'hcaptcha' })).toThrow(TypeError);
+  });
+
+  it('без своего логгера пишет ход решения в логгер клиента', async () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const browser = new FakeBrowser(new FakePage({ tokenAfterClicks: 0 }));
+
+    await createCaptchaSolver({ browser }).getToken(CaptchaType.Itd, { logger });
+    await createCaptchaSolver({ browser, type: CaptchaType.Itd }).getToken(CaptchaType.Itd, {
+      logger,
+    });
+
+    expect(logger.info).toHaveBeenCalledTimes(2);
+    expect(logger.info).toHaveBeenLastCalledWith(expect.stringMatching(/^токен капчи ИТД получен/));
+  });
+
+  it('свой логгер важнее логгера клиента', async () => {
+    const own = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const client = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const browser = new FakeBrowser(new FakePage({ tokenAfterClicks: 0 }));
+
+    await createCaptchaSolver({ browser, logger: own }).getToken(CaptchaType.Itd, {
+      logger: client,
+    });
+
+    expect(own.info).toHaveBeenCalled();
+    expect(client.info).not.toHaveBeenCalled();
   });
 });

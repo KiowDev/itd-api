@@ -1,9 +1,9 @@
 import type { OperationCatalog } from './catalog.js';
 import { type ItdClock, systemClock } from './clock.js';
 import { ItdConfigError } from './errors.js';
+import { type Logger, resolveLogger } from './logger.js';
 import type {
   ClientHooks,
-  Logger,
   RateLimitBucketContext,
   RateLimitBucketOverride,
   RetryOptions,
@@ -141,30 +141,6 @@ function resolveHooks(hooks: ClientHooks | undefined): ClientHooks {
     }
   }
   return { ...hooks };
-}
-
-function resolveLogger(logger: RuntimeOptions['logger']): Logger | undefined {
-  if (logger === undefined || logger === false) return undefined;
-  if (logger === true) return consoleLogger();
-  if (!isObjectLike(logger))
-    throw new ItdConfigError('logger должен быть boolean или объектом Logger');
-
-  for (const method of ['debug', 'info', 'warn', 'error'] as const) {
-    if (typeof logger[method] !== 'function') {
-      throw new ItdConfigError(`logger.${method} должен быть функцией`);
-    }
-  }
-  return logger;
-}
-
-/** Логгер поверх `console` — включается опцией `logger: true`. */
-function consoleLogger(): Logger {
-  return {
-    debug: (message, ...args) => console.debug(`[itd-api] ${message}`, ...args),
-    info: (message, ...args) => console.info(`[itd-api] ${message}`, ...args),
-    warn: (message, ...args) => console.warn(`[itd-api] ${message}`, ...args),
-    error: (message, ...args) => console.error(`[itd-api] ${message}`, ...args),
-  };
 }
 
 /**

@@ -557,6 +557,46 @@ describe('event channel', () => {
     engine.disconnect();
   });
 
+  it('пишет жизненный цикл соединения в логгер', async () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    // Первое соединение закрывается штатно сразу после открытия, второе живёт до отмены.
+    let closedOnce = false;
+    const transport: EventTransport = {
+      name: 'flaky',
+      connect(context) {
+        context.onOpen();
+        if (!closedOnce) {
+          closedOnce = true;
+          return Promise.resolve();
+        }
+        return new Promise<void>((resolve) => {
+          context.signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+      },
+    };
+    const engine = makeEngine(transport, { logger }, { backoff: [0], jitter: 0, maxAttempts: 3 });
+    engine.on('error', () => {});
+
+    await engine.connect();
+    await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('поток событий переподключён'));
+
+    expect(logger.info.mock.calls.map(([message]) => message)).toEqual([
+      'поток событий подключён',
+      'поток событий переподключён',
+    ]);
+    expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+      'поток событий оборван (Соединение с потоком событий закрыто); ' +
+        'переподключение 1 из 3 через 0 мс',
+    );
+
+    engine.disconnect();
+    expect(logger.info).toHaveBeenLastCalledWith('поток событий остановлен');
+
+    // Повторный disconnect() уже остановленного потока не даёт новой записи.
+    engine.disconnect();
+    expect(logger.info).toHaveBeenCalledTimes(3);
+  });
+
   it('игнорирует события транспорта из закрытого поколения', async () => {
     const transport = new TestTransport();
     const delivered: number[] = [];
