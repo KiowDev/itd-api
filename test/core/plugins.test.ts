@@ -606,6 +606,39 @@ describe('раздельные operation transformers и attempt interceptors', 
     expect(mock.calls[0]?.headers.get('x-attempt')).toBe('yes');
   });
 
+  it('правки полей контекста в onRequest не доходят до interceptor и onResponse, заголовки — доходят', async () => {
+    const seen: string[] = [];
+    const { itd, mock } = makeClient([json({ data: { id: '1' } })], {
+      hooks: {
+        onRequest: (context) => {
+          // Пользователь JavaScript может присвоить поле в обход `readonly`.
+          (context as { url: string }).url = 'https://evil.test/';
+          context.headers.set('X-From-Hook', 'yes');
+        },
+        onResponse: ({ url, headers }) => {
+          seen.push(`response:${url}:${headers.get('x-from-hook')}`);
+        },
+      },
+    });
+    itd.use({
+      name: 'observe',
+      install({ attempts }) {
+        attempts.use(({ url, headers }, next) => {
+          seen.push(`attempt:${url}:${headers.get('x-from-hook')}`);
+          return next();
+        });
+      },
+    });
+
+    await itd.posts.get('1');
+
+    expect(seen).toEqual([
+      'attempt:https://itd.test/api/posts/1:yes',
+      'response:https://itd.test/api/posts/1:yes',
+    ]);
+    expect(mock.calls[0]?.headers.get('x-from-hook')).toBe('yes');
+  });
+
   it('проверяет interceptor при регистрации', () => {
     const { itd } = makeClient([]);
 

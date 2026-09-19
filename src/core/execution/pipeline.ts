@@ -3,21 +3,11 @@ import type { CookieJar } from '../cookies.js';
 import type { OperationRequestOptions } from '../options.js';
 
 /*
- * Служебное состояние конвейера хранится в объекте запроса под символьными ключами.
- * Символы перечислимы: spread-копии слоёв переносят их дальше, а `Object.entries` и
- * `JSON.stringify` в пользовательском коде — например в ключе кэша — их не видят.
+ * Служебное состояние одной логической операции лежит в объекте запроса под перечислимым
+ * символом: spread-копии слоёв переносят его дальше, а `Object.entries` и `JSON.stringify`
+ * в пользовательском коде — например в ключе кэша — его не видят.
  */
-const REQUEST_ATTEMPT_STATE = Symbol('itd-api.request-attempt-state');
-const REQUEST_QUEUE_KEY = Symbol('itd-api.request-queue-key');
-const REQUEST_AUTH_RECOVERY_STATE = Symbol('itd-api.request-auth-recovery-state');
-const REQUEST_ERROR_OBSERVATION_STATE = Symbol('itd-api.request-error-observation-state');
-const REQUEST_LIFECYCLE_SIGNAL = Symbol('itd-api.request-lifecycle-signal');
-const REQUEST_READER = Symbol('itd-api.request-reader');
-const DISPOSE_CLEANUP_REQUEST = Symbol('itd-api.dispose-cleanup-request');
-
-interface RequestAttemptState {
-  value: number;
-}
+const OPERATION_STATE = Symbol('itd-api.operation-state');
 
 /** Преобразует разобранное тело HTTP-ответа в результат операции. */
 export type OperationReader = (
@@ -42,15 +32,29 @@ interface RequestErrorReportingState {
   abortReported: boolean;
 }
 
+interface OperationState {
+  attempt?: number;
+  queueKey?: RequestQueueKey;
+  authRecovery?: RequestAuthRecoveryState;
+  errorReporting?: RequestErrorReportingState;
+  lifecycleSignal?: AbortSignal;
+  reader?: OperationReader;
+  disposeCleanup?: true;
+}
+
 type InternalPipelineRequest = PipelineRequest & {
-  [REQUEST_ATTEMPT_STATE]?: RequestAttemptState;
-  [REQUEST_QUEUE_KEY]?: RequestQueueKey;
-  [REQUEST_AUTH_RECOVERY_STATE]?: RequestAuthRecoveryState;
-  [REQUEST_ERROR_OBSERVATION_STATE]?: RequestErrorReportingState;
-  [REQUEST_LIFECYCLE_SIGNAL]?: AbortSignal;
-  [REQUEST_READER]?: OperationReader;
-  [DISPOSE_CLEANUP_REQUEST]?: true;
+  [OPERATION_STATE]?: OperationState;
 };
+
+function operationState(request: PipelineRequest): OperationState {
+  const internal = request as InternalPipelineRequest;
+  let state = internal[OPERATION_STATE];
+  if (!state) {
+    state = {};
+    internal[OPERATION_STATE] = state;
+  }
+  return state;
+}
 
 /**
  * Привязывает к запросу функцию чтения контракта операции. У `raw`-запроса её нет.
@@ -62,33 +66,24 @@ export function withOperationReader<T extends PipelineRequestInput>(
   request: T,
   read: OperationReader,
 ): T {
-  return { ...request, [REQUEST_READER]: read } as T;
+  operationState(request as PipelineRequest).reader = read;
+  return request;
 }
 
 /** Функция чтения контракта операции, если запрос её несёт. @internal */
 export function operationReaderOf(request: PipelineRequest): OperationReader | undefined {
-  return (request as InternalPipelineRequest)[REQUEST_READER];
+  return (request as InternalPipelineRequest)[OPERATION_STATE]?.reader;
 }
 
-/**
- * Переносит служебное состояние логической операции на запрос, который обёртка плагина
- * могла собрать заново: функцию чтения, право финализации после `dispose()` и учёт
- * уже переданных в `onError` ошибок.
- *
- * @internal
- */
+/** Переносит служебное состояние логической операции на новый объект запроса. @internal */
 export function withOperationState(
   prepared: PipelineRequest,
   source: PipelineRequest,
 ): PipelineRequest {
   const from = source as InternalPipelineRequest;
-  const to = { ...prepared } as InternalPipelineRequest;
-  if (from[REQUEST_READER] !== undefined) to[REQUEST_READER] = from[REQUEST_READER];
-  if (from[DISPOSE_CLEANUP_REQUEST]) to[DISPOSE_CLEANUP_REQUEST] = true;
-  if (from[REQUEST_ERROR_OBSERVATION_STATE] !== undefined) {
-    to[REQUEST_ERROR_OBSERVATION_STATE] = from[REQUEST_ERROR_OBSERVATION_STATE];
-  }
-  return to;
+  const to = prepared as InternalPipelineRequest;
+  to[OPERATION_STATE] = from[OPERATION_STATE] ?? {};
+  return prepared;
 }
 
 /**
@@ -103,35 +98,34 @@ export function withLifecycleSignal(
   request: PipelineRequest,
   signal: AbortSignal,
 ): PipelineRequest {
-  return { ...request, [REQUEST_LIFECYCLE_SIGNAL]: signal } as InternalPipelineRequest;
+  operationState(request).lifecycleSignal = signal;
+  return request;
 }
 
 /** Общий сигнал операции, сохранённый {@link withLifecycleSignal}. @internal */
 export function lifecycleSignalOf(request: PipelineRequest): AbortSignal | undefined {
-  return (request as InternalPipelineRequest)[REQUEST_LIFECYCLE_SIGNAL];
+  return (request as InternalPipelineRequest)[OPERATION_STATE]?.lifecycleSignal;
 }
 
 /** Возвращает общее для всех retry состояние восстановления авторизации. @internal */
 export function requestAuthRecoveryState(request: PipelineRequest): RequestAuthRecoveryState {
-  const internal = request as InternalPipelineRequest;
-  const current = internal[REQUEST_AUTH_RECOVERY_STATE];
+  const state = operationState(request);
+  const current = state.authRecovery;
   if (current) return current;
-  const state = { recovered: false, preparationErrors: new Set<unknown>() };
-  internal[REQUEST_AUTH_RECOVERY_STATE] = state;
-  return state;
+  const recovery = { recovered: false, preparationErrors: new Set<unknown>() };
+  state.authRecovery = recovery;
+  return recovery;
 }
 
 /** Создаёт общий для копий логического запроса учёт вызовов `onError`. @internal */
 export function trackRequestErrorReporting(request: PipelineRequest): void {
-  const internal = request as InternalPipelineRequest;
-  internal[REQUEST_ERROR_OBSERVATION_STATE] ??= { errors: new Set(), abortReported: false };
+  const state = operationState(request);
+  state.errorReporting ??= { errors: new Set(), abortReported: false };
 }
 
 function errorReportingState(request: PipelineRequest): RequestErrorReportingState {
   trackRequestErrorReporting(request);
-  return (request as InternalPipelineRequest)[
-    REQUEST_ERROR_OBSERVATION_STATE
-  ] as RequestErrorReportingState;
+  return operationState(request).errorReporting as RequestErrorReportingState;
 }
 
 /** Отмечает, что ошибка логического запроса уже была передана в `onError`. @internal */
@@ -142,7 +136,7 @@ export function markRequestErrorReported(request: PipelineRequest, error: unknow
 /** Была ли конкретная ошибка этой логической операции уже передана в `onError`. @internal */
 export function wasRequestErrorReported(request: PipelineRequest, error: unknown): boolean {
   return (
-    (request as InternalPipelineRequest)[REQUEST_ERROR_OBSERVATION_STATE]?.errors.has(error) ??
+    (request as InternalPipelineRequest)[OPERATION_STATE]?.errorReporting?.errors.has(error) ??
     false
   );
 }
@@ -220,25 +214,16 @@ export function identifyRequest(request: PipelineRequestInput): PipelineRequest 
     : (request as PipelineRequest);
 }
 
-/** Привязывает счётчик транспортных попыток к одной логической операции. @internal */
-export function trackRequestAttempts(request: PipelineRequest): PipelineRequest {
-  const internal = request as InternalPipelineRequest;
-  if (internal[REQUEST_ATTEMPT_STATE]) return request;
-  return { ...request, [REQUEST_ATTEMPT_STATE]: { value: 0 } } as InternalPipelineRequest;
-}
-
 /** Начинает следующую фактическую транспортную попытку логической операции. @internal */
 export function beginTransportAttempt(request: PipelineRequest): PipelineRequest {
-  const tracked = trackRequestAttempts(request) as InternalPipelineRequest;
-  const state = tracked[REQUEST_ATTEMPT_STATE];
-  if (!state) throw new Error('request attempt state was not initialized');
-  state.value += 1;
-  return { ...tracked, attempt: state.value };
+  const state = operationState(request);
+  state.attempt = (state.attempt ?? 0) + 1;
+  return { ...request, attempt: state.attempt };
 }
 
 /** Возвращает номер последней начатой транспортной попытки. @internal */
 export function currentTransportAttempt(request: PipelineRequest): number {
-  return (request as InternalPipelineRequest)[REQUEST_ATTEMPT_STATE]?.value ?? 0;
+  return (request as InternalPipelineRequest)[OPERATION_STATE]?.attempt ?? 0;
 }
 
 /** Куда встаёт запрос: направление и бакет. @internal */
@@ -252,8 +237,8 @@ export interface RequestQueueKey {
  * Вычисляет ключ очереди один раз на логическую операцию.
  *
  * Ключ спрашивают трижды: при постановке в очередь, при чтении заголовков ответа и при
- * паузе после `429`. Значение пишется прямо в объект запроса — слои ниже копируют его
- * через spread, и перечислимое символьное поле переходит в копии.
+ * паузе после `429`. Значение хранится в общем состоянии операции, поэтому его видят все
+ * копии запроса ниже по конвейеру.
  *
  * @internal
  */
@@ -261,23 +246,24 @@ export function requestQueueKey(
   request: PipelineRequest,
   compute: (request: PipelineRequest) => RequestQueueKey,
 ): RequestQueueKey {
-  const internal = request as InternalPipelineRequest;
-  const cached = internal[REQUEST_QUEUE_KEY];
+  const state = operationState(request);
+  const cached = state.queueKey;
   if (cached) return cached;
 
   const key = compute(request);
-  internal[REQUEST_QUEUE_KEY] = key;
+  state.queueKey = key;
   return key;
 }
 
 /** Помечает запрос как часть внутренней финализации уже начатого `dispose()`. @internal */
 export function markDisposeCleanupRequest<T extends PipelineRequestInput>(request: T): T {
-  return { ...request, [DISPOSE_CLEANUP_REQUEST]: true } as T;
+  operationState(request as PipelineRequest).disposeCleanup = true;
+  return request;
 }
 
 /** Разрешено ли запросу завершать внутреннюю очистку после `dispose()`. @internal */
 export function isDisposeCleanupRequest(request: PipelineRequest): boolean {
-  return (request as InternalPipelineRequest)[DISPOSE_CLEANUP_REQUEST] === true;
+  return (request as InternalPipelineRequest)[OPERATION_STATE]?.disposeCleanup === true;
 }
 
 /** Обработчик запроса. Самый внутренний в цепочке — транспорт. */
@@ -287,7 +273,8 @@ export type RequestHandler = (request: PipelineRequest) => Promise<unknown>;
  * Слой конвейера запросов.
  *
  * Получает запрос и продолжение цепочки. Может изменить запрос, обработать ошибку
- * продолжения или вовсе не вызывать `next`.
+ * продолжения или вовсе не вызывать `next`. Вправе вернуть `next()` без `await` и бросить
+ * синхронно: вход в конвейер принимает и отклонение, и исключение.
  */
 export type RequestMiddleware = (
   request: PipelineRequest,

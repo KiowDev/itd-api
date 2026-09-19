@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { anonymousAuth } from '../../src/core/auth-provider.js';
 import {
@@ -7,7 +8,7 @@ import {
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { createItdAuth } from '../../src/session/auth.js';
-import { createMockFetch, json } from '../helpers/mock-fetch.js';
+import { createHangingFetch, createMockFetch, json } from '../helpers/mock-fetch.js';
 
 function makeRuntime(rateLimit: false | { concurrency: number }) {
   const mock = createMockFetch([]);
@@ -111,5 +112,32 @@ describe('createClientRuntime', () => {
     expect(mock.callCount).toBe(1);
 
     await runtime.dispose();
+  });
+
+  it('использует один lifetime-listener для всех активных запросов', async () => {
+    const mock = createHangingFetch();
+    const runtime = createClientRuntime(
+      {
+        baseUrl: 'https://itd.test',
+        fetch: mock.fetch,
+        mode: 'server',
+        retry: false,
+        rateLimit: { concurrency: 2 },
+        timeout: 0,
+      },
+      { auth: anonymousAuth, catalog: ITD_CATALOG },
+    );
+    const lifetime = runtime.connection().signal;
+    if (!lifetime) throw new Error('runtime должен предоставлять lifetime signal');
+    const pending = Array.from({ length: 20 }, (_, index) =>
+      runtime.http.request({ method: 'GET', path: `/api/pending/${index}` }).catch(() => {}),
+    );
+
+    await Promise.resolve();
+    expect(getEventListeners(lifetime, 'abort')).toHaveLength(1);
+
+    await runtime.dispose();
+    await Promise.all(pending);
+    expect(getEventListeners(lifetime, 'abort')).toHaveLength(0);
   });
 });

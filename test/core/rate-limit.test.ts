@@ -536,6 +536,42 @@ describe('RequestQueuePool', () => {
     expect(started).not.toHaveBeenCalled();
   });
 
+  it('отмена из середины очереди сохраняет порядок остальных задач', async () => {
+    const pool = new RequestQueuePool(poolOptions());
+    const queue = pool.for('https://itd.test', 'feed');
+    const started: string[] = [];
+    let release!: () => void;
+    const holder = queue.schedule(() => new Promise<void>((resolve) => (release = resolve)));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const controllers = {
+      a: new AbortController(),
+      b: new AbortController(),
+      d: new AbortController(),
+    };
+    const run = (name: string) => async () => void started.push(name);
+    const a = queue.schedule(run('a'), controllers.a.signal);
+    const b = queue.schedule(run('b'), controllers.b.signal);
+    const c = queue.schedule(run('c'));
+    const d = queue.schedule(run('d'), controllers.d.signal);
+    expect(queue.pending).toBe(4);
+
+    controllers.b.abort();
+    controllers.d.abort();
+    await expect(b).rejects.toThrow(ItdAbortError);
+    await expect(d).rejects.toThrow(ItdAbortError);
+    expect(queue.pending).toBe(2);
+
+    release();
+    await holder;
+    await a;
+    // Запущенную задачу отмена уже не снимает.
+    controllers.a.abort();
+    await c;
+    expect(started).toEqual(['a', 'c']);
+    expect(queue.pending).toBe(0);
+  });
+
   it('снимок отдаёт то, что сказал сервер по каждому бакету', () => {
     const pool = new RequestQueuePool(poolOptions());
 
@@ -666,6 +702,42 @@ describe('BucketQueue — режимы реакции на заголовки', 
     expect(queue.observe(90, 2)).toBe(0);
     expect(queue.observe(90, 0)).toBe(667);
     expect(queue.observe(90, 90)).toBe(667);
+  });
+
+  it('smooth: обновление остатка не перевзводит более ранний таймер', () => {
+    let scheduled = 0;
+    let cancelled = 0;
+    let now = 0;
+    const clock = {
+      now: () => now,
+      schedule: () => {
+        scheduled += 1;
+        let active = true;
+        return () => {
+          if (!active) return;
+          active = false;
+          cancelled += 1;
+        };
+      },
+    };
+    const rateLimit = resolveRuntimeConfig({}, ITD_CATALOG).rateLimit;
+    if (!rateLimit) throw new Error('очередь должна быть включена по умолчанию');
+    const queue = new RequestQueuePool(
+      { ...rateLimit, pacing: RateLimitPacing.Smooth, concurrency: 6 },
+      clock,
+    ).for('https://itd.test', 'posts.create');
+    queue.pause(12_000);
+    queue.schedule(() => new Promise<void>(() => {})).catch(() => {});
+    scheduled = 0;
+    cancelled = 0;
+
+    for (let index = 0; index < 100; index += 1) {
+      now += 10;
+      queue.observe(5, 4);
+    }
+
+    expect(scheduled).toBe(0);
+    expect(cancelled).toBe(0);
   });
 
   it('smooth: 429 обнуляет оценку и передаёт управление лестнице', async () => {

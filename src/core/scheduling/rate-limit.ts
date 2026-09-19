@@ -67,14 +67,8 @@ class DestinationScheduler {
     this.#buckets.push(bucket);
   }
 
-  /** Пересчитывает ближайший запуск после изменения очереди или ограничения. */
+  /** Пересчитывает запуск; существующий таймер заменяется только более ранним. */
   changed(): void {
-    this.#drain();
-  }
-
-  /** Перепланирует пробуждение после изменения времени готовности бакета. */
-  timingChanged(): void {
-    this.#cancelWakeup();
     this.#drain();
   }
 
@@ -148,6 +142,80 @@ interface BucketTask {
   cancel: (reason: unknown) => void;
 }
 
+/** Узел очереди ожидания. */
+interface WaitingNode {
+  readonly task: BucketTask;
+  prev: WaitingNode | undefined;
+  next: WaitingNode | undefined;
+  /** Стоит ли узел в очереди; снятый узел повторно не снимается. */
+  linked: boolean;
+}
+
+/**
+ * Очередь ожидающих задач в порядке постановки.
+ *
+ * Постановка в хвост, снятие головы, снятие произвольного узла при отмене и полная
+ * очистка — за O(1) при любой длине: очередь рассчитана на десятки тысяч задач, разом
+ * упёршихся в паузу `429`.
+ */
+class WaitingList {
+  #head: WaitingNode | undefined;
+  #tail: WaitingNode | undefined;
+  #size = 0;
+
+  get size(): number {
+    return this.#size;
+  }
+
+  push(task: BucketTask): WaitingNode {
+    const node: WaitingNode = { task, prev: this.#tail, next: undefined, linked: true };
+    if (this.#tail) this.#tail.next = node;
+    else this.#head = node;
+    this.#tail = node;
+    this.#size += 1;
+    return node;
+  }
+
+  shift(): BucketTask | undefined {
+    const node = this.#head;
+    if (!node) return undefined;
+    this.remove(node);
+    return node.task;
+  }
+
+  /** Снимает узел; `false`, если он уже снят. */
+  remove(node: WaitingNode): boolean {
+    if (!node.linked) return false;
+    node.linked = false;
+    if (node.prev) node.prev.next = node.next;
+    else this.#head = node.next;
+    if (node.next) node.next.prev = node.prev;
+    else this.#tail = node.prev;
+    node.prev = undefined;
+    node.next = undefined;
+    this.#size -= 1;
+    return true;
+  }
+
+  /** Снимает все узлы; задачи возвращаются в порядке постановки. */
+  drain(): BucketTask[] {
+    const tasks: BucketTask[] = [];
+    let node = this.#head;
+    while (node) {
+      const following = node.next;
+      node.linked = false;
+      node.prev = undefined;
+      node.next = undefined;
+      tasks.push(node.task);
+      node = following;
+    }
+    this.#head = undefined;
+    this.#tail = undefined;
+    this.#size = 0;
+    return tasks;
+  }
+}
+
 /**
  * Состояние и очередь одного серверного бакета.
  *
@@ -183,7 +251,7 @@ export class BucketQueue {
   #remaining: number | undefined;
   #active = 0;
   #nextSlot = 0;
-  readonly #waiting: BucketTask[] = [];
+  readonly #waiting = new WaitingList();
 
   /**
    * Оценка остатка для режима `smooth`.
@@ -235,12 +303,12 @@ export class BucketQueue {
 
   /** Запросов бакета ждёт своей очереди. */
   get pending(): number {
-    return this.#waiting.length;
+    return this.#waiting.size;
   }
 
   /** Есть ли ожидающая задача, для которой свободен локальный слот. */
   get canStart(): boolean {
-    return this.#waiting.length > 0 && this.#active < this.#concurrency;
+    return this.#waiting.size > 0 && this.#active < this.#concurrency;
   }
 
   /** Момент, раньше которого локальное ограничение не разрешает следующий старт. */
@@ -253,17 +321,15 @@ export class BucketQueue {
     if (signal?.aborted) return Promise.reject(queueAbortError());
 
     return new Promise<T>((resolve, reject) => {
-      let queued: BucketTask;
+      let queued: WaitingNode;
       const detach = () => signal?.removeEventListener('abort', onAbort);
       const onAbort = () => {
-        const index = this.#waiting.indexOf(queued);
-        if (index < 0) return;
-        this.#waiting.splice(index, 1);
-        queued.cancel(queueAbortError());
-        this.#scheduler.timingChanged();
+        if (!this.#waiting.remove(queued)) return;
+        queued.task.cancel(queueAbortError());
+        this.#scheduler.changed();
       };
 
-      queued = {
+      queued = this.#waiting.push({
         start: (complete) => {
           detach();
           Promise.resolve().then(task).then(resolve, reject).finally(complete);
@@ -272,9 +338,8 @@ export class BucketQueue {
           detach();
           reject(reason);
         },
-      };
+      });
 
-      this.#waiting.push(queued);
       signal?.addEventListener('abort', onAbort, { once: true });
       if (signal?.aborted) onAbort();
       else this.#scheduler.changed();
@@ -330,7 +395,7 @@ export class BucketQueue {
       // по мере того как сервер действительно возвращает квоту.
       if (remaining < this.#tokens) this.#tokens = remaining;
       const wait = this.#armPause(capacity);
-      this.#scheduler.timingChanged();
+      this.#scheduler.changed();
       return wait;
     }
 
@@ -364,7 +429,7 @@ export class BucketQueue {
       limit: this.#limit,
       remaining: this.#remaining,
       active: this.#active,
-      pending: this.#waiting.length,
+      pending: this.#waiting.size,
     };
   }
 
@@ -375,9 +440,8 @@ export class BucketQueue {
 
   /** Отклоняет ожидающие задачи; используется также при остановке всего направления. */
   cancelWaiting(reason: unknown, notify = true): void {
-    const pending = this.#waiting.splice(0, this.#waiting.length);
-    for (const task of pending) task.cancel(reason);
-    if (notify) this.#scheduler.timingChanged();
+    for (const task of this.#waiting.drain()) task.cancel(reason);
+    if (notify) this.#scheduler.changed();
   }
 
   /** Лимит бакета: сказанный сервером, иначе табличный. */
@@ -418,7 +482,7 @@ export class BucketQueue {
   #hold(ms: number): void {
     if (ms <= 0) return;
     this.#nextSlot = Math.max(this.#nextSlot, this.#clock.now() + ms);
-    this.#scheduler.timingChanged();
+    this.#scheduler.changed();
   }
 }
 

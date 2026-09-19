@@ -9,7 +9,7 @@ import {
   isItdRateLimitError,
 } from '../errors.js';
 import type { ClientHooks, Logger, RequestOptions } from '../options.js';
-import { dispatchRequestHook } from '../plugins/hooks.js';
+import { dispatchRequestHook, hasRequestHook } from '../plugins/hooks.js';
 import type { PluginRegistry } from '../plugins/registry.js';
 import {
   createRetryScheduler,
@@ -29,7 +29,6 @@ import {
   type RequestHandler,
   type RequestMiddleware,
   requestAuthRecoveryState,
-  trackRequestAttempts,
   withLayerHeaders,
   withOperationState,
 } from './pipeline.js';
@@ -71,11 +70,13 @@ export function createPluginsMiddleware(plugins: Pick<PluginRegistry, 'run'>): R
     const lifecycle = lifecycleSignalOf(request) ?? request.signal;
     return plugins.run(
       request,
-      (prepared) =>
-        next({
-          ...withOperationState(prepared as PipelineRequest, request),
+      (prepared) => {
+        const scoped = {
+          ...(prepared as PipelineRequest),
           ...(lifecycle ? { signal: lifecycle } : {}),
-        }),
+        };
+        return next(withOperationState(scoped, request));
+      },
       lifecycle ?? IDLE_SIGNAL,
     );
   };
@@ -155,15 +156,18 @@ export function createServicesMiddleware(registry: ServiceRegistry): RequestMidd
 export function createAuthPreflightMiddleware(
   getAuth: () => Pick<AuthProvider, 'preflight'>,
 ): RequestMiddleware {
-  return async (request, next) => {
-    if (!request.skipAuth) {
-      const auth = getAuth();
-      if (auth.preflight) {
-        const pending = auth.preflight(request.skipAuthRefresh !== true);
-        await (request.signal ? waitForRequest(pending, request.signal) : pending);
-      }
-    }
-    return next(request);
+  return (request, next) => {
+    if (request.skipAuth) return next(request);
+
+    const auth = getAuth();
+    const preflight = auth.preflight;
+    if (!preflight) return next(request);
+
+    return (async () => {
+      const pending = preflight.call(auth, request.skipAuthRefresh !== true);
+      await (request.signal ? waitForRequest(pending, request.signal) : pending);
+      return next(request);
+    })();
   };
 }
 
@@ -174,20 +178,26 @@ export function createAuthPreflightMiddleware(
  * сам входит в ту же queue. Поэтому эти действия обязаны завершиться до захвата её слота.
  */
 export function createAuthPreparationMiddleware(
-  auth: Pick<AuthProvider, 'prepare'>,
+  getAuth: () => Pick<AuthProvider, 'prepare'>,
 ): RequestMiddleware {
-  return async (request, next) => {
-    if (!request.skipAuth) {
-      const pending = auth.prepare();
+  return (request, next) => {
+    if (request.skipAuth) return next(request);
+
+    const auth = getAuth();
+    const prepare = auth.prepare;
+    if (!prepare) return next(request);
+
+    return (async () => {
       try {
+        const pending = prepare.call(auth);
         await (request.signal ? waitForRequest(pending, request.signal) : pending);
       } catch (error) {
         // Recovery пропускает только эту ошибку; retry не считается восстановлением.
         requestAuthRecoveryState(request).preparationErrors.add(error);
         throw error;
       }
-    }
-    return next(request);
+      return next(request);
+    })();
   };
 }
 
@@ -229,10 +239,10 @@ export function createAuthRecoveryMiddleware(
   auth: Pick<AuthProvider, 'recover'>,
 ): RequestMiddleware {
   return async (request, next) => {
-    const recovery = requestAuthRecoveryState(request);
     try {
       return await next(request);
     } catch (error) {
+      const recovery = requestAuthRecoveryState(request);
       const preparationFailed = recovery.preparationErrors.delete(error);
       // Обновляем и повторяем ровно один раз, чтобы не зациклиться, если сервер
       // отдаёт 401 и на свежем токене.
@@ -333,55 +343,59 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
     return wait;
   };
 
-  return async (request, next) => {
-    const trackedRequest = trackRequestAttempts(request);
+  return (request, next) => {
+    const backoff = resolveBackoff(request.retry, globalScheduler);
+    if (!backoff && (!ladder || ladder.length === 0)) return next(request);
+
     const method = request.method.toUpperCase();
     const policy = resolveRetryPolicy(request, deps.catalog);
-    const backoff = resolveBackoff(request.retry, globalScheduler);
-    let retryAttempt = 0;
-    let rateLimitAttempt = 0;
 
-    for (;;) {
-      try {
-        return await next(trackedRequest);
-      } catch (error) {
-        // Отменённую операцию не повторяют и о повторе не сообщают.
-        if (request.signal?.aborted) throw error;
+    return (async () => {
+      let retryAttempt = 0;
+      let rateLimitAttempt = 0;
 
-        const transportAttempt = currentTransportAttempt(trackedRequest);
-        // Без очереди `429` — рядовая ошибка: её повторяет обычная политика в общий счёт попыток.
-        const rateLimited = ladder !== undefined && isItdRateLimitError(error);
-        if (rateLimited) rateLimitAttempt += 1;
-        else retryAttempt += 1;
+      for (;;) {
+        try {
+          return await next(request);
+        } catch (error) {
+          // Отменённую операцию не повторяют и о повторе не сообщают.
+          if (request.signal?.aborted) throw error;
 
-        // Дальше идёт именно `trackedRequest`, а не исходный объект: он несёт запомненный
-        // ключ очереди, и пауза попадает в тот же бакет, из которого запрос уходил.
-        const delay = rateLimited
-          ? ladderDelay(error, rateLimitAttempt, trackedRequest, policy)
-          : backoff?.(error, retryAttempt, policy);
-        if (delay === undefined) throw error;
+          const transportAttempt = currentTransportAttempt(request);
+          // Без очереди `429` — рядовая ошибка: её повторяет обычная политика в общий счёт попыток.
+          const rateLimited = ladder !== undefined && isItdRateLimitError(error);
+          if (rateLimited) rateLimitAttempt += 1;
+          else retryAttempt += 1;
 
-        const notification = dispatchRequestHook(deps.hooks, 'onRetry', {
-          operationId: request.operationId,
-          signal: request.signal,
-          method,
-          path: request.path,
-          url: deps.buildUrl(request),
-          // Умолчания транспорта добавляются после слоя повторов и сюда не входят.
-          headers: new Headers({ ...request.layerHeaders, ...request.headers }),
-          attempt: transportAttempt,
-          error,
-          delay,
-        });
-        await (request.signal ? waitForRequest(notification, request.signal) : notification);
+          const delay = rateLimited
+            ? ladderDelay(error, rateLimitAttempt, request, policy)
+            : backoff?.(error, retryAttempt, policy);
+          if (delay === undefined) throw error;
 
-        deps.logger?.debug(
-          `повтор ${method} ${request.path}, попытка ${transportAttempt + 1} через ${delay} мс`,
-        );
+          if (hasRequestHook(deps.hooks, 'onRetry')) {
+            const notification = dispatchRequestHook(deps.hooks, 'onRetry', {
+              operationId: request.operationId,
+              signal: request.signal,
+              method,
+              path: request.path,
+              url: deps.buildUrl(request),
+              // Умолчания транспорта добавляются после слоя повторов и сюда не входят.
+              headers: new Headers({ ...request.layerHeaders, ...request.headers }),
+              attempt: transportAttempt,
+              error,
+              delay,
+            });
+            await (request.signal ? waitForRequest(notification, request.signal) : notification);
+          }
 
-        await sleep(deps.clock ?? systemClock, delay, request.signal);
+          deps.logger?.debug(
+            `повтор ${method} ${request.path}, попытка ${transportAttempt + 1} через ${delay} мс`,
+          );
+
+          await sleep(deps.clock ?? systemClock, delay, request.signal);
+        }
       }
-    }
+    })();
   };
 }
 

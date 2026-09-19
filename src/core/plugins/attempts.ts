@@ -38,8 +38,8 @@ export function withAttemptInterceptorScope<T extends OperationRequestOptions>(
 /** Читает снимок attempt interceptors логической операции. @internal */
 export function attemptInterceptorScope(
   request: OperationRequestOptions,
-): readonly RegisteredAttemptInterceptor[] {
-  return (request as ScopedRequest)[ATTEMPT_SCOPE] ?? [];
+): readonly RegisteredAttemptInterceptor[] | undefined {
+  return (request as ScopedRequest)[ATTEMPT_SCOPE];
 }
 
 /**
@@ -49,11 +49,11 @@ export function attemptInterceptorScope(
  * `Response`, но не может незаметно породить два сетевых запроса внутри одного attempt.
  */
 export async function runAttemptInterceptors(
-  request: OperationRequestOptions,
+  interceptors: readonly RegisteredAttemptInterceptor[],
   context: AttemptContext,
   execute: () => Promise<Response>,
 ): Promise<Response> {
-  const chain = attemptInterceptorScope(request).reduceRight<() => Promise<Response>>(
+  const chain = interceptors.reduceRight<() => Promise<Response>>(
     (next, { plugin, interceptor }) =>
       async () => {
         let called = false;

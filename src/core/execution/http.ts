@@ -3,9 +3,14 @@ import type { ItdClock } from '../clock.js';
 import { ItdTimeoutError, TimeoutBudget } from '../errors.js';
 import type { OperationContract } from '../operation.js';
 import type { ClientHooks } from '../options.js';
-import { dispatchRequestHook } from '../plugins/hooks.js';
+import { dispatchRequestHook, hasRequestHook } from '../plugins/hooks.js';
 import { buildQuery, joinUrl } from '../url.js';
-import { createRequestAbortScope, requestAbortError, waitForRequest } from './lifecycle.js';
+import {
+  createRequestAbortScope,
+  type RequestAbortScope,
+  requestAbortError,
+  waitForRequest,
+} from './lifecycle.js';
 import {
   claimAbortReport,
   identifyRequest,
@@ -14,7 +19,6 @@ import {
   type PipelineRequest,
   type PipelineRequestInput,
   type RequestHandler,
-  trackRequestErrorReporting,
   wasRequestErrorReported,
   withLifecycleSignal,
   withOperationReader,
@@ -70,6 +74,7 @@ export class HttpClient {
   readonly #lifetimeSignal: AbortSignal | undefined;
   readonly #hooks: ClientHooks;
   readonly #assertActive: (() => void) | undefined;
+  readonly #activeScopes = new Set<RequestAbortScope>();
 
   constructor(deps: HttpClientDeps) {
     this.#handler = deps.handler;
@@ -79,6 +84,15 @@ export class HttpClient {
     this.#lifetimeSignal = deps.lifetimeSignal;
     this.#hooks = deps.hooks;
     this.#assertActive = deps.assertActive;
+    if (this.#lifetimeSignal && !this.#lifetimeSignal.aborted) {
+      this.#lifetimeSignal.addEventListener(
+        'abort',
+        () => {
+          for (const scope of this.#activeScopes) scope.abort(this.#lifetimeSignal?.reason);
+        },
+        { once: true },
+      );
+    }
   }
 
   /**
@@ -116,7 +130,7 @@ export class HttpClient {
   async #run(request: PipelineRequest, allowDisposed = false): Promise<unknown> {
     if (!allowDisposed) this.#assertActive?.();
     const deadline = request.deadline ?? this.#deadline;
-    const scope = createRequestAbortScope(request.signal, this.#lifetimeSignal, this.#clock, {
+    const scope = createRequestAbortScope(request.signal, undefined, this.#clock, {
       after: deadline,
       error: () =>
         new ItdTimeoutError({
@@ -126,28 +140,32 @@ export class HttpClient {
           budget: TimeoutBudget.Deadline,
         }),
     });
+    if (this.#lifetimeSignal?.aborted) scope.abort(this.#lifetimeSignal.reason);
+    else this.#activeScopes.add(scope);
     const startedAt = this.#clock.now();
-    const tracked = withLifecycleSignal(request, scope.signal);
-    trackRequestErrorReporting(tracked);
+    const tracked = withLifecycleSignal({ ...request }, scope.signal);
 
     try {
       return await waitForRequest(this.#handler(tracked), scope.signal);
     } catch (error) {
       const failure = requestAbortError(scope, request, error);
-      // Транспортная попытка сообщает о своих ошибках сама. Отмену операции сообщает тот
-      // уровень, который заметил её первым: попытка, если отмена застала её внутри хука,
-      // иначе — эта граница.
-      const reported =
-        wasRequestErrorReported(tracked, error) ||
-        wasRequestErrorReported(tracked, failure) ||
-        (scope.signal.aborted && !claimAbortReport(tracked));
-      if (!reported) {
-        markRequestErrorReported(tracked, error);
-        markRequestErrorReported(tracked, failure);
-        await this.#notifyError(request, scope.signal, startedAt, failure);
+      if (hasRequestHook(this.#hooks, 'onError')) {
+        // Транспортная попытка сообщает о своих ошибках сама. Отмену операции сообщает тот
+        // уровень, который заметил её первым: попытка, если отмена застала её внутри хука,
+        // иначе — эта граница.
+        const reported =
+          wasRequestErrorReported(tracked, error) ||
+          wasRequestErrorReported(tracked, failure) ||
+          (scope.signal.aborted && !claimAbortReport(tracked));
+        if (!reported) {
+          markRequestErrorReported(tracked, error);
+          markRequestErrorReported(tracked, failure);
+          await this.#notifyError(request, scope.signal, startedAt, failure);
+        }
       }
       throw failure;
     } finally {
+      this.#activeScopes.delete(scope);
       scope.cleanup();
     }
   }

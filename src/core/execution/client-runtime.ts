@@ -139,7 +139,7 @@ export function createClientRuntime<A extends AuthProvider>(
   });
   const services = createServiceRegistry(config);
 
-  // Транспорт объединяет этот сигнал с сигналом запроса: dispose() отменяет начатые запросы.
+  // HttpClient отменяет этим сигналом активные области запросов: dispose() прерывает начатые.
   const lifetime = new AbortController();
 
   // Общая очередь принадлежит ItdAccounts. `rateLimit: false` исключает отдельный клиент
@@ -172,9 +172,19 @@ export function createClientRuntime<A extends AuthProvider>(
     return custom ?? catalog.bucketOf(request.operationId);
   };
 
+  /** Origin направления, мемоизированный по базовому адресу. */
+  const origins = new Map<string, string | undefined>();
+  const destinationOf = (baseUrl: string): string | undefined => {
+    if (origins.has(baseUrl)) return origins.get(baseUrl);
+    if (origins.size >= 256) origins.clear();
+    const origin = originOf(baseUrl) || undefined;
+    origins.set(baseUrl, origin);
+    return origin;
+  };
+
   const queueKeyFor = (request: PipelineRequest) =>
     requestQueueKey(request, (target) => ({
-      destination: originOf(transport.buildUrl(target)) || undefined,
+      destination: destinationOf(target.baseUrl ?? config.baseUrl),
       bucket: bucketFor(target),
     }));
 
@@ -246,9 +256,7 @@ export function createClientRuntime<A extends AuthProvider>(
     },
     {
       name: ClientRuntimeStage.AuthPreparation,
-      middleware: createAuthPreparationMiddleware({
-        prepare: () => auth.prepare(),
-      }),
+      middleware: createAuthPreparationMiddleware(() => auth),
     },
   ];
 

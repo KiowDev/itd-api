@@ -122,6 +122,22 @@ describe('область действия', () => {
 });
 
 describe('сохранение и восстановление', () => {
+  it('clone и replaceWith сохраняют независимые снимки', () => {
+    const source = new CookieJar();
+    source.setFromStrings(URL_BASE, ['token=source; Path=/']);
+
+    const clone = source.clone();
+    clone.setFromStrings(URL_BASE, ['token=clone; Path=/', 'extra=1; Path=/']);
+
+    expect(source.getHeader(URL_BASE)).toBe('token=source');
+    expect(clone.getHeader(URL_BASE)).toBe('token=clone; extra=1');
+
+    source.replaceWith(clone);
+    clone.setFromStrings(URL_BASE, ['token=changed; Path=/']);
+
+    expect(source.getHeader(URL_BASE)).toBe('token=clone; extra=1');
+  });
+
   it('переживает круг сериализации', () => {
     const jar = new CookieJar();
     jar.setFromStrings(URL_BASE, [

@@ -3,6 +3,7 @@ import { ItdAbortError, type ItdError, ItdTimeoutError } from '../errors.js';
 
 export interface RequestAbortScope {
   signal: AbortSignal;
+  abort(reason?: unknown): void;
   /** Ошибка истёкшего срока, если сигнал сработал по таймеру. */
   expired(): ItdError | undefined;
   /** Снимает таймер срока, оставляя связь с отменой вызова и владельца. */
@@ -64,6 +65,7 @@ export function createRequestAbortScope(
 
   return {
     signal: controller.signal,
+    abort: (reason) => controller.abort(reason),
     expired: () => expired,
     disarm,
     cleanup: () => {

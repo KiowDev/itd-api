@@ -112,42 +112,42 @@ export interface RateLimitOptions {
   retryDelays?: readonly number[] | undefined;
 }
 
-/** Данные о запросе, доступные хукам. */
+/** Данные о запросе, доступные хукам. Изменяем только объект `headers`. */
 export interface RequestContext {
   /** Стабильная семантическая операция; `raw` у низкоуровневого вызова без явного ID. */
-  operationId: OperationId;
+  readonly operationId: OperationId;
   /** Общий сигнал пользовательской отмены, истёкших сроков и освобождения клиента. */
-  signal: AbortSignal | undefined;
-  method: string;
+  readonly signal: AbortSignal | undefined;
+  readonly method: string;
   /** Путь без базового URL, например `/api/posts`. */
-  path: string;
+  readonly path: string;
   /** Итоговый URL со строкой запроса. */
-  url: string;
-  headers: Headers;
+  readonly url: string;
+  readonly headers: Headers;
   /** Номер попытки, начиная с 1. */
-  attempt: number;
+  readonly attempt: number;
 }
 
 /** Данные об успешном ответе. */
 export interface ResponseContext extends RequestContext {
-  status: number;
+  readonly status: number;
   /** Длительность запроса в мс. */
-  duration: number;
+  readonly duration: number;
   /** Отдельная копия ответа: её тело можно прочитать, не мешая разбору внутри SDK. */
-  response: Response;
+  readonly response: Response;
 }
 
 /** Данные об ошибке запроса. */
 export interface ErrorContextHook extends RequestContext {
-  duration: number;
-  error: unknown;
+  readonly duration: number;
+  readonly error: unknown;
 }
 
 /** Данные о предстоящем повторе. */
 export interface RetryContext extends RequestContext {
-  error: unknown;
+  readonly error: unknown;
   /** Пауза перед следующей попыткой в мс. */
-  delay: number;
+  readonly delay: number;
 }
 
 /**

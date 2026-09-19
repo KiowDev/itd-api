@@ -10,7 +10,7 @@ import {
   TimeoutBudget,
 } from '../errors.js';
 import type { ClientHooks, Logger, RequestContext } from '../options.js';
-import { runAttemptInterceptors } from '../plugins/attempts.js';
+import { attemptInterceptorScope, runAttemptInterceptors } from '../plugins/attempts.js';
 import { dispatchRequestHook, hasRequestHook } from '../plugins/hooks.js';
 import { redactBody, redactHeaders } from '../redact.js';
 import { isBlob } from '../runtime.js';
@@ -86,6 +86,8 @@ interface Attempt {
   /** Номер попытки, начиная с 1. */
   readonly number: number;
 }
+
+type AttemptHookContext = RequestContext & { signal: AbortSignal };
 
 type BodyCleanup = () => void | Promise<void>;
 
@@ -173,16 +175,17 @@ export class Transport {
   send = async (input: PipelineRequestInput): Promise<unknown> => {
     const request = identifyRequest(input);
     const timeout = request.timeout ?? this.#config.timeout;
+    const method = request.method.toUpperCase();
     const attempt: Attempt = {
       request,
-      method: request.method.toUpperCase(),
+      method,
       url: this.buildUrl(request),
       abort: createRequestAbortScope(request.signal, undefined, this.#config.clock, {
         after: timeout,
         error: () =>
           new ItdTimeoutError({
             timeout,
-            method: request.method.toUpperCase(),
+            method,
             path: request.path,
             budget: TimeoutBudget.Attempt,
           }),
@@ -218,15 +221,22 @@ export class Transport {
         throw failure;
       }
 
-      try {
-        await waitForRequest(
-          dispatchRequestHook(this.#config.hooks, 'onRequest', this.#context(attempt, headers)),
-          signal,
-        );
-      } catch (error) {
-        const failure = this.#abortedOr(attempt, error);
-        await this.#report(attempt, headers, failure);
-        throw failure;
+      // Контекст попытки строится не более одного раза и только если он кому-то нужен.
+      let context: AttemptHookContext | undefined;
+      const contextOf = () => (context ??= this.#context(attempt, headers));
+
+      if (hasRequestHook(this.#config.hooks, 'onRequest')) {
+        try {
+          // Хук получает собственную копию: `headers` общие, остальные поля его правки не переживут.
+          await waitForRequest(
+            dispatchRequestHook(this.#config.hooks, 'onRequest', { ...contextOf() }),
+            signal,
+          );
+        } catch (error) {
+          const failure = this.#abortedOr(attempt, error);
+          await this.#report(attempt, headers, failure);
+          throw failure;
+        }
       }
 
       this.#config.logger?.debug(`→ ${attempt.method} ${request.path}`, {
@@ -236,7 +246,7 @@ export class Transport {
 
       let response: Response;
       try {
-        response = await this.#fetch(attempt, headers, body);
+        response = await this.#fetch(attempt, headers, body, contextOf);
       } catch (error) {
         await this.#report(attempt, headers, error);
         this.#config.logger?.warn(
@@ -264,7 +274,7 @@ export class Transport {
         try {
           await waitForRequest(
             dispatchRequestHook(this.#config.hooks, 'onResponse', {
-              ...this.#context(attempt, headers),
+              ...contextOf(),
               status: response.status,
               duration: this.#elapsed(attempt),
               response: hookResponse,
@@ -376,7 +386,7 @@ export class Transport {
   }
 
   /** Данные попытки для хуков `onRequest`, `onResponse` и перехватчиков. */
-  #context(attempt: Attempt, headers: Headers): RequestContext & { signal: AbortSignal } {
+  #context(attempt: Attempt, headers: Headers): AttemptHookContext {
     return {
       operationId: attempt.request.operationId,
       signal: attempt.abort.signal,
@@ -469,7 +479,12 @@ export class Transport {
   }
 
   /** Вызывает `fetch` через перехватчики попытки; сбой сети становится ошибкой библиотеки. */
-  #fetch(attempt: Attempt, headers: Headers, body: BodyInit | undefined): Promise<Response> {
+  #fetch(
+    attempt: Attempt,
+    headers: Headers,
+    body: BodyInit | undefined,
+    contextOf: () => AttemptHookContext,
+  ): Promise<Response> {
     const init: RequestInit & { duplex?: 'half' } = {
       method: attempt.method,
       headers,
@@ -481,17 +496,17 @@ export class Transport {
       init.duplex = 'half';
     }
 
-    return runAttemptInterceptors(
-      attempt.request,
-      { ...this.#context(attempt, headers), body },
-      async () => {
-        try {
-          return await this.#config.fetch(attempt.url, init);
-        } catch (error) {
-          throw this.#toTransportError(attempt, error);
-        }
-      },
-    );
+    const execute = async () => {
+      try {
+        return await this.#config.fetch(attempt.url, init);
+      } catch (error) {
+        throw this.#toTransportError(attempt, error);
+      }
+    };
+    const interceptors = attemptInterceptorScope(attempt.request);
+    if (!interceptors) return execute();
+
+    return runAttemptInterceptors(interceptors, { ...contextOf(), body }, execute);
   }
 
   /**
@@ -505,6 +520,7 @@ export class Transport {
   async #report(attempt: Attempt, headers: Headers, error: unknown): Promise<void> {
     const { request } = attempt;
     attempt.abort.disarm();
+    if (!hasRequestHook(this.#config.hooks, 'onError')) return;
     markRequestErrorReported(request, error);
 
     const lifecycle = request.signal;

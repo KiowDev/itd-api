@@ -38,7 +38,7 @@ export interface AuthProvider {
    */
   preflight?(allowRefresh: boolean): Promise<void>;
   /** Перед каждой попыткой читает внешний источник токена до захвата слота очереди. */
-  prepare(): Promise<void>;
+  prepare?(): Promise<void>;
   /**
    * Заголовки уже подготовленной авторизации.
    *
@@ -102,7 +102,6 @@ function localDeviceId(): () => Promise<string> {
 export function anonymousAuth(): AuthProvider {
   return {
     token: () => Promise.resolve(null),
-    prepare: () => Promise.resolve(),
     currentHeaders: () => ({}),
     recover: () => Promise.resolve(false),
     deviceId: localDeviceId(),
@@ -126,7 +125,6 @@ export function bearerToken(accessToken: string): AuthProvider {
 
   return {
     token: () => Promise.resolve(accessToken),
-    prepare: () => Promise.resolve(),
     currentHeaders: () => headers,
     recover: () => Promise.resolve(false),
     deviceId: localDeviceId(),

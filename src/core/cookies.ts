@@ -1,14 +1,14 @@
 import { parse as parseSetCookie, splitCookiesString } from 'set-cookie-parser';
 import { originOf } from './url.js';
 
-/** Cookie, сохранённая в jar. */
+/** Cookie, сохранённая в jar. Запись неизменяема: копии jar делят её по ссылке. */
 interface StoredCookie {
-  name: string;
-  value: string;
-  path: string;
+  readonly name: string;
+  readonly value: string;
+  readonly path: string;
   /** Момент истечения, мс с начала эпохи. `undefined` — сессионная cookie. */
-  expires: number | undefined;
-  secure: boolean;
+  readonly expires: number | undefined;
+  readonly secure: boolean;
 }
 
 /** Имя cookie-флага «есть refresh-сессия». Ставится сайтом итд.com рядом с refresh-токеном. */
@@ -49,14 +49,6 @@ function toTimestamp(date: Date | undefined): number | undefined {
   return Number.isFinite(time) ? time : undefined;
 }
 
-function pathOf(url: string): string {
-  try {
-    return new URL(url).pathname || '/';
-  } catch {
-    return '/';
-  }
-}
-
 /**
  * Подходит ли путь cookie запросу.
  *
@@ -85,15 +77,20 @@ export class CookieJar {
   /** Независимая копия для auth-flow, который ещё не получил право на commit. */
   clone(): CookieJar {
     const copy = new CookieJar();
-    copy.deserialize(this.serialize());
+    copy.#adopt(this);
     return copy;
   }
 
   /** Атомарно с точки зрения синхронных читателей заменяет содержимое снимком другого jar. */
   replaceWith(source: CookieJar): void {
-    const entries = source.serialize();
-    this.clear();
-    this.deserialize(entries);
+    if (source === this) return;
+    this.#byOrigin.clear();
+    this.#adopt(source);
+  }
+
+  /** Копирует карты cookie другого jar; сами записи неизменяемы и делятся по ссылке. */
+  #adopt(source: CookieJar): void {
+    for (const [origin, jar] of source.#byOrigin) this.#byOrigin.set(origin, new Map(jar));
   }
 
   /**
@@ -253,12 +250,17 @@ export class CookieJar {
 
   /** Действующие cookie, подходящие запросу: тот же origin, подходящий путь, не истёкшие. */
   #matching(url: string): StoredCookie[] {
-    const origin = originOf(url);
-    const jar = this.#byOrigin.get(origin);
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return [];
+    }
+    const jar = this.#byOrigin.get(parsed.origin);
     if (!jar) return [];
 
-    const isSecureRequest = origin.startsWith('https:');
-    const requestPath = pathOf(url);
+    const isSecureRequest = parsed.protocol === 'https:';
+    const requestPath = parsed.pathname || '/';
     const now = Date.now();
     const result: StoredCookie[] = [];
 

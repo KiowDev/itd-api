@@ -469,13 +469,16 @@ export class FeatureRegistry {
             if (!resolved) {
               throw new ItdConfigError(`feature «${name}» не объявляет операцию «${operation}»`);
             }
-            const scoped = { ...options } as Partial<RawRequestOptions>;
-            delete scoped.operationId;
-            delete scoped.method;
-            delete scoped.service;
-            delete scoped.baseUrl;
-            delete scoped.retrySafety;
-            delete scoped.rateLimitBucket;
+            // Поля, которые задаёт контракт операции, отбрасываются и при вызове из JavaScript.
+            const {
+              operationId: _operationId,
+              method: _method,
+              service: _service,
+              baseUrl: _baseUrl,
+              retrySafety: _retrySafety,
+              rateLimitBucket: _rateLimitBucket,
+              ...scoped
+            } = options as Partial<RawRequestOptions>;
             return this.#deps.http.execute(resolved.contract, {
               ...(scoped as FeatureRequestOptions),
               ...(resolved.service === undefined ? {} : { service: resolved.service }),

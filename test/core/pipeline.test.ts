@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { OperationCatalog } from '../../src/core/catalog.js';
 import { systemClock } from '../../src/core/clock.js';
 import { resolveRuntimeConfig } from '../../src/core/config.js';
 import { ItdAbortError, ItdAuthError } from '../../src/core/errors.js';
@@ -180,7 +181,7 @@ describe('слой авторизации', () => {
     const request = composePipeline(
       [
         createAuthRecoveryMiddleware({ recover }),
-        createAuthPreparationMiddleware({ prepare: () => Promise.reject(error) }),
+        createAuthPreparationMiddleware(() => ({ prepare: () => Promise.reject(error) })),
       ],
       transport,
     );
@@ -363,6 +364,34 @@ describe('слой повторов', () => {
     expect(mock.callCount).toBe(1);
   });
 
+  it('без retry и лестницы не запрашивает политику операции', async () => {
+    const definitionOf = vi.fn(() => {
+      throw new Error('политика не нужна');
+    });
+    const catalog: OperationCatalog = { ...ITD_CATALOG, definitionOf };
+    const next = vi.fn().mockResolvedValue('ok');
+    const request = composePipeline(
+      [
+        createRetryMiddleware({
+          catalog,
+          retry: undefined,
+          rateLimitDelays: undefined,
+          pauseQueue: undefined,
+          hooks: {},
+          logger: undefined,
+          buildUrl: () => 'https://itd.test/api/posts',
+        }),
+      ],
+      next,
+    );
+
+    await expect(request({ operationId: 'raw', method: 'GET', path: '/api/posts' })).resolves.toBe(
+      'ok',
+    );
+    expect(definitionOf).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledOnce();
+  });
+
   it('retry у запроса переопределяет глобальную настройку', async () => {
     const { request, mock } = withRetry(() => json({ code: 'UNKNOWN_ERROR' }, { status: 500 }), {
       retry: { attempts: 5, baseDelay: 0, jitter: 0 },
@@ -461,7 +490,9 @@ describe('стадии операции', () => {
           operations.use((current, next) => {
             seenSignal = current.signal;
             // Object.fromEntries отбрасывает символьные ключи — как это сделал бы чужой код.
-            return next(Object.fromEntries(Object.entries(current)) as typeof current);
+            return next(
+              Object.freeze(Object.fromEntries(Object.entries(current))) as typeof current,
+            );
           });
         },
       },
