@@ -38,8 +38,7 @@ describe('resolveConfig — значения по умолчанию', () => {
       bucketConcurrency: 6,
       bucketOverrides: { 'files.upload': { concurrency: 1 } },
       bucket: undefined,
-      // Ёмкости и умолчание приходят из каталога операций, а не из самой очереди.
-      bucketLimits: ITD_CATALOG.bucketLimits,
+      // Умолчание приходит из каталога операций, а не из самой очереди.
       defaultBucket: 'default',
     });
     expect(config.retry).toMatchObject({ attempts: 3, baseDelay: 500 });

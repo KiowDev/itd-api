@@ -245,6 +245,8 @@ export class BucketQueue {
   readonly #flatPause: number | undefined;
   /** Лимит бакета до первого ответа. */
   readonly #seedLimit: number | undefined;
+  /** Начальные ограничения из каталога, с которыми создана очередь. */
+  readonly #definition: Readonly<RateLimitBucketOverride> | undefined;
 
   /** Последнее, что сказал сервер. Живёт и в режиме `off` — ради `rateLimitState()`. */
   #limit: number | undefined;
@@ -267,26 +269,23 @@ export class BucketQueue {
     scheduler: DestinationScheduler,
     options: ResolvedRateLimitOptions,
     clock: ItdClock,
-    featureDefinition?: RateLimitBucketOverride,
+    definition: Readonly<RateLimitBucketOverride> | undefined,
   ) {
     this.#destination = destination;
     this.#bucket = bucket;
     this.#scheduler = scheduler;
     this.#clock = clock;
+    this.#definition = definition;
     this.#pacing = options.pacing;
     this.#smooth = options.buckets && options.pacing === RateLimitPacing.Smooth;
     this.#flatPause = options.buckets ? undefined : (options.retryDelays[0] ?? 0);
-    this.#seedLimit = options.buckets
-      ? (featureDefinition?.limit ?? seedLimit(bucket, options))
-      : undefined;
+    // Поправка из настроек клиента важнее начального ограничения из каталога.
+    const override = options.buckets ? options.bucketOverrides[bucket] : undefined;
+    this.#seedLimit = options.buckets ? (override?.limit ?? definition?.limit) : undefined;
     this.#concurrency = options.buckets
-      ? (featureDefinition?.concurrency ??
-        options.bucketOverrides[bucket]?.concurrency ??
-        options.bucketConcurrency)
+      ? (override?.concurrency ?? definition?.concurrency ?? options.bucketConcurrency)
       : options.concurrency;
-    const rps = options.buckets
-      ? (featureDefinition?.rps ?? options.bucketOverrides[bucket]?.rps)
-      : undefined;
+    const rps = options.buckets ? (override?.rps ?? definition?.rps) : undefined;
     this.#minGap = rps ? 1000 / rps : 0;
     scheduler.register(this);
   }
@@ -294,6 +293,11 @@ export class BucketQueue {
   /** Имя счётчика. При `buckets: false` — всегда `default`, каким бы ни был запрос. */
   get bucket(): string {
     return this.#bucket;
+  }
+
+  /** Начальные ограничения из каталога, с которыми создана очередь. */
+  get definition(): Readonly<RateLimitBucketOverride> | undefined {
+    return this.#definition;
   }
 
   /** Запросов бакета прошло в общую очередь и ещё не завершилось. */
@@ -486,11 +490,26 @@ export class BucketQueue {
   }
 }
 
-/** Лимит бакета до первого ответа: поправка пользователя важнее табличного значения. */
-function seedLimit(bucket: string, options: ResolvedRateLimitOptions): number | undefined {
-  const override = options.bucketOverrides[bucket]?.limit;
-  if (override !== undefined) return override;
-  return options.bucketLimits[bucket];
+/** Совпадают ли начальные ограничения по всем трём полям. */
+function sameDefinition(
+  left: Readonly<RateLimitBucketOverride> | undefined,
+  right: Readonly<RateLimitBucketOverride> | undefined,
+): boolean {
+  return (
+    left?.limit === right?.limit &&
+    left?.concurrency === right?.concurrency &&
+    left?.rps === right?.rps
+  );
+}
+
+/** Ограничения бакета для текста ошибки. */
+function describeDefinition(definition: Readonly<RateLimitBucketOverride> | undefined): string {
+  const parts = [
+    definition?.limit === undefined ? [] : [`limit ${definition.limit}`],
+    definition?.concurrency === undefined ? [] : [`concurrency ${definition.concurrency}`],
+    definition?.rps === undefined ? [] : [`rps ${definition.rps}`],
+  ].flat();
+  return parts.length > 0 ? parts.join(', ') : 'без ограничений';
 }
 
 /** Планировщик направления и зарегистрированные в нём бакеты. */
@@ -513,61 +532,29 @@ export class RequestQueuePool {
   readonly #clock: ItdClock;
   /** Ключ `undefined` — основная очередь внутренних клиентов без известного направления. */
   readonly #destinations = new Map<string | undefined, DestinationQueues>();
-  /** Динамические определения feature вместе с числом использующих их клиентов. */
-  readonly #featureBuckets = new Map<
-    string,
-    { definition: Readonly<RateLimitBucketOverride>; references: number }
-  >();
+
   constructor(options: ResolvedRateLimitOptions, clock: ItdClock = systemClock) {
     this.#options = options;
     this.#clock = clock;
   }
 
   /**
-   * Регистрирует бакет подключаемого feature.
+   * Очередь бакета на направлении. При `buckets: false` бакет всегда `default`.
    *
-   * Повтор той же декларации разрешён клиентам, разделяющим один pool через `ItdAccounts`.
-   * Возвращённая функция откатывает регистрацию, пока очередь бакета ещё не создана.
+   * Начальные ограничения приходят из каталога вызывающего клиента и запоминаются при
+   * создании очереди. Клиенты, разделяющие один пул через `ItdAccounts`, обязаны описывать
+   * бакет одинаково: расхождение обнаруживается при обращении к уже созданной очереди.
+   *
+   * @throws {ItdConfigError} если очередь бакета создана с другими ограничениями
    */
-  defineBucket(name: string, definition: RateLimitBucketOverride): () => void {
-    const normalized = Object.freeze({
-      ...(definition.limit === undefined ? {} : { limit: definition.limit }),
-      ...(definition.concurrency === undefined ? {} : { concurrency: definition.concurrency }),
-      ...(definition.rps === undefined ? {} : { rps: definition.rps }),
-    });
-    const existing = this.#featureBuckets.get(name);
-    if (existing) {
-      if (
-        existing.definition.limit !== normalized.limit ||
-        existing.definition.concurrency !== normalized.concurrency ||
-        existing.definition.rps !== normalized.rps
-      ) {
-        throw new ItdConfigError(
-          `Бакет feature «${name}» уже зарегистрирован с другими ограничениями`,
-        );
-      }
-      existing.references += 1;
-    } else {
-      this.#featureBuckets.set(name, { definition: normalized, references: 1 });
-    }
-
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      const current = this.#featureBuckets.get(name);
-      if (!current) return;
-      current.references -= 1;
-      if (current.references > 0) return;
-      const hasQueue = [...this.#destinations.values()].some((entry) => entry.buckets.has(name));
-      if (!hasQueue) this.#featureBuckets.delete(name);
-    };
-  }
-
-  /** Очередь бакета на направлении. При `buckets: false` бакет всегда `default`. */
-  for(destination: string | undefined, bucket?: string): BucketQueue {
+  for(
+    destination: string | undefined,
+    bucket?: string,
+    definition?: Readonly<RateLimitBucketOverride>,
+  ): BucketQueue {
     const fallback = this.#options.defaultBucket;
     const name = this.#options.buckets ? (bucket ?? fallback) : fallback;
+    const limits = this.#options.buckets ? definition : undefined;
 
     let entry = this.#destinations.get(destination);
     if (!entry) {
@@ -586,9 +573,14 @@ export class RequestQueuePool {
         entry.scheduler,
         this.#options,
         this.#clock,
-        this.#featureBuckets.get(name)?.definition,
+        limits,
       );
       entry.buckets.set(name, queue);
+    } else if (!sameDefinition(queue.definition, limits)) {
+      throw new ItdConfigError(
+        `Бакет «${name}» уже используется с другими ограничениями: ` +
+          `${describeDefinition(queue.definition)} против ${describeDefinition(limits)}`,
+      );
     }
     return queue;
   }
@@ -616,6 +608,5 @@ export class RequestQueuePool {
   clear(): void {
     this.stop();
     this.#destinations.clear();
-    this.#featureBuckets.clear();
   }
 }

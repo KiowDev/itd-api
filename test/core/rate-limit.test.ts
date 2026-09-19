@@ -38,15 +38,27 @@ describe('RequestQueuePool', () => {
     expect(pool.for('https://itd.test', 'feed')).not.toBe(pool.for('https://other.test', 'feed'));
   });
 
-  it('отклоняет повторную декларацию общего feature-бакета с другим rps', () => {
+  it('отдаёт очередь бакета только с теми ограничениями, с которыми она создана', () => {
     const pool = new RequestQueuePool(poolOptions());
-    const releaseFirst = pool.defineBucket('feature:probe/read', { rps: 2 });
-    const releaseSecond = pool.defineBucket('feature:probe/read', { rps: 2 });
+    const queue = pool.for('https://itd.test', 'feature:probe/read', { rps: 2 });
 
-    expect(() => pool.defineBucket('feature:probe/read', { rps: 3 })).toThrow(ItdConfigError);
-    releaseSecond();
-    releaseFirst();
-    expect(() => pool.defineBucket('feature:probe/read', { rps: 3 })).not.toThrow();
+    expect(pool.for('https://itd.test', 'feature:probe/read', { rps: 2 })).toBe(queue);
+    expect(() => pool.for('https://itd.test', 'feature:probe/read', { rps: 3 })).toThrow(
+      ItdConfigError,
+    );
+    expect(() => pool.for('https://itd.test', 'feature:probe/read')).toThrow(
+      /limit .*|rps 2 против без ограничений/,
+    );
+    // Другое направление — другая очередь, ограничения не связаны.
+    expect(() => pool.for('https://other.test', 'feature:probe/read', { rps: 3 })).not.toThrow();
+  });
+
+  it('при buckets: false ограничения бакета не влияют на общую очередь', () => {
+    const pool = new RequestQueuePool(poolOptions({ buckets: false }));
+    const queue = pool.for('https://itd.test', 'feed', { limit: 90 });
+
+    expect(pool.for('https://itd.test', 'posts.create', { limit: 5, concurrency: 1 })).toBe(queue);
+    expect(queue.definition).toBeUndefined();
   });
 
   it('при buckets: false складывает направление в один бакет', () => {
@@ -188,8 +200,7 @@ describe('RequestQueuePool', () => {
 
   it('локальный rps равномерно разносит старты без серверных заголовков', async () => {
     const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
-    pool.defineBucket('feature:probe/read', { rps: 4 });
-    const queue = pool.for('https://itd.test', 'feature:probe/read');
+    const queue = pool.for('https://itd.test', 'feature:probe/read', { rps: 4 });
     const begin = Date.now();
     const starts: number[] = [];
 
@@ -209,8 +220,7 @@ describe('RequestQueuePool', () => {
 
   it('после общей паузы локальный rps не выпускает накопленные задачи залпом', async () => {
     const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
-    pool.defineBucket('feature:probe/read', { rps: 2 });
-    const queue = pool.for('https://itd.test', 'feature:probe/read');
+    const queue = pool.for('https://itd.test', 'feature:probe/read', { rps: 2 });
     const begin = Date.now();
     const starts: number[] = [];
 
@@ -231,9 +241,8 @@ describe('RequestQueuePool', () => {
 
   it('после ожидания общей конкурентности локальный rps не создаёт всплеск', async () => {
     const pool = new RequestQueuePool(poolOptions({ concurrency: 2 }));
-    pool.defineBucket('feature:probe/read', { rps: 2 });
     const blocker = pool.for('https://itd.test', 'feed');
-    const limited = pool.for('https://itd.test', 'feature:probe/read');
+    const limited = pool.for('https://itd.test', 'feature:probe/read', { rps: 2 });
     const releases: Array<() => void> = [];
     const occupied = Array.from({ length: 2 }, () =>
       blocker.schedule(
@@ -268,8 +277,7 @@ describe('RequestQueuePool', () => {
 
   it('готовый бакет обходит бакет, ожидающий локальный слот темпа', async () => {
     const pool = new RequestQueuePool(poolOptions({ concurrency: 4 }));
-    pool.defineBucket('feature:slow/read', { rps: 1 });
-    const slow = pool.for('https://itd.test', 'feature:slow/read');
+    const slow = pool.for('https://itd.test', 'feature:slow/read', { rps: 1 });
     const free = pool.for('https://itd.test', 'feed');
     const started: string[] = [];
 
@@ -340,8 +348,7 @@ describe('RequestQueuePool', () => {
 
   it('локальные concurrency и rps действуют одновременно', async () => {
     const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
-    pool.defineBucket('feature:probe/read', { concurrency: 1, rps: 10 });
-    const queue = pool.for('https://itd.test', 'feature:probe/read');
+    const queue = pool.for('https://itd.test', 'feature:probe/read', { concurrency: 1, rps: 10 });
     const starts: number[] = [];
     const begin = Date.now();
 
@@ -366,8 +373,7 @@ describe('RequestQueuePool', () => {
 
   it('общий и локальный rps применяются по максимальному времени готовности', async () => {
     const pool = new RequestQueuePool(poolOptions({ concurrency: 6, rps: 4 }));
-    pool.defineBucket('feature:slow/read', { rps: 2 });
-    const slow = pool.for('https://itd.test', 'feature:slow/read');
+    const slow = pool.for('https://itd.test', 'feature:slow/read', { rps: 2 });
     const free = pool.for('https://itd.test', 'feed');
     const begin = Date.now();
     const starts: Array<[string, number]> = [];
@@ -674,7 +680,11 @@ describe('BucketQueue — режимы реакции на заголовки', 
   });
 
   it('smooth: при лимите 5 второй запрос уходит через 12 секунд', async () => {
-    const queue = pool({ pacing: RateLimitPacing.Smooth }).for('https://itd.test', 'posts.create');
+    const queue = pool({ pacing: RateLimitPacing.Smooth }).for(
+      'https://itd.test',
+      'posts.create',
+      ITD_CATALOG.bucketDefinitionOf('posts.create'),
+    );
     const starts = scheduleAll(queue, 3);
 
     await vi.advanceTimersByTimeAsync(0);
@@ -688,9 +698,13 @@ describe('BucketQueue — режимы реакции на заголовки', 
   });
 
   it('smooth: нулевая ёмкость не создаёт бесконечный таймер', () => {
-    const queue = pool({ pacing: RateLimitPacing.Smooth }).for('https://itd.test', 'posts.create');
+    const queue = pool({ pacing: RateLimitPacing.Smooth }).for(
+      'https://itd.test',
+      'posts.create',
+      ITD_CATALOG.bucketDefinitionOf('posts.create'),
+    );
 
-    // Некорректный ответ не заменяет встроенную ёмкость 5 запросов в минуту.
+    // Некорректный ответ не заменяет ёмкость из каталога — 5 запросов в минуту.
     expect(queue.observe(0, 0)).toBe(12_000);
     expect(queue.state().limit).toBeUndefined();
   });

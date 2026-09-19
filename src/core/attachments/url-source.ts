@@ -116,13 +116,14 @@ async function responseBlob(
   maxBytes: number | undefined,
   streamBufferBytes: number,
   signal: AbortSignal | undefined,
+  type: string,
 ): Promise<Blob> {
   if (!response.body) {
     const blob = await response.blob();
     if (maxBytes !== undefined && blob.size > maxBytes) {
       throw fileTooLarge(url, maxBytes, blob.size);
     }
-    return blob;
+    return blob.type === type ? blob : new Blob([blob], { type });
   }
 
   const chunks: Uint8Array[] = [];
@@ -145,7 +146,7 @@ async function responseBlob(
     reader.releaseLock();
   }
 
-  return new Blob(chunks as BlobPart[]);
+  return new Blob(chunks as BlobPart[], { type });
 }
 
 /** Скачивает файл целиком с ограничением размера. @internal */
@@ -156,20 +157,21 @@ export async function downloadFile(
 ): Promise<FileContent> {
   const resolved = resolveFileStreamOptions(options, DEFAULT_URL_FILE_MAX_BYTES);
   const { response, url } = await fetchFile(target, options, context);
-  const blob = await responseBlob(
+  const contentType = normalizeMimeType(
+    options.contentType ?? response.headers.get('content-type') ?? undefined,
+  );
+  const file = await responseBlob(
     response,
     url.href,
     resolved.maxBytes,
     resolved.streamBufferBytes,
     context.signal,
-  );
-  const contentType = normalizeMimeType(
-    options.contentType ?? response.headers.get('content-type') ?? undefined,
+    contentType ?? '',
   );
   const filename = options.filename ?? filenameFromUrl(url);
 
   return {
-    file: new Blob([blob], { type: contentType ?? '' }),
+    file,
     ...(filename ? { filename } : {}),
     ...(contentType ? { contentType } : {}),
   };

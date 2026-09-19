@@ -17,6 +17,11 @@ export interface OperationCatalog {
   bucketOf(id: string): string;
   /** Известно ли каталогу имя бакета. */
   isKnownBucket(name: string): boolean;
+  /**
+   * Начальные ограничения бакета до первого ответа сервера: ёмкость в минуту, предел
+   * одновременности, темп. `undefined` — бакет каталогу неизвестен.
+   */
+  bucketDefinitionOf(name: string): Readonly<RateLimitBucketOverride> | undefined;
   /** Ёмкость бакетов до первого ответа сервера, запросов в минуту. */
   readonly bucketLimits: Readonly<Record<string, number>>;
   /** Встроенные поправки бакетов, например предел одновременности загрузки файлов. */

@@ -1,4 +1,5 @@
 import type { OperationCatalog } from '../core/catalog.js';
+import type { RateLimitBucketOverride } from '../core/options.js';
 import {
   BUCKET_LIMITS,
   DEFAULT_BUCKET_OVERRIDES,
@@ -6,6 +7,17 @@ import {
   isKnownBucket,
 } from './buckets.js';
 import { isBuiltInOperationId, OPERATIONS, operationBucket } from './operations.js';
+
+/** Ограничения встроенных бакетов: ёмкость из таблицы плюс встроенные поправки. */
+const BUCKET_DEFINITIONS: Readonly<Record<string, Readonly<RateLimitBucketOverride>>> =
+  Object.freeze(
+    Object.fromEntries(
+      Object.entries(BUCKET_LIMITS).map(([name, limit]) => [
+        name,
+        Object.freeze({ limit, ...DEFAULT_BUCKET_OVERRIDES[name] }),
+      ]),
+    ),
+  );
 
 /**
  * Каталог операций итд.com, которым пользуется ядро.
@@ -19,6 +31,7 @@ export const ITD_CATALOG: OperationCatalog = Object.freeze({
   // Неизвестный ID каталог сам сводит к бакету по умолчанию.
   bucketOf: (id) => operationBucket(id as Parameters<typeof operationBucket>[0]),
   isKnownBucket,
+  bucketDefinitionOf: (name) => BUCKET_DEFINITIONS[name],
   bucketLimits: BUCKET_LIMITS,
   bucketOverrides: DEFAULT_BUCKET_OVERRIDES,
   defaultBucket: DEFAULT_RATE_LIMIT_BUCKET,

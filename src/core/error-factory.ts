@@ -2,6 +2,7 @@ import type { ItdErrorCode } from '../types/enums.js';
 import {
   type ItdApiError,
   ItdApiError as ItdApiErrorClass,
+  type ItdApiErrorInit,
   ItdAuthError,
   ItdConflictError,
   type ItdFieldErrors,
@@ -219,7 +220,7 @@ export function getRequestId(headers: Headers | undefined): string | undefined {
 }
 
 /** Соответствие кода ошибки конкретному классу. Приоритетнее, чем HTTP-статус. */
-const CODE_TO_CLASS: Record<string, new (init: never) => ItdApiError> = {
+const CODE_TO_CLASS: Record<string, new (init: ItdApiErrorInit) => ItdApiError> = {
   VALIDATION_ERROR: ItdValidationError,
   RATE_LIMIT_EXCEEDED: ItdRateLimitError,
   UNAUTHORIZED: ItdAuthError,
@@ -239,7 +240,7 @@ const CODE_TO_CLASS: Record<string, new (init: never) => ItdApiError> = {
 };
 
 /** Соответствие HTTP-статуса классу — запасной вариант, когда код ничего не говорит. */
-function classByStatus(status: number): new (init: never) => ItdApiError {
+function classByStatus(status: number): new (init: ItdApiErrorInit) => ItdApiError {
   if (status === 401) return ItdAuthError;
   if (status === 403) return ItdForbiddenError;
   if (status === 404) return ItdNotFoundError;
@@ -310,5 +311,5 @@ export function createApiError(context: ErrorContext): ItdApiError {
   }
 
   const Ctor = CODE_TO_CLASS[parsed.code] ?? classByStatus(context.status);
-  return new Ctor(init as never);
+  return new Ctor(init);
 }

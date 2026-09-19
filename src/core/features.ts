@@ -44,7 +44,7 @@ export interface FeatureOperationDefinition<T = unknown> {
 }
 
 /** Начальные ограничения нового серверного счётчика feature. */
-export interface FeatureBucketDefinition extends RateLimitBucketOverride {}
+export type FeatureBucketDefinition = RateLimitBucketOverride;
 
 /** Результат синхронной сборки API feature. */
 export interface FeatureInstallation<TApi> {
@@ -120,10 +120,6 @@ export interface FeatureRegistryDeps {
   readonly assertActive: (action: string) => void;
   readonly connection: (serviceName?: string) => ClientConnection;
   readonly manage: (resource: ManagedClientResource) => () => void;
-  readonly registerBucket: (
-    name: string,
-    definition: FeatureBucketDefinition,
-  ) => (() => void) | undefined;
 }
 
 interface ResolvedFeatureOperation {
@@ -245,6 +241,149 @@ function validateFeatureInstallation<TApi>(
   }
 }
 
+/** Состояние устанавливаемого модуля, общее для реестра и его контекста. */
+interface FeatureActivation {
+  readonly name: string;
+  readonly controller: AbortController;
+  readonly services: ReadonlySet<string>;
+  readonly operations: ReadonlyMap<string, ResolvedFeatureOperation>;
+  readonly transaction: FeatureInstallationTransaction;
+  /** `setup()` завершился, модуль опубликован в реестре. */
+  committed: boolean;
+}
+
+/** Пишет ошибку отката в журнал; сбой самого журнала не заменяет ошибку установки. */
+function reportRollbackError(logger: Logger | undefined, message: string, error: unknown): void {
+  try {
+    logger?.error(message, error);
+  } catch {
+    // Проглатывается намеренно.
+  }
+}
+
+/** Останавливает ресурс, зарегистрированный до публикации модуля, при откате установки. */
+function stopUnpublishedResource(
+  resource: ManagedClientResource,
+  release: () => void,
+  featureName: string,
+  logger: Logger | undefined,
+): void {
+  try {
+    resource.stop();
+  } catch (error) {
+    reportRollbackError(
+      logger,
+      `Не удалось остановить ресурс «${resource.kind}» при откате feature «${featureName}»`,
+      error,
+    );
+  } finally {
+    release();
+  }
+  void Promise.resolve()
+    .then(() => resource.drain())
+    .catch((error: unknown) => {
+      reportRollbackError(
+        logger,
+        `Не удалось освободить ресурс «${resource.kind}» при откате feature «${featureName}»`,
+        error,
+      );
+    });
+}
+
+/** Собирает {@link FeatureContext} модуля: доступ к клиенту с проверкой, что модуль активен. */
+function createFeatureContext(
+  deps: FeatureRegistryDeps,
+  activation: FeatureActivation,
+): FeatureContext {
+  const { name, controller, services, operations, transaction } = activation;
+  const inactive = () => new ItdStateError(`feature «${name}» не активен`);
+  const assertActive = (action: string): void => {
+    deps.assertActive(action);
+    if (!activation.committed || controller.signal.aborted) throw inactive();
+  };
+  const requireService = (serviceName: string): void => {
+    if (!services.has(serviceName)) {
+      throw new ItdConfigError(`feature «${name}» не объявляет сервис «${serviceName}»`);
+    }
+  };
+
+  return Object.freeze({
+    featureName: name,
+    baseUrl: deps.baseUrl,
+    signal: controller.signal,
+    clock: deps.clock,
+    logger: deps.logger,
+    files: Object.freeze({
+      resolve: (
+        input: FileInput,
+        options?: ResolveFileOptions,
+        context?: ResolveFileContext,
+      ): Promise<PreparedFileSource> => {
+        try {
+          assertActive(`открыть файловый источник feature «${name}»`);
+          return deps.files.resolve(input, options, context);
+        } catch (error) {
+          return Promise.reject(error);
+        }
+      },
+    }),
+    request: <T>(operation: string, options: FeatureRequestOptions): Promise<T> => {
+      try {
+        assertActive(`выполнить операцию feature «${name}»`);
+        const resolved = operations.get(operation);
+        if (!resolved) {
+          throw new ItdConfigError(`feature «${name}» не объявляет операцию «${operation}»`);
+        }
+        // Поля, которые задаёт контракт операции, отбрасываются и при вызове из JavaScript.
+        const {
+          operationId: _operationId,
+          method: _method,
+          service: _service,
+          baseUrl: _baseUrl,
+          retrySafety: _retrySafety,
+          rateLimitBucket: _rateLimitBucket,
+          ...scoped
+        } = options as Partial<RawRequestOptions>;
+        return deps.http.execute(resolved.contract, {
+          ...(scoped as FeatureRequestOptions),
+          ...(resolved.service === undefined ? {} : { service: resolved.service }),
+        }) as Promise<T>;
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    },
+    serviceBaseUrl: (serviceName: string): string => {
+      requireService(serviceName);
+      return deps.services.resolveBaseUrl(serviceName);
+    },
+    connection: (serviceName: string): ClientConnection => {
+      requireService(serviceName);
+      return deps.connection(serviceName);
+    },
+    manage: (resource: ManagedClientResource): (() => void) => {
+      deps.assertActive(`зарегистрировать ресурс feature «${name}»`);
+      if (controller.signal.aborted) throw inactive();
+      const unregister = deps.manage(resource);
+      let registered = true;
+      const release = (): void => {
+        if (!registered) return;
+        registered = false;
+        unregister();
+      };
+      // Ресурс, заведённый в `setup()`, при неудачной установке останавливается откатом.
+      if (!activation.committed) {
+        transaction.add(() => {
+          if (!registered) return;
+          if (activation.committed) release();
+          else stopUnpublishedResource(resource, release, name, deps.logger);
+        });
+      }
+      return release;
+    },
+    assertActive,
+  });
+}
+
 /** Реестр подключаемых модулей клиента. @internal */
 export class FeatureRegistry {
   readonly #deps: FeatureRegistryDeps;
@@ -311,8 +450,6 @@ export class FeatureRegistry {
       validateBucket(featureName, localName, bucket);
       const globalName = `feature:${featureName}/${localName}`;
       transaction.add(this.#deps.catalog.registerBucket(featureName, globalName, bucket));
-      const unregisterQueue = this.#deps.registerBucket(globalName, bucket);
-      if (unregisterQueue) transaction.add(unregisterQueue);
       bucketNames.set(localName, globalName);
     }
     return bucketNames;
@@ -416,14 +553,6 @@ export class FeatureRegistry {
     const name = validateFeatureDefinition(feature, (candidate) => this.#features.has(candidate));
     const transaction = new FeatureInstallationTransaction();
     const controller = new AbortController();
-    let committed = false;
-    const reportRollbackError = (message: string, error: unknown): void => {
-      try {
-        this.#deps.logger?.error(message, error);
-      } catch {
-        // Ошибка записи в журнал не заменяет ошибку установки.
-      }
-    };
 
     try {
       const services = this.#registerServices(name, feature.services ?? [], transaction);
@@ -435,121 +564,16 @@ export class FeatureRegistry {
         bucketNames,
         transaction,
       );
+      const activation: FeatureActivation = {
+        name,
+        controller,
+        services,
+        operations,
+        transaction,
+        committed: false,
+      };
 
-      const context: FeatureContext = Object.freeze({
-        featureName: name,
-        baseUrl: this.#deps.baseUrl,
-        signal: controller.signal,
-        clock: this.#deps.clock,
-        logger: this.#deps.logger,
-        files: Object.freeze({
-          resolve: (
-            input: FileInput,
-            options?: ResolveFileOptions,
-            context?: ResolveFileContext,
-          ): Promise<PreparedFileSource> => {
-            try {
-              this.#deps.assertActive(`открыть файловый источник feature «${name}»`);
-              if (!committed || controller.signal.aborted) {
-                throw new ItdStateError(`feature «${name}» не активен`);
-              }
-              return this.#deps.files.resolve(input, options, context);
-            } catch (error) {
-              return Promise.reject(error);
-            }
-          },
-        }),
-        request: <T>(operation: string, options: FeatureRequestOptions): Promise<T> => {
-          try {
-            this.#deps.assertActive(`выполнить операцию feature «${name}»`);
-            if (!committed || controller.signal.aborted) {
-              throw new ItdStateError(`feature «${name}» не активен`);
-            }
-            const resolved = operations.get(operation);
-            if (!resolved) {
-              throw new ItdConfigError(`feature «${name}» не объявляет операцию «${operation}»`);
-            }
-            // Поля, которые задаёт контракт операции, отбрасываются и при вызове из JavaScript.
-            const {
-              operationId: _operationId,
-              method: _method,
-              service: _service,
-              baseUrl: _baseUrl,
-              retrySafety: _retrySafety,
-              rateLimitBucket: _rateLimitBucket,
-              ...scoped
-            } = options as Partial<RawRequestOptions>;
-            return this.#deps.http.execute(resolved.contract, {
-              ...(scoped as FeatureRequestOptions),
-              ...(resolved.service === undefined ? {} : { service: resolved.service }),
-            }) as Promise<T>;
-          } catch (error) {
-            return Promise.reject(error);
-          }
-        },
-        serviceBaseUrl: (serviceName: string): string => {
-          if (!services.has(serviceName)) {
-            throw new ItdConfigError(`feature «${name}» не объявляет сервис «${serviceName}»`);
-          }
-          return this.#deps.services.resolveBaseUrl(serviceName);
-        },
-        connection: (serviceName: string): ClientConnection => {
-          if (!services.has(serviceName)) {
-            throw new ItdConfigError(`feature «${name}» не объявляет сервис «${serviceName}»`);
-          }
-          return this.#deps.connection(serviceName);
-        },
-        manage: (resource: ManagedClientResource): (() => void) => {
-          this.#deps.assertActive(`зарегистрировать ресурс feature «${name}»`);
-          if (controller.signal.aborted) {
-            throw new ItdStateError(`feature «${name}» не активен`);
-          }
-          const unregister = this.#deps.manage(resource);
-          let registered = true;
-          const release = (): void => {
-            if (!registered) return;
-            registered = false;
-            unregister();
-          };
-          if (!committed) {
-            transaction.add(() => {
-              if (!registered) return;
-              if (committed) {
-                release();
-                return;
-              }
-
-              try {
-                resource.stop();
-              } catch (error) {
-                reportRollbackError(
-                  `Не удалось остановить ресурс «${resource.kind}» при откате feature «${name}»`,
-                  error,
-                );
-              } finally {
-                release();
-              }
-              void Promise.resolve()
-                .then(() => resource.drain())
-                .catch((error: unknown) => {
-                  reportRollbackError(
-                    `Не удалось освободить ресурс «${resource.kind}» при откате feature «${name}»`,
-                    error,
-                  );
-                });
-            });
-          }
-          return release;
-        },
-        assertActive: (action: string): void => {
-          this.#deps.assertActive(action);
-          if (!committed || controller.signal.aborted) {
-            throw new ItdStateError(`feature «${name}» не активен`);
-          }
-        },
-      });
-
-      const installation = feature.setup(context);
+      const installation = feature.setup(createFeatureContext(this.#deps, activation));
       validateFeatureInstallation(name, installation);
 
       this.#features.set(name, {
@@ -559,12 +583,16 @@ export class FeatureRegistry {
         dispose: installation.dispose,
         cleanup: transaction.snapshot(),
       });
-      committed = true;
+      activation.committed = true;
       return installation.api;
     } catch (error) {
       controller.abort(new ItdAbortError(`Установка feature «${name}» отменена`));
       transaction.rollback((rollbackError) => {
-        reportRollbackError(`Не удалось полностью откатить feature «${name}»`, rollbackError);
+        reportRollbackError(
+          this.#deps.logger,
+          `Не удалось полностью откатить feature «${name}»`,
+          rollbackError,
+        );
       });
       throw error;
     }

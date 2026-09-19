@@ -1,6 +1,6 @@
 import type { OperationId } from '../../domain/operations.js';
 import type { CookieJar } from '../cookies.js';
-import type { OperationRequestOptions } from '../options.js';
+import type { OperationRequestOptions, RateLimitBucketOverride } from '../options.js';
 
 /*
  * Служебное состояние одной логической операции лежит в объекте запроса под перечислимым
@@ -231,6 +231,8 @@ export interface RequestQueueKey {
   /** Origin разрешённого URL. `undefined` — направление неизвестно. */
   destination: string | undefined;
   bucket: string;
+  /** Начальные ограничения бакета из каталога на момент постановки в очередь. */
+  definition: Readonly<RateLimitBucketOverride> | undefined;
 }
 
 /**
@@ -238,7 +240,8 @@ export interface RequestQueueKey {
  *
  * Ключ спрашивают трижды: при постановке в очередь, при чтении заголовков ответа и при
  * паузе после `429`. Значение хранится в общем состоянии операции, поэтому его видят все
- * копии запроса ниже по конвейеру.
+ * копии запроса ниже по конвейеру. Ограничения бакета фиксируются вместе с ключом:
+ * освобождение feature во время запроса не меняет очередь операции.
  *
  * @internal
  */

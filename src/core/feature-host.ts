@@ -39,7 +39,6 @@ export class ClientFeatureHost {
       assertActive: options.assertActive,
       connection: (serviceName) => runtime.connection(serviceName),
       manage: (resource) => this.#resources.register(resource),
-      registerBucket: (name, definition) => runtime.registerRateLimitBucket(name, definition),
     });
   }
 

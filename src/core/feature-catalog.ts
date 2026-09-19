@@ -20,22 +20,22 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
   readonly #base: OperationCatalog;
   readonly #operations = new Map<string, RegisteredOperationDefinition>();
   readonly #operationOwners = new Map<string, string>();
-  readonly #bucketOwners = new Map<string, string>();
-  readonly #bucketLimits: Record<string, number>;
-  readonly #bucketOverrides: Record<string, RateLimitBucketOverride>;
+  /** Бакеты feature: владелец и ограничения. Таблицы базового каталога не изменяются. */
+  readonly #buckets = new Map<
+    string,
+    { owner: string; definition: Readonly<RateLimitBucketOverride> }
+  >();
 
   constructor(base: OperationCatalog) {
     this.#base = base;
-    this.#bucketLimits = { ...base.bucketLimits };
-    this.#bucketOverrides = { ...base.bucketOverrides };
   }
 
   get bucketLimits(): Readonly<Record<string, number>> {
-    return this.#bucketLimits;
+    return this.#base.bucketLimits;
   }
 
   get bucketOverrides(): Readonly<Record<string, RateLimitBucketOverride>> {
-    return this.#bucketOverrides;
+    return this.#base.bucketOverrides;
   }
 
   get defaultBucket(): string {
@@ -51,29 +51,30 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
   }
 
   isKnownBucket(name: string): boolean {
-    return this.#bucketOwners.has(name) || this.#base.isKnownBucket(name);
+    return this.#buckets.has(name) || this.#base.isKnownBucket(name);
+  }
+
+  bucketDefinitionOf(name: string): Readonly<RateLimitBucketOverride> | undefined {
+    return this.#buckets.get(name)?.definition ?? this.#base.bucketDefinitionOf(name);
   }
 
   /** Регистрирует принадлежащий feature бакет и возвращает откат регистрации. */
   registerBucket(owner: string, name: string, definition: RateLimitBucketOverride): () => void {
-    if (this.#base.isKnownBucket(name) || this.#bucketOwners.has(name)) {
+    if (this.#base.isKnownBucket(name) || this.#buckets.has(name)) {
       throw new ItdConfigError(`feature «${owner}»: бакет «${name}» уже зарегистрирован`);
     }
 
-    this.#bucketOwners.set(name, owner);
-    if (definition.limit !== undefined) this.#bucketLimits[name] = definition.limit;
-    if (definition.concurrency !== undefined || definition.rps !== undefined) {
-      this.#bucketOverrides[name] = Object.freeze({
+    this.#buckets.set(name, {
+      owner,
+      definition: Object.freeze({
+        ...(definition.limit === undefined ? {} : { limit: definition.limit }),
         ...(definition.concurrency === undefined ? {} : { concurrency: definition.concurrency }),
         ...(definition.rps === undefined ? {} : { rps: definition.rps }),
-      });
-    }
+      }),
+    });
 
     return () => {
-      if (this.#bucketOwners.get(name) !== owner) return;
-      this.#bucketOwners.delete(name);
-      delete this.#bucketLimits[name];
-      delete this.#bucketOverrides[name];
+      if (this.#buckets.get(name)?.owner === owner) this.#buckets.delete(name);
     };
   }
 

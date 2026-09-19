@@ -4,7 +4,7 @@ import { assertKnownBucket, type ResolvedRuntimeConfig, resolveRuntimeConfig } f
 import type { ClientConnection } from '../connection.js';
 import { CookieJar } from '../cookies.js';
 import { ItdAbortError } from '../errors.js';
-import type { RateLimitBucketOverride, RuntimeOptions } from '../options.js';
+import type { RuntimeOptions } from '../options.js';
 import { PluginRegistry } from '../plugins/registry.js';
 import { type RateLimitBucketState, RequestQueuePool } from '../scheduling/rate-limit.js';
 import { ServiceRegistry } from '../services.js';
@@ -95,11 +95,6 @@ export interface ClientRuntime<A extends AuthProvider = AuthProvider> {
   platformHeaders(url: string): Promise<Headers>;
   /** Снимок известных бакетов. Пустой, когда очередь отключена. */
   rateLimitState(): RateLimitBucketState[];
-  /** Регистрирует ограничения бакета подключаемого модуля. @internal */
-  registerRateLimitBucket(
-    name: string,
-    definition: RateLimitBucketOverride,
-  ): (() => void) | undefined;
   /**
    * Временно останавливает принадлежащие клиенту очереди.
    *
@@ -183,16 +178,20 @@ export function createClientRuntime<A extends AuthProvider>(
   };
 
   const queueKeyFor = (request: PipelineRequest) =>
-    requestQueueKey(request, (target) => ({
-      destination: destinationOf(target.baseUrl ?? config.baseUrl),
-      bucket: bucketFor(target),
-    }));
+    requestQueueKey(request, (target) => {
+      const bucket = bucketFor(target);
+      return {
+        destination: destinationOf(target.baseUrl ?? config.baseUrl),
+        bucket,
+        definition: catalog.bucketDefinitionOf(bucket),
+      };
+    });
 
   const queueFor = (request: PipelineRequest) => {
     if (!queues) return undefined;
 
     const key = queueKeyFor(request);
-    return queues.for(key.destination, key.bucket);
+    return queues.for(key.destination, key.bucket, key.definition);
   };
 
   /** Передаёт остаток из заголовков ответа бакету запроса; тот решает, тормозить ли себя. */
@@ -362,7 +361,6 @@ export function createClientRuntime<A extends AuthProvider>(
     },
     platformHeaders: (url) => transport.platformHeaders(url),
     rateLimitState: () => queues?.states() ?? [],
-    registerRateLimitBucket: (name, definition) => queues?.defineBucket(name, definition),
     close: () => {
       if (ownsQueues) queues?.stop();
     },

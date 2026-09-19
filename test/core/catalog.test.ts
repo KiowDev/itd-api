@@ -7,7 +7,6 @@ import {
 } from '../../src/core/execution/client-runtime.js';
 import { ExtensibleOperationCatalog } from '../../src/core/feature-catalog.js';
 import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
-import { RequestQueuePool } from '../../src/core/scheduling/rate-limit.js';
 import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import { passthroughOperation } from '../../src/operations/common.js';
 import type { ItdClientOptions } from '../../src/options.js';
@@ -161,49 +160,48 @@ describe('ёмкости бакетов доходят из каталога д�
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('таблица каталога задаёт ровный темп до первого ответа сервера', async () => {
-    const rateLimit = resolveRateLimit(
-      { pacing: RateLimitPacing.Smooth },
-      catalogWith({ bucketLimits: { ...ITD_CATALOG.bucketLimits, 'posts.create': 10 } }),
+  it('bucketDefinitionOf задаёт ровный темп до первого ответа сервера', async () => {
+    const { runtime, mock } = makeRuntime(
+      () => json({ data: {} }),
+      { rateLimit: { pacing: RateLimitPacing.Smooth } },
+      catalogWith({
+        bucketDefinitionOf: (name) =>
+          name === 'posts.create' ? { limit: 10 } : ITD_CATALOG.bucketDefinitionOf(name),
+      }),
     );
-    if (!rateLimit) throw new Error('очередь должна быть включена');
+    const create = () =>
+      runtime.http.execute(passthroughOperation('posts.create'), { path: '/api/posts' });
 
-    const queue = new RequestQueuePool(rateLimit).for('https://itd.test', 'posts.create');
-    const begin = Date.now();
-    const starts: number[] = [];
-    for (let index = 0; index < 2; index += 1) {
-      void queue.schedule(() => {
-        starts.push(Date.now() - begin);
-        return Promise.resolve();
-      });
-    }
-
+    const pending = [create(), create()];
     await vi.advanceTimersByTimeAsync(0);
-    expect(starts).toEqual([0]);
+    expect(mock.callCount).toBe(1);
 
     // Встроенная ёмкость posts.create — 5 запросов в минуту, то есть шаг 12 секунд.
     // Каталог назвал 10, поэтому очередь выдерживает вдвое меньший интервал.
-    await vi.advanceTimersByTimeAsync(6_000);
-    expect(starts).toEqual([0, 6_000]);
+    await vi.advanceTimersByTimeAsync(5_999);
+    expect(mock.callCount).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mock.callCount).toBe(2);
+
+    await Promise.all(pending);
+    await shutdown(runtime);
   });
 
-  it('resolveRateLimit переносит ёмкости и умолчание из каталога в настройки очереди', () => {
+  it('resolveRateLimit переносит поправки и умолчание из каталога в настройки очереди', () => {
     const catalog = catalogWith({
-      bucketLimits: { только: 42 },
       defaultBucket: 'только',
-      bucketOverrides: {},
+      bucketOverrides: { только: { concurrency: 1 } },
     });
 
     expect(resolveRateLimit(undefined, catalog)).toMatchObject({
-      bucketLimits: { только: 42 },
       defaultBucket: 'только',
-      bucketOverrides: {},
+      bucketOverrides: { только: { concurrency: 1 } },
     });
   });
 });
 
 describe('динамические бакеты каталога', () => {
-  it('сохраняет rps в поправке и удаляет его при откате регистрации', () => {
+  it('отдаёт ограничения бакета feature и забывает их при откате регистрации', () => {
     const catalog = new ExtensibleOperationCatalog(ITD_CATALOG);
     const unregister = catalog.registerBucket('probe', 'feature:probe/read', {
       limit: 60,
@@ -211,11 +209,24 @@ describe('динамические бакеты каталога', () => {
       rps: 4,
     });
 
-    expect(catalog.bucketLimits['feature:probe/read']).toBe(60);
-    expect(catalog.bucketOverrides['feature:probe/read']).toEqual({ concurrency: 2, rps: 4 });
+    expect(catalog.isKnownBucket('feature:probe/read')).toBe(true);
+    expect(catalog.bucketDefinitionOf('feature:probe/read')).toEqual({
+      limit: 60,
+      concurrency: 2,
+      rps: 4,
+    });
+    // Таблицы базового каталога регистрация не трогает.
+    expect(catalog.bucketLimits).toBe(ITD_CATALOG.bucketLimits);
+    expect(catalog.bucketOverrides).toBe(ITD_CATALOG.bucketOverrides);
 
     unregister();
-    expect(catalog.bucketLimits['feature:probe/read']).toBeUndefined();
-    expect(catalog.bucketOverrides['feature:probe/read']).toBeUndefined();
+    expect(catalog.isKnownBucket('feature:probe/read')).toBe(false);
+    expect(catalog.bucketDefinitionOf('feature:probe/read')).toBeUndefined();
+  });
+
+  it('встроенные бакеты отвечают ёмкостью таблицы вместе со встроенной поправкой', () => {
+    expect(ITD_CATALOG.bucketDefinitionOf('posts.create')).toEqual({ limit: 5 });
+    expect(ITD_CATALOG.bucketDefinitionOf('files.upload')).toMatchObject({ concurrency: 1 });
+    expect(ITD_CATALOG.bucketDefinitionOf('нет такого')).toBeUndefined();
   });
 });

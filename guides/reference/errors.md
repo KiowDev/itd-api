@@ -61,7 +61,7 @@ class ItdApiError extends ItdError {
   apiKind: ItdApiErrorKind;              // разновидность для сравнения
 
   hasCode(...codes: ItdErrorCode[]): boolean;   // проверить код
-  get isRetryable: boolean;                     // 429 или ≥ 500
+  get isRetryable: boolean;                     // 429 или ≥ 500; повтор операции зависит ещё от retrySafety
 }
 ```
 

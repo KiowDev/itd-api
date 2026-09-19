@@ -559,7 +559,7 @@ describe('фабрики подключаемых модулей', () => {
     expect(disposed).toEqual([1, 2]);
   });
 
-  it('ошибка setup не публикует аккаунт и освобождает плагины и общий бакет', async () => {
+  it('ошибка setup не публикует аккаунт и освобождает плагины', async () => {
     const storage = new MemoryMultiTokenStorage();
     const pluginTeardown = vi.fn();
     const featureTeardown = vi.fn();
@@ -1083,6 +1083,60 @@ describe('очередь запросов', () => {
     release();
 
     await expect(Promise.all([first, waiting])).resolves.toHaveLength(2);
+    await accounts.close();
+  });
+
+  type ClientWithBucketed = ReturnType<ItdAccounts['addAccount']> & {
+    readonly bucketed: { ping(): Promise<unknown> };
+  };
+
+  /** Feature с одним бакетом; ограничения задаёт тест. */
+  function bucketFeature(rps: number): AccountFeature<{ ping(): Promise<unknown> }> {
+    return {
+      key: 'bucketed',
+      create: () => ({
+        name: 'bucketed',
+        buckets: { work: { rps } },
+        operations: { ping: { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'work' } },
+        setup: (context) => ({ api: { ping: () => context.request('ping', { path: '/api/x' }) } }),
+      }),
+    };
+  }
+
+  it('аккаунты с одинаковым бакетом feature делят одну очередь общего пула', async () => {
+    const { accounts } = makeAccounts(ok, {
+      rateLimit: { concurrency: 2 },
+      features: [bucketFeature(4)],
+    });
+    const a = accounts.addAccount('a', { auth: 'token-a' }) as ClientWithBucketed;
+    const b = accounts.addAccount('b', { auth: 'token-b' }) as ClientWithBucketed;
+
+    await expect(a.bucketed.ping()).resolves.toEqual({});
+    await expect(b.bucketed.ping()).resolves.toEqual({});
+
+    const buckets = a.rateLimitState().filter((state) => state.bucket === 'feature:bucketed/work');
+    expect(buckets).toHaveLength(1);
+    await accounts.close();
+  });
+
+  it('аккаунт с другими ограничениями того же бакета получает ошибку при первом запросе', async () => {
+    let rps = 4;
+    const feature: AccountFeature<{ ping(): Promise<unknown> }> = {
+      key: 'bucketed',
+      create: () => bucketFeature(rps).create(),
+    };
+    const { accounts, mock } = makeAccounts(ok, {
+      rateLimit: { concurrency: 2 },
+      features: [feature],
+    });
+    const a = accounts.addAccount('a', { auth: 'token-a' }) as ClientWithBucketed;
+    rps = 8;
+    const b = accounts.addAccount('b', { auth: 'token-b' }) as ClientWithBucketed;
+
+    await expect(a.bucketed.ping()).resolves.toEqual({});
+    await expect(b.bucketed.ping()).rejects.toThrow(ItdConfigError);
+    await expect(b.bucketed.ping()).rejects.toThrow(/rps 4 против rps 8/);
+    expect(mock.callCount).toBe(1);
     await accounts.close();
   });
 });

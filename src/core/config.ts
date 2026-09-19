@@ -77,13 +77,12 @@ export interface ResolvedRateLimitOptions {
   buckets: boolean;
   pacing: RateLimitPacing;
   bucketConcurrency: number;
+  /**
+   * Поправки бакетов: встроенные плюс заданные пользователем. Начальные ограничения самих
+   * бакетов очередь получает вместе с запросом из каталога операций.
+   */
   bucketOverrides: Readonly<Record<string, RateLimitBucketOverride>>;
   bucket: ((request: RateLimitBucketContext) => string | undefined) | undefined;
-  /**
-   * Ёмкость бакетов до первого ответа сервера. Приходит из каталога операций: сама
-   * очередь ни одного имени счётчика не знает.
-   */
-  bucketLimits: Readonly<Record<string, number>>;
   /** Счётчик, из которого списывается путь без собственного правила на сервере. */
   defaultBucket: string;
 }
@@ -339,7 +338,6 @@ export function resolveRateLimit(
     bucketConcurrency: 6,
     bucketOverrides: catalog.bucketOverrides,
     bucket: undefined,
-    bucketLimits: catalog.bucketLimits,
     defaultBucket: catalog.defaultBucket,
   };
   if (!rateLimit) return defaults;
@@ -371,7 +369,6 @@ export function resolveRateLimit(
     ),
     bucketOverrides: resolveBucketOverrides(rateLimit.bucketOverrides, rateLimit.bucket, catalog),
     bucket: rateLimit.bucket,
-    bucketLimits: catalog.bucketLimits,
     defaultBucket: catalog.defaultBucket,
   };
 }
