@@ -14,9 +14,18 @@ import {
   createRetryMiddleware,
 } from '../../src/core/execution/middleware.js';
 import {
+  beginTransportAttempt,
+  claimAbortReport,
+  currentTransportAttempt,
+  initializeOperationState,
+  isDisposeCleanupRequest,
+  lifecycleSignalOf,
+  markRequestErrorReported,
+  operationReaderOf,
   type PipelineRequest,
-  withLifecycleSignal,
-  withOperationReader,
+  requestAuthRecoveryState,
+  requestQueueKey,
+  wasRequestErrorReported,
 } from '../../src/core/execution/pipeline.js';
 import { Transport, type TransportDeps } from '../../src/core/execution/transport.js';
 import { RetrySafety } from '../../src/core/operation.js';
@@ -28,6 +37,63 @@ import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.j
 /** Каталог операций ядру неизвестен — здесь он подставляется явно, как это делает клиент. */
 const resolveConfig = (options: ItdClientOptions = {}) =>
   resolveRuntimeConfig(options, ITD_CATALOG);
+
+describe('состояние логической операции', () => {
+  it('явно устанавливает reader, lifecycle и право финализации', () => {
+    const lifecycle = new AbortController().signal;
+    const read = (body: unknown) => body;
+    const request = initializeOperationState(
+      { operationId: 'raw', method: 'GET', path: '/api/test' },
+      { lifecycleSignal: lifecycle, reader: read, disposeCleanup: true },
+    );
+
+    expect(lifecycleSignalOf(request)).toBe(lifecycle);
+    expect(operationReaderOf(request)).toBe(read);
+    expect(isDisposeCleanupRequest(request)).toBe(true);
+  });
+
+  it('заменяет состояние, случайно перенесённое spread-копией другой операции', () => {
+    const firstSignal = new AbortController().signal;
+    const firstError = new Error('первая операция');
+    const first = initializeOperationState(
+      { operationId: 'raw', method: 'GET', path: '/api/first' },
+      {
+        lifecycleSignal: firstSignal,
+        reader: (body) => body,
+        disposeCleanup: true,
+      },
+    );
+    beginTransportAttempt(first);
+    requestQueueKey(first, () => ({
+      destination: 'https://first.test',
+      bucket: 'first',
+      definition: undefined,
+    }));
+    requestAuthRecoveryState(first).recovered = true;
+    markRequestErrorReported(first, firstError);
+    claimAbortReport(first);
+
+    const secondSignal = new AbortController().signal;
+    const second = initializeOperationState(
+      { ...first, path: '/api/second' },
+      { lifecycleSignal: secondSignal },
+    );
+    const secondKey = requestQueueKey(second, () => ({
+      destination: 'https://second.test',
+      bucket: 'second',
+      definition: undefined,
+    }));
+
+    expect(lifecycleSignalOf(second)).toBe(secondSignal);
+    expect(operationReaderOf(second)).toBeUndefined();
+    expect(isDisposeCleanupRequest(second)).toBe(false);
+    expect(currentTransportAttempt(second)).toBe(0);
+    expect(secondKey).toMatchObject({ destination: 'https://second.test', bucket: 'second' });
+    expect(requestAuthRecoveryState(second).recovered).toBe(false);
+    expect(wasRequestErrorReported(second, firstError)).toBe(false);
+    expect(claimAbortReport(second)).toBe(true);
+  });
+});
 
 /** Собирает транспорт с моком сети — так же, как это делает ItdClient. */
 function makeTransport(
@@ -463,9 +529,9 @@ describe('стадии операции', () => {
 
     await expect(
       request(
-        withOperationReader(
+        initializeOperationState(
           { operationId: 'users.me', method: 'GET', path: '/api/users/me' },
-          read,
+          { lifecycleSignal: new AbortController().signal, reader: read },
         ),
       ),
     ).resolves.toBe(20);
@@ -503,12 +569,9 @@ describe('стадии операции', () => {
 
     await expect(
       request(
-        withLifecycleSignal(
-          withOperationReader(
-            { operationId: 'users.me', method: 'GET', path: '/api/users/me', signal: userSignal },
-            read,
-          ),
-          lifecycle,
+        initializeOperationState(
+          { operationId: 'users.me', method: 'GET', path: '/api/users/me', signal: userSignal },
+          { lifecycleSignal: lifecycle, reader: read },
         ),
       ),
     ).resolves.toBe(4);

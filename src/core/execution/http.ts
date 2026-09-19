@@ -15,14 +15,13 @@ import {
   claimAbortReport,
   currentTransportAttempt,
   identifyRequest,
-  markDisposeCleanupRequest,
+  initializeOperationState,
   markRequestErrorReported,
+  type OperationReader,
   type PipelineRequest,
   type PipelineRequestInput,
   type RequestHandler,
   wasRequestErrorReported,
-  withLifecycleSignal,
-  withOperationReader,
 } from './pipeline.js';
 
 /** Что нужно точке входа в конвейер. */
@@ -49,15 +48,18 @@ function operationRequest<T, TId extends OperationId>(
   operation: OperationContract<T, TId>,
   options: HttpOperationOptions,
 ): PipelineRequest {
-  return withOperationReader(
-    {
-      ...options,
-      operationId: operation.id,
-      method: operation.method,
-      retrySafety: options.retrySafety ?? operation.retrySafety,
-    },
-    operation.read,
-  );
+  return {
+    ...options,
+    operationId: operation.id,
+    method: operation.method,
+    retrySafety: options.retrySafety ?? operation.retrySafety,
+  };
+}
+
+interface RunOptions {
+  allowDisposed?: boolean | undefined;
+  reader?: OperationReader | undefined;
+  disposeCleanup?: boolean | undefined;
 }
 
 /**
@@ -114,7 +116,9 @@ export class HttpClient {
     operation: OperationContract<T, TId>,
     options: HttpOperationOptions,
   ): Promise<T> {
-    return this.#run(operationRequest(operation, options)) as Promise<T>;
+    return this.#run(operationRequest(operation, options), {
+      reader: operation.read,
+    }) as Promise<T>;
   }
 
   /** Выполняет внутреннюю операцию финализации после начала `ItdClient.dispose()`. @internal */
@@ -122,14 +126,15 @@ export class HttpClient {
     operation: OperationContract<T, TId>,
     options: HttpOperationOptions,
   ): Promise<T> {
-    return this.#run(
-      markDisposeCleanupRequest(operationRequest(operation, options)),
-      true,
-    ) as Promise<T>;
+    return this.#run(operationRequest(operation, options), {
+      allowDisposed: true,
+      reader: operation.read,
+      disposeCleanup: true,
+    }) as Promise<T>;
   }
 
-  async #run(request: PipelineRequest, allowDisposed = false): Promise<unknown> {
-    if (!allowDisposed) this.#assertActive?.();
+  async #run(request: PipelineRequest, options: RunOptions = {}): Promise<unknown> {
+    if (!options.allowDisposed) this.#assertActive?.();
     const deadline = request.deadline ?? this.#deadline;
     const scope = createRequestAbortScope(request.signal, undefined, this.#clock, {
       after: deadline,
@@ -144,7 +149,11 @@ export class HttpClient {
     if (this.#lifetimeSignal?.aborted) scope.abort(this.#lifetimeSignal.reason);
     else this.#activeScopes.add(scope);
     const startedAt = this.#clock.now();
-    const tracked = withLifecycleSignal({ ...request }, scope.signal);
+    const tracked = initializeOperationState(request, {
+      lifecycleSignal: scope.signal,
+      reader: options.reader,
+      disposeCleanup: options.disposeCleanup,
+    });
 
     try {
       return await waitForRequest(this.#handler(tracked), scope.signal);

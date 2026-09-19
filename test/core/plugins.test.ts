@@ -255,6 +255,38 @@ describe('обёртки запроса', () => {
     expect(page).not.toHaveProperty('notifications');
   });
 
+  it('побочный запрос из transformer не наследует состояние основной операции', async () => {
+    const attempts: Array<[string, number]> = [];
+    const { itd } = makeClient(
+      (request) =>
+        new URL(request.url).pathname === '/api/side'
+          ? json({ data: { side: true } })
+          : json({ data: { posts: [], pagination: { hasMore: false } } }),
+      {
+        hooks: {
+          onRequest: ({ path, attempt }) => void attempts.push([path, attempt]),
+        },
+      },
+    );
+    let side: unknown;
+
+    itd.use(
+      plugin('side-request', async (current, next) => {
+        if (current.path === '/api/side') return next(current);
+        side = await itd.request({ ...current, path: '/api/side', raw: true });
+        return next(current);
+      }),
+    );
+
+    await itd.posts.list();
+
+    expect(side).toEqual({ data: { side: true } });
+    expect(attempts).toEqual([
+      ['/api/side', 1],
+      ['/api/posts', 1],
+    ]);
+  });
+
   it('считает локальный ответ плагина уже готовым публичным результатом', async () => {
     const { itd, mock } = makeClient([]);
     const cached = {

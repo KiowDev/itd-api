@@ -5,7 +5,8 @@ import type { OperationRequestOptions, RateLimitBucketOverride } from '../option
 /*
  * Служебное состояние одной логической операции лежит в объекте запроса под перечислимым
  * символом: spread-копии слоёв переносят его дальше, а `Object.entries` и `JSON.stringify`
- * в пользовательском коде — например в ключе кэша — его не видят.
+ * в пользовательском коде — например в ключе кэша — его не видят. Внешняя граница каждого
+ * нового запроса безусловно заменяет скопированный контейнер через {@link initializeOperationState}.
  */
 const OPERATION_STATE = Symbol('itd-api.operation-state');
 
@@ -56,18 +57,31 @@ function operationState(request: PipelineRequest): OperationState {
   return state;
 }
 
+interface InitialOperationState {
+  lifecycleSignal: AbortSignal;
+  reader?: OperationReader | undefined;
+  disposeCleanup?: boolean | undefined;
+}
+
 /**
- * Привязывает к запросу функцию чтения контракта операции. У `raw`-запроса её нет.
- * Стадия плагинов переносит её на запрос, собранный обёрткой заново.
+ * Начинает новую логическую операцию со свежим служебным состоянием.
+ *
+ * Контейнер заменяется безусловно: пользовательский код мог передать spread-копию запроса,
+ * уже прошедшего через pipeline. Такое повторное обращение является новой операцией и не
+ * должно наследовать её попытки, очередь, auth recovery, reader или учёт `onError`.
  *
  * @internal
  */
-export function withOperationReader<T extends PipelineRequestInput>(
+export function initializeOperationState<T extends PipelineRequest>(
   request: T,
-  read: OperationReader,
+  initial: InitialOperationState,
 ): T {
-  operationState(request as PipelineRequest).reader = read;
-  return request;
+  const state: OperationState = {
+    lifecycleSignal: initial.lifecycleSignal,
+    ...(initial.reader === undefined ? {} : { reader: initial.reader }),
+    ...(initial.disposeCleanup ? { disposeCleanup: true as const } : {}),
+  };
+  return { ...request, [OPERATION_STATE]: state };
 }
 
 /** Функция чтения контракта операции, если запрос её несёт. @internal */
@@ -86,23 +100,7 @@ export function withOperationState(
   return prepared;
 }
 
-/**
- * Сохраняет общий сигнал логической операции до стадии плагинов.
- *
- * Transformer получает запрос с пользовательским `signal`; слои ниже плагинов — с общим
- * сигналом операции.
- *
- * @internal
- */
-export function withLifecycleSignal(
-  request: PipelineRequest,
-  signal: AbortSignal,
-): PipelineRequest {
-  operationState(request).lifecycleSignal = signal;
-  return request;
-}
-
-/** Общий сигнал операции, сохранённый {@link withLifecycleSignal}. @internal */
+/** Общий сигнал операции, сохранённый {@link initializeOperationState}. @internal */
 export function lifecycleSignalOf(request: PipelineRequest): AbortSignal | undefined {
   return (request as InternalPipelineRequest)[OPERATION_STATE]?.lifecycleSignal;
 }
@@ -256,12 +254,6 @@ export function requestQueueKey(
   const key = compute(request);
   state.queueKey = key;
   return key;
-}
-
-/** Помечает запрос как часть внутренней финализации уже начатого `dispose()`. @internal */
-export function markDisposeCleanupRequest<T extends PipelineRequestInput>(request: T): T {
-  operationState(request as PipelineRequest).disposeCleanup = true;
-  return request;
 }
 
 /** Разрешено ли запросу завершать внутреннюю очистку после `dispose()`. @internal */
