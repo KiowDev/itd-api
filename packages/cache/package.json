@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/cache",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Кэширование и дедупликация запросов для itd-api",
   "repository": {
     "type": "git",
@@ -60,10 +60,10 @@
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
   "dependencies": {
-    "lru-cache": "^11.5.2"
+    "lru-cache": "^11.5.3"
   },
   "peerDependencies": {
-    "itd-api": ">=0.9.0 <1.0.0"
+    "itd-api": ">=0.11.0 <1.0.0"
   },
   "peerDependenciesMeta": {
     "itd-api": {
@@ -72,7 +72,7 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.6.2",
     "publint": "^0.3.24",
     "tsdown": "^0.22.14",
     "typescript": "^5.9.3",
