@@ -91,6 +91,11 @@ const referenceSidebar = [
     ],
   },
   {
+    text: 'Ивенты',
+    collapsed: true,
+    items: [{ text: 'Алиса AI', link: '/reference/itd-events/alice-ai' }],
+  },
+  {
     text: 'Дальше',
     collapsed: true,
     items: [
