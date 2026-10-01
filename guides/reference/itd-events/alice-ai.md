@@ -7,7 +7,7 @@ description: Ивент «Алиса AI» и полный модуль для р
 
 Школьный ивент итд.com, проходит с 1 по 29 октября 2026 года.
 
-За мелки (валюту ивента) можно покупать предметы и применять их к чужим профилям и постам: клеить наклейки на баннер, кидать водные шарики, разбивать окно портфелем, подкладывать подушку-пердушку, закрашивать текст корректором и исправлять слова красной ручкой. Свой профиль можно задёрнуть шторами, если на них собрали 100 мелков. Ещё в ивенте есть кликухи рядом с именем, своя картинка вместо эмодзи аватара, оформление поста тетрадным листом и сбор старых постов в макулатуру.
+Мелки (валюту ивента) зарабатывают на ежедневных заданиях: нужно попросить Алису AI о чём-то по школьному предмету и отправить ссылку на результат. Лучшие попадают на доску почёта. За мелки можно покупать предметы и применять их к чужим профилям и постам: клеить наклейки на баннер, кидать водные шарики, разбивать окно портфелем, подкладывать подушку-пердушку, закрашивать текст корректором и исправлять слова красной ручкой. Свой профиль можно задёрнуть шторами, если на них собрали 100 мелков. Ещё в ивенте есть кликухи рядом с именем, своя картинка вместо эмодзи аватара, оформление поста тетрадным листом сбор старых постов в макулатуру и общая доска, на которой любой с купленным мелком может нарисовать что-нибудь.
 
 ## Общие модели
 
@@ -23,13 +23,57 @@ import type { Loose } from 'itd-api';
 const AliceAiErrorCode = Object.freeze({
   /** Предмет уже потрачен или не принадлежит пользователю. */
   ItemUnavailable: 'ITEM_UNAVAILABLE',
+  /** Слишком частые запросы. */
+  RateLimitExceeded: 'RATE_LIMIT_EXCEEDED',
+  /** Действие предназначено для чужого профиля. */
+  OwnProfile: 'OWN_PROFILE',
+  /** Профиль сейчас нельзя проверить. */
+  TargetValidationUnavailable: 'TARGET_VALIDATION_UNAVAILABLE',
+  /** Товара нет в текущей витрине. */
+  NotOnShowcase: 'NOT_ON_SHOWCASE',
+  /** Товар сейчас не продаётся. */
+  ItemNotAvailable: 'ITEM_NOT_AVAILABLE',
+  /** Товар уже куплен, повторно его не продают. */
+  AlreadyPurchased: 'ALREADY_PURCHASED',
+  /** Для тетради не выбрана или неверно указана разлиновка. */
+  InvalidVariant: 'INVALID_VARIANT',
+  /** Выдача купленных предметов временно не работает; мелки не списаны. */
+  DeliveryDisabled: 'DELIVERY_DISABLED',
+  /** Аура уже измерена. */
+  AuraAlreadyMeasured: 'AURA_ALREADY_MEASURED',
+  /** Случайная кликуха уже выпала. */
+  NicknameAlreadyDrawn: 'NICKNAME_ALREADY_DRAWN',
+  /** Такой кликухи у пользователя нет. */
+  NicknameNotOwned: 'NOT_OWNED',
+  /** На шторы ещё не собрали, закрывать нечем. */
+  NoCurtains: 'NO_CURTAINS',
+  /** Ответ на задание уже отправлен, попытка использована. */
+  AttemptAlreadyUsed: 'ATTEMPT_ALREADY_USED',
+  /** Права на свою аватарку пока нет. */
+  NoProfileAvatars: 'NO_PROFILE_AVATARS',
+  /** Установка аватарок приостановлена. */
+  ProfileAvatarPaused: 'PROFILE_AVATAR_PAUSED',
+  /** Право на аватарку сначала нужно купить. */
+  ProfileAvatarPurchaseRequired: 'PROFILE_AVATAR_PURCHASE_REQUIRED',
+  /** Картинка не прошла модерацию. */
+  AvatarModerationRejected: 'AVATAR_MODERATION_REJECTED',
+  /** Модерация картинок временно не работает. */
+  AvatarModerationUnavailable: 'AVATAR_MODERATION_UNAVAILABLE',
+  /** Рисунок накладывается на чужой рисунок на доске. */
+  BoardDrawingOverlap: 'BOARD_DRAWING_OVERLAP',
+  /** Проход тряпкой слишком длинный; тряпка не потрачена. */
+  BoardWipeLimitExceeded: 'BOARD_WIPE_LIMIT_EXCEEDED',
+  /** Путь тряпки не прошёл проверку; тряпка не потрачена. */
+  InvalidBoardWipe: 'INVALID_BOARD_WIPE',
+  /** В рюкзаке нет пачек макулатуры. */
+  NoWastePaper: 'NO_WASTE_PAPER',
   /** На профиле уже лежит подушка; новую можно положить, когда пройдут сутки. */
   CushionActive: 'CUSHION_ACTIVE',
   /** Не хватает мелков на взнос. */
   InsufficientChalks: 'INSUFFICIENT_CHALKS',
   /** На шторы этого профиля уже всё собрано. */
   CurtainsFunded: 'CURTAINS_FUNDED',
-  /** Покупки ивента приостановлены. */
+  /** Покупки ивента приостановлены; мелки не списаны. */
   PurchasesDisabled: 'EVENT_PURCHASES_DISABLED',
   /** Применение предметов приостановлено. */
   ApplicationsDisabled: 'EVENT_APPLICATIONS_DISABLED',
@@ -74,6 +118,12 @@ interface AliceEventRights {
 | `GET /api/v1/aliceai/shop` | ответ: `balance`, `showcase`, `nicknameShowcase`, `items[]` |
 | `GET /api/v1/aliceai/balance` | ответ: `balance` — остаток мелков |
 | `GET /api/v1/aliceai/inventory` | ответ: `items[]` — предметы в рюкзаке |
+| `GET /api/v1/aliceai/shop/board` | ответ: `balance`, `items[]` — мелок и тряпка для доски |
+| `GET /api/v1/aliceai/shop/purchased` | ответ: `items[]` — купленные товары |
+| `POST /api/v1/aliceai/shop/items/{productId}/purchase` | `quantity`, `variant?` → `balance`, `delivery?` |
+| `POST /api/v1/aliceai/aura` | body пустой → `balance`, `aura` |
+| `POST /api/v1/aliceai/nicknames/random/purchase` | body пустой → `balance`, `nickname`, `duplicate` |
+| `POST /api/v1/aliceai/sounds/bell` | body пустой → `balance` |
 
 <details>
 <summary>Модели</summary>
@@ -97,6 +147,16 @@ const AliceProduct = Object.freeze({
   DutyCorrector: 'duty_corrector',
   /** Тетрадный лист для оформления одного своего поста. */
   PostNotebook: 'post_notebook',
+  /** Набор школьных наклеек для чужих профилей. */
+  SchoolStickers: 'school_stickers',
+  /** Анализатор ауры: один раз измеряет ауру от 0 до 100. */
+  AuraAnalyzer: 'aura_analyzer',
+  /** Случайная кликуха. */
+  RandomNickname: 'random_nickname',
+  /** Мелок для общей доски: один рисунок. 160 мелков. */
+  BoardDrawing: 'board_drawing',
+  /** Тряпка для общей доски: один проход по рисункам. 120 мелков. */
+  BoardCloth: 'board_cloth',
 } as const);
 type AliceProduct = Loose<(typeof AliceProduct)[keyof typeof AliceProduct]>;
 
@@ -106,7 +166,7 @@ const AliceItemKind = Object.freeze({
   Sticker: 'sticker',
   /** Ластик: одно стирание наклейки на любом профиле. */
   Eraser: 'eraser',
-  /** Водный шарик: мокрый след на чужом профиле на 48 часов. */
+  /** Водный шарик: мокрый след на чужом профиле на сутки. */
   WaterBalloon: 'stain',
   /** Портфель, которым разбивают окно на баннере чужого профиля. */
   Window: 'window',
@@ -185,6 +245,160 @@ interface AliceInventoryItem {
   /** Картинка наклейки. */
   asset?: string;
 }
+
+/** Результат покупки товара. */
+interface AlicePurchase {
+  /** Остаток мелков после покупки. */
+  balance: number;
+  /** Сведения о выдаче предмета в соцсеть; есть, если предмет выдаётся отдельно от рюкзака. */
+  delivery?: unknown;
+}
+
+/** Результат измерения ауры. */
+interface AliceAuraResult {
+  /** Остаток мелков. */
+  balance: number;
+  /** Аура от 0 до 100. */
+  aura: number;
+}
+
+/** Результат покупки случайной кликухи. */
+interface AliceRandomNickname {
+  /** Остаток мелков. */
+  balance: number;
+  /** Выпавшая кликуха. */
+  nickname: string;
+  /** Такая кликуха у пользователя уже была. */
+  duplicate: boolean;
+}
+```
+
+</details>
+
+## Задания и доска почёта
+
+| Маршрут | Основной контракт |
+|---|---|
+| `GET /api/v1/aliceai/tasks` | ответ: `balance`, `cycle`, `completedInCycle`, `tasks[]` |
+| `POST /api/v1/aliceai/tasks/{code}/submission` | `link` — ссылка на результат |
+| `GET /api/v1/aliceai/tasks/{code}/submission` | ответ: состояние проверки, `attemptsUsed`; `404` — ответа не было |
+| `GET /api/v1/aliceai/tasks/completed?before={cursor}` | ответ: `tasks[]`, `nextBefore` |
+| `GET /api/v1/aliceai/honor-board` | ответ: `entries[]` — рейтинг по заработанным мелкам |
+| `POST /api/v1/aliceai/screens/{screen}/view` | body пустой; отметка о просмотре раздела |
+
+<details>
+<summary>Модели</summary>
+
+```ts
+/** Задание за мелки. */
+interface AliceTask {
+  /** Код задания; по нему отправляют ответ. */
+  code: string;
+  /** Короткое название, обычно предмет. */
+  title: string;
+  /** Что нужно сделать. */
+  description: string;
+  /** Ссылка, которую пользователь отправил как ответ. */
+  link: string;
+  /** Группа заданий. */
+  group: string;
+  /** Награда в мелках. */
+  reward: number;
+  /** Сколько шагов выполнено. */
+  progress: number;
+  /** Сколько шагов нужно. */
+  target: number;
+  /** Номер дневного цикла, в котором выдано задание. */
+  cycle: number;
+  /** Когда задание засчитано. */
+  completedAt?: string;
+  /** Вид задания, например `alice_chat` — диалог с Алисой AI. */
+  kind: string;
+  /** Школьный предмет. */
+  subject: string;
+  /** Сложность, например `easy`. */
+  difficulty: string;
+  /** Примерное время на выполнение. */
+  minutes: string;
+  /** Что нужно сохранить и отправить как результат. */
+  save: string;
+}
+
+/** Задания текущего дня. */
+interface AliceTasks {
+  /** Остаток мелков. */
+  balance: number;
+  /** Дневной цикл заданий. */
+  cycle: {
+    /** Номер цикла. */
+    number: number;
+    /** Начало цикла. */
+    startsAt: string;
+    /** Конец цикла. */
+    endsAt: string;
+    /** Сколько секунд осталось до новых заданий. */
+    refreshesInSec: number;
+  };
+  /** Сколько заданий засчитано в этом цикле. */
+  completedInCycle: number;
+  /** Задания, которые ещё можно выполнить. */
+  tasks: AliceTask[];
+}
+
+/** Страница выполненных заданий. */
+interface AliceCompletedTasks {
+  /** Выполненные задания, новые первыми. */
+  tasks: AliceTask[];
+  /** Курсор следующей страницы; `null` — страниц больше нет. */
+  nextBefore: string | null;
+}
+
+/** Проверка отправленного ответа на задание. */
+interface AliceTaskSubmission {
+  /** Сколько попыток использовано. */
+  attemptsUsed: number;
+  [field: string]: unknown;
+}
+
+/** Строка доски почёта. */
+interface AliceHonorEntry {
+  /** Место в рейтинге. */
+  rank: number;
+  /** Идентификатор пользователя. */
+  userId: string;
+  /** Сколько мелков заработано на заданиях. */
+  earned: number;
+  /** Автор. */
+  author: {
+    /** Имя пользователя. */
+    username: string;
+    /** Отображаемое имя. */
+    displayName: string;
+    /** Картинка аватара, если стоит своя. */
+    avatarImageUrl: string | null;
+    /** Эмодзи аватара. */
+    avatar: string;
+  };
+}
+
+/** Раздел приложения ивента. */
+const AliceScreen = Object.freeze({
+  /** Главная. */
+  Main: 'main',
+  /** Задания. */
+  Tasks: 'tasks',
+  /** Доска почёта. */
+  Honor: 'honor',
+  /** Магазин. */
+  Shop: 'shop',
+  /** Общая доска. */
+  Board: 'board',
+  /** Установка своей аватарки. */
+  Avatar: 'avatar',
+  /** Сбор макулатуры. */
+  WastePaper: 'waste-paper',
+} as const);
+type AliceScreen = Loose<(typeof AliceScreen)[keyof typeof AliceScreen]>;
 ```
 
 </details>
@@ -218,8 +432,10 @@ const AlicePlacementKind = Object.freeze({
 } as const);
 type AlicePlacementKind = Loose<(typeof AlicePlacementKind)[keyof typeof AlicePlacementKind]>;
 
-/** Область профиля, в которую попадает шарик или кладётся подушка. */
+/** Область профиля, к которой привязан предмет. */
 const AliceAnchorKind = Object.freeze({
+  /** Баннер профиля; к нему привязаны наклейки. */
+  Banner: 'banner',
   /** Шапка профиля. */
   ProfileHeader: 'profile_header',
   /** Конкретный пост на стене профиля. */
@@ -274,6 +490,17 @@ interface AlicePlacement {
   z: number;
   /** Сколько раз наклейку уже стирали. После третьего стирания она исчезает. */
   wear: number;
+  /** Кто наклеил. */
+  createdBy: string;
+  /** Когда наклеили. */
+  createdAt: string;
+  /** Область, к которой привязана наклейка. */
+  anchor: {
+    /** Обычно баннер. */
+    kind: AliceAnchorKind;
+    /** Идентификатор поста или `null`. */
+    id: string | null;
+  };
 }
 
 /** След водного шарика. */
@@ -286,9 +513,11 @@ interface AliceBalloon {
   y: number;
   /** Поворот пятна в градусах. */
   angle: number;
+  /** Кто бросил шарик. */
+  thrownBy: string;
   /** Когда шарик бросили. */
   thrownAt: string;
-  /** Когда след пропадёт: через 48 часов после броска. */
+  /** Когда след пропадёт: через сутки после броска. */
   expiresAt: string;
   /** Куда попал шарик. */
   anchor: {
@@ -345,8 +574,8 @@ interface AliceProfile {
   };
   /** Сбор на шторы и их положение. */
   curtains: AliceCurtains;
-  /** Результат анализатора ауры, если он есть. */
-  aura: unknown;
+  /** Аура владельца от 0 до 100; `null`, если её не измеряли. */
+  aura: number | null;
   /** Активная кликуха владельца. */
   nickname: string | null;
   /** Наклейки и пятна на баннере. */
@@ -402,9 +631,12 @@ interface AliceDonation {
 |---|---|
 | `GET /api/v1/aliceai/nicknames` | ответ: `owned[]`, `active` |
 | `PUT /api/v1/aliceai/nicknames/active` | `form` — кликуха или `null` → `nickname` |
-| `GET /api/event-nicknames/?ids={id},{id}` | ответ: `data` — кликуха по идентификатору пользователя, `serverTime`, `displayValidUntil` |
+| `GET /api/event-nicknames/?ids={id},{id}` | ответ: `data` — `id`, `label`, `styleKey`, `expiresAt` кликухи по идентификатору пользователя, `serverTime`, `displayValidUntil` |
 | `GET /api/profile-avatar/` | ответ: `data` — права на свою картинку аватара и её состояние |
 | `DELETE /api/profile-avatar/` | удаление своей картинки аватара |
+| `POST /api/files/avatar` | `FormData` с полем `file` → `id`, `url` |
+| `PUT /api/profile-avatar/` | `eventId`, `fileId`, `operationId` |
+| `DELETE /api/files/{fileId}` | удаление загруженного файла |
 
 <details>
 <summary>Модели</summary>
@@ -418,10 +650,26 @@ interface AliceNicknames {
   active: string | null;
 }
 
+/** Кликуха, которая показывается после имени пользователя. */
+interface AliceEventNickname {
+  /** Идентификатор кликухи. */
+  id: string;
+  /** Текст кликухи. */
+  label: string;
+  /** Оформление, например `school_gold` — золотом. */
+  styleKey: string;
+  /** Ивент, в котором получена кликуха. */
+  eventId: string;
+  /** До какого момента кликуха показывается. */
+  expiresAt: string;
+  /** Версия выбора кликухи у пользователя. */
+  stateVersion: number;
+}
+
 /** Выбранные кликухи нескольких пользователей. */
 interface AliceEventNicknames {
   /** Кликуха по идентификатору пользователя; `null` — кликухи нет. */
-  data: Record<string, string | null>;
+  data: Record<string, AliceEventNickname | null>;
   /** Время сервера. */
   serverTime: string;
   /** До какого момента ответ можно считать актуальным. */
@@ -439,11 +687,21 @@ interface AliceProfileAvatar {
     pending: unknown;
   };
 }
+
+/** Загруженный файл картинки для аватарки. */
+interface AliceAvatarFile {
+  /** Идентификатор файла; его передают в `installAvatar()`. */
+  id: string;
+  /** Адрес картинки. */
+  url: string;
+}
 ```
 
 </details>
 
 ## Посты
+
+Ответы с постами содержат поля ивента `corrector`, `redPen` и `notebook` — их форма описана в `AlicePostFields`.
 
 | Маршрут | Основной контракт |
 |---|---|
@@ -460,6 +718,8 @@ interface AliceProfileAvatar {
 | `POST /api/red-pens/cancel` | `postId`, `claimId` |
 | `POST /api/red-pens/report` | `postId`, `claimId`, `reason` |
 | `POST /api/v1/aliceai/waste-paper/posts/{postId}` | body пустой, ключ в `Idempotency-Key` |
+| `GET /api/v1/aliceai/waste-paper` | ответ: `total`, `mine`, `handedIn`, `closed` |
+| `POST /api/v1/aliceai/waste-paper/hand-ins` | body пустой → `total`, `mine`, `handedIn`, `myHandedIn` |
 
 <details>
 <summary>Модели</summary>
@@ -505,8 +765,8 @@ interface CorrectorApply {
   eventId: string;
   /** Идентификатор чужого поста. */
   postId: string;
-  /** Версия текста поста, к которой относятся границы. */
-  revision: number;
+  /** Версия текста поста из `CorrectorState.revision` или `RedPenState.revision`. */
+  revision: string;
   /** Начало фрагмента в тексте поста. */
   start: number;
   /** Конец фрагмента: от 1 до 10 символов без учёта пробелов. */
@@ -522,6 +782,302 @@ interface RedPenApply extends Omit<CorrectorApply, 'end'> {
   /** Новое написание: до 10 видимых символов. */
   replacement: string;
 }
+
+/** Общий сбор макулатуры. */
+interface AliceWastePaper {
+  /** Сколько постов сдано всеми пользователями. */
+  total: number;
+  /** Сколько пачек макулатуры лежит в рюкзаке пользователя и ещё не засчитано. */
+  mine: number;
+  /** Сколько пачек пользователь уже сдал. */
+  handedIn: number;
+  /** Сбор закрыт. */
+  closed: boolean;
+}
+
+/** Результат сдачи пачек из рюкзака. */
+interface AliceWastePaperHandIn {
+  /** Сколько постов сдано всеми пользователями. */
+  total: number;
+  /** Сколько пачек осталось в рюкзаке. */
+  mine: number;
+  /** Сколько пачек засчитано этим запросом. */
+  handedIn: number;
+  /** Сколько пачек пользователь сдал всего. */
+  myHandedIn: number;
+}
+
+/** Автор правки на посте. */
+interface AlicePostActor {
+  /** Идентификатор пользователя. */
+  id: string;
+  /** Имя пользователя. */
+  username: string;
+  /** Отображаемое имя. */
+  displayName: string;
+  /** Кликуха автора. */
+  activeNickname?: AliceEventNickname | null;
+}
+
+/** Закрашивания корректором на одном посте. */
+interface CorrectorState {
+  /** Версия текста поста; передаётся в `applyCorrector()`. */
+  revision: string;
+  /** Время сервера. */
+  serverTime: string;
+  /** Ивенты, в которых доступен корректор. */
+  events: Array<{
+    /** Идентификатор ивента. */
+    id: string;
+    /** Когда ивент заканчивается. */
+    endsAt: string;
+    /** Можно ли сейчас закрашивать. */
+    applicationsEnabled: boolean;
+    /** Сколько корректоров пользователь уже потратил на этот пост: не больше трёх. */
+    used: number;
+  }>;
+  /** Закрашенные фрагменты. */
+  marks: Array<{
+    /** Идентификатор закрашивания; нужен для жалобы. */
+    id: string;
+    /** Ивент. */
+    eventId: string;
+    /** Начало фрагмента в тексте поста. */
+    start: number;
+    /** Конец фрагмента. */
+    end: number;
+    /** До какого момента закрашивание держится. */
+    endsAt: string;
+    /** Когда закрасили. */
+    createdAt: string;
+    /** То же время в микросекундах. */
+    createdAtMicros: number;
+    /** Кто закрасил. */
+    actor: AlicePostActor;
+  }>;
+}
+
+/** Право одного пользователя править пост красной ручкой. */
+interface RedPenClaim {
+  /** Идентификатор; нужен для отмены и жалобы. */
+  id: string;
+  /** Ивент. */
+  eventId: string;
+  /** До какого момента правки держатся. */
+  endsAt: string;
+  /** Сколько слов уже исправлено. */
+  used: number;
+  /** Сколько слов можно исправить: 3. */
+  limit: number;
+  /** Это правка текущего пользователя. */
+  isOwner: boolean;
+  /** Кто правит. */
+  actor: AlicePostActor;
+}
+
+/** Исправления красной ручкой на одном посте. */
+interface RedPenState {
+  /** Версия текста поста; передаётся в `applyRedPen()`. */
+  revision: string;
+  /** Время сервера. */
+  serverTime: string;
+  /** Ивенты, в которых доступна ручка. */
+  events: Array<{ id: string; endsAt: string; applicationsEnabled: boolean }>;
+  /** Право, которое сейчас действует на посте; `null` — пост никто не правил. */
+  claim: RedPenClaim | null;
+  /** Все права на правку этого поста. */
+  claims: RedPenClaim[];
+  /** Исправленные слова. */
+  corrections: Array<{
+    /** Идентификатор исправления. */
+    id: string;
+    /** Начало слова в тексте поста. */
+    start: number;
+    /** Конец слова. */
+    end: number;
+    /** Новое написание. */
+    replacement: string;
+    /** Когда исправили. */
+    createdAt: string;
+    /** То же время в микросекундах. */
+    createdAtMicros: number;
+  }>;
+}
+
+/** Поля ивента, которые приходят в ответах с постами. */
+interface AlicePostFields {
+  /** Закрашивания корректором. */
+  corrector?: CorrectorState;
+  /** Исправления красной ручкой. */
+  redPen?: RedPenState;
+  /** Оформление тетрадным листом. */
+  notebook?: { style: NotebookStyle } | null;
+}
+```
+
+</details>
+
+## Доска
+
+| Маршрут | Основной контракт |
+|---|---|
+| `GET /api/v1/aliceai/board` | ответ: `revision`, `drawings[]`, `wipes[]`, `contract` |
+| `GET /api/v1/aliceai/board/inventory` | ответ: `items[]` — мелки и тряпки |
+| `POST /api/v1/aliceai/board/socket-ticket` | `{}` → `ticket` |
+| `WS /api/v1/aliceai/board/ws?ticket={ticket}` | события `drawing.created`, `board.wiped`, `presence.updated`; `ping` → `pong` |
+| `POST /api/v1/aliceai/board/drawings` | `inventoryItemId`, `strokes[]` → `revision`, `drawing` |
+| `POST /api/v1/aliceai/board/wipes` | `inventoryItemId`, `path[]` |
+
+<details>
+<summary>Модели</summary>
+
+```ts
+/** Точка на доске. Доска — квадрат 1024×1024, отсчёт от левого верхнего угла. */
+interface BoardPoint {
+  /** Горизонтальная координата. */
+  x: number;
+  /** Вертикальная координата. */
+  y: number;
+}
+
+/** Одна линия мелом. */
+interface BoardStroke {
+  /** Цвет из `BoardContract.colors`. */
+  color: string;
+  /** Толщина из `BoardContract.widths`. */
+  width: number;
+  /** Точки линии по порядку. */
+  points: BoardPoint[];
+}
+
+/** Ограничения доски. Сервер присылает их вместе с состоянием доски. */
+interface BoardContract {
+  /** Ширина доски: 1024. */
+  width: number;
+  /** Высота доски: 1024. */
+  height: number;
+  /** Наибольшая суммарная длина линий одного рисунка: 1140. */
+  lineBudget: number;
+  /** Наименьшая длина одной линии: 2. */
+  minStrokeLength: number;
+  /** Наибольшая ширина рисунка: 213. */
+  maxDrawingWidth: number;
+  /** Наибольшая высота рисунка: 160. */
+  maxDrawingHeight: number;
+  /** Наибольшее число линий в рисунке: 48. */
+  maxStrokes: number;
+  /** Наибольшее число точек во всех линиях рисунка: 1400. */
+  maxPoints: number;
+  /** Радиус тряпки: 42. */
+  wipeRadius: number;
+  /** Наибольшее число точек в проходе тряпки: 192. */
+  maxWipePoints: number;
+  /** Наибольшая длина прохода тряпки: 480. */
+  maxWipeLength: number;
+  /** Наибольший размах прохода тряпки: 360. */
+  maxWipeSpan: number;
+  /** Цвета мела: белый, розовый, голубой, зелёный. */
+  colors: string[];
+  /** Допустимые толщины линии: 6. */
+  widths: number[];
+}
+
+/** Рисунок на доске. */
+interface BoardDrawing {
+  /** Идентификатор рисунка. */
+  id: string;
+  /** Автор рисунка. */
+  author: { id: string; username: string; displayName: string };
+  /** Оставшиеся линии рисунка; стёртые тряпкой части уже вырезаны. */
+  strokes: BoardStroke[];
+  /** Рамка, в которую вписан рисунок. */
+  bounds: { top: number; left: number; right: number; bottom: number };
+  /** Длина оставшихся линий. */
+  lineLength: number;
+  /** Длина линий до стирания. */
+  originalLineLength: number;
+  /** Показывается ли подпись автора. */
+  authorVisible: boolean;
+  /** Версия доски, в которой рисунок появился. */
+  revision: number;
+  /** Когда рисунок опубликован. */
+  createdAt: string;
+}
+
+/** Разводы мела, оставшиеся после прохода тряпкой. */
+interface BoardWipe {
+  /** Идентификатор прохода. */
+  id: string;
+  /** Версия доски, в которой прошла тряпка. */
+  revision: number;
+  /** Разводы. */
+  smudges: Array<{
+    /** Цвет стёртого мела. */
+    color: string;
+    /** Точки развода. */
+    points: BoardPoint[];
+    /** Насколько заметен развод. */
+    strength: number;
+  }>;
+}
+
+/** Состояние общей доски. */
+interface AliceBoard {
+  /** Версия доски; растёт с каждым рисунком и проходом тряпки. */
+  revision: number;
+  /** Рисунки. */
+  drawings: BoardDrawing[];
+  /** Разводы от тряпки. */
+  wipes: BoardWipe[];
+  /** Ограничения доски. */
+  contract: BoardContract;
+}
+
+/** Мелок или тряпка в рюкзаке доски. */
+interface BoardInventoryItem {
+  /** Идентификатор экземпляра; его передают в действие. */
+  id: string;
+  /** `board_drawing` — мелок, `board_cloth` — тряпка. */
+  kind: string;
+}
+
+/** Тип сообщения WebSocket доски. */
+const BoardSocketEvent = Object.freeze({
+  /** Появился новый рисунок. */
+  DrawingCreated: 'drawing.created',
+  /** По доске прошлись тряпкой; состояние нужно перечитать через `board()`. */
+  BoardWiped: 'board.wiped',
+  /** Изменился список тех, кто смотрит доску. */
+  PresenceUpdated: 'presence.updated',
+} as const);
+
+/**
+ * Сообщение WebSocket доски. Подключение: `wss://итд.com/api/v1/aliceai/board/ws?ticket=<билет>`.
+ * Клиент раз в 20 секунд отправляет строку `ping`, сервер отвечает `pong`.
+ */
+type BoardSocketMessage =
+  | {
+      /** Появился новый рисунок. */
+      type: typeof BoardSocketEvent.DrawingCreated;
+      /** Новая версия доски. */
+      revision: number;
+      /** Рисунок. */
+      drawing: BoardDrawing;
+    }
+  | {
+      /** По доске прошлись тряпкой; состояние нужно перечитать через `board()`. */
+      type: typeof BoardSocketEvent.BoardWiped;
+      /** Новая версия доски. */
+      revision: number;
+    }
+  | {
+      /** Изменился список тех, кто смотрит доску. */
+      type: typeof BoardSocketEvent.PresenceUpdated;
+      /** Сколько человек смотрит доску. */
+      onlineCount: number;
+      /** Кто смотрит доску. */
+      users: Array<{ id: string; [field: string]: unknown }>;
+    };
 ```
 
 </details>
@@ -548,13 +1104,57 @@ import {
 const AliceAiErrorCode = Object.freeze({
   /** Предмет уже потрачен или не принадлежит пользователю. */
   ItemUnavailable: 'ITEM_UNAVAILABLE',
+  /** Слишком частые запросы. */
+  RateLimitExceeded: 'RATE_LIMIT_EXCEEDED',
+  /** Действие предназначено для чужого профиля. */
+  OwnProfile: 'OWN_PROFILE',
+  /** Профиль сейчас нельзя проверить. */
+  TargetValidationUnavailable: 'TARGET_VALIDATION_UNAVAILABLE',
+  /** Товара нет в текущей витрине. */
+  NotOnShowcase: 'NOT_ON_SHOWCASE',
+  /** Товар сейчас не продаётся. */
+  ItemNotAvailable: 'ITEM_NOT_AVAILABLE',
+  /** Товар уже куплен, повторно его не продают. */
+  AlreadyPurchased: 'ALREADY_PURCHASED',
+  /** Для тетради не выбрана или неверно указана разлиновка. */
+  InvalidVariant: 'INVALID_VARIANT',
+  /** Выдача купленных предметов временно не работает; мелки не списаны. */
+  DeliveryDisabled: 'DELIVERY_DISABLED',
+  /** Аура уже измерена. */
+  AuraAlreadyMeasured: 'AURA_ALREADY_MEASURED',
+  /** Случайная кликуха уже выпала. */
+  NicknameAlreadyDrawn: 'NICKNAME_ALREADY_DRAWN',
+  /** Такой кликухи у пользователя нет. */
+  NicknameNotOwned: 'NOT_OWNED',
+  /** На шторы ещё не собрали, закрывать нечем. */
+  NoCurtains: 'NO_CURTAINS',
+  /** Ответ на задание уже отправлен, попытка использована. */
+  AttemptAlreadyUsed: 'ATTEMPT_ALREADY_USED',
+  /** Права на свою аватарку пока нет. */
+  NoProfileAvatars: 'NO_PROFILE_AVATARS',
+  /** Установка аватарок приостановлена. */
+  ProfileAvatarPaused: 'PROFILE_AVATAR_PAUSED',
+  /** Право на аватарку сначала нужно купить. */
+  ProfileAvatarPurchaseRequired: 'PROFILE_AVATAR_PURCHASE_REQUIRED',
+  /** Картинка не прошла модерацию. */
+  AvatarModerationRejected: 'AVATAR_MODERATION_REJECTED',
+  /** Модерация картинок временно не работает. */
+  AvatarModerationUnavailable: 'AVATAR_MODERATION_UNAVAILABLE',
+  /** Рисунок накладывается на чужой рисунок на доске. */
+  BoardDrawingOverlap: 'BOARD_DRAWING_OVERLAP',
+  /** Проход тряпкой слишком длинный; тряпка не потрачена. */
+  BoardWipeLimitExceeded: 'BOARD_WIPE_LIMIT_EXCEEDED',
+  /** Путь тряпки не прошёл проверку; тряпка не потрачена. */
+  InvalidBoardWipe: 'INVALID_BOARD_WIPE',
+  /** В рюкзаке нет пачек макулатуры. */
+  NoWastePaper: 'NO_WASTE_PAPER',
   /** На профиле уже лежит подушка; новую можно положить, когда пройдут сутки. */
   CushionActive: 'CUSHION_ACTIVE',
   /** Не хватает мелков на взнос. */
   InsufficientChalks: 'INSUFFICIENT_CHALKS',
   /** На шторы этого профиля уже всё собрано. */
   CurtainsFunded: 'CURTAINS_FUNDED',
-  /** Покупки ивента приостановлены. */
+  /** Покупки ивента приостановлены; мелки не списаны. */
   PurchasesDisabled: 'EVENT_PURCHASES_DISABLED',
   /** Применение предметов приостановлено. */
   ApplicationsDisabled: 'EVENT_APPLICATIONS_DISABLED',
@@ -605,6 +1205,16 @@ const AliceProduct = Object.freeze({
   DutyCorrector: 'duty_corrector',
   /** Тетрадный лист для оформления одного своего поста. */
   PostNotebook: 'post_notebook',
+  /** Набор школьных наклеек для чужих профилей. */
+  SchoolStickers: 'school_stickers',
+  /** Анализатор ауры: один раз измеряет ауру от 0 до 100. */
+  AuraAnalyzer: 'aura_analyzer',
+  /** Случайная кликуха. */
+  RandomNickname: 'random_nickname',
+  /** Мелок для общей доски: один рисунок. 160 мелков. */
+  BoardDrawing: 'board_drawing',
+  /** Тряпка для общей доски: один проход по рисункам. 120 мелков. */
+  BoardCloth: 'board_cloth',
 } as const);
 type AliceProduct = Loose<(typeof AliceProduct)[keyof typeof AliceProduct]>;
 
@@ -614,7 +1224,7 @@ const AliceItemKind = Object.freeze({
   Sticker: 'sticker',
   /** Ластик: одно стирание наклейки на любом профиле. */
   Eraser: 'eraser',
-  /** Водный шарик: мокрый след на чужом профиле на 48 часов. */
+  /** Водный шарик: мокрый след на чужом профиле на сутки. */
   WaterBalloon: 'stain',
   /** Портфель, которым разбивают окно на баннере чужого профиля. */
   Window: 'window',
@@ -694,6 +1304,142 @@ interface AliceInventoryItem {
   asset?: string;
 }
 
+/** Результат покупки товара. */
+interface AlicePurchase {
+  /** Остаток мелков после покупки. */
+  balance: number;
+  /** Сведения о выдаче предмета в соцсеть; есть, если предмет выдаётся отдельно от рюкзака. */
+  delivery?: unknown;
+}
+
+/** Результат измерения ауры. */
+interface AliceAuraResult {
+  /** Остаток мелков. */
+  balance: number;
+  /** Аура от 0 до 100. */
+  aura: number;
+}
+
+/** Результат покупки случайной кликухи. */
+interface AliceRandomNickname {
+  /** Остаток мелков. */
+  balance: number;
+  /** Выпавшая кликуха. */
+  nickname: string;
+  /** Такая кликуха у пользователя уже была. */
+  duplicate: boolean;
+}
+
+/** Задание за мелки. */
+interface AliceTask {
+  /** Код задания; по нему отправляют ответ. */
+  code: string;
+  /** Короткое название, обычно предмет. */
+  title: string;
+  /** Что нужно сделать. */
+  description: string;
+  /** Ссылка, которую пользователь отправил как ответ. */
+  link: string;
+  /** Группа заданий. */
+  group: string;
+  /** Награда в мелках. */
+  reward: number;
+  /** Сколько шагов выполнено. */
+  progress: number;
+  /** Сколько шагов нужно. */
+  target: number;
+  /** Номер дневного цикла, в котором выдано задание. */
+  cycle: number;
+  /** Когда задание засчитано. */
+  completedAt?: string;
+  /** Вид задания, например `alice_chat` — диалог с Алисой AI. */
+  kind: string;
+  /** Школьный предмет. */
+  subject: string;
+  /** Сложность, например `easy`. */
+  difficulty: string;
+  /** Примерное время на выполнение. */
+  minutes: string;
+  /** Что нужно сохранить и отправить как результат. */
+  save: string;
+}
+
+/** Задания текущего дня. */
+interface AliceTasks {
+  /** Остаток мелков. */
+  balance: number;
+  /** Дневной цикл заданий. */
+  cycle: {
+    /** Номер цикла. */
+    number: number;
+    /** Начало цикла. */
+    startsAt: string;
+    /** Конец цикла. */
+    endsAt: string;
+    /** Сколько секунд осталось до новых заданий. */
+    refreshesInSec: number;
+  };
+  /** Сколько заданий засчитано в этом цикле. */
+  completedInCycle: number;
+  /** Задания, которые ещё можно выполнить. */
+  tasks: AliceTask[];
+}
+
+/** Страница выполненных заданий. */
+interface AliceCompletedTasks {
+  /** Выполненные задания, новые первыми. */
+  tasks: AliceTask[];
+  /** Курсор следующей страницы; `null` — страниц больше нет. */
+  nextBefore: string | null;
+}
+
+/** Проверка отправленного ответа на задание. */
+interface AliceTaskSubmission {
+  /** Сколько попыток использовано. */
+  attemptsUsed: number;
+  [field: string]: unknown;
+}
+
+/** Строка доски почёта. */
+interface AliceHonorEntry {
+  /** Место в рейтинге. */
+  rank: number;
+  /** Идентификатор пользователя. */
+  userId: string;
+  /** Сколько мелков заработано на заданиях. */
+  earned: number;
+  /** Автор. */
+  author: {
+    /** Имя пользователя. */
+    username: string;
+    /** Отображаемое имя. */
+    displayName: string;
+    /** Картинка аватара, если стоит своя. */
+    avatarImageUrl: string | null;
+    /** Эмодзи аватара. */
+    avatar: string;
+  };
+}
+
+/** Раздел приложения ивента. */
+const AliceScreen = Object.freeze({
+  /** Главная. */
+  Main: 'main',
+  /** Задания. */
+  Tasks: 'tasks',
+  /** Доска почёта. */
+  Honor: 'honor',
+  /** Магазин. */
+  Shop: 'shop',
+  /** Общая доска. */
+  Board: 'board',
+  /** Установка своей аватарки. */
+  Avatar: 'avatar',
+  /** Сбор макулатуры. */
+  WastePaper: 'waste-paper',
+} as const);
+type AliceScreen = Loose<(typeof AliceScreen)[keyof typeof AliceScreen]>;
+
 /** Вид следа на баннере профиля. */
 const AlicePlacementKind = Object.freeze({
   /** Наклейка. */
@@ -703,8 +1449,10 @@ const AlicePlacementKind = Object.freeze({
 } as const);
 type AlicePlacementKind = Loose<(typeof AlicePlacementKind)[keyof typeof AlicePlacementKind]>;
 
-/** Область профиля, в которую попадает шарик или кладётся подушка. */
+/** Область профиля, к которой привязан предмет. */
 const AliceAnchorKind = Object.freeze({
+  /** Баннер профиля; к нему привязаны наклейки. */
+  Banner: 'banner',
   /** Шапка профиля. */
   ProfileHeader: 'profile_header',
   /** Конкретный пост на стене профиля. */
@@ -759,6 +1507,17 @@ interface AlicePlacement {
   z: number;
   /** Сколько раз наклейку уже стирали. После третьего стирания она исчезает. */
   wear: number;
+  /** Кто наклеил. */
+  createdBy: string;
+  /** Когда наклеили. */
+  createdAt: string;
+  /** Область, к которой привязана наклейка. */
+  anchor: {
+    /** Обычно баннер. */
+    kind: AliceAnchorKind;
+    /** Идентификатор поста или `null`. */
+    id: string | null;
+  };
 }
 
 /** След водного шарика. */
@@ -771,9 +1530,11 @@ interface AliceBalloon {
   y: number;
   /** Поворот пятна в градусах. */
   angle: number;
+  /** Кто бросил шарик. */
+  thrownBy: string;
   /** Когда шарик бросили. */
   thrownAt: string;
-  /** Когда след пропадёт: через 48 часов после броска. */
+  /** Когда след пропадёт: через сутки после броска. */
   expiresAt: string;
   /** Куда попал шарик. */
   anchor: {
@@ -830,8 +1591,8 @@ interface AliceProfile {
   };
   /** Сбор на шторы и их положение. */
   curtains: AliceCurtains;
-  /** Результат анализатора ауры, если он есть. */
-  aura: unknown;
+  /** Аура владельца от 0 до 100; `null`, если её не измеряли. */
+  aura: number | null;
   /** Активная кликуха владельца. */
   nickname: string | null;
   /** Наклейки и пятна на баннере. */
@@ -886,10 +1647,26 @@ interface AliceNicknames {
   active: string | null;
 }
 
+/** Кликуха, которая показывается после имени пользователя. */
+interface AliceEventNickname {
+  /** Идентификатор кликухи. */
+  id: string;
+  /** Текст кликухи. */
+  label: string;
+  /** Оформление, например `school_gold` — золотом. */
+  styleKey: string;
+  /** Ивент, в котором получена кликуха. */
+  eventId: string;
+  /** До какого момента кликуха показывается. */
+  expiresAt: string;
+  /** Версия выбора кликухи у пользователя. */
+  stateVersion: number;
+}
+
 /** Выбранные кликухи нескольких пользователей. */
 interface AliceEventNicknames {
   /** Кликуха по идентификатору пользователя; `null` — кликухи нет. */
-  data: Record<string, string | null>;
+  data: Record<string, AliceEventNickname | null>;
   /** Время сервера. */
   serverTime: string;
   /** До какого момента ответ можно считать актуальным. */
@@ -906,6 +1683,14 @@ interface AliceProfileAvatar {
     /** Картинка на проверке. */
     pending: unknown;
   };
+}
+
+/** Загруженный файл картинки для аватарки. */
+interface AliceAvatarFile {
+  /** Идентификатор файла; его передают в `installAvatar()`. */
+  id: string;
+  /** Адрес картинки. */
+  url: string;
 }
 
 /** Разлиновка тетрадного листа под постом. */
@@ -948,8 +1733,8 @@ interface CorrectorApply {
   eventId: string;
   /** Идентификатор чужого поста. */
   postId: string;
-  /** Версия текста поста, к которой относятся границы. */
-  revision: number;
+  /** Версия текста поста из `CorrectorState.revision` или `RedPenState.revision`. */
+  revision: string;
   /** Начало фрагмента в тексте поста. */
   start: number;
   /** Конец фрагмента: от 1 до 10 символов без учёта пробелов. */
@@ -966,6 +1751,284 @@ interface RedPenApply extends Omit<CorrectorApply, 'end'> {
   replacement: string;
 }
 
+/** Общий сбор макулатуры. */
+interface AliceWastePaper {
+  /** Сколько постов сдано всеми пользователями. */
+  total: number;
+  /** Сколько пачек макулатуры лежит в рюкзаке пользователя и ещё не засчитано. */
+  mine: number;
+  /** Сколько пачек пользователь уже сдал. */
+  handedIn: number;
+  /** Сбор закрыт. */
+  closed: boolean;
+}
+
+/** Результат сдачи пачек из рюкзака. */
+interface AliceWastePaperHandIn {
+  /** Сколько постов сдано всеми пользователями. */
+  total: number;
+  /** Сколько пачек осталось в рюкзаке. */
+  mine: number;
+  /** Сколько пачек засчитано этим запросом. */
+  handedIn: number;
+  /** Сколько пачек пользователь сдал всего. */
+  myHandedIn: number;
+}
+
+/** Автор правки на посте. */
+interface AlicePostActor {
+  /** Идентификатор пользователя. */
+  id: string;
+  /** Имя пользователя. */
+  username: string;
+  /** Отображаемое имя. */
+  displayName: string;
+  /** Кликуха автора. */
+  activeNickname?: AliceEventNickname | null;
+}
+
+/** Закрашивания корректором на одном посте. */
+interface CorrectorState {
+  /** Версия текста поста; передаётся в `applyCorrector()`. */
+  revision: string;
+  /** Время сервера. */
+  serverTime: string;
+  /** Ивенты, в которых доступен корректор. */
+  events: Array<{
+    /** Идентификатор ивента. */
+    id: string;
+    /** Когда ивент заканчивается. */
+    endsAt: string;
+    /** Можно ли сейчас закрашивать. */
+    applicationsEnabled: boolean;
+    /** Сколько корректоров пользователь уже потратил на этот пост: не больше трёх. */
+    used: number;
+  }>;
+  /** Закрашенные фрагменты. */
+  marks: Array<{
+    /** Идентификатор закрашивания; нужен для жалобы. */
+    id: string;
+    /** Ивент. */
+    eventId: string;
+    /** Начало фрагмента в тексте поста. */
+    start: number;
+    /** Конец фрагмента. */
+    end: number;
+    /** До какого момента закрашивание держится. */
+    endsAt: string;
+    /** Когда закрасили. */
+    createdAt: string;
+    /** То же время в микросекундах. */
+    createdAtMicros: number;
+    /** Кто закрасил. */
+    actor: AlicePostActor;
+  }>;
+}
+
+/** Право одного пользователя править пост красной ручкой. */
+interface RedPenClaim {
+  /** Идентификатор; нужен для отмены и жалобы. */
+  id: string;
+  /** Ивент. */
+  eventId: string;
+  /** До какого момента правки держатся. */
+  endsAt: string;
+  /** Сколько слов уже исправлено. */
+  used: number;
+  /** Сколько слов можно исправить: 3. */
+  limit: number;
+  /** Это правка текущего пользователя. */
+  isOwner: boolean;
+  /** Кто правит. */
+  actor: AlicePostActor;
+}
+
+/** Исправления красной ручкой на одном посте. */
+interface RedPenState {
+  /** Версия текста поста; передаётся в `applyRedPen()`. */
+  revision: string;
+  /** Время сервера. */
+  serverTime: string;
+  /** Ивенты, в которых доступна ручка. */
+  events: Array<{ id: string; endsAt: string; applicationsEnabled: boolean }>;
+  /** Право, которое сейчас действует на посте; `null` — пост никто не правил. */
+  claim: RedPenClaim | null;
+  /** Все права на правку этого поста. */
+  claims: RedPenClaim[];
+  /** Исправленные слова. */
+  corrections: Array<{
+    /** Идентификатор исправления. */
+    id: string;
+    /** Начало слова в тексте поста. */
+    start: number;
+    /** Конец слова. */
+    end: number;
+    /** Новое написание. */
+    replacement: string;
+    /** Когда исправили. */
+    createdAt: string;
+    /** То же время в микросекундах. */
+    createdAtMicros: number;
+  }>;
+}
+
+/** Поля ивента, которые приходят в ответах с постами. */
+interface AlicePostFields {
+  /** Закрашивания корректором. */
+  corrector?: CorrectorState;
+  /** Исправления красной ручкой. */
+  redPen?: RedPenState;
+  /** Оформление тетрадным листом. */
+  notebook?: { style: NotebookStyle } | null;
+}
+
+/** Точка на доске. Доска — квадрат 1024×1024, отсчёт от левого верхнего угла. */
+interface BoardPoint {
+  /** Горизонтальная координата. */
+  x: number;
+  /** Вертикальная координата. */
+  y: number;
+}
+
+/** Одна линия мелом. */
+interface BoardStroke {
+  /** Цвет из `BoardContract.colors`. */
+  color: string;
+  /** Толщина из `BoardContract.widths`. */
+  width: number;
+  /** Точки линии по порядку. */
+  points: BoardPoint[];
+}
+
+/** Ограничения доски. Сервер присылает их вместе с состоянием доски. */
+interface BoardContract {
+  /** Ширина доски: 1024. */
+  width: number;
+  /** Высота доски: 1024. */
+  height: number;
+  /** Наибольшая суммарная длина линий одного рисунка: 1140. */
+  lineBudget: number;
+  /** Наименьшая длина одной линии: 2. */
+  minStrokeLength: number;
+  /** Наибольшая ширина рисунка: 213. */
+  maxDrawingWidth: number;
+  /** Наибольшая высота рисунка: 160. */
+  maxDrawingHeight: number;
+  /** Наибольшее число линий в рисунке: 48. */
+  maxStrokes: number;
+  /** Наибольшее число точек во всех линиях рисунка: 1400. */
+  maxPoints: number;
+  /** Радиус тряпки: 42. */
+  wipeRadius: number;
+  /** Наибольшее число точек в проходе тряпки: 192. */
+  maxWipePoints: number;
+  /** Наибольшая длина прохода тряпки: 480. */
+  maxWipeLength: number;
+  /** Наибольший размах прохода тряпки: 360. */
+  maxWipeSpan: number;
+  /** Цвета мела: белый, розовый, голубой, зелёный. */
+  colors: string[];
+  /** Допустимые толщины линии: 6. */
+  widths: number[];
+}
+
+/** Рисунок на доске. */
+interface BoardDrawing {
+  /** Идентификатор рисунка. */
+  id: string;
+  /** Автор рисунка. */
+  author: { id: string; username: string; displayName: string };
+  /** Оставшиеся линии рисунка; стёртые тряпкой части уже вырезаны. */
+  strokes: BoardStroke[];
+  /** Рамка, в которую вписан рисунок. */
+  bounds: { top: number; left: number; right: number; bottom: number };
+  /** Длина оставшихся линий. */
+  lineLength: number;
+  /** Длина линий до стирания. */
+  originalLineLength: number;
+  /** Показывается ли подпись автора. */
+  authorVisible: boolean;
+  /** Версия доски, в которой рисунок появился. */
+  revision: number;
+  /** Когда рисунок опубликован. */
+  createdAt: string;
+}
+
+/** Разводы мела, оставшиеся после прохода тряпкой. */
+interface BoardWipe {
+  /** Идентификатор прохода. */
+  id: string;
+  /** Версия доски, в которой прошла тряпка. */
+  revision: number;
+  /** Разводы. */
+  smudges: Array<{
+    /** Цвет стёртого мела. */
+    color: string;
+    /** Точки развода. */
+    points: BoardPoint[];
+    /** Насколько заметен развод. */
+    strength: number;
+  }>;
+}
+
+/** Состояние общей доски. */
+interface AliceBoard {
+  /** Версия доски; растёт с каждым рисунком и проходом тряпки. */
+  revision: number;
+  /** Рисунки. */
+  drawings: BoardDrawing[];
+  /** Разводы от тряпки. */
+  wipes: BoardWipe[];
+  /** Ограничения доски. */
+  contract: BoardContract;
+}
+
+/** Мелок или тряпка в рюкзаке доски. */
+interface BoardInventoryItem {
+  /** Идентификатор экземпляра; его передают в действие. */
+  id: string;
+  /** `board_drawing` — мелок, `board_cloth` — тряпка. */
+  kind: string;
+}
+
+/** Тип сообщения WebSocket доски. */
+const BoardSocketEvent = Object.freeze({
+  /** Появился новый рисунок. */
+  DrawingCreated: 'drawing.created',
+  /** По доске прошлись тряпкой; состояние нужно перечитать через `board()`. */
+  BoardWiped: 'board.wiped',
+  /** Изменился список тех, кто смотрит доску. */
+  PresenceUpdated: 'presence.updated',
+} as const);
+
+/**
+ * Сообщение WebSocket доски. Подключение: `wss://итд.com/api/v1/aliceai/board/ws?ticket=<билет>`.
+ * Клиент раз в 20 секунд отправляет строку `ping`, сервер отвечает `pong`.
+ */
+type BoardSocketMessage =
+  | {
+      /** Появился новый рисунок. */
+      type: typeof BoardSocketEvent.DrawingCreated;
+      /** Новая версия доски. */
+      revision: number;
+      /** Рисунок. */
+      drawing: BoardDrawing;
+    }
+  | {
+      /** По доске прошлись тряпкой; состояние нужно перечитать через `board()`. */
+      type: typeof BoardSocketEvent.BoardWiped;
+      /** Новая версия доски. */
+      revision: number;
+    }
+  | {
+      /** Изменился список тех, кто смотрит доску. */
+      type: typeof BoardSocketEvent.PresenceUpdated;
+      /** Сколько человек смотрит доску. */
+      onlineCount: number;
+      /** Кто смотрит доску. */
+      users: Array<{ id: string; [field: string]: unknown }>;
+    };
+
 interface AliceAiApi {
   /** Показывается ли на сайте портал в ивент и куда он ведёт. */
   portal(): Promise<AlicePortal>;
@@ -977,6 +2040,98 @@ interface AliceAiApi {
   balance(): Promise<{ balance: number }>;
   /** Предметы, которые пользователь купил и ещё не потратил. */
   inventory(): Promise<{ items: AliceInventoryItem[] }>;
+  /** Товары для общей доски: мелок и тряпка. */
+  boardShop(): Promise<Pick<AliceShop, 'balance' | 'items'>>;
+  /** Товары, которые пользователь уже купил. */
+  purchased(): Promise<{ items: unknown[] }>;
+  /**
+   * Покупает товар за мелки. Предметы попадают в рюкзак, а некоторые выдаются
+   * сразу в соцсети — тогда в ответе есть `delivery`. Купить можно только товар
+   * из текущей витрины, иначе сервер отвечает `409 NOT_ON_SHOWCASE`.
+   *
+   * @param productId Товар из витрины.
+   * @param key Ключ операции.
+   * @param variant Вариант товара, например разлиновка тетради.
+   */
+  buy(productId: AliceProduct, key: string, variant?: NotebookStyle): Promise<AlicePurchase>;
+  /**
+   * Покупает анализатор ауры и сразу измеряет ауру пользователя от 0 до 100.
+   *
+   * @param key Ключ операции.
+   */
+  measureAura(key: string): Promise<AliceAuraResult>;
+  /**
+   * Покупает случайную кликуху. Выпавшая кликуха добавляется в `nicknames().owned`.
+   *
+   * @param key Ключ операции.
+   */
+  buyRandomNickname(key: string): Promise<AliceRandomNickname>;
+  /**
+   * Покупает школьный звонок: он звенит у всех, кто в этот момент в соцсети.
+   *
+   * @param key Ключ операции.
+   */
+  ringBell(key: string): Promise<{ balance: number }>;
+  /** Задания текущего дня. Каждый день выдаются новые; за выполненное начисляются мелки. */
+  tasks(): Promise<AliceTasks>;
+  /**
+   * Отправляет результат задания — ссылку на диалог с Алисой AI. На каждое задание
+   * одна попытка; ответ проверяется не сразу.
+   *
+   * @param code Код задания из `tasks()`.
+   * @param link Ссылка на результат.
+   * @param key Ключ операции.
+   */
+  submitTask(code: string, link: string, key: string): Promise<unknown>;
+  /**
+   * Состояние проверки отправленного задания. `null`, если ответ ещё не отправлялся.
+   *
+   * @param code Код задания.
+   */
+  taskSubmission(code: string): Promise<AliceTaskSubmission | null>;
+  /**
+   * Выполненные задания, по страницам.
+   *
+   * @param before Курсор `nextBefore` из предыдущей страницы.
+   */
+  completedTasks(before?: string): Promise<AliceCompletedTasks>;
+  /** Доска почёта: кто больше всех заработал мелков на заданиях. */
+  honorBoard(): Promise<{ entries: AliceHonorEntry[] }>;
+  /**
+   * Отмечает, что пользователь открыл раздел приложения ивента.
+   *
+   * @param screen Раздел приложения.
+   */
+  screenViewed(screen: AliceScreen): Promise<unknown>;
+  /** Общая доска, на которой любой с мелком может нарисовать что-нибудь. Рисунки видят все. */
+  board(): Promise<AliceBoard>;
+  /** Мелки и тряпки пользователя для доски. */
+  boardInventory(): Promise<{ items: BoardInventoryItem[] }>;
+  /** Одноразовый билет для подключения к WebSocket доски. */
+  boardTicket(): Promise<{ ticket: string }>;
+  /**
+   * Рисует на общей доске. Один мелок — один рисунок. Рисунок должен уложиться
+   * в `BoardContract` и не накладываться на чужие рисунки.
+   *
+   * @param itemId Идентификатор мелка из `boardInventory()`.
+   * @param strokes Линии рисунка.
+   * @param key Ключ операции.
+   * @returns Новая версия доски и опубликованный рисунок.
+   */
+  publishDrawing(
+    itemId: string,
+    strokes: BoardStroke[],
+    key: string,
+  ): Promise<{ revision: number; drawing: BoardDrawing }>;
+  /**
+   * Проводит тряпкой по доске. Стирает мел своих и чужих рисунков на пути тряпки
+   * и оставляет разводы. Один проход — одна тряпка.
+   *
+   * @param itemId Идентификатор тряпки из `boardInventory()`.
+   * @param path Путь тряпки, минимум две точки.
+   * @param key Ключ операции.
+   */
+  wipeBoard(itemId: string, path: BoardPoint[], key: string): Promise<unknown>;
   /**
    * Что ивент сделал с профилем: наклейки, следы шариков, разбитое окно и шторы.
    *
@@ -1001,7 +2156,7 @@ interface AliceAiApi {
     anchor?: unknown,
   ): Promise<AlicePlaceResult>;
   /**
-   * Кидает водный шарик в чужой профиль. Мокрый след держится 48 часов.
+   * Кидает водный шарик в чужой профиль. Мокрый след держится сутки.
    * Кидать можно сколько угодно раз, каждый бросок тратит один шарик.
    *
    * @param profileId Идентификатор чужого профиля.
@@ -1109,6 +2264,27 @@ interface AliceAiApi {
   /** Убирает свою картинку и возвращает эмодзи аватара. Потраченное право не возвращается. */
   removeProfileAvatar(): Promise<unknown>;
   /**
+   * Загружает картинку для своей аватарки. Сайт отправляет квадрат 512×512 в JPEG.
+   *
+   * @param file Картинка.
+   */
+  uploadAvatar(file: Blob): Promise<AliceAvatarFile>;
+  /**
+   * Ставит загруженную картинку вместо эмодзи аватара. Тратит одно право установки;
+   * картинка проходит модерацию.
+   *
+   * @param eventId `profileAvatar().data.eventId`.
+   * @param fileId Идентификатор из `uploadAvatar()`.
+   * @param operationId Идентификатор операции. При повторе передайте прежний.
+   */
+  installAvatar(eventId: string, fileId: string, operationId: string): Promise<unknown>;
+  /**
+   * Удаляет загруженный файл, например картинку, которую решили не ставить.
+   *
+   * @param fileId Идентификатор файла.
+   */
+  deleteFile(fileId: string): Promise<unknown>;
+  /**
    * Тетрадные листы для постов. Лист оформляет один свой пост как страницу школьной тетради.
    * Чтобы опубликовать такой пост, передайте в `POST /api/posts` поле
    * `notebook: { style }` через `itd.request()`; лист списывается после публикации.
@@ -1124,14 +2300,14 @@ interface AliceAiApi {
    * @param postIds Идентификаторы постов.
    * @returns Закрашивания по идентификатору поста; `null` — их нет.
    */
-  correctorState(postIds: readonly string[]): Promise<{ data: Record<string, unknown> }>;
+  correctorState(postIds: readonly string[]): Promise<{ data: Record<string, CorrectorState | null> }>;
   /**
    * Исправления красной ручкой на постах.
    *
    * @param postIds Идентификаторы постов.
    * @returns Исправления по идентификатору поста; `null` — их нет.
    */
-  redPenState(postIds: readonly string[]): Promise<{ data: Record<string, unknown> }>;
+  redPenState(postIds: readonly string[]): Promise<{ data: Record<string, RedPenState | null> }>;
   /**
    * Закрашивает фрагмент чужого поста корректором. Закрашивание видят все.
    * Один пользователь может закрасить на одном посте не больше трёх фрагментов.
@@ -1182,6 +2358,14 @@ interface AliceAiApi {
    * @param key Ключ операции.
    */
   recyclePost(postId: string, key: string): Promise<unknown>;
+  /** Сколько постов сдано всего и сколько пачек макулатуры у пользователя. */
+  wastePaper(): Promise<AliceWastePaper>;
+  /**
+   * Засчитывает в общий сбор все пачки макулатуры из рюкзака пользователя.
+   *
+   * @param key Ключ операции.
+   */
+  handInWastePaper(key: string): Promise<AliceWastePaperHandIn>;
 }
 
 const get = { method: 'GET', retrySafety: RetrySafety.Safe } as const;
@@ -1202,7 +2386,14 @@ const aliceAiFeature: ClientFeature<AliceAiApi> = {
     applyCorrector: post, applyRedPen: post,
     cancelCorrectors: post, cancelRedPen: post,
     reportCorrector: post, reportRedPen: post,
-    recyclePost: post,
+    recyclePost: post, wastePaper: get, handInWastePaper: post,
+    boardShop: get, purchased: get, buy: post, measureAura: post,
+    buyRandomNickname: post, ringBell: post,
+    tasks: get, submitTask: post, taskSubmission: get, completedTasks: get,
+    honorBoard: get, screenViewed: post,
+    board: get, boardInventory: get, boardTicket: post,
+    publishDrawing: post, wipeBoard: post,
+    uploadAvatar: post, installAvatar: put, deleteFile: del,
   },
   setup(context) {
     const profilePath = (id: string) =>
@@ -1213,6 +2404,7 @@ const aliceAiFeature: ClientFeature<AliceAiApi> = {
         ...(body === undefined ? {} : { body }),
         ...(key === undefined ? {} : { headers: { 'Idempotency-Key': key } }),
       });
+    const alicePath = (path: string) => `/api/v1/aliceai${path}`;
     const byIds = <T>(operation: string, path: string, ids: readonly string[]) =>
       context.request<T>(operation, { path, query: { ids: ids.join(',') }, raw: true });
 
@@ -1280,6 +2472,64 @@ const aliceAiFeature: ClientFeature<AliceAiApi> = {
           'recyclePost', `/api/v1/aliceai/waste-paper/posts/${encodeURIComponent(postId)}`,
           {}, key,
         ),
+        wastePaper: () => request('wastePaper', alicePath('/waste-paper')),
+        handInWastePaper: (key) => request(
+          'handInWastePaper', alicePath('/waste-paper/hand-ins'), undefined, key,
+        ),
+        boardShop: () => request('boardShop', alicePath('/shop/board')),
+        purchased: () => request('purchased', alicePath('/shop/purchased')),
+        buy: (productId, key, variant) => request(
+          'buy', alicePath(`/shop/items/${encodeURIComponent(productId)}/purchase`),
+          { quantity: 1, ...(variant ? { variant } : {}) }, key,
+        ),
+        measureAura: (key) => request('measureAura', alicePath('/aura'), undefined, key),
+        buyRandomNickname: (key) => request(
+          'buyRandomNickname', alicePath('/nicknames/random/purchase'), undefined, key,
+        ),
+        ringBell: (key) => request('ringBell', alicePath('/sounds/bell'), undefined, key),
+        tasks: () => request('tasks', alicePath('/tasks')),
+        submitTask: (code, link, key) => request(
+          'submitTask', alicePath(`/tasks/${encodeURIComponent(code)}/submission`), { link }, key,
+        ),
+        taskSubmission: async (code) => {
+          try {
+            return await request(
+              'taskSubmission', alicePath(`/tasks/${encodeURIComponent(code)}/submission`),
+            );
+          } catch (error) {
+            if (error instanceof ItdApiError && error.status === 404) return null;
+            throw error;
+          }
+        },
+        completedTasks: (before) => context.request('completedTasks', {
+          path: alicePath('/tasks/completed'), raw: true,
+          ...(before === undefined ? {} : { query: { before } }),
+        }),
+        honorBoard: () => request('honorBoard', alicePath('/honor-board')),
+        screenViewed: (screen) => request(
+          'screenViewed', alicePath(`/screens/${encodeURIComponent(screen)}/view`),
+        ),
+        board: () => request('board', alicePath('/board')),
+        boardInventory: () => request('boardInventory', alicePath('/board/inventory')),
+        boardTicket: () => request('boardTicket', alicePath('/board/socket-ticket'), {}),
+        publishDrawing: (itemId, strokes, key) => request(
+          'publishDrawing', alicePath('/board/drawings'),
+          { inventoryItemId: itemId, strokes }, key,
+        ),
+        wipeBoard: (itemId, path, key) => request(
+          'wipeBoard', alicePath('/board/wipes'), { inventoryItemId: itemId, path }, key,
+        ),
+        uploadAvatar: (file) => {
+          const form = new FormData();
+          form.append('file', file, 'avatar.jpg');
+          return request('uploadAvatar', '/api/files/avatar', form);
+        },
+        installAvatar: (eventId, fileId, operationId) => request(
+          'installAvatar', '/api/profile-avatar/', { eventId, fileId, operationId },
+        ),
+        deleteFile: (fileId) => request(
+          'deleteFile', `/api/files/${encodeURIComponent(fileId)}`,
+        ),
       },
     };
   },
@@ -1329,6 +2579,27 @@ try {
     } else {
       throw error;
     }
+  }
+
+  const today = await alice.tasks();
+  console.log(`Задания цикла ${today.cycle.number}: выполнено ${today.completedInCycle}`);
+  for (const task of today.tasks) {
+    console.log(`${task.subject}: ${task.description} (+${task.reward} мелков)`);
+  }
+
+  const { entries } = await alice.honorBoard();
+  console.log('Лучший ученик:', entries[0]?.author.displayName, entries[0]?.earned);
+
+  const board = await alice.board();
+  const { items: chalks } = await alice.boardInventory();
+  const chalk = chalks.find((item) => item.kind === AliceProduct.BoardDrawing);
+  if (chalk) {
+    const [color = '#f5f1df'] = board.contract.colors;
+    const [width = 6] = board.contract.widths;
+    const { drawing } = await alice.publishDrawing(chalk.id, [
+      { color, width, points: [{ x: 500, y: 500 }, { x: 560, y: 500 }, { x: 560, y: 540 }] },
+    ], crypto.randomUUID());
+    console.log('Рисунок на доске', drawing.id);
   }
 
   const profile = await alice.profile(friendId);
