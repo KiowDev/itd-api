@@ -61,15 +61,15 @@
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
   "dependencies": {
-    "socks": "^2.8.9",
-    "undici": "^6.28.0"
+    "socks": "^2.8.10",
+    "undici": "^6.29.0"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@types/node": "^26.2.0",
-    "publint": "^0.3.24",
-    "tsdown": "^0.22.14",
+    "@types/node": "^26.6.4",
+    "publint": "^0.3.25",
+    "tsdown": "^0.23.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.3"
   }
 }
