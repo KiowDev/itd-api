@@ -1,6 +1,6 @@
 import { ItdClient } from 'itd-api';
 import { describe, expect, it } from 'vitest';
-import { waitForUpdate } from '../../../src/index.js';
+import { HttpMethod, waitForUpdate } from '../../../src/index.js';
 import { ALICE, BOB, makeServer } from '../test-server.utils.js';
 
 describe('createMockServer: пользователи', () => {
@@ -63,5 +63,53 @@ describe('createMockServer: пользователи', () => {
       status: 404,
       code: 'NOT_FOUND',
     });
+  });
+
+  it('отклоняет занятое и неверное имя при обновлении профиля', async () => {
+    const server = makeServer();
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+
+    await expect(alice.users.updateMe({ username: 'Bob' })).rejects.toMatchObject({
+      status: 409,
+      code: 'PROFILE_USERNAME_TAKEN',
+    });
+    await expect(alice.users.updateMe({ username: 'a-b' })).rejects.toMatchObject({
+      status: 400,
+      code: 'VALIDATION_ERROR',
+    });
+    await expect(alice.users.updateMe({ username: 'Alice' })).resolves.toMatchObject({
+      username: 'Alice',
+    });
+  });
+
+  it('проверяет имя так же, как прод', async () => {
+    const server = makeServer();
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+
+    await expect(alice.users.checkUsername('free_name')).resolves.toBe(true);
+    await expect(alice.users.checkUsername('BOB')).resolves.toBe(false);
+    await expect(alice.users.checkUsername('alice')).resolves.toBe(false);
+    await expect(
+      alice.request({
+        method: HttpMethod.Get,
+        path: '/api/users/check-username',
+        query: { username: 'ab' },
+        raw: true,
+      }),
+    ).resolves.toEqual({ available: false, reason: 'INVALID_FORMAT' });
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('устанавливает и удаляет баннер, отклоняя неверный bannerId', async () => {
+    const server = makeServer();
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+
+    await expect(alice.users.updateMe({ bannerId: 'file-1' })).resolves.toMatchObject({
+      banner: 'file-1',
+    });
+    await expect(alice.users.removeBanner()).resolves.toMatchObject({ banner: null });
+    await expect(
+      alice.request({ method: HttpMethod.Put, path: '/api/users/me', body: { bannerId: 5 } }),
+    ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
   });
 });

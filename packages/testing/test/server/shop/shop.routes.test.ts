@@ -24,7 +24,7 @@ describe('createMockServer: магазин', () => {
         ],
       },
     });
-    const client = new ItdClient(server.clientOptions({ as: 'test-user-1' }));
+    const client = new ItdClient(server.clientOptions({ as: 'test_user_1' }));
     const created = await client.shop.orders.create({
       items: [{ productId: 'hoodie', size: 'M', color: null, qty: 1 }],
       recipient: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MockDomainError } from '../../../src/server/shared/domain.errors.js';
+import { UsernameIssue } from '../../../src/server/users/users.constants.js';
 import { makeRuntime, userOf } from '../test-runtime.utils.js';
 import { ALICE, BOB } from '../test-server.utils.js';
 
@@ -54,5 +55,57 @@ describe('UserService', () => {
     const alice = userOf(runtime, ALICE);
 
     expect(() => runtime.services.users.follow(alice, alice)).toThrow(MockDomainError);
+  });
+
+  it.each([['ab'], ['with-dash'], ['пользователь'], ['a'.repeat(33)]])(
+    'отклоняет имя неверного формата: %s',
+    (username) => {
+      expect(makeRuntime().services.users.validateUsername(username)).toBe(
+        UsernameIssue.InvalidFormat,
+      );
+    },
+  );
+
+  it('считает занятым чужое имя и чужой id без учёта регистра', () => {
+    const runtime = makeRuntime({
+      users: [
+        { id: ALICE, username: 'alice' },
+        { id: 'dave_id', username: 'dave' },
+      ],
+    });
+    const { users } = runtime.services;
+
+    expect(users.validateUsername('ALICE')).toBe(UsernameIssue.Taken);
+    expect(users.validateUsername('Dave_Id')).toBe(UsernameIssue.Taken);
+    expect(users.validateUsername('free_name')).toBeUndefined();
+  });
+
+  it('разрешает владельцу оставить своё имя и сменить в нём регистр', () => {
+    const runtime = makeRuntime();
+    const alice = userOf(runtime, ALICE);
+
+    expect(runtime.services.users.validateUsername('alice', alice)).toBeUndefined();
+    expect(runtime.services.users.validateUsername('Alice', alice)).toBeUndefined();
+  });
+
+  it('не меняет профиль, если новое имя занято', () => {
+    const runtime = makeRuntime();
+    const alice = userOf(runtime, ALICE);
+
+    expect(() =>
+      runtime.services.users.updateProfile(alice, { username: 'BOB', displayName: 'Новое' }),
+    ).toThrow(expect.objectContaining({ status: 409, code: 'PROFILE_USERNAME_TAKEN' }));
+    expect(alice.profile).toMatchObject({ username: 'alice' });
+    expect(alice.profile.displayName).not.toBe('Новое');
+  });
+
+  it('освобождает прежнее имя после переименования', () => {
+    const runtime = makeRuntime();
+    const { users } = runtime.services;
+
+    users.updateProfile(userOf(runtime, ALICE), { username: 'alice_new' });
+
+    expect(users.validateUsername('alice', userOf(runtime, BOB))).toBeUndefined();
+    expect(users.find('alice')).toBeUndefined();
   });
 });

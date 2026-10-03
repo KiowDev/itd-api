@@ -1,4 +1,5 @@
 import type { MyProfile, Notification } from 'itd-api';
+import type { UsernameIssue } from './users.constants.js';
 
 /** Пользователь в хранилище mock-server. Производные счётчики профиля здесь не хранятся. @internal */
 export interface UserRecord {
@@ -13,7 +14,13 @@ export interface ProfilePatch {
   displayName?: string;
   avatar?: string;
   bio?: string;
-  banner?: null;
+  banner?: string | null;
+}
+
+/** Результат проверки имени пользователя в форме ответа `check-username`. @internal */
+export interface UsernameAvailability {
+  available: boolean;
+  reason?: typeof UsernameIssue.InvalidFormat;
 }
 
 /** Краткие данные пользователя в составе поста, комментария или уведомления. @internal */

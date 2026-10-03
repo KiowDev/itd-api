@@ -117,7 +117,7 @@ describe('hydrateClient', () => {
 
   it('добавляет городу доставки загрузку пунктов выдачи', async () => {
     const server = createMockServer();
-    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'test-user-1' })));
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'test_user_1' })));
 
     const cities = await itd.shop.delivery.cities('Москва', 'RU');
     const city = cities[0];

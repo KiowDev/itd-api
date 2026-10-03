@@ -2,7 +2,9 @@ import { NotificationType } from 'itd-api';
 import type { NotificationService } from '../notifications/notifications.service.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
+import { UsernameIssue } from './users.constants.js';
 import type { ProfilePatch, UserRecord } from './users.types.js';
+import { isUsernameFormatValid, usernameKey } from './users.utils.js';
 
 /** Пользователи, их профили и граф подписок. @internal */
 export class UserService {
@@ -32,10 +34,26 @@ export class UserService {
     return user;
   }
 
+  /**
+   * Проверяет, можно ли занять имя. Имя `owner` и его `id` не считаются занятыми — так
+   * пользователь может оставить своё имя или сменить в нём регистр.
+   */
+  validateUsername(username: string, owner?: UserRecord): UsernameIssue | undefined {
+    if (!isUsernameFormatValid(username)) return UsernameIssue.InvalidFormat;
+    const key = usernameKey(username);
+    for (const user of this.#store.users.values()) {
+      if (user === owner) continue;
+      if (usernameKey(user.profile.username) === key || usernameKey(user.profile.id) === key) {
+        return UsernameIssue.Taken;
+      }
+    }
+    return undefined;
+  }
+
+  /** Применяет изменения целиком или не применяет ни одного, если новое имя занять нельзя. */
   updateProfile(user: UserRecord, patch: ProfilePatch): void {
-    const { banner, ...fields } = patch;
-    Object.assign(user.profile, fields);
-    if (banner === null) user.profile.banner = null;
+    if (patch.username !== undefined) this.#assertUsername(user, patch.username);
+    Object.assign(user.profile, patch);
   }
 
   deactivate(user: UserRecord): void {
@@ -81,5 +99,17 @@ export class UserService {
 
   followingCount(user: UserRecord): number {
     return user.following.size;
+  }
+
+  #assertUsername(user: UserRecord, username: string): void {
+    switch (this.validateUsername(username, user)) {
+      case UsernameIssue.InvalidFormat:
+        throw MockDomainError.badRequest(
+          'VALIDATION_ERROR',
+          'Имя пользователя: латинские буквы, цифры и _, от 3 до 32 символов',
+        );
+      case UsernameIssue.Taken:
+        throw new MockDomainError(409, 'PROFILE_USERNAME_TAKEN', 'Имя пользователя занято');
+    }
   }
 }

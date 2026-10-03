@@ -1,8 +1,15 @@
 import { HttpMethod } from '../../http/http.constants.js';
-import { apiResponse, emptyResponse } from '../../http/responses.utils.js';
+import { apiResponse, emptyResponse, jsonResponse } from '../../http/responses.utils.js';
+import { MockDomainError } from '../shared/domain.errors.js';
 import { objectBody } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 import type { ProfilePatch } from './users.types.js';
+
+/** Баннер по `bannerId`: идентификатор файла сохраняется как есть, `null` удаляет баннер. */
+function bannerOf(value: unknown): string | null {
+  if (value === null || typeof value === 'string') return value;
+  throw MockDomainError.badRequest('VALIDATION_ERROR', 'bannerId должен быть строкой или null');
+}
 
 function profilePatch(body: Record<string, unknown>): ProfilePatch {
   const patch: ProfilePatch = {};
@@ -10,7 +17,7 @@ function profilePatch(body: Record<string, unknown>): ProfilePatch {
     const value = body[key];
     if (typeof value === 'string') patch[key] = value;
   }
-  if (body.bannerId === null) patch.banner = null;
+  if ('bannerId' in body) patch.banner = bannerOf(body.bannerId);
   return patch;
 }
 
@@ -63,6 +70,14 @@ export function registerUserRoutes({
       users.restore(user);
       return emptyResponse();
     }),
+  );
+
+  route(HttpMethod.Get, '/api/users/check-username', (request) =>
+    jsonResponse(
+      presenters.users.usernameAvailability(
+        users.validateUsername(request.query.get('username') ?? ''),
+      ),
+    ),
   );
 
   route(

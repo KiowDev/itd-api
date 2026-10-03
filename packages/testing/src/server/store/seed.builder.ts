@@ -6,6 +6,7 @@ import type { NotificationRecord } from '../notifications/notifications.types.js
 import type { PostRecord } from '../posts/posts.types.js';
 import type { MockServerSeed } from '../server.types.js';
 import type { UserRecord } from '../users/users.types.js';
+import { isUsernameFormatValid, usernameKey } from '../users/users.utils.js';
 import type { MockStoreContents } from './store.types.js';
 
 function at<T>(values: readonly T[], index: number): T {
@@ -42,7 +43,7 @@ export function buildStoreContents(
   const userIds = userSeeds.map(
     (item, index) => item.id ?? `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
   );
-  const usernames = userSeeds.map((item, index) => item.username ?? `test-user-${index + 1}`);
+  const usernames = userSeeds.map((item, index) => item.username ?? `test_user_${index + 1}`);
   const postIds = postSeeds.map((item, index) => item.id ?? `post-${index + 1}`);
   const commentIds = commentSeeds.map((item, index) => item.id ?? `comment-${index + 1}`);
   const notificationIds = notificationSeeds.map(
@@ -50,7 +51,14 @@ export function buildStoreContents(
   );
 
   requireUnique(userIds, 'пользователь');
-  requireUnique(usernames, 'имя пользователя');
+  for (const username of usernames) {
+    if (!isUsernameFormatValid(username)) {
+      throw new MockServerSeedError(
+        `Имя пользователя ${username} должно состоять из латинских букв, цифр и _, от 3 до 32 символов`,
+      );
+    }
+  }
+  requireUnique(usernames.map(usernameKey), 'имя пользователя');
   requireUnique(postIds, 'пост');
   requireUnique(commentIds, 'комментарий');
   requireUnique(notificationIds, 'уведомление');
@@ -65,7 +73,7 @@ export function buildStoreContents(
   );
   const userReferences = new Map<string, string>();
   userIds.forEach((id, index) => {
-    for (const reference of [id, at(usernames, index)]) {
+    for (const reference of [usernameKey(id), usernameKey(at(usernames, index))]) {
       const owner = userReferences.get(reference);
       if (owner !== undefined && owner !== id) {
         throw new MockServerSeedError(

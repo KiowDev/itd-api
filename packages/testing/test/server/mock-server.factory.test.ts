@@ -12,12 +12,12 @@ import { ALICE, BOB, makeServer, settleUntil } from './test-server.utils.js';
 describe('createMockServer: жизненный цикл', () => {
   it('сохраняет mock-домен по умолчанию и нормализует пользовательский baseUrl', async () => {
     const defaultServer = createMockServer();
-    const defaultClient = new ItdClient(defaultServer.clientOptions({ as: 'test-user-1' }));
+    const defaultClient = new ItdClient(defaultServer.clientOptions({ as: 'test_user_1' }));
     await defaultClient.users.me();
     expect(defaultServer.requests[0]?.url).toBe('https://mock.itd.test/api/users/me');
 
     const customServer = createMockServer({ baseUrl: 'https://custom.test/' });
-    const customClient = new ItdClient(customServer.clientOptions({ as: 'test-user-1' }));
+    const customClient = new ItdClient(customServer.clientOptions({ as: 'test_user_1' }));
     await customClient.users.me();
     expect(customServer.requests[0]?.url).toBe('https://custom.test/api/users/me');
   });
@@ -107,6 +107,28 @@ describe('createMockServer: жизненный цикл', () => {
         users: [
           { id: ALICE, username: 'same' },
           { id: BOB, username: 'same' },
+        ],
+      },
+    },
+    {
+      name: 'имя пользователя, отличающееся только регистром',
+      seed: {
+        users: [
+          { id: ALICE, username: 'same' },
+          { id: BOB, username: 'SAME' },
+        ],
+      },
+    },
+    {
+      name: 'имя пользователя неверного формата',
+      seed: { users: [{ id: ALICE, username: 'with-dash' }] },
+    },
+    {
+      name: 'имя, совпадающее с id другого пользователя',
+      seed: {
+        users: [
+          { id: 'dave_id', username: 'dave' },
+          { id: BOB, username: 'DAVE_ID' },
         ],
       },
     },
