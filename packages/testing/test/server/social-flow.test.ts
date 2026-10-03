@@ -1,6 +1,6 @@
 import { ItdClient } from 'itd-api';
 import { describe, expect, it } from 'vitest';
-import { ALICE, BOB, makeServer } from './helpers.js';
+import { ALICE, BOB, makeServer } from './test-server.utils.js';
 
 describe('createMockServer: социальный сценарий', () => {
   it('выполняет пользовательский сценарий в общем состоянии', async () => {
