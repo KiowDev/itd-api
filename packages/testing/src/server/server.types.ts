@@ -5,16 +5,19 @@ import type {
   Notification,
   ShopOrder,
   ShopProduct,
+  Span,
 } from 'itd-api';
 import type { MockEventTransport } from '../events/mock-event.transport.js';
 import type { RecordedRequest } from '../http/request.types.js';
 import type { MockHandler } from '../http/router.types.js';
 import type { CommentPresenter } from './comments/comments.presenter.js';
 import type { CommentService } from './comments/comments.service.js';
+import type { HashtagService } from './hashtags/hashtags.service.js';
 import type { NotificationPresenter } from './notifications/notifications.presenter.js';
 import type { NotificationService } from './notifications/notifications.service.js';
 import type { PostPresenter } from './posts/posts.presenter.js';
 import type { PostService } from './posts/posts.service.js';
+import type { SearchService } from './search/search.service.js';
 import type { ShopService } from './shop/shop.service.js';
 import type { UserPresenter } from './users/users.presenter.js';
 import type { UserService } from './users/users.service.js';
@@ -41,6 +44,7 @@ export interface MockPostSeed {
   id?: string;
   authorId: string;
   content?: string;
+  spans?: readonly Span[];
   wallRecipientId?: string | null;
   createdAt?: string;
   likedBy?: readonly string[];
@@ -121,6 +125,7 @@ export interface MockPostSnapshot {
   readonly id: string;
   readonly authorId: string;
   readonly content: string;
+  readonly spans: readonly Readonly<Span>[];
   readonly wallRecipientId: string | null;
   readonly createdAt: string;
   readonly editedAt: string | null;
@@ -181,6 +186,8 @@ export interface MockServices {
   readonly posts: PostService;
   readonly comments: CommentService;
   readonly notifications: NotificationService;
+  readonly hashtags: HashtagService;
+  readonly search: SearchService;
   readonly shop: ShopService;
 }
 

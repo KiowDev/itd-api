@@ -71,6 +71,19 @@ export class UserPresenter {
     };
   }
 
+  /** Пользователь в результатах поиска. */
+  searchUser(user: UserRecord): UserSummary {
+    return {
+      id: user.profile.id,
+      username: user.profile.username,
+      displayName: user.profile.displayName,
+      avatar: user.profile.avatar,
+      verified: user.profile.verified,
+      hasNuksta: user.profile.subscription.isActive,
+      followersCount: this.#users.followersCount(user),
+    };
+  }
+
   /** Свободно ли имя. Причину ответ называет только для неверного формата. */
   usernameAvailability(issue: UsernameIssue | undefined): UsernameAvailability {
     if (issue === undefined) return { available: true };

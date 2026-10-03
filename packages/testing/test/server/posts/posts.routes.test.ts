@@ -177,4 +177,24 @@ describe('createMockServer: посты', () => {
       code: 'NOT_FOUND',
     });
   });
+
+  it('сохраняет разметку при создании и сбрасывает её с новым текстом', async () => {
+    const server = makeContentServer();
+    const bob = new ItdClient(server.clientOptions({ as: 'bob' }));
+
+    const post = await bob.posts.create((p) => p.markup((m) => m.bold('жирно')));
+    expect(post.spans).toEqual([{ type: 'bold', offset: 0, length: 5 }]);
+    expect(server.snapshot().posts.find((item) => item.id === post.id)?.spans).toEqual(post.spans);
+
+    await expect(bob.posts.update(post.id, { content: 'просто' })).resolves.toMatchObject({
+      spans: [],
+    });
+    await expect(
+      bob.request({
+        method: HttpMethod.Post,
+        path: '/api/posts',
+        body: { content: 'x', spans: [{ type: 'bold', offset: -1, length: 1 }] },
+      }),
+    ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
+  });
 });

@@ -1,4 +1,6 @@
+import type { Span } from 'itd-api';
 import type { MockRequest } from '../../http/request.types.js';
+import { MockDomainError } from './domain.errors.js';
 
 /** JSON-тело запроса как объект; всё остальное — пустой объект. @internal */
 export function objectBody(request: MockRequest): Record<string, unknown> {
@@ -11,6 +13,31 @@ export function objectBody(request: MockRequest): Record<string, unknown> {
 export function stringField(body: Record<string, unknown>, key: string): string | undefined {
   const value = body[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function isSpan(value: unknown): value is Span {
+  if (typeof value !== 'object' || value === null) return false;
+  const { type, offset, length } = value as Record<string, unknown>;
+  return (
+    typeof type === 'string' &&
+    Number.isInteger(offset) &&
+    (offset as number) >= 0 &&
+    Number.isInteger(length) &&
+    (length as number) > 0
+  );
+}
+
+/** Разметка из тела запроса. Отсутствующее поле — `undefined`, неверная разметка — ошибка. @internal */
+export function spansField(body: Record<string, unknown>): Span[] | undefined {
+  const value = body.spans;
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every(isSpan)) {
+    throw MockDomainError.badRequest(
+      'VALIDATION_ERROR',
+      'spans: ожидается массив фрагментов разметки',
+    );
+  }
+  return structuredClone(value);
 }
 
 /** Положительное целое из параметра запроса, ограниченное сверху. @internal */

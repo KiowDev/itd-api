@@ -117,6 +117,33 @@ export class UserService {
       .slice(0, limit);
   }
 
+  /**
+   * Активные пользователи, у которых запрос входит в username или отображаемое имя без учёта
+   * регистра. Сначала точное совпадение username, затем совпадение начала username.
+   */
+  search(query: string, limit: number): UserRecord[] {
+    const needle = query.toLowerCase();
+    if (!needle) return [];
+    const rank = (user: UserRecord): number => {
+      const username = usernameKey(user.profile.username);
+      if (username === needle) return 0;
+      return username.startsWith(needle) ? 1 : 2;
+    };
+    return [...this.#store.users.values()]
+      .filter(
+        (user) =>
+          !user.deactivated &&
+          (usernameKey(user.profile.username).includes(needle) ||
+            user.profile.displayName.toLowerCase().includes(needle)),
+      )
+      .sort(
+        (a, b) =>
+          rank(a) - rank(b) ||
+          usernameKey(a.profile.username).localeCompare(usernameKey(b.profile.username)),
+      )
+      .slice(0, limit);
+  }
+
   /** Отношение владельца ресурса к обращающемуся для проверки политик доступа. */
   relation(owner: UserRecord, viewer: UserRecord): AccessRelation {
     return {

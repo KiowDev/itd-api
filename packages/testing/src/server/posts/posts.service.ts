@@ -5,7 +5,7 @@ import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
 import type { UserService } from '../users/users.service.js';
 import type { UserRecord } from '../users/users.types.js';
-import type { NewPost, PostRecord } from './posts.types.js';
+import type { NewPost, PostEdit, PostRecord } from './posts.types.js';
 
 function newestFirst(a: PostRecord, b: PostRecord): number {
   return b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
@@ -83,6 +83,7 @@ export class PostService {
       id: this.#store.nextPostId(),
       authorId: author.profile.id,
       content: input.content,
+      spans: input.spans,
       wallRecipientId: input.wallRecipientId,
       createdAt: this.#store.now(),
       editedAt: null,
@@ -102,8 +103,13 @@ export class PostService {
     return post;
   }
 
-  edit(post: PostRecord, content: string | undefined): void {
-    if (content !== undefined) post.content = content;
+  edit(post: PostRecord, changes: PostEdit): void {
+    if (changes.content !== undefined) {
+      post.content = changes.content;
+      post.spans = changes.spans ?? [];
+    } else if (changes.spans !== undefined) {
+      post.spans = changes.spans;
+    }
     post.editedAt = this.#store.now();
   }
 

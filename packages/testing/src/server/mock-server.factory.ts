@@ -7,8 +7,10 @@ import type { MockHandler } from '../http/router.types.js';
 import { compileRoute, defineRoute, matchRoute } from '../http/router.utils.js';
 import { ItdTestingError } from '../testing.errors.js';
 import { registerCommentRoutes } from './comments/comments.routes.js';
+import { registerHashtagRoutes } from './hashtags/hashtags.routes.js';
 import { registerNotificationRoutes } from './notifications/notifications.routes.js';
 import { registerPostRoutes } from './posts/posts.routes.js';
+import { registerSearchRoutes } from './search/search.routes.js';
 import { MockServerRuntime } from './server.runtime.js';
 import type { CreateMockServerOptions, MockServer, MockServerSeed } from './server.types.js';
 import { createRouteContext } from './shared/route.context.js';
@@ -60,6 +62,8 @@ export function createMockServer(options: CreateMockServerOptions = {}): MockSer
   registerPostRoutes(context);
   registerCommentRoutes(context);
   registerNotificationRoutes(context);
+  registerHashtagRoutes(context);
+  registerSearchRoutes(context);
   registerShopRoutes(context);
 
   const dispatch = async (

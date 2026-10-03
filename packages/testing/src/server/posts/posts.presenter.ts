@@ -24,6 +24,7 @@ export class PostPresenter {
     return postFixture({
       id: post.id,
       content: post.content,
+      spans: structuredClone(post.spans),
       author: this.#userPresenter.reference(author),
       wallRecipientId: post.wallRecipientId,
       likesCount: post.likedBy.size,

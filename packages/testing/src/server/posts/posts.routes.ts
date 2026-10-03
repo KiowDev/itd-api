@@ -5,7 +5,7 @@ import { apiResponse, emptyResponse } from '../../http/responses.utils.js';
 import type { MockHandler } from '../../http/router.types.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import { cursorPage } from '../shared/pagination.utils.js';
-import { objectBody, pageLimit, stringField } from '../shared/request.utils.js';
+import { objectBody, pageLimit, spansField, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 import type { UserRecord } from '../users/users.types.js';
 import type { PostRecord } from './posts.types.js';
@@ -73,6 +73,7 @@ export function registerPostRoutes({
       const body = objectBody(request);
       const post = posts.create(user, {
         content: stringField(body, 'content') ?? '',
+        spans: spansField(body) ?? [],
         wallRecipientId: stringField(body, 'wallRecipientId') ?? null,
       });
       return apiResponse(presenters.posts.post(post, user), { status: 201 });
@@ -92,11 +93,12 @@ export function registerPostRoutes({
     '/api/posts/:postId',
     requireAuth((request, user) => {
       const post = posts.requireOwn(request.params.postId ?? '', user);
-      posts.edit(post, stringField(objectBody(request), 'content'));
+      const body = objectBody(request);
+      posts.edit(post, { content: stringField(body, 'content'), spans: spansField(body) });
       return apiResponse({
         id: post.id,
         content: post.content,
-        spans: [],
+        spans: post.spans,
         updatedAt: post.editedAt,
       });
     }),

@@ -175,6 +175,7 @@ export function buildStoreContents(
       id,
       authorId: item.authorId,
       content: item.content ?? '',
+      spans: structuredClone([...(item.spans ?? [])]),
       wallRecipientId: item.wallRecipientId ?? null,
       createdAt: item.createdAt ?? now(),
       editedAt: null,
