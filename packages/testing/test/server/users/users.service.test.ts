@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MockDomainError } from '../../../src/server/shared/domain.errors.js';
 import { UsernameIssue } from '../../../src/server/users/users.constants.js';
 import { makeRuntime, userOf } from '../test-runtime.utils.js';
-import { ALICE, BOB } from '../test-server.utils.js';
+import { ALICE, BOB, CAROL } from '../test-server.utils.js';
 
 describe('UserService', () => {
   it('ищет по id раньше, чем по username', () => {
@@ -107,5 +107,41 @@ describe('UserService', () => {
 
     expect(users.validateUsername('alice', userOf(runtime, BOB))).toBeUndefined();
     expect(users.find('alice')).toBeUndefined();
+  });
+
+  it('различает подписчиков и подписки', () => {
+    const runtime = makeRuntime({
+      users: [
+        { id: ALICE, username: 'alice', following: [BOB, CAROL] },
+        { id: BOB, username: 'bob', following: [ALICE] },
+        { id: CAROL, username: 'carol' },
+      ],
+    });
+    const { users } = runtime.services;
+    const ids = (list: { profile: { id: string } }[]) => list.map((user) => user.profile.id);
+
+    expect(ids(users.following(userOf(runtime, ALICE)))).toEqual([BOB, CAROL]);
+    expect(ids(users.followers(userOf(runtime, ALICE)))).toEqual([BOB]);
+    expect(ids(users.followers(userOf(runtime, CAROL)))).toEqual([ALICE]);
+    expect(users.following(userOf(runtime, CAROL))).toEqual([]);
+  });
+
+  it('считает кланы по аватарам активных пользователей', () => {
+    const runtime = makeRuntime({
+      users: [
+        { id: ALICE, username: 'alice', avatar: '🦎' },
+        { id: BOB, username: 'bob', avatar: '🦎' },
+        { id: CAROL, username: 'carol', avatar: '🍅' },
+        { id: 'dave_id', username: 'dave', avatar: '🍅', deactivated: true },
+        { id: 'erin_id', username: 'erin', avatar: '🍌' },
+      ],
+    });
+
+    expect(runtime.services.users.topClans(10)).toEqual([
+      { avatar: '🦎', memberCount: 2 },
+      { avatar: '🍅', memberCount: 1 },
+      { avatar: '🍌', memberCount: 1 },
+    ]);
+    expect(runtime.services.users.topClans(1)).toHaveLength(1);
   });
 });

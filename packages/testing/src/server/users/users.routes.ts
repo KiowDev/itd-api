@@ -1,9 +1,15 @@
 import { HttpMethod } from '../../http/http.constants.js';
+import type { MockRequest } from '../../http/request.types.js';
 import { apiResponse, emptyResponse, jsonResponse } from '../../http/responses.utils.js';
 import { MockDomainError } from '../shared/domain.errors.js';
-import { objectBody } from '../shared/request.utils.js';
+import { numberedPage } from '../shared/pagination.utils.js';
+import { objectBody, pageLimit, pageNumber } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
-import type { ProfilePatch } from './users.types.js';
+import type { ProfilePatch, UserRecord } from './users.types.js';
+
+/** Как и прод, списки подписчиков и подписок отдают не больше 20 записей за раз. */
+const USER_LIST_LIMIT = 20;
+const TOP_CLANS_LIMIT = 10;
 
 /** Баннер по `bannerId`: идентификатор файла сохраняется как есть, `null` удаляет баннер. */
 function bannerOf(value: unknown): string | null {
@@ -86,6 +92,42 @@ export function registerUserRoutes({
     requireAuth((request, viewer) =>
       apiResponse(presenters.users.publicProfile(viewer, users.require(request.params.user ?? ''))),
     ),
+  );
+
+  const userPage = (request: MockRequest, viewer: UserRecord, list: readonly UserRecord[]) => {
+    const page = numberedPage(list, {
+      page: pageNumber(request),
+      limit: pageLimit(request, USER_LIST_LIMIT),
+    });
+    return apiResponse({
+      users: page.items.map((user) => presenters.users.userSummary(viewer, user)),
+      pagination: {
+        page: page.page,
+        limit: page.limit,
+        total: page.total,
+        hasMore: page.hasMore,
+      },
+    });
+  };
+
+  route(
+    HttpMethod.Get,
+    '/api/users/:user/followers',
+    requireAuth((request, viewer) =>
+      userPage(request, viewer, users.followers(users.require(request.params.user ?? ''))),
+    ),
+  );
+
+  route(
+    HttpMethod.Get,
+    '/api/users/:user/following',
+    requireAuth((request, viewer) =>
+      userPage(request, viewer, users.following(users.require(request.params.user ?? ''))),
+    ),
+  );
+
+  route(HttpMethod.Get, '/api/users/stats/top-clans', () =>
+    jsonResponse({ clans: users.topClans(TOP_CLANS_LIMIT) }),
   );
 
   route(

@@ -2,7 +2,7 @@ import { HttpMethod } from '../../http/http.constants.js';
 import { apiResponse, emptyResponse } from '../../http/responses.utils.js';
 import type { MockHandler } from '../../http/router.types.js';
 import { cursorPage, numberedPage } from '../shared/pagination.utils.js';
-import { objectBody, pageLimit, positiveInt, stringField } from '../shared/request.utils.js';
+import { objectBody, pageLimit, pageNumber, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 
 export function registerCommentRoutes({
@@ -51,7 +51,7 @@ export function registerCommentRoutes({
     requireAuth((request, viewer) => {
       const parent = comments.requireActive(request.params.commentId ?? '');
       const page = numberedPage(comments.replies(parent), {
-        page: positiveInt(request.query.get('page'), 1),
+        page: pageNumber(request),
         limit: pageLimit(request),
       });
       return apiResponse({

@@ -1,5 +1,6 @@
-import { NotificationType } from 'itd-api';
+import { type Clan, NotificationType } from 'itd-api';
 import type { NotificationService } from '../notifications/notifications.service.js';
+import type { AccessRelation } from '../shared/access.types.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
 import { UsernameIssue } from './users.constants.js';
@@ -87,6 +88,42 @@ export class UserService {
 
   isFollowing(follower: UserRecord, target: UserRecord): boolean {
     return follower.following.has(target.profile.id);
+  }
+
+  /** Подписчики пользователя в порядке хранения. */
+  followers(user: UserRecord): UserRecord[] {
+    return [...this.#store.users.values()].filter((candidate) =>
+      candidate.following.has(user.profile.id),
+    );
+  }
+
+  /** Подписки пользователя в порядке подписки. */
+  following(user: UserRecord): UserRecord[] {
+    return [...user.following]
+      .map((id) => this.#store.users.get(id))
+      .filter((candidate): candidate is UserRecord => candidate !== undefined);
+  }
+
+  /** Кланы — группы активных пользователей с одинаковым аватаром, самые большие первыми. */
+  topClans(limit: number): Clan[] {
+    const members = new Map<string, number>();
+    for (const user of this.#store.users.values()) {
+      if (user.deactivated) continue;
+      members.set(user.profile.avatar, (members.get(user.profile.avatar) ?? 0) + 1);
+    }
+    return [...members]
+      .map(([avatar, memberCount]) => ({ avatar, memberCount }))
+      .sort((a, b) => b.memberCount - a.memberCount || a.avatar.localeCompare(b.avatar))
+      .slice(0, limit);
+  }
+
+  /** Отношение владельца ресурса к обращающемуся для проверки политик доступа. */
+  relation(owner: UserRecord, viewer: UserRecord): AccessRelation {
+    return {
+      isOwner: owner === viewer,
+      follows: this.isFollowing(viewer, owner),
+      followedBy: this.isFollowing(owner, viewer),
+    };
   }
 
   followersCount(user: UserRecord): number {

@@ -1,7 +1,9 @@
 import { NotificationType } from 'itd-api';
 import type { NotificationService } from '../notifications/notifications.service.js';
+import { canAccess } from '../shared/access.utils.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
+import type { UserService } from '../users/users.service.js';
 import type { UserRecord } from '../users/users.types.js';
 import type { NewPost, PostRecord } from './posts.types.js';
 
@@ -12,16 +14,39 @@ function newestFirst(a: PostRecord, b: PostRecord): number {
 /** Посты, их публикация, удаление и реакции. @internal */
 export class PostService {
   readonly #store: MockStore;
+  readonly #users: UserService;
   readonly #notifications: NotificationService;
 
-  constructor(store: MockStore, notifications: NotificationService) {
+  constructor(store: MockStore, users: UserService, notifications: NotificationService) {
     this.#store = store;
+    this.#users = users;
     this.#notifications = notifications;
   }
 
   /** Все активные посты, сначала новые. */
   feed(): PostRecord[] {
     return this.#active(() => true);
+  }
+
+  /** Активные посты авторов, на которых подписан пользователь. */
+  followingFeed(viewer: UserRecord): PostRecord[] {
+    return this.#active((post) => viewer.following.has(post.authorId));
+  }
+
+  /** Активные посты авторов из клана пользователя, включая его собственные. */
+  clanFeed(viewer: UserRecord): PostRecord[] {
+    return this.#active(
+      (post) => this.#store.users.get(post.authorId)?.profile.avatar === viewer.profile.avatar,
+    );
+  }
+
+  /**
+   * Активные посты, которые лайкнул владелец списка. Если `likesVisibility` закрывает список
+   * от обращающегося, список пуст: прод в этом случае не отвечает ошибкой.
+   */
+  likedBy(owner: UserRecord, viewer: UserRecord): PostRecord[] {
+    const visible = canAccess(owner.profile.likesVisibility, this.#users.relation(owner, viewer));
+    return visible ? this.#active((post) => post.likedBy.has(owner.profile.id)) : [];
   }
 
   /** Активные посты на стене пользователя: свои без адресата и адресованные ему. */

@@ -1,7 +1,9 @@
+import { FeedTab } from 'itd-api';
 import { HttpMethod } from '../../http/http.constants.js';
 import type { MockRequest } from '../../http/request.types.js';
 import { apiResponse, emptyResponse } from '../../http/responses.utils.js';
 import type { MockHandler } from '../../http/router.types.js';
+import { MockDomainError } from '../shared/domain.errors.js';
 import { cursorPage } from '../shared/pagination.utils.js';
 import { objectBody, pageLimit, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
@@ -27,10 +29,25 @@ export function registerPostRoutes({
     });
   };
 
+  const feedOf = (request: MockRequest, viewer: UserRecord): PostRecord[] => {
+    const tab = request.query.get('tab');
+    switch (tab) {
+      case null:
+      case FeedTab.Popular:
+        return posts.feed();
+      case FeedTab.Following:
+        return posts.followingFeed(viewer);
+      case FeedTab.Clan:
+        return posts.clanFeed(viewer);
+      default:
+        throw MockDomainError.badRequest('VALIDATION_ERROR', `Неизвестная вкладка ленты ${tab}`);
+    }
+  };
+
   route(
     HttpMethod.Get,
     '/api/posts',
-    requireAuth((request, viewer) => postPage(request, viewer, posts.feed())),
+    requireAuth((request, viewer) => postPage(request, viewer, feedOf(request, viewer))),
   );
 
   route(
@@ -38,6 +55,14 @@ export function registerPostRoutes({
     '/api/posts/user/:user',
     requireAuth((request, viewer) =>
       postPage(request, viewer, posts.wall(users.require(request.params.user ?? ''))),
+    ),
+  );
+
+  route(
+    HttpMethod.Get,
+    '/api/posts/user/:user/liked',
+    requireAuth((request, viewer) =>
+      postPage(request, viewer, posts.likedBy(users.require(request.params.user ?? ''), viewer)),
     ),
   );
 

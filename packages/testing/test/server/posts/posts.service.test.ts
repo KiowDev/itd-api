@@ -1,6 +1,7 @@
+import { AccessType } from 'itd-api';
 import { describe, expect, it } from 'vitest';
 import { makeRuntime, userOf } from '../test-runtime.utils.js';
-import { ALICE, BOB } from '../test-server.utils.js';
+import { ALICE, BOB, CAROL } from '../test-server.utils.js';
 
 describe('PostService', () => {
   it('отдаёт ленту без удалённых постов, сначала новые', () => {
@@ -51,5 +52,69 @@ describe('PostService', () => {
     expect(() => runtime.services.posts.requireOwn('missing', bob)).toThrow(
       expect.objectContaining({ status: 404, code: 'NOT_FOUND' }),
     );
+  });
+
+  it('собирает ленту подписок только из постов тех, на кого подписан пользователь', () => {
+    const runtime = makeRuntime({
+      users: [
+        { id: ALICE, username: 'alice', following: [BOB] },
+        { id: BOB, username: 'bob' },
+        { id: CAROL, username: 'carol' },
+      ],
+      posts: [
+        { id: 'own', authorId: ALICE },
+        { id: 'bob', authorId: BOB },
+        { id: 'carol', authorId: CAROL },
+      ],
+    });
+
+    const feed = runtime.services.posts.followingFeed(userOf(runtime, ALICE));
+    expect(feed.map((post) => post.id)).toEqual(['bob']);
+  });
+
+  it('собирает ленту клана по аватару авторов, включая свои посты', () => {
+    const runtime = makeRuntime({
+      users: [
+        { id: ALICE, username: 'alice', avatar: '🦎' },
+        { id: BOB, username: 'bob', avatar: '🦎' },
+        { id: CAROL, username: 'carol', avatar: '🍅' },
+      ],
+      posts: [
+        { id: 'own', authorId: ALICE, createdAt: '2026-08-01T09:00:00.000Z' },
+        { id: 'bob', authorId: BOB, createdAt: '2026-08-01T09:30:00.000Z' },
+        { id: 'carol', authorId: CAROL },
+      ],
+    });
+    const alice = userOf(runtime, ALICE);
+    const { posts, users } = runtime.services;
+
+    expect(posts.clanFeed(alice).map((post) => post.id)).toEqual(['bob', 'own']);
+    users.updateProfile(alice, { avatar: '🍅' });
+    expect(posts.clanFeed(alice).map((post) => post.id)).toEqual(['carol', 'own']);
+  });
+
+  it('отдаёт лайкнутые активные посты, если политика открывает список', () => {
+    const runtime = makeRuntime({
+      users: [
+        { id: ALICE, username: 'alice', likesVisibility: AccessType.Followers },
+        { id: BOB, username: 'bob', following: [ALICE] },
+        { id: CAROL, username: 'carol' },
+      ],
+      posts: [
+        { id: 'old', authorId: BOB, likedBy: [ALICE], createdAt: '2026-08-01T09:00:00.000Z' },
+        { id: 'new', authorId: CAROL, likedBy: [ALICE], createdAt: '2026-08-01T09:30:00.000Z' },
+        { id: 'deleted', authorId: BOB, likedBy: [ALICE], deleted: true },
+        { id: 'other', authorId: BOB, likedBy: [CAROL] },
+      ],
+    });
+    const { posts } = runtime.services;
+    const alice = userOf(runtime, ALICE);
+
+    expect(posts.likedBy(alice, userOf(runtime, BOB)).map((post) => post.id)).toEqual([
+      'new',
+      'old',
+    ]);
+    expect(posts.likedBy(alice, alice)).toHaveLength(2);
+    expect(posts.likedBy(alice, userOf(runtime, CAROL))).toEqual([]);
   });
 });

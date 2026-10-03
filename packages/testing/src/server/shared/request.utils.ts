@@ -24,7 +24,12 @@ export function nonNegativeInt(value: string | null): number {
   return Math.max(0, Number.parseInt(value ?? '0', 10) || 0);
 }
 
-/** Размер страницы из `limit`: по умолчанию 20, не больше 100. @internal */
-export function pageLimit(request: MockRequest): number {
-  return positiveInt(request.query.get('limit'), 20);
+/** Размер страницы из `limit`: по умолчанию 20, не больше `maximum`. @internal */
+export function pageLimit(request: MockRequest, maximum = 100): number {
+  return positiveInt(request.query.get('limit'), 20, maximum);
+}
+
+/** Номер страницы из `page`, начиная с 1. @internal */
+export function pageNumber(request: MockRequest): number {
+  return positiveInt(request.query.get('page'), 1, Number.MAX_SAFE_INTEGER);
 }

@@ -1,4 +1,4 @@
-import type { MyProfile, PublicProfile } from 'itd-api';
+import type { MyProfile, PublicProfile, UserSummary } from 'itd-api';
 import { publicProfileFixture } from '../../fixtures/models.fixtures.js';
 import type { PostService } from '../posts/posts.service.js';
 import { UsernameIssue } from './users.constants.js';
@@ -57,6 +57,18 @@ export class UserPresenter {
       isFollowing: this.#users.isFollowing(viewer, user),
       isFollowedBy: this.#users.isFollowing(user, viewer),
     });
+  }
+
+  /** Запись списка подписчиков или подписок относительно текущего пользователя. */
+  userSummary(viewer: UserRecord, user: UserRecord): UserSummary {
+    return {
+      id: user.profile.id,
+      username: user.profile.username,
+      displayName: user.profile.displayName,
+      avatar: user.profile.avatar,
+      verified: user.profile.verified,
+      isFollowing: this.#users.isFollowing(viewer, user),
+    };
   }
 
   /** Свободно ли имя. Причину ответ называет только для неверного формата. */

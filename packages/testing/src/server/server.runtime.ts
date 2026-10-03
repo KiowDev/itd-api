@@ -30,7 +30,7 @@ export class MockServerRuntime {
     const store = new MockStore(clock);
     const notifications = new NotificationService(store);
     const users = new UserService(store, notifications);
-    const posts = new PostService(store, notifications);
+    const posts = new PostService(store, users, notifications);
     const comments = new CommentService(store, users, notifications);
     const shop = new ShopService(store);
     const userPresenter = new UserPresenter(users, posts);
