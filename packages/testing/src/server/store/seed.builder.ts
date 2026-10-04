@@ -40,21 +40,6 @@ function requireAcyclicReposts(
   }
 }
 
-/** Автор держит не больше одного активного репоста одного поста. */
-function requireSingleActiveRepost(postSeeds: readonly MockPostSeed[]): void {
-  const reposts = new Set<string>();
-  for (const item of postSeeds) {
-    if (!item.originalPostId || item.deleted) continue;
-    const key = JSON.stringify([item.authorId, item.originalPostId]);
-    if (reposts.has(key)) {
-      throw new MockServerSeedError(
-        `Пользователь ${item.authorId} репостнул пост ${item.originalPostId} больше одного раза`,
-      );
-    }
-    reposts.add(key);
-  }
-}
-
 /** Валидирует seed и собирает независимые данные хранилища, не изменяя работающий сервер. @internal */
 export function buildStoreContents(
   seed: MockServerSeed | undefined,
@@ -150,7 +135,6 @@ export function buildStoreContents(
     }
   });
   requireAcyclicReposts(postSeeds, postIds);
-  requireSingleActiveRepost(postSeeds);
   commentSeeds.forEach((item, index) => {
     if (!knownPosts.has(item.postId)) {
       throw new MockServerSeedError(`У комментария ${commentIds[index]} нет поста ${item.postId}`);

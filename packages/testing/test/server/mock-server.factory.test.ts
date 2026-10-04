@@ -150,20 +150,6 @@ describe('createMockServer: жизненный цикл', () => {
       },
     },
     {
-      name: 'два активных репоста одного поста от автора',
-      seed: {
-        users: [
-          { id: ALICE, username: 'alice' },
-          { id: BOB, username: 'bob' },
-        ],
-        posts: [
-          { id: 'root', authorId: ALICE },
-          { id: 'r1', authorId: BOB, originalPostId: 'root' },
-          { id: 'r2', authorId: BOB, originalPostId: 'root' },
-        ],
-      },
-    },
-    {
       name: 'повторяющийся идентификатор уведомления',
       seed: {
         users: [{ id: ALICE, username: 'alice' }],

@@ -132,14 +132,13 @@ export class PostService {
   }
 
   /**
-   * Репостит пост с необязательным текстом. Повторный репост того же поста возвращает уже
-   * существующий репост без изменений и без нового уведомления. Репост репоста ссылается
-   * на сам репост, поэтому цепочка может быть любой длины.
+   * Репостит пост с необязательным текстом. Каждый вызов создаёт новый репост, но автор поста
+   * получает уведомление только о первом активном репосте пользователя. Репост репоста
+   * ссылается на сам репост, поэтому цепочка может быть любой длины.
    */
   repost(user: UserRecord, postId: string, content: string): PostRecord {
     const parent = this.requireActive(postId);
-    const existing = this.activeRepost(user, parent.id);
-    if (existing) return existing;
+    const firstRepost = !this.hasReposted(user, parent.id);
     const repost: PostRecord = {
       id: this.#store.nextPostId(),
       authorId: user.profile.id,
@@ -153,41 +152,37 @@ export class PostService {
       deleted: false,
     };
     this.#store.posts.set(repost.id, repost);
-    this.#notifications.notify({
-      recipientId: parent.authorId,
-      type: NotificationType.PostRepost,
-      actorId: user.profile.id,
-      entityId: repost.id,
-      parentEntityId: parent.id,
-      preview: parent.content,
-    });
+    if (firstRepost) {
+      this.#notifications.notify({
+        recipientId: parent.authorId,
+        type: NotificationType.PostRepost,
+        actorId: user.profile.id,
+        entityId: repost.id,
+        preview: parent.content,
+      });
+    }
     return repost;
   }
 
-  /** Удаляет репост пользователя. Сам пост и чужие репосты не меняются. */
-  unrepost(user: UserRecord, postId: string): void {
-    const repost = this.activeRepost(user, postId);
-    if (!repost) throw MockDomainError.notFound('Repost not found');
-    repost.deleted = true;
+  /**
+   * Удаляет все репосты поста от пользователя и возвращает, сколько пользователей его ещё
+   * репостят. Сам пост и чужие репосты не меняются; удалённый исходный пост отмене не мешает.
+   */
+  unrepost(user: UserRecord, postId: string): number {
+    const reposts = this.#repostsBy(user, postId);
+    if (reposts.length === 0) throw MockDomainError.notFound('Repost not found');
+    for (const repost of reposts) repost.deleted = true;
+    return this.#countReposters(postId);
   }
 
-  /** Активный репост поста от пользователя. */
-  activeRepost(user: UserRecord, postId: string): PostRecord | undefined {
-    for (const post of this.#store.posts.values()) {
-      if (!post.deleted && post.originalPostId === postId && post.authorId === user.profile.id) {
-        return post;
-      }
-    }
-    return undefined;
+  /** Есть ли у пользователя активный репост поста. */
+  hasReposted(user: UserRecord, postId: string): boolean {
+    return this.#repostsBy(user, postId).length > 0;
   }
 
-  /** Число активных прямых репостов поста. */
+  /** Сколько пользователей репостят пост: несколько репостов одного пользователя считаются одним. */
   repostsCount(post: PostRecord): number {
-    let count = 0;
-    for (const candidate of this.#store.posts.values()) {
-      if (candidate.originalPostId === post.id && this.#visible(candidate)) count += 1;
-    }
-    return count;
+    return this.#countReposters(post.id);
   }
 
   /** Пост, который репостнули, если он виден. */
@@ -220,6 +215,23 @@ export class PostService {
     return [...this.#store.posts.values()]
       .filter((post) => this.#visible(post) && predicate(post))
       .sort(newestFirst);
+  }
+
+  #repostsBy(user: UserRecord, postId: string): PostRecord[] {
+    return [...this.#store.posts.values()].filter(
+      (post) =>
+        !post.deleted && post.originalPostId === postId && post.authorId === user.profile.id,
+    );
+  }
+
+  #countReposters(postId: string): number {
+    const reposters = new Set<string>();
+    for (const candidate of this.#store.posts.values()) {
+      if (candidate.originalPostId === postId && this.#visible(candidate)) {
+        reposters.add(candidate.authorId);
+      }
+    }
+    return reposters.size;
   }
 
   #visible(post: PostRecord): boolean {

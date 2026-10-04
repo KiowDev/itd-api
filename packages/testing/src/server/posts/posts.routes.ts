@@ -141,8 +141,8 @@ export function registerPostRoutes({
     HttpMethod.Delete,
     '/api/posts/:postId/repost',
     requireAuth((request, user) => {
-      posts.unrepost(user, request.params.postId ?? '');
-      return emptyResponse();
+      const repostsCount = posts.unrepost(user, request.params.postId ?? '');
+      return apiResponse({ success: true, repostsCount });
     }),
   );
 

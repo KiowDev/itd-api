@@ -71,7 +71,7 @@ describe('createMockServer: пользователи', () => {
 
     await expect(alice.users.updateMe({ username: 'Bob' })).rejects.toMatchObject({
       status: 409,
-      code: 'PROFILE_USERNAME_TAKEN',
+      code: 'USERNAME_TAKEN',
     });
     await expect(alice.users.updateMe({ username: 'a-b' })).rejects.toMatchObject({
       status: 400,

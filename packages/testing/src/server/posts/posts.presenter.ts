@@ -41,7 +41,7 @@ export class PostPresenter {
       commentsCount: this.#comments.activeCountFor(post),
       repostsCount: this.#posts.repostsCount(post),
       isLiked: post.likedBy.has(viewer.profile.id),
-      isReposted: this.#posts.activeRepost(viewer, post.id) !== undefined,
+      isReposted: this.#posts.hasReposted(viewer, post.id),
       isOwner: post.authorId === viewer.profile.id,
       originalPost: parent ? this.originalPost(parent) : null,
       editedAt: post.editedAt,

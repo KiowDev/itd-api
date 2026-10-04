@@ -122,4 +122,44 @@ describe('createMockServer: репосты', () => {
     expect(raw.data.originalPost.createdAt).toBe('2026-10-04 19:32:04.381000+00');
     expect(repost.originalPost?.createdAt).toBe('2026-10-04T19:32:04.381Z');
   });
+
+  it('отменяет репост и после удаления исходного поста', async () => {
+    const server = makeRepostServer();
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+    const bob = new ItdClient(server.clientOptions({ as: 'bob' }));
+    await bob.posts.repost('root');
+    await alice.posts.remove('root');
+
+    await expect(
+      bob.request({ method: HttpMethod.Delete, path: '/api/posts/root/repost', raw: true }),
+    ).resolves.toEqual({ data: { success: true, repostsCount: 0 } });
+    const [notification] = (await alice.notifications.list()).items;
+    expect(notification).toMatchObject({ type: 'post_repost', parentEntityId: null });
+  });
+
+  it('повторяет поведение прода при повторном репосте', async () => {
+    const server = makeRepostServer();
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+    const bob = new ItdClient(server.clientOptions({ as: 'bob' }));
+
+    const first = await bob.posts.repost('root', 'проверка');
+    const second = await bob.posts.repost('root', 'повтор');
+
+    expect(second.id).not.toBe(first.id);
+    await expect(bob.posts.get('root')).resolves.toMatchObject({
+      repostsCount: 1,
+      isReposted: true,
+    });
+    expect((await alice.notifications.list()).items.map((item) => item.type)).toEqual([
+      'post_repost',
+    ]);
+
+    await bob.posts.unrepost('root');
+    await expect(bob.posts.get(first.id)).rejects.toMatchObject({ status: 404 });
+    await expect(bob.posts.get(second.id)).rejects.toMatchObject({ status: 404 });
+    await expect(bob.posts.get('root')).resolves.toMatchObject({
+      repostsCount: 0,
+      isReposted: false,
+    });
+  });
 });

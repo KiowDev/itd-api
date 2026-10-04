@@ -8,21 +8,24 @@ function makeRepostRuntime() {
 }
 
 describe('PostService: репосты', () => {
-  it('создаёт репост с текстом и уведомляет автора поста один раз', () => {
+  it('создаёт новый репост на каждый вызов и уведомляет автора поста один раз', () => {
     const runtime = makeRepostRuntime();
     const { posts, notifications } = runtime.services;
     const bob = userOf(runtime, BOB);
 
     const repost = posts.repost(bob, 'root', 'Смотрите');
+    const again = posts.repost(bob, 'root', 'Другой текст');
     expect(repost).toMatchObject({ authorId: BOB, content: 'Смотрите', originalPostId: 'root' });
-    expect(posts.repost(bob, 'root', 'Другой текст')).toBe(repost);
-    expect(repost.content).toBe('Смотрите');
+    expect(again).toMatchObject({ authorId: BOB, content: 'Другой текст', originalPostId: 'root' });
+    expect(again.id).not.toBe(repost.id);
+    expect(posts.hasReposted(bob, 'root')).toBe(true);
 
     expect(notifications.forUser(ALICE)).toEqual([
       expect.objectContaining({
         type: NotificationType.PostRepost,
         entityId: repost.id,
-        parentEntityId: 'root',
+        parentEntityId: null,
+        preview: 'Исходный',
       }),
     ]);
     expect(posts.repostsCount(posts.requireActive('root'))).toBe(1);
@@ -48,6 +51,21 @@ describe('PostService: репосты', () => {
     expect(() => runtime.services.posts.repost(userOf(runtime, BOB), 'root', '')).toThrow(
       expect.objectContaining({ status: 404, code: 'NOT_FOUND' }),
     );
+  });
+
+  it('отменяет все репосты пользователя одним вызовом', () => {
+    const runtime = makeRepostRuntime();
+    const { posts, notifications } = runtime.services;
+    const bob = userOf(runtime, BOB);
+    const reposts = [posts.repost(bob, 'root', '1'), posts.repost(bob, 'root', '2')];
+    posts.repost(userOf(runtime, CAROL), 'root', '');
+
+    expect(posts.repostsCount(posts.requireActive('root'))).toBe(2);
+    expect(posts.unrepost(bob, 'root')).toBe(1);
+    expect(reposts.map((repost) => repost.deleted)).toEqual([true, true]);
+
+    posts.repost(bob, 'root', '3');
+    expect(notifications.forUser(ALICE).filter((n) => n.actorIds[0] === BOB)).toHaveLength(2);
   });
 
   it('отменяет только репост текущего пользователя', () => {

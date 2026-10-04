@@ -94,7 +94,7 @@ describe('UserService', () => {
 
     expect(() =>
       runtime.services.users.updateProfile(alice, { username: 'BOB', displayName: 'Новое' }),
-    ).toThrow(expect.objectContaining({ status: 409, code: 'PROFILE_USERNAME_TAKEN' }));
+    ).toThrow(expect.objectContaining({ status: 409, code: 'USERNAME_TAKEN' }));
     expect(alice.profile).toMatchObject({ username: 'alice' });
     expect(alice.profile.displayName).not.toBe('Новое');
   });

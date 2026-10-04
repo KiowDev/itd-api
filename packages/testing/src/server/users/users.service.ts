@@ -184,7 +184,7 @@ export class UserService {
           'Имя пользователя: латинские буквы, цифры и _, от 3 до 32 символов',
         );
       case UsernameIssue.Taken:
-        throw new MockDomainError(409, 'PROFILE_USERNAME_TAKEN', 'Имя пользователя занято');
+        throw new MockDomainError(409, 'USERNAME_TAKEN', 'Username is already taken');
     }
   }
 }
