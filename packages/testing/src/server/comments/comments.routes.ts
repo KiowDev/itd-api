@@ -1,8 +1,8 @@
 import { HttpMethod } from '../../http/http.constants.js';
 import { apiResponse, emptyResponse } from '../../http/responses.utils.js';
 import type { MockHandler } from '../../http/router.types.js';
-import { cursorPage, numberedPage } from '../shared/pagination.utils.js';
-import { objectBody, pageLimit, pageNumber, stringField } from '../shared/request.utils.js';
+import { cursorPage, numberedPage, numberedPagination } from '../shared/pagination.utils.js';
+import { cursorQuery, numberedQuery, objectBody, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 
 export function registerCommentRoutes({
@@ -18,10 +18,7 @@ export function registerCommentRoutes({
     '/api/posts/:postId/comments',
     requireAuth((request, viewer) => {
       const all = comments.topLevel(posts.requireActive(request.params.postId ?? ''));
-      const page = cursorPage(all, {
-        limit: pageLimit(request),
-        cursor: request.query.get('cursor'),
-      });
+      const page = cursorPage(all, cursorQuery(request));
       return apiResponse({
         comments: page.items.map((comment) => presenters.comments.comment(comment, viewer)),
         hasMore: page.hasMore,
@@ -50,18 +47,10 @@ export function registerCommentRoutes({
     '/api/comments/:commentId/replies',
     requireAuth((request, viewer) => {
       const parent = comments.requireActive(request.params.commentId ?? '');
-      const page = numberedPage(comments.replies(parent), {
-        page: pageNumber(request),
-        limit: pageLimit(request),
-      });
+      const page = numberedPage(comments.replies(parent), numberedQuery(request));
       return apiResponse({
         replies: page.items.map((comment) => presenters.comments.comment(comment, viewer)),
-        pagination: {
-          page: page.page,
-          limit: page.limit,
-          total: page.total,
-          hasMore: page.hasMore,
-        },
+        pagination: numberedPagination(page),
       });
     }),
   );

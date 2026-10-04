@@ -5,8 +5,9 @@
 
 Особенности, о которых легко забыть:
 
-- **`avatar` — это эмодзи, а не URL.** На итд.com аватар — символ клана (`🩵`, `🦎`).
-  Отрисовывать его нужно как текст. Поле `banner` содержит URL изображения или `null`.
+- **`avatar` — обычно эмодзи.** Как правило, аватар — символ клана (`🩵`, `🦎`), его отрисовывают
+  как текст. Он может быть и URL изображения — тогда клан хранится в `clanAvatar` профиля.
+  Поле `banner` содержит URL изображения или `null`.
 - **`UserRef`** = UUID или username; **`UserId`** = строго UUID.
 
 ```ts
@@ -26,7 +27,7 @@ interface Author {
   id: UserId;
   username: string;
   displayName: string;
-  avatar: string;                        // эмодзи, не URL
+  avatar: string;                        // обычно эмодзи, может быть URL
   verified: boolean;
   pin?: Pin | null;                      // активный значок
   hasNuksta?: boolean;                   // премиум-подписка
@@ -72,7 +73,8 @@ interface UserSummary {
 ```ts
 interface MyProfile {
   id: UserId; username: string; displayName: string;
-  avatar: string; banner: string | null; bio: string;
+  avatar: string; clanAvatar?: string;   // эмодзи клана
+  banner: string | null; bio: string;
   verified: boolean; pin?: Pin | null;
   wallAccess: WallAccess;                // кто может писать на стену
   likesVisibility: LikesVisibility;      // кто видит реакции
@@ -99,7 +101,7 @@ interface SubscriptionState {
 ```ts
 interface AuthUser {
   id: UserId; username: string; displayName: string;
-  avatar: string; bio: string; verified: boolean;
+  avatar: string; clanAvatar?: string; bio: string; verified: boolean;
   isPhoneVerified: boolean;
   roles: string[];
 }
@@ -120,7 +122,8 @@ interface AuthState {
 ```ts
 interface PublicProfile {
   id: UserId; username: string; displayName: string;
-  avatar: string; banner: string | null; bio: string;
+  avatar: string; clanAvatar?: string;   // эмодзи клана
+  banner: string | null; bio: string;
   verified: boolean; pin?: Pin | null;
   wallAccess: WallAccess; likesVisibility: LikesVisibility;
   followersCount: number; followingCount: number; postsCount: number;
@@ -168,6 +171,7 @@ interface PrivacySettings {
   isPrivate: boolean;                    // подписка требует одобрения
   wallAccess: WallAccess;
   likesVisibility: LikesVisibility;
+  messageAccess: MessageAccess;          // кто может писать личные сообщения
   showLastSeen: boolean;
 }
 ```
@@ -186,7 +190,7 @@ interface FollowResult {
 
 ```ts
 interface Clan {
-  avatar: string;                        // эмодзи клана
+  avatar: string;                        // эмодзи клана = clanAvatar участников
   memberCount: number;
 }
 ```
@@ -206,13 +210,34 @@ interface Post {
   wallRecipientId: UserId | null;        // чья стена, если пост не у себя
   wallRecipient?: Author | null;         // владелец стены
   isLiked: boolean; isReposted: boolean; isViewed?: boolean; isOwner: boolean;
-  originalPost?: Post | null;            // если это репост
+  originalPost?: OriginalPost | null;    // если это репост
   poll?: Poll | null;
   dominantEmoji?: string | null;         // преобладающая реакция
   editedAt?: IsoDate | null;
   createdAt: IsoDate;
   vs?: string;                           // служебная метка показа для itd.telemetry
   comments?: Comment[];                  // только в ответе itd.posts.get()
+}
+```
+
+### OriginalPost
+
+Пост, на который ссылается репост. Сервер отдаёт его на один уровень: у репоста репоста
+`originalPost` — промежуточный репост, без собственного `originalPost`. `createdAt` сервер
+присылает в формате PostgreSQL (`2026-10-04 22:32:04.381097+03`), библиотека приводит его к ISO.
+
+```ts
+interface OriginalPost {
+  id: string;
+  content: string;
+  spans: Span[];
+  author: Author;
+  attachments: Attachment[];
+  likesCount: number; commentsCount: number; repostsCount: number; viewsCount: number;
+  isDeleted: boolean;
+  dominantEmoji?: string | null;
+  createdAt: IsoDate;
+  vs?: string;
 }
 ```
 
@@ -359,6 +384,7 @@ interface Notification {
 interface NotificationSettings {
   enabled: boolean;                      // общий выключатель
   sound: boolean;
+  messages: boolean;                     // личные сообщения
   follows: boolean;
   wallPosts: boolean;
   likes: boolean;

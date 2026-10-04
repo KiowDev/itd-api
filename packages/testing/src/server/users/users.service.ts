@@ -5,7 +5,7 @@ import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
 import { UsernameIssue } from './users.constants.js';
 import type { ProfilePatch, UserRecord } from './users.types.js';
-import { isUsernameFormatValid, usernameKey } from './users.utils.js';
+import { clanOf, isImageAvatar, isUsernameFormatValid, usernameKey } from './users.utils.js';
 
 /** Пользователи, их профили и граф подписок. @internal */
 export class UserService {
@@ -55,6 +55,9 @@ export class UserService {
   updateProfile(user: UserRecord, patch: ProfilePatch): void {
     if (patch.username !== undefined) this.#assertUsername(user, patch.username);
     Object.assign(user.profile, patch);
+    if (patch.avatar !== undefined && !isImageAvatar(patch.avatar)) {
+      user.profile.clanAvatar = patch.avatar;
+    }
   }
 
   deactivate(user: UserRecord): void {
@@ -104,12 +107,13 @@ export class UserService {
       .filter((candidate): candidate is UserRecord => candidate !== undefined);
   }
 
-  /** Кланы — группы активных пользователей с одинаковым аватаром, самые большие первыми. */
+  /** Кланы — группы активных пользователей с одним `clanAvatar`, самые большие первыми. */
   topClans(limit: number): Clan[] {
     const members = new Map<string, number>();
     for (const user of this.#store.users.values()) {
       if (user.deactivated) continue;
-      members.set(user.profile.avatar, (members.get(user.profile.avatar) ?? 0) + 1);
+      const clan = clanOf(user);
+      members.set(clan, (members.get(clan) ?? 0) + 1);
     }
     return [...members]
       .map(([avatar, memberCount]) => ({ avatar, memberCount }))

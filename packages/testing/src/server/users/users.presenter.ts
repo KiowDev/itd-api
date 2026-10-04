@@ -1,14 +1,17 @@
-import type { MyProfile, PublicProfile, UserSummary } from 'itd-api';
+import {
+  type AuthUser,
+  type MyProfile,
+  type PublicProfile,
+  type UsernameAvailability,
+  UsernameUnavailableReason,
+  type UserSummary,
+} from 'itd-api';
 import { publicProfileFixture } from '../../fixtures/models.fixtures.js';
 import type { PostService } from '../posts/posts.service.js';
 import { UsernameIssue } from './users.constants.js';
 import type { UserService } from './users.service.js';
-import type {
-  SessionUser,
-  UsernameAvailability,
-  UserRecord,
-  UserReference,
-} from './users.types.js';
+import type { UserRecord, UserReference } from './users.types.js';
+import { clanOf } from './users.utils.js';
 
 /** Профили в форме ответов API. Счётчики вычисляются при каждом вызове. @internal */
 export class UserPresenter {
@@ -29,12 +32,13 @@ export class UserPresenter {
     };
   }
 
-  sessionUser(user: UserRecord): SessionUser {
+  sessionUser(user: UserRecord): AuthUser {
     return {
       id: user.profile.id,
       username: user.profile.username,
       displayName: user.profile.displayName,
       avatar: user.profile.avatar,
+      clanAvatar: clanOf(user),
       bio: user.profile.bio,
       verified: user.profile.verified,
       isPhoneVerified: user.profile.isPhoneVerified,
@@ -88,7 +92,7 @@ export class UserPresenter {
   usernameAvailability(issue: UsernameIssue | undefined): UsernameAvailability {
     if (issue === undefined) return { available: true };
     return issue === UsernameIssue.InvalidFormat
-      ? { available: false, reason: UsernameIssue.InvalidFormat }
+      ? { available: false, reason: UsernameUnavailableReason.InvalidFormat }
       : { available: false };
   }
 

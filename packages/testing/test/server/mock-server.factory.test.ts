@@ -133,6 +133,37 @@ describe('createMockServer: жизненный цикл', () => {
       },
     },
     {
+      name: 'репост отсутствующего поста',
+      seed: {
+        users: [{ id: ALICE, username: 'alice' }],
+        posts: [{ id: 'repost', authorId: ALICE, originalPostId: 'missing' }],
+      },
+    },
+    {
+      name: 'цикл репостов',
+      seed: {
+        users: [{ id: ALICE, username: 'alice' }],
+        posts: [
+          { id: 'a', authorId: ALICE, originalPostId: 'b' },
+          { id: 'b', authorId: ALICE, originalPostId: 'a' },
+        ],
+      },
+    },
+    {
+      name: 'два активных репоста одного поста от автора',
+      seed: {
+        users: [
+          { id: ALICE, username: 'alice' },
+          { id: BOB, username: 'bob' },
+        ],
+        posts: [
+          { id: 'root', authorId: ALICE },
+          { id: 'r1', authorId: BOB, originalPostId: 'root' },
+          { id: 'r2', authorId: BOB, originalPostId: 'root' },
+        ],
+      },
+    },
+    {
       name: 'повторяющийся идентификатор уведомления',
       seed: {
         users: [{ id: ALICE, username: 'alice' }],

@@ -39,7 +39,7 @@ export type Loose<T extends string> = T | (string & {});
  * Множество закрытое: неизвестное значение сервер отвергнет.
  */
 export const FeedTab = Object.freeze({
-  /** Популярное. Курсор здесь — номер страницы в виде строки (`"2"`, `"6"`…). */
+  /** Популярное. Курсор здесь — числовая строка (`"40"`, `"60"`…), а не номер страницы. */
   Popular: 'popular',
   /** Записи тех, на кого вы подписаны. Курсор — отметка времени последнего поста. */
   Following: 'following',
@@ -209,7 +209,8 @@ export type IncidentKind = Loose<(typeof IncidentKind)[keyof typeof IncidentKind
 /**
  * Уровень доступа к разделу профиля.
  *
- * Общий набор значений для полей `wallAccess` и `likesVisibility` настроек приватности.
+ * Общий набор значений для полей `wallAccess`, `likesVisibility` и `messageAccess` настроек
+ * приватности.
  * Тип открытый: сервер может прислать значение вне этого перечня.
  */
 export const AccessType = Object.freeze({
@@ -231,6 +232,19 @@ export type WallAccess = AccessType;
 /** Кто видит реакции пользователя. Псевдоним {@link AccessType}. */
 export const LikesVisibility = AccessType;
 export type LikesVisibility = AccessType;
+
+/** Почему имя пользователя нельзя занять. Тип открытый: сервер может прислать другую причину. */
+export const UsernameUnavailableReason = Object.freeze({
+  /** Имя не подходит под правила: латинские буквы, цифры и `_`, не короче трёх символов. */
+  InvalidFormat: 'INVALID_FORMAT',
+} as const);
+export type UsernameUnavailableReason = Loose<
+  (typeof UsernameUnavailableReason)[keyof typeof UsernameUnavailableReason]
+>;
+
+/** Кто может писать пользователю личные сообщения. Псевдоним {@link AccessType}. */
+export const MessageAccess = AccessType;
+export type MessageAccess = AccessType;
 
 /**
  * Канонический тип уведомления (новое поколение имён).

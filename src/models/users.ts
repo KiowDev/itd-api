@@ -1,4 +1,10 @@
-import type { LikesVisibility, Loose, WallAccess } from '../types/enums.js';
+import type {
+  LikesVisibility,
+  Loose,
+  MessageAccess,
+  UsernameUnavailableReason,
+  WallAccess,
+} from '../types/enums.js';
 import type { IsoDate, UserId } from './common.js';
 
 /** Значок-«пин» в профиле — награда или отметка платформы. */
@@ -25,10 +31,10 @@ export interface Author {
   username: string;
   displayName: string;
   /**
-   * **Эмодзи, а не картинка.**
+   * Аватар: обычно эмодзи — символ клана (`🩵`, `🦎`), который отрисовывают как текст.
    *
-   * На итд.com аватар — это символ клана (`🩵`, `🦎`), а не адрес изображения.
-   * Отрисовывать его нужно как текст.
+   * Может быть и адресом изображения. Клан пользователя в этом случае хранится отдельно,
+   * в `clanAvatar` профиля.
    */
   avatar: string;
   /** Пройдена ли верификация. */
@@ -48,7 +54,7 @@ export interface Actor {
   id: UserId;
   username: string;
   displayName: string;
-  /** Эмодзи-аватар, см. {@link Author.avatar}. */
+  /** Аватар: эмодзи или адрес изображения, см. {@link Author.avatar}. */
   avatar: string;
   /** Подписаны ли вы на этого пользователя. */
   isFollowing?: boolean;
@@ -67,7 +73,7 @@ export interface UserSummary {
   id: UserId;
   username: string;
   displayName: string;
-  /** Эмодзи-аватар, см. {@link Author.avatar}. */
+  /** Аватар: эмодзи или адрес изображения, см. {@link Author.avatar}. */
   avatar: string;
   verified: boolean;
   /** Подписаны ли вы. Приходит в списках подписчиков и подписок. */
@@ -83,8 +89,13 @@ interface ProfileBase {
   id: UserId;
   username: string;
   displayName: string;
-  /** Эмодзи-аватар, см. {@link Author.avatar}. */
+  /** Аватар: эмодзи или адрес изображения, см. {@link Author.avatar}. */
   avatar: string;
+  /**
+   * Эмодзи клана. Совпадает с `avatar`, пока аватар — эмодзи; при аватаре-картинке остаётся
+   * символом клана.
+   */
+  clanAvatar?: string;
   /** URL изображения баннера либо `null`. */
   banner: string | null;
   /** Описание профиля. */
@@ -133,8 +144,10 @@ export interface AuthUser {
   id: UserId;
   username: string;
   displayName: string;
-  /** Эмодзи-аватар, см. {@link Author.avatar}. */
+  /** Аватар: эмодзи или адрес изображения, см. {@link Author.avatar}. */
   avatar: string;
+  /** Эмодзи клана. Совпадает с `avatar`, пока аватар — эмодзи. */
+  clanAvatar?: string;
   bio: string;
   verified: boolean;
   isPhoneVerified: boolean;
@@ -175,12 +188,22 @@ export interface PublicProfile extends ProfileBase {
 /** Профиль: свой либо чужой. Различаются функцией `isMyProfile()`. */
 export type Profile = MyProfile | PublicProfile;
 
+/** Результат проверки имени пользователя. */
+export interface UsernameAvailability {
+  /** Свободно ли имя. Своё текущее имя сервер считает занятым. */
+  available: boolean;
+  /** Причина, если имя не подходит по формату. У занятого имени причины нет. */
+  reason?: UsernameUnavailableReason;
+}
+
 /** Настройки приватности профиля. */
 export interface PrivacySettings {
   /** Закрыт ли профиль: подписка требует одобрения. */
   isPrivate: boolean;
   wallAccess: WallAccess;
   likesVisibility: LikesVisibility;
+  /** Кто может писать личные сообщения. */
+  messageAccess: MessageAccess;
   /** Показывать ли время последнего посещения. */
   showLastSeen: boolean;
 }

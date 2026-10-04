@@ -1,4 +1,4 @@
-import { ItdClient } from 'itd-api';
+import { ItdClient, UsernameUnavailableReason } from 'itd-api';
 import { describe, expect, it } from 'vitest';
 import { createMockServer, HttpMethod, waitForUpdate } from '../../../src/index.js';
 import { ALICE, BOB, CAROL, makeServer } from '../test-server.utils.js';
@@ -86,9 +86,13 @@ describe('createMockServer: пользователи', () => {
     const server = makeServer();
     const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
 
-    await expect(alice.users.checkUsername('free_name')).resolves.toBe(true);
-    await expect(alice.users.checkUsername('BOB')).resolves.toBe(false);
-    await expect(alice.users.checkUsername('alice')).resolves.toBe(false);
+    await expect(alice.users.checkUsername('free_name')).resolves.toEqual({ available: true });
+    await expect(alice.users.checkUsername('BOB')).resolves.toEqual({ available: false });
+    await expect(alice.users.checkUsername('alice')).resolves.toEqual({ available: false });
+    await expect(alice.users.checkUsername('ab')).resolves.toEqual({
+      available: false,
+      reason: UsernameUnavailableReason.InvalidFormat,
+    });
     await expect(
       alice.request({
         method: HttpMethod.Get,
@@ -203,5 +207,31 @@ describe('createMockServer: пользователи', () => {
       { avatar: '🍅', memberCount: 1 },
     ]);
     server.assertNoUnsupportedRequests();
+  });
+
+  it('хранит клан отдельно от аватара-картинки', async () => {
+    const server = createMockServer({
+      seed: {
+        users: [
+          { id: ALICE, username: 'alice', avatar: 'https://cdn.test/alice.png', clanAvatar: '🦎' },
+          { id: BOB, username: 'bob', avatar: '🦎' },
+          { id: CAROL, username: 'carol', avatar: '🍅' },
+        ],
+      },
+    });
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+
+    await expect(alice.users.me()).resolves.toMatchObject({ clanAvatar: '🦎' });
+    await expect(alice.users.get('bob')).resolves.toMatchObject({ clanAvatar: '🦎' });
+    await expect(alice.auth.check()).resolves.toMatchObject({ user: { clanAvatar: '🦎' } });
+    await expect(alice.users.topClans()).resolves.toEqual([
+      { avatar: '🦎', memberCount: 2 },
+      { avatar: '🍅', memberCount: 1 },
+    ]);
+
+    await alice.users.updateMe({ avatar: 'https://cdn.test/new.png' });
+    await expect(alice.users.me()).resolves.toMatchObject({ clanAvatar: '🦎' });
+    await alice.users.updateMe({ avatar: '🍅' });
+    await expect(alice.users.me()).resolves.toMatchObject({ avatar: '🍅', clanAvatar: '🍅' });
   });
 });

@@ -4,9 +4,9 @@ import { MockServerSeedError } from '../../testing.errors.js';
 import type { CommentRecord } from '../comments/comments.types.js';
 import type { NotificationRecord } from '../notifications/notifications.types.js';
 import type { PostRecord } from '../posts/posts.types.js';
-import type { MockServerSeed } from '../server.types.js';
+import type { MockPostSeed, MockServerSeed } from '../server.types.js';
 import type { UserRecord } from '../users/users.types.js';
-import { isUsernameFormatValid, usernameKey } from '../users/users.utils.js';
+import { isImageAvatar, isUsernameFormatValid, usernameKey } from '../users/users.utils.js';
 import type { MockStoreContents } from './store.types.js';
 
 function at<T>(values: readonly T[], index: number): T {
@@ -22,6 +22,36 @@ function requireUnique(ids: readonly string[], kind: string): void {
   for (const id of ids) {
     if (seen.has(id)) throw new MockServerSeedError(`Повторяется ${kind} ${id}`);
     seen.add(id);
+  }
+}
+
+/** Цепочка репостов не может замыкаться на себя. */
+function requireAcyclicReposts(
+  postSeeds: readonly MockPostSeed[],
+  postIds: readonly string[],
+): void {
+  const parents = new Map(postIds.map((id, index) => [id, at(postSeeds, index).originalPostId]));
+  for (const start of postIds) {
+    const seen = new Set<string>();
+    for (let id: string | null | undefined = start; id; id = parents.get(id)) {
+      if (seen.has(id)) throw new MockServerSeedError(`Репосты образуют цикл через пост ${id}`);
+      seen.add(id);
+    }
+  }
+}
+
+/** Автор держит не больше одного активного репоста одного поста. */
+function requireSingleActiveRepost(postSeeds: readonly MockPostSeed[]): void {
+  const reposts = new Set<string>();
+  for (const item of postSeeds) {
+    if (!item.originalPostId || item.deleted) continue;
+    const key = JSON.stringify([item.authorId, item.originalPostId]);
+    if (reposts.has(key)) {
+      throw new MockServerSeedError(
+        `Пользователь ${item.authorId} репостнул пост ${item.originalPostId} больше одного раза`,
+      );
+    }
+    reposts.add(key);
   }
 }
 
@@ -113,7 +143,14 @@ export function buildStoreContents(
       );
     }
     requireKnownUsers(item.likedBy ?? [], `Пост ${postIds[index]}`);
+    if (item.originalPostId && !knownPosts.has(item.originalPostId)) {
+      throw new MockServerSeedError(
+        `Пост ${postIds[index]} репостит отсутствующий пост ${item.originalPostId}`,
+      );
+    }
   });
+  requireAcyclicReposts(postSeeds, postIds);
+  requireSingleActiveRepost(postSeeds);
   commentSeeds.forEach((item, index) => {
     if (!knownPosts.has(item.postId)) {
       throw new MockServerSeedError(`У комментария ${commentIds[index]} нет поста ${item.postId}`);
@@ -167,6 +204,9 @@ export function buildStoreContents(
       createdAt: item.createdAt ?? now(),
       ...fields,
     });
+    if (profile.clanAvatar === undefined && !isImageAvatar(profile.avatar)) {
+      profile.clanAvatar = profile.avatar;
+    }
     users.set(id, { profile, following: new Set(following), deactivated });
   });
   postSeeds.forEach((item, index) => {
@@ -176,6 +216,7 @@ export function buildStoreContents(
       authorId: item.authorId,
       content: item.content ?? '',
       spans: structuredClone([...(item.spans ?? [])]),
+      originalPostId: item.originalPostId ?? null,
       wallRecipientId: item.wallRecipientId ?? null,
       createdAt: item.createdAt ?? now(),
       editedAt: null,

@@ -5,6 +5,7 @@ import {
   type MyProfile,
   type Notification,
   NotificationType,
+  type OriginalPost,
   type Page,
   type Post,
   type PublicProfile,
@@ -15,6 +16,7 @@ import type {
   AuthorFixtureInput,
   CommentFixtureInput,
   NotificationFixtureInput,
+  OriginalPostFixtureInput,
   PostFixtureInput,
   PublicProfileFixtureInput,
   UserFixtureInput,
@@ -100,6 +102,25 @@ export function postFixture(input: PostFixtureInput = {}): Post {
     isViewed: false,
     isOwner: false,
     editedAt: null,
+    createdAt: FIXTURE_TIME,
+    ...fields,
+  };
+}
+
+/** Пост, на который ссылается репост, с устойчивыми значениями по умолчанию. */
+export function originalPostFixture(input: OriginalPostFixtureInput = {}): OriginalPost {
+  const { author, ...fields } = input;
+  return {
+    id: 'post-original',
+    content: 'Исходная запись',
+    spans: [],
+    author: authorFixture(author),
+    attachments: [],
+    likesCount: 0,
+    commentsCount: 0,
+    repostsCount: 0,
+    viewsCount: 0,
+    isDeleted: false,
     createdAt: FIXTURE_TIME,
     ...fields,
   };

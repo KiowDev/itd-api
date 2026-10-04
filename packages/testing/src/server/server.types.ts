@@ -27,6 +27,8 @@ export interface MockUserSeed {
   username?: string;
   displayName?: string;
   avatar?: string;
+  /** Эмодзи клана. По умолчанию — `avatar`, если он не адрес изображения. */
+  clanAvatar?: string;
   banner?: string | null;
   bio?: string;
   verified?: boolean;
@@ -45,6 +47,8 @@ export interface MockPostSeed {
   authorId: string;
   content?: string;
   spans?: readonly Span[];
+  /** Пост, который репостнули. Репост репоста ссылается на репост, а не на начало цепочки. */
+  originalPostId?: string | null;
   wallRecipientId?: string | null;
   createdAt?: string;
   likedBy?: readonly string[];
@@ -126,6 +130,7 @@ export interface MockPostSnapshot {
   readonly authorId: string;
   readonly content: string;
   readonly spans: readonly Readonly<Span>[];
+  readonly originalPostId: string | null;
   readonly wallRecipientId: string | null;
   readonly createdAt: string;
   readonly editedAt: string | null;

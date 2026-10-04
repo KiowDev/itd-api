@@ -92,6 +92,34 @@ describe('реестр cipher', () => {
 });
 
 describe('шифрование запроса', () => {
+  it('расшифровывает исходный пост внутри репоста', async () => {
+    const { itd, calls } = makeClient((call, index) =>
+      index === 0
+        ? { id: 'root', ...call.body }
+        : {
+            id: 'repost',
+            content: '',
+            spans: [],
+            originalPost: {
+              id: 'root',
+              content: calls[0]?.body.content,
+              spans: calls[0]?.body.spans,
+              createdAt: '2026-10-04 22:32:04+03',
+            },
+          },
+    );
+    itd.use(crypt());
+    await itd.posts.create({
+      content: 'видно секрет',
+      spans: [{ type: 'crypto', cipher: 'invisible', offset: 6, length: 6 }],
+    });
+
+    const post = await itd.posts.get('repost');
+
+    expect(post.originalPost?.decoded?.content?.text).toBe('видно секрет');
+    expect(post.originalPost?.createdAt).toBe('2026-10-04T19:32:04.000Z');
+  });
+
   it('заменяет crypto span на frame и восстанавливает plaintext без мутации входа', async () => {
     const inputSpans: Span[] = [
       { type: 'bold', offset: 6, length: 6 },

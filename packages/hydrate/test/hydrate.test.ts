@@ -5,6 +5,7 @@ import {
   commentFixture,
   createMockFetch,
   createMockServer,
+  originalPostFixture,
   postFixture,
 } from '@itd-api/testing';
 import {
@@ -12,6 +13,7 @@ import {
   type ClientPlugin,
   ItdClient,
   NotificationType,
+  type OriginalPost,
   Paginator,
   type Post,
   type PublicProfile,
@@ -73,7 +75,7 @@ describe('hydrateClient', () => {
       replyTo: { id: 'user-bob', username: 'bob', displayName: 'Боб' },
     });
     const comment = commentFixture({ id: 'comment-1', replies: [reply] });
-    const originalPost = postFixture({ id: 'post-original' });
+    const originalPost = originalPostFixture({ id: 'post-original' });
     const source = postFixture({
       id: 'post-root',
       originalPost,
@@ -317,7 +319,7 @@ describe('hydrateClient', () => {
 
   it('привязывает одну модель к нужному клиенту', async () => {
     const shared = postFixture({ id: 'shared' });
-    shared.originalPost = shared;
+    shared.originalPost = shared as unknown as OriginalPost;
     const calls: string[] = [];
     const make = (name: string) => {
       const raw = new ItdClient({ auth: 'test-token', retry: false, rateLimit: false });

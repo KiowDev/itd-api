@@ -274,6 +274,7 @@ export type {
   Profile,
   PublicProfile,
   SubscriptionState,
+  UsernameAvailability,
   UserSummary,
 } from './models/users.js';
 export { type NotificationEvent, normalizeNotification } from './notifications/normalize.js';
@@ -363,11 +364,13 @@ export {
   InteractionType,
   ItdErrorCode,
   LikesVisibility,
+  MessageAccess,
   NotificationType,
   ReportReason,
   ReportTargetType,
   ServiceState,
   SpanType,
+  UsernameUnavailableReason,
   ViewReason,
   ViewSource,
   WallAccess,

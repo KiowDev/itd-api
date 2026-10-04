@@ -1,4 +1,5 @@
-import type { Span } from 'itd-api';
+import type { Post, Span } from 'itd-api';
+import type { CursorPagination } from '../shared/pagination.types.js';
 
 /** Пост в хранилище mock-server. @internal */
 export interface PostRecord {
@@ -6,6 +7,8 @@ export interface PostRecord {
   authorId: string;
   content: string;
   spans: Span[];
+  /** Пост, который репостнули: непосредственный родитель, а не начало цепочки. */
+  originalPostId: string | null;
   wallRecipientId: string | null;
   createdAt: string;
   editedAt: string | null;
@@ -24,4 +27,10 @@ export interface NewPost {
 export interface PostEdit {
   content?: string | undefined;
   spans?: Span[] | undefined;
+}
+
+/** Курсорная страница постов в форме ответа API. @internal */
+export interface PostPage {
+  posts: Post[];
+  pagination: CursorPagination;
 }

@@ -1,6 +1,7 @@
 import type { Span } from 'itd-api';
 import type { MockRequest } from '../../http/request.types.js';
 import { MockDomainError } from './domain.errors.js';
+import type { CursorQuery, NumberedQuery, OffsetQuery } from './pagination.types.js';
 
 /** JSON-тело запроса как объект; всё остальное — пустой объект. @internal */
 export function objectBody(request: MockRequest): Record<string, unknown> {
@@ -46,17 +47,33 @@ export function positiveInt(value: string | null, fallback: number, maximum = 10
   return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, maximum) : fallback;
 }
 
-/** Неотрицательное целое из параметра запроса. @internal */
-export function nonNegativeInt(value: string | null): number {
+/** Неотрицательное целое из параметра запроса. */
+function nonNegativeInt(value: string | null): number {
   return Math.max(0, Number.parseInt(value ?? '0', 10) || 0);
 }
 
-/** Размер страницы из `limit`: по умолчанию 20, не больше `maximum`. @internal */
-export function pageLimit(request: MockRequest, maximum = 100): number {
+/** Размер страницы из `limit`: по умолчанию 20, не больше `maximum`. */
+function pageLimit(request: MockRequest, maximum: number): number {
   return positiveInt(request.query.get('limit'), 20, maximum);
 }
 
-/** Номер страницы из `page`, начиная с 1. @internal */
-export function pageNumber(request: MockRequest): number {
-  return positiveInt(request.query.get('page'), 1, Number.MAX_SAFE_INTEGER);
+/** Курсорная страница из `limit` и `cursor`. @internal */
+export function cursorQuery(request: MockRequest, maxLimit = 100): CursorQuery {
+  return { limit: pageLimit(request, maxLimit), cursor: request.query.get('cursor') };
+}
+
+/** Страница со смещением из `limit` и `offset`. @internal */
+export function offsetQuery(request: MockRequest, maxLimit = 100): OffsetQuery {
+  return {
+    limit: pageLimit(request, maxLimit),
+    offset: nonNegativeInt(request.query.get('offset')),
+  };
+}
+
+/** Страница по номеру из `limit` и `page`. @internal */
+export function numberedQuery(request: MockRequest, maxLimit = 100): NumberedQuery {
+  return {
+    limit: pageLimit(request, maxLimit),
+    page: positiveInt(request.query.get('page'), 1, Number.MAX_SAFE_INTEGER),
+  };
 }

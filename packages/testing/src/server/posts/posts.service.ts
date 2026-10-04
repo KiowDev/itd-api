@@ -5,6 +5,7 @@ import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
 import type { UserService } from '../users/users.service.js';
 import type { UserRecord } from '../users/users.types.js';
+import { clanOf } from '../users/users.utils.js';
 import type { NewPost, PostEdit, PostRecord } from './posts.types.js';
 
 function newestFirst(a: PostRecord, b: PostRecord): number {
@@ -33,11 +34,13 @@ export class PostService {
     return this.#active((post) => viewer.following.has(post.authorId));
   }
 
-  /** Активные посты авторов из клана пользователя, включая его собственные. */
+  /** Активные посты авторов из клана пользователя (`clanAvatar`), включая его собственные. */
   clanFeed(viewer: UserRecord): PostRecord[] {
-    return this.#active(
-      (post) => this.#store.users.get(post.authorId)?.profile.avatar === viewer.profile.avatar,
-    );
+    const clan = clanOf(viewer);
+    return this.#active((post) => {
+      const author = this.#store.users.get(post.authorId);
+      return author !== undefined && clanOf(author) === clan;
+    });
   }
 
   /**
@@ -84,6 +87,7 @@ export class PostService {
       authorId: author.profile.id,
       content: input.content,
       spans: input.spans,
+      originalPostId: null,
       wallRecipientId: input.wallRecipientId,
       createdAt: this.#store.now(),
       editedAt: null,
@@ -119,6 +123,72 @@ export class PostService {
 
   restore(post: PostRecord): void {
     post.deleted = false;
+  }
+
+  /**
+   * Репостит пост с необязательным текстом. Повторный репост того же поста возвращает уже
+   * существующий репост без изменений и без нового уведомления. Репост репоста ссылается
+   * на сам репост, поэтому цепочка может быть любой длины.
+   */
+  repost(user: UserRecord, postId: string, content: string): PostRecord {
+    const parent = this.requireActive(postId);
+    const existing = this.activeRepost(user, parent.id);
+    if (existing) return existing;
+    const repost: PostRecord = {
+      id: this.#store.nextPostId(),
+      authorId: user.profile.id,
+      content,
+      spans: [],
+      originalPostId: parent.id,
+      wallRecipientId: null,
+      createdAt: this.#store.now(),
+      editedAt: null,
+      likedBy: new Set(),
+      deleted: false,
+    };
+    this.#store.posts.set(repost.id, repost);
+    this.#notifications.notify({
+      recipientId: parent.authorId,
+      type: NotificationType.PostRepost,
+      actorId: user.profile.id,
+      entityId: repost.id,
+      parentEntityId: parent.id,
+      preview: parent.content,
+    });
+    return repost;
+  }
+
+  /** Удаляет репост пользователя. Сам пост и чужие репосты не меняются. */
+  unrepost(user: UserRecord, postId: string): void {
+    const repost = this.activeRepost(user, postId);
+    if (!repost) throw MockDomainError.notFound('Repost not found');
+    repost.deleted = true;
+  }
+
+  /** Активный репост поста от пользователя. */
+  activeRepost(user: UserRecord, postId: string): PostRecord | undefined {
+    for (const post of this.#store.posts.values()) {
+      if (!post.deleted && post.originalPostId === postId && post.authorId === user.profile.id) {
+        return post;
+      }
+    }
+    return undefined;
+  }
+
+  /** Число активных прямых репостов поста. */
+  repostsCount(post: PostRecord): number {
+    let count = 0;
+    for (const candidate of this.#store.posts.values()) {
+      if (!candidate.deleted && candidate.originalPostId === post.id) count += 1;
+    }
+    return count;
+  }
+
+  /** Пост, который репостнули, если он не удалён. */
+  activeParent(post: PostRecord): PostRecord | undefined {
+    if (!post.originalPostId) return undefined;
+    const parent = this.#store.posts.get(post.originalPostId);
+    return parent && !parent.deleted ? parent : undefined;
   }
 
   /** Возвращает `true`, если реакция появилась. Только новая реакция уведомляет автора. */

@@ -1,7 +1,7 @@
 import { HttpMethod } from '../../http/http.constants.js';
 import { apiResponse, jsonResponse } from '../../http/responses.utils.js';
 import { offsetPage } from '../shared/pagination.utils.js';
-import { nonNegativeInt, objectBody, pageLimit } from '../shared/request.utils.js';
+import { objectBody, offsetQuery } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 
 export function registerNotificationRoutes({
@@ -16,10 +16,7 @@ export function registerNotificationRoutes({
     HttpMethod.Get,
     '/api/notifications/',
     requireAuth((request, user) => {
-      const page = offsetPage(notifications.forUser(user.profile.id), {
-        offset: nonNegativeInt(request.query.get('offset')),
-        limit: pageLimit(request),
-      });
+      const page = offsetPage(notifications.forUser(user.profile.id), offsetQuery(request));
       return jsonResponse({
         notifications: page.items.map((record) => presenters.notifications.notification(record)),
         hasMore: page.hasMore,

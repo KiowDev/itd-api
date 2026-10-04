@@ -3,7 +3,7 @@ import type { IsoDate } from './common.js';
 
 /** Клан в рейтинге. */
 export interface Clan {
-  /** Эмодзи клана — оно же аватар его участников. */
+  /** Эмодзи клана — оно же `clanAvatar` его участников. */
   avatar: string;
   memberCount: number;
 }

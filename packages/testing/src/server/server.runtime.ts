@@ -44,7 +44,7 @@ export class MockServerRuntime {
     this.services = { users, posts, comments, notifications, hashtags, search, shop };
     this.presenters = {
       users: userPresenter,
-      posts: new PostPresenter(users, comments, userPresenter),
+      posts: new PostPresenter(users, posts, comments, userPresenter),
       comments: new CommentPresenter(users, comments, userPresenter),
       notifications: notificationPresenter,
     };

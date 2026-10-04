@@ -5,7 +5,7 @@ import { apiResponse, emptyResponse } from '../../http/responses.utils.js';
 import type { MockHandler } from '../../http/router.types.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import { cursorPage } from '../shared/pagination.utils.js';
-import { objectBody, pageLimit, spansField, stringField } from '../shared/request.utils.js';
+import { cursorQuery, objectBody, spansField, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 import type { UserRecord } from '../users/users.types.js';
 import type { PostRecord } from './posts.types.js';
@@ -18,16 +18,8 @@ export function registerPostRoutes({
 }: MockRouteContext): void {
   const { posts, users } = services;
 
-  const postPage = (request: MockRequest, viewer: UserRecord, items: readonly PostRecord[]) => {
-    const page = cursorPage(items, {
-      limit: pageLimit(request),
-      cursor: request.query.get('cursor'),
-    });
-    return apiResponse({
-      posts: page.items.map((post) => presenters.posts.post(post, viewer)),
-      pagination: { hasMore: page.hasMore, nextCursor: page.nextCursor, limit: page.limit },
-    });
-  };
+  const postPage = (request: MockRequest, viewer: UserRecord, items: readonly PostRecord[]) =>
+    apiResponse(presenters.posts.page(cursorPage(items, cursorQuery(request)), viewer));
 
   const feedOf = (request: MockRequest, viewer: UserRecord): PostRecord[] => {
     const tab = request.query.get('tab');
@@ -118,6 +110,25 @@ export function registerPostRoutes({
     '/api/posts/:postId/restore',
     requireAuth((request, user) => {
       posts.restore(posts.requireOwn(request.params.postId ?? '', user));
+      return emptyResponse();
+    }),
+  );
+
+  route(
+    HttpMethod.Post,
+    '/api/posts/:postId/repost',
+    requireAuth((request, user) => {
+      const content = stringField(objectBody(request), 'content') ?? '';
+      const repost = posts.repost(user, request.params.postId ?? '', content);
+      return apiResponse(presenters.posts.post(repost, user), { status: 201 });
+    }),
+  );
+
+  route(
+    HttpMethod.Delete,
+    '/api/posts/:postId/repost',
+    requireAuth((request, user) => {
+      posts.unrepost(user, request.params.postId ?? '');
       return emptyResponse();
     }),
   );
