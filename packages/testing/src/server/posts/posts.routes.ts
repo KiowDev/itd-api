@@ -10,6 +10,18 @@ import type { MockRouteContext } from '../shared/route.types.js';
 import type { UserRecord } from '../users/users.types.js';
 import type { PostRecord } from './posts.types.js';
 
+/** Вложения и опросы требуют моделей файлов и опросов, которых в mock-server нет. */
+function rejectUnsupportedPostFields(body: Record<string, unknown>): void {
+  for (const field of ['attachmentIds', 'poll']) {
+    if (field in body) {
+      throw MockDomainError.badRequest(
+        'VALIDATION_ERROR',
+        `mock-server не поддерживает ${field} при создании поста`,
+      );
+    }
+  }
+}
+
 export function registerPostRoutes({
   services,
   presenters,
@@ -63,6 +75,7 @@ export function registerPostRoutes({
     '/api/posts',
     requireAuth((request, user) => {
       const body = objectBody(request);
+      rejectUnsupportedPostFields(body);
       const post = posts.create(user, {
         content: stringField(body, 'content') ?? '',
         spans: spansField(body) ?? [],

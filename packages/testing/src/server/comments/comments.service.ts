@@ -43,9 +43,10 @@ export class CommentService {
     return this.#count((comment) => comment.parentCommentId === parent.id);
   }
 
+  /** Видимый комментарий: не удалён, автор не деактивирован. */
   requireActive(commentId: string): CommentRecord {
     const comment = this.#store.comments.get(commentId);
-    if (!comment || comment.deleted) throw MockDomainError.notFound('Comment not found');
+    if (!comment || !this.#visible(comment)) throw MockDomainError.notFound('Comment not found');
     return comment;
   }
 
@@ -85,7 +86,7 @@ export class CommentService {
     content: string,
     replyToUserId: string = parent.authorId,
   ): CommentRecord {
-    if (!this.#users.get(replyToUserId)) throw MockDomainError.notFound('User not found');
+    if (!this.#users.isActive(replyToUserId)) throw MockDomainError.notFound('User not found');
     const reply = this.#insert({
       postId: parent.postId,
       authorId: author.profile.id,
@@ -152,15 +153,19 @@ export class CommentService {
 
   #active(predicate: (comment: CommentRecord) => boolean): CommentRecord[] {
     return [...this.#store.comments.values()]
-      .filter((comment) => !comment.deleted && predicate(comment))
+      .filter((comment) => this.#visible(comment) && predicate(comment))
       .sort(oldestFirst);
   }
 
   #count(predicate: (comment: CommentRecord) => boolean): number {
     let count = 0;
     for (const comment of this.#store.comments.values()) {
-      if (!comment.deleted && predicate(comment)) count += 1;
+      if (this.#visible(comment) && predicate(comment)) count += 1;
     }
     return count;
+  }
+
+  #visible(comment: CommentRecord): boolean {
+    return !comment.deleted && this.#users.isActive(comment.authorId);
   }
 }

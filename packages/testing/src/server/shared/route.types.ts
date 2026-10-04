@@ -21,5 +21,15 @@ export interface MockRouteContext {
   readonly presenters: MockPresenters;
   readonly auth: TokenAuthenticator;
   route(method: string, path: string, handler: MockHandler): void;
-  requireAuth(handler: AuthenticatedHandler): MockHandler;
+  /**
+   * Пропускает к обработчику только авторизованного пользователя. Деактивированному доступны
+   * чтение и действия с `allowDeactivated`; остальное отклоняется `403 ACCOUNT_DEACTIVATED`.
+   */
+  requireAuth(handler: AuthenticatedHandler, options?: RequireAuthOptions): MockHandler;
+}
+
+/** @internal */
+export interface RequireAuthOptions {
+  /** Действие доступно деактивированному пользователю, например восстановление аккаунта. */
+  allowDeactivated?: boolean;
 }

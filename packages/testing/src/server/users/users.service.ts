@@ -29,10 +29,17 @@ export class UserService {
     );
   }
 
+  /** Активный пользователь по `id` или username. Деактивированный для других не существует. */
   require(reference: string): UserRecord {
     const user = this.find(reference);
-    if (!user) throw MockDomainError.notFound('User not found');
+    if (!user || user.deactivated) throw MockDomainError.notFound('User not found');
     return user;
+  }
+
+  /** Существует ли пользователь и не деактивирован ли он. */
+  isActive(userId: string): boolean {
+    const user = this.#store.users.get(userId);
+    return user !== undefined && !user.deactivated;
   }
 
   /**

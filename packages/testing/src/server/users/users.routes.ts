@@ -72,10 +72,13 @@ export function registerUserRoutes({
   route(
     HttpMethod.Post,
     '/api/users/me/restore',
-    requireAuth((_request, user) => {
-      users.restore(user);
-      return emptyResponse();
-    }),
+    requireAuth(
+      (_request, user) => {
+        users.restore(user);
+        return emptyResponse();
+      },
+      { allowDeactivated: true },
+    ),
   );
 
   route(HttpMethod.Get, '/api/users/check-username', (request) =>

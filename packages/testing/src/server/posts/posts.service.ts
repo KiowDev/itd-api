@@ -65,9 +65,10 @@ export class PostService {
     return count;
   }
 
+  /** Видимый пост: не удалён, автор не деактивирован. */
   requireActive(postId: string): PostRecord {
     const post = this.#store.posts.get(postId);
-    if (!post || post.deleted) throw MockDomainError.notFound('Post not found');
+    if (!post || !this.#visible(post)) throw MockDomainError.notFound('Post not found');
     return post;
   }
 
@@ -81,14 +82,19 @@ export class PostService {
     return post;
   }
 
+  /**
+   * Публикует пост. Пост на своей стене хранится без адресата; на чужую стену можно писать,
+   * только если её `wallAccess` разрешает это автору.
+   */
   create(author: UserRecord, input: NewPost): PostRecord {
+    const wallRecipientId = this.#wallRecipient(author, input.wallRecipientId);
     const post: PostRecord = {
       id: this.#store.nextPostId(),
       authorId: author.profile.id,
       content: input.content,
       spans: input.spans,
       originalPostId: null,
-      wallRecipientId: input.wallRecipientId,
+      wallRecipientId,
       createdAt: this.#store.now(),
       editedAt: null,
       likedBy: new Set(),
@@ -179,16 +185,16 @@ export class PostService {
   repostsCount(post: PostRecord): number {
     let count = 0;
     for (const candidate of this.#store.posts.values()) {
-      if (!candidate.deleted && candidate.originalPostId === post.id) count += 1;
+      if (candidate.originalPostId === post.id && this.#visible(candidate)) count += 1;
     }
     return count;
   }
 
-  /** Пост, который репостнули, если он не удалён. */
+  /** Пост, который репостнули, если он виден. */
   activeParent(post: PostRecord): PostRecord | undefined {
     if (!post.originalPostId) return undefined;
     const parent = this.#store.posts.get(post.originalPostId);
-    return parent && !parent.deleted ? parent : undefined;
+    return parent && this.#visible(parent) ? parent : undefined;
   }
 
   /** Возвращает `true`, если реакция появилась. Только новая реакция уведомляет автора. */
@@ -212,7 +218,21 @@ export class PostService {
 
   #active(predicate: (post: PostRecord) => boolean): PostRecord[] {
     return [...this.#store.posts.values()]
-      .filter((post) => !post.deleted && predicate(post))
+      .filter((post) => this.#visible(post) && predicate(post))
       .sort(newestFirst);
+  }
+
+  #visible(post: PostRecord): boolean {
+    return !post.deleted && this.#users.isActive(post.authorId);
+  }
+
+  #wallRecipient(author: UserRecord, recipientId: string | null): string | null {
+    if (!recipientId || recipientId === author.profile.id) return null;
+    const recipient = this.#users.require(recipientId);
+    if (recipient === author) return null;
+    if (!canAccess(recipient.profile.wallAccess, this.#users.relation(recipient, author))) {
+      throw new MockDomainError(403, 'WRITE_ACCESS_RESTRICTED', 'Стена закрыта для записей');
+    }
+    return recipient.profile.id;
   }
 }

@@ -1,3 +1,4 @@
+import { HttpMethod } from '../../http/http.constants.js';
 import type { MockRequest } from '../../http/request.types.js';
 import { apiErrorResponse } from '../../http/responses.utils.js';
 import type { MockHandler } from '../../http/router.types.js';
@@ -31,12 +32,15 @@ export function createRouteContext(
         handler: (request) => translateDomainErrors(handler, request),
       });
     },
-    requireAuth(handler) {
+    requireAuth(handler, options = {}) {
       return (request) => {
         const user = dependencies.auth.authenticate(request);
-        return user
-          ? handler(request, user)
-          : apiErrorResponse(401, 'UNAUTHORIZED', 'Нужна авторизация');
+        if (!user) return apiErrorResponse(401, 'UNAUTHORIZED', 'Нужна авторизация');
+        const reading = request.method.toUpperCase() === HttpMethod.Get;
+        if (user.deactivated && !reading && !options.allowDeactivated) {
+          return apiErrorResponse(403, 'ACCOUNT_DEACTIVATED', 'Аккаунт деактивирован');
+        }
+        return handler(request, user);
       };
     },
   };
