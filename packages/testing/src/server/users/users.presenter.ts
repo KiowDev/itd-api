@@ -1,4 +1,5 @@
 import {
+  type Author,
   type AuthUser,
   type MyProfile,
   type PublicProfile,
@@ -8,7 +9,7 @@ import {
 } from 'itd-api';
 import { publicProfileFixture } from '../../fixtures/models.fixtures.js';
 import type { PostService } from '../posts/posts.service.js';
-import { UsernameIssue } from './users.constants.js';
+import { UsernameIssue, UserRole } from './users.constants.js';
 import type { UserService } from './users.service.js';
 import type { UserRecord, UserReference } from './users.types.js';
 import { clanOf } from './users.utils.js';
@@ -32,6 +33,11 @@ export class UserPresenter {
     };
   }
 
+  /** Автор поста или комментария: краткая запись с признаком верификации. */
+  author(user: UserRecord): Author {
+    return { ...this.reference(user), verified: user.profile.verified };
+  }
+
   sessionUser(user: UserRecord): AuthUser {
     return {
       id: user.profile.id,
@@ -42,7 +48,7 @@ export class UserPresenter {
       bio: user.profile.bio,
       verified: user.profile.verified,
       isPhoneVerified: user.profile.isPhoneVerified,
-      roles: ['user'],
+      roles: [UserRole.User],
     };
   }
 
@@ -65,24 +71,13 @@ export class UserPresenter {
 
   /** Запись списка подписчиков или подписок относительно текущего пользователя. */
   userSummary(viewer: UserRecord, user: UserRecord): UserSummary {
-    return {
-      id: user.profile.id,
-      username: user.profile.username,
-      displayName: user.profile.displayName,
-      avatar: user.profile.avatar,
-      verified: user.profile.verified,
-      isFollowing: this.#users.isFollowing(viewer, user),
-    };
+    return { ...this.author(user), isFollowing: this.#users.isFollowing(viewer, user) };
   }
 
   /** Пользователь в результатах поиска. */
   searchUser(user: UserRecord): UserSummary {
     return {
-      id: user.profile.id,
-      username: user.profile.username,
-      displayName: user.profile.displayName,
-      avatar: user.profile.avatar,
-      verified: user.profile.verified,
+      ...this.author(user),
       hasNuksta: user.profile.subscription.isActive,
       followersCount: this.#users.followersCount(user),
     };

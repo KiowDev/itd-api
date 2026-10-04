@@ -6,6 +6,13 @@ import type { IsoDate } from '../models/common.js';
  */
 const PG_STAMP = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?(?:([+-]\d{2})(?::?(\d{2}))?)?$/;
 
+/** Существует ли дата `ГГГГ-ММ-ДД` в календаре: `Date.parse` молча переносит `02-30` на март. */
+function isCalendarDate(date: string): boolean {
+  const [year = 0, month = 0, day = 0] = date.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}
+
 /**
  * Приводит отметку времени PostgreSQL к ISO-8601 в UTC.
  *
@@ -22,7 +29,8 @@ const PG_STAMP = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?(?:([+-]\d{2})
 export function utcStampToIso(value: string): string {
   const match = typeof value === 'string' ? PG_STAMP.exec(value) : null;
   if (!match) return value;
-  const [, date, time, fraction = '', offsetHours, offsetMinutes = '00'] = match;
+  const [, date = '', time, fraction = '', offsetHours, offsetMinutes = '00'] = match;
+  if (!isCalendarDate(date)) return value;
 
   if (offsetHours === undefined) {
     const iso = `${date}T${time}${fraction}Z`;

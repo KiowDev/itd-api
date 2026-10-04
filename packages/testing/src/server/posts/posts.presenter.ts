@@ -59,7 +59,8 @@ export class PostPresenter {
 
   /**
    * Пост, который репостнули: один уровень, без признаков относительно текущего пользователя.
-   * Дата — в формате PostgreSQL, как на проде.
+   * Дата — в формате PostgreSQL, как на проде. Удалённый родитель вместо объекта отдаётся `null`,
+   * поэтому `isDeleted` здесь всегда `false`.
    */
   originalPost(post: PostRecord): OriginalPost {
     return {
@@ -72,7 +73,7 @@ export class PostPresenter {
       commentsCount: this.#comments.activeCountFor(post),
       repostsCount: this.#posts.repostsCount(post),
       viewsCount: 0,
-      isDeleted: post.deleted,
+      isDeleted: false,
       createdAt: postgresStamp(post.createdAt),
     };
   }
@@ -80,6 +81,6 @@ export class PostPresenter {
   #author(post: PostRecord): Post['author'] {
     const author = this.#users.get(post.authorId);
     if (!author) throw new Error(`У поста ${post.id} нет автора ${post.authorId}`);
-    return { ...this.#userPresenter.reference(author), verified: author.profile.verified };
+    return this.#userPresenter.author(author);
   }
 }

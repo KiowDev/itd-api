@@ -1,3 +1,4 @@
+import { ItdErrorCode } from 'itd-api';
 import { HttpMethod } from '../../http/http.constants.js';
 import type { MockRequest } from '../../http/request.types.js';
 import { apiErrorResponse } from '../../http/responses.utils.js';
@@ -35,10 +36,10 @@ export function createRouteContext(
     requireAuth(handler, options = {}) {
       return (request) => {
         const user = dependencies.auth.authenticate(request);
-        if (!user) return apiErrorResponse(401, 'UNAUTHORIZED', 'Нужна авторизация');
+        if (!user) return apiErrorResponse(401, ItdErrorCode.UNAUTHORIZED, 'Нужна авторизация');
         const reading = request.method.toUpperCase() === HttpMethod.Get;
         if (user.deactivated && !reading && !options.allowDeactivated) {
-          return apiErrorResponse(403, 'ACCOUNT_DEACTIVATED', 'Аккаунт деактивирован');
+          return apiErrorResponse(403, ItdErrorCode.ACCOUNT_DEACTIVATED, 'Аккаунт деактивирован');
         }
         return handler(request, user);
       };

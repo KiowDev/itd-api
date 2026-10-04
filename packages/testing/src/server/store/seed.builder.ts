@@ -201,7 +201,8 @@ export function buildStoreContents(
       content: item.content ?? '',
       spans: structuredClone([...(item.spans ?? [])]),
       originalPostId: item.originalPostId ?? null,
-      wallRecipientId: item.wallRecipientId ?? null,
+      wallRecipientId:
+        item.wallRecipientId === item.authorId ? null : (item.wallRecipientId ?? null),
       createdAt: item.createdAt ?? now(),
       editedAt: null,
       likedBy: new Set(item.likedBy),

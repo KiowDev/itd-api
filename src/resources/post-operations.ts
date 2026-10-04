@@ -1,5 +1,4 @@
-import type { BuiltInOperationId } from '../domain/operations.js';
-import { defineBuiltInOperation } from '../domain/operations.js';
+import { type BuiltInOperationId, defineBuiltInOperation } from '../domain/operations.js';
 import { normalizePost } from '../domain/posts.js';
 import type { Post } from '../models/content.js';
 import { mapPage, pageOperation, readCursorPage } from './pagination.js';

@@ -1,4 +1,11 @@
-import type { CreateShopOrderInput, ShopOrder, ShopOrderItem, ShopProduct } from 'itd-api';
+import {
+  type CreateShopOrderInput,
+  type ShopOrder,
+  type ShopOrderItem,
+  ShopOrderStatus,
+  type ShopProduct,
+} from 'itd-api';
+import { MockErrorCode } from '../shared/domain.constants.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
 import type {
@@ -30,7 +37,10 @@ export class ShopService {
     return product;
   }
 
-  /** Создаёт заказ. Повтор с тем же ключом идемпотентности возвращает прежний результат. */
+  /**
+   * Создаёт заказ. Повтор с тем же ключом идемпотентности возвращает прежний результат,
+   * неизвестный товар — `404`.
+   */
   createOrder(
     input: CreateShopOrderInput,
     options: { userId?: string | undefined; idempotencyKey?: string | null },
@@ -46,7 +56,7 @@ export class ShopService {
     const pass = options.userId ? undefined : `order-pass-${number}`;
     const value: ShopOrder = {
       number,
-      status: 'new',
+      status: ShopOrderStatus.New,
       createdAt: this.#store.now(),
       payment: { pending: false },
       items,
@@ -76,7 +86,7 @@ export class ShopService {
   /** Обменивает код из письма на временный доступ ко всем заказам этого адреса. */
   grantAccess(email: unknown, code: unknown): ShopAccessGrant {
     if (typeof email !== 'string' || code !== ACCESS_CODE) {
-      throw MockDomainError.badRequest('INVALID_CODE', 'Неверный код');
+      throw MockDomainError.badRequest(MockErrorCode.InvalidCode, 'Неверный код');
     }
     const normalized = email.trim().toLowerCase();
     const now = this.#store.clock.now();
@@ -107,7 +117,7 @@ export class ShopService {
   /** Заказ, к которому у покупателя есть доступ. */
   requireAccessibleOrder(number: string, credentials: ShopCredentials): ShopOrderRecord {
     const order = this.findOrder(number);
-    if (!order) throw new MockDomainError(404, 'ORDER_NOT_FOUND', 'Заказ не найден');
+    if (!order) throw new MockDomainError(404, MockErrorCode.OrderNotFound, 'Заказ не найден');
     this.assertAccess(order, credentials);
     return order;
   }
@@ -146,14 +156,14 @@ export class ShopService {
 
   #orderItems(input: CreateShopOrderInput): ShopOrderItem[] {
     return input.items.map((item) => {
-      const product = this.#store.shopProducts.get(item.productId);
+      const product = this.requireProduct(item.productId);
       return {
         slug: item.productId,
-        title: product?.title ?? item.productId,
-        color: item.color,
-        size: item.size,
+        title: product.title,
+        color: item.color ?? null,
+        size: item.size ?? null,
         qty: item.qty,
-        sum: (product?.price ?? 0) * item.qty,
+        sum: product.price * item.qty,
       };
     });
   }

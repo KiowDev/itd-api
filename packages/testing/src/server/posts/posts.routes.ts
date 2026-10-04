@@ -10,14 +10,11 @@ import type { MockRouteContext } from '../shared/route.types.js';
 import type { UserRecord } from '../users/users.types.js';
 import type { PostRecord } from './posts.types.js';
 
-/** Вложения и опросы требуют моделей файлов и опросов, которых в mock-server нет. */
+/** Отклоняет вложения и опросы: mock-server их не моделирует. */
 function rejectUnsupportedPostFields(body: Record<string, unknown>): void {
   for (const field of ['attachmentIds', 'poll']) {
     if (field in body) {
-      throw MockDomainError.badRequest(
-        'VALIDATION_ERROR',
-        `mock-server не поддерживает ${field} при создании поста`,
-      );
+      throw MockDomainError.validation(`mock-server не поддерживает ${field} при создании поста`);
     }
   }
 }
@@ -44,7 +41,7 @@ export function registerPostRoutes({
       case FeedTab.Clan:
         return posts.clanFeed(viewer);
       default:
-        throw MockDomainError.badRequest('VALIDATION_ERROR', `Неизвестная вкладка ленты ${tab}`);
+        throw MockDomainError.validation(`Неизвестная вкладка ленты ${tab}`);
     }
   };
 

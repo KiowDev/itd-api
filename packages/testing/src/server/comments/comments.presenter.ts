@@ -25,7 +25,7 @@ export class CommentPresenter {
     return commentFixture({
       id: comment.id,
       content: comment.content,
-      author: this.#userPresenter.reference(author),
+      author: this.#userPresenter.author(author),
       likesCount: comment.likedBy.size,
       repliesCount: this.#comments.activeReplyCount(comment),
       isLiked: comment.likedBy.has(viewer.profile.id),

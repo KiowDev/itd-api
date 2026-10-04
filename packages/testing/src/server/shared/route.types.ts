@@ -4,12 +4,14 @@ import type { MockPresenters, MockServices } from '../server.types.js';
 import type { UserRecord } from '../users/users.types.js';
 import type { TokenAuthenticator } from './token.authenticator.js';
 
+/** Маршрут вместе с разобранным шаблоном пути и обработчиком. @internal */
 export interface RegisteredHandler {
   route: MockRoute;
   compiled: CompiledRoute;
   handler: MockHandler;
 }
 
+/** Обработчик маршрута, которому уже известен авторизованный пользователь. @internal */
 export type AuthenticatedHandler = (
   request: MockRequest,
   user: UserRecord,

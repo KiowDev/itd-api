@@ -2,7 +2,8 @@ import type { CreateShopOrderInput } from 'itd-api';
 import { HttpMethod } from '../../http/http.constants.js';
 import type { MockRequest } from '../../http/request.types.js';
 import { emptyResponse, jsonResponse } from '../../http/responses.utils.js';
-import { objectBody } from '../shared/request.utils.js';
+import { MockDomainError } from '../shared/domain.errors.js';
+import { isRecord, objectBody, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 import { orderSummary } from './shop.presenter.js';
 import type { ShopCredentials } from './shop.types.js';
@@ -36,6 +37,35 @@ function deliveryPoint(cityCode: number) {
   };
 }
 
+const REQUIRED_RECIPIENT_FIELDS = ['email', 'city', 'address'] as const;
+const OPTIONAL_RECIPIENT_FIELDS = ['name', 'phone', 'country', 'deliveryPoint', 'comment'] as const;
+
+function isOrderItem(item: unknown): boolean {
+  if (!isRecord(item) || !Number.isInteger(item.qty) || (item.qty as number) <= 0) return false;
+  stringField(item, 'size');
+  stringField(item, 'color');
+  return stringField(item, 'productId') !== undefined;
+}
+
+/**
+ * Тело заказа: непустой список позиций с товаром и количеством, получатель с адресом. Поля
+ * неверного типа отклоняются `400 VALIDATION_ERROR`.
+ */
+function orderInput(body: Record<string, unknown>): CreateShopOrderInput {
+  const { items, recipient } = body;
+  if (!Array.isArray(items) || items.length === 0 || !items.every(isOrderItem)) {
+    throw MockDomainError.validation('items: ожидается непустой список позиций заказа');
+  }
+  if (!isRecord(recipient)) throw MockDomainError.validation('recipient: ожидается получатель');
+  for (const key of REQUIRED_RECIPIENT_FIELDS) {
+    if (stringField(recipient, key) === undefined) {
+      throw MockDomainError.validation(`recipient.${key}: ожидается строка`);
+    }
+  }
+  for (const key of OPTIONAL_RECIPIENT_FIELDS) stringField(recipient, key);
+  return body as unknown as CreateShopOrderInput;
+}
+
 export function registerShopRoutes({ services, auth, route }: MockRouteContext): void {
   const { shop } = services;
 
@@ -62,7 +92,7 @@ export function registerShopRoutes({ services, auth, route }: MockRouteContext):
 
   route(HttpMethod.Post, '/api/v1/shop/orders', (request) =>
     jsonResponse(
-      shop.createOrder(objectBody(request) as unknown as CreateShopOrderInput, {
+      shop.createOrder(orderInput(objectBody(request)), {
         userId: auth.authenticate(request)?.profile.id,
         idempotencyKey: request.headers.get('idempotency-key'),
       }),

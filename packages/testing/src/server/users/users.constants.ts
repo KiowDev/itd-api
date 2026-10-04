@@ -7,3 +7,9 @@ export const UsernameIssue = Object.freeze({
   Taken: 'TAKEN',
 } as const);
 export type UsernameIssue = (typeof UsernameIssue)[keyof typeof UsernameIssue];
+
+/** Роль пользователя в ответе `/api/profile`. @internal */
+export const UserRole = Object.freeze({
+  User: 'user',
+} as const);
+export type UserRole = (typeof UserRole)[keyof typeof UserRole];

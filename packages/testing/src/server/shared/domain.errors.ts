@@ -1,9 +1,13 @@
+import { ItdErrorCode } from 'itd-api';
+import { MockErrorCode } from './domain.constants.js';
+import type { KnownItdErrorCode } from './domain.types.js';
+
 /** Нарушение доменного правила mock-server с HTTP-статусом и кодом ошибки API. @internal */
 export class MockDomainError extends Error {
   readonly status: number;
-  readonly code: string;
+  readonly code: KnownItdErrorCode | MockErrorCode;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: KnownItdErrorCode | MockErrorCode, message: string) {
     super(message);
     this.name = 'MockDomainError';
     this.status = status;
@@ -11,18 +15,22 @@ export class MockDomainError extends Error {
   }
 
   static notFound(message: string): MockDomainError {
-    return new MockDomainError(404, 'NOT_FOUND', message);
+    return new MockDomainError(404, ItdErrorCode.NOT_FOUND, message);
   }
 
   static forbidden(message: string): MockDomainError {
-    return new MockDomainError(403, 'FORBIDDEN', message);
+    return new MockDomainError(403, MockErrorCode.Forbidden, message);
   }
 
   static unauthorized(message: string): MockDomainError {
-    return new MockDomainError(401, 'UNAUTHORIZED', message);
+    return new MockDomainError(401, ItdErrorCode.UNAUTHORIZED, message);
   }
 
-  static badRequest(code: string, message: string): MockDomainError {
+  static validation(message: string): MockDomainError {
+    return new MockDomainError(400, ItdErrorCode.VALIDATION_ERROR, message);
+  }
+
+  static badRequest(code: KnownItdErrorCode | MockErrorCode, message: string): MockDomainError {
     return new MockDomainError(400, code, message);
   }
 }

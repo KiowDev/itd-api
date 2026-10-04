@@ -1,6 +1,6 @@
 import { createShopFeature, ItdClient } from 'itd-api';
 import { describe, expect, it } from 'vitest';
-import { createMockServer, createTestClock } from '../../../src/index.js';
+import { createMockServer, createTestClock, HttpMethod } from '../../../src/index.js';
 
 describe('createMockServer: магазин', () => {
   it('выполняет сценарий магазина с доступом по коду из письма', async () => {
@@ -83,5 +83,53 @@ describe('createMockServer: магазин', () => {
       client.shop.orders.list({ orderAccessToken: token, useItdAuth: false }),
     ).rejects.toMatchObject({ status: 401 });
     server.assertNoUnsupportedRequests();
+  });
+
+  it('отклоняет заказ без получателя ошибкой, а не сбоем сети', async () => {
+    const server = createMockServer();
+    const client = new ItdClient(server.clientOptions({ as: 'test_user_1' }));
+
+    await expect(
+      client.request({ method: HttpMethod.Post, path: '/api/v1/shop/orders', body: { items: [] } }),
+    ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
+    expect(server.snapshot().shopOrders).toEqual([]);
+  });
+
+  it.each([
+    ['пустой список позиций', { items: [] }, 400],
+    ['нестроковый комментарий', { recipient: { comment: 7 } }, 400],
+    ['неизвестный товар', { items: [{ productId: 'nope', size: null, color: null, qty: 1 }] }, 404],
+  ])('отклоняет заказ: %s', async (_name, change, status) => {
+    const server = createMockServer({
+      seed: {
+        shopProducts: [
+          {
+            id: 'hoodie',
+            title: 'Худи',
+            category: 'apparel',
+            price: 4_000,
+            images: [],
+            sizes: ['M'],
+            colors: [],
+            description: '',
+            specs: [],
+            status: 'available',
+            stockLeft: 10,
+          },
+        ],
+      },
+    });
+    const client = new ItdClient(server.clientOptions({ as: 'test_user_1' }));
+    const recipient = { email: 'buyer@example.test', city: 'Москва', address: 'Тестовая улица, 1' };
+    const body = {
+      items: [{ productId: 'hoodie', size: 'M', color: null, qty: 1 }],
+      ...change,
+      recipient: { ...recipient, ...('recipient' in change ? change.recipient : {}) },
+    };
+
+    await expect(
+      client.request({ method: HttpMethod.Post, path: '/api/v1/shop/orders', body }),
+    ).rejects.toMatchObject({ status });
+    expect(server.snapshot().shopOrders).toEqual([]);
   });
 });

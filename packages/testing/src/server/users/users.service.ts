@@ -1,6 +1,7 @@
-import { type Clan, NotificationType } from 'itd-api';
+import { type Clan, ItdErrorCode, NotificationType } from 'itd-api';
 import type { NotificationService } from '../notifications/notifications.service.js';
 import type { AccessRelation } from '../shared/access.types.js';
+import { MockErrorCode } from '../shared/domain.constants.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
 import { UsernameIssue } from './users.constants.js';
@@ -78,7 +79,10 @@ export class UserService {
   /** Возвращает `true`, если подписка появилась. Только новая подписка уведомляет цель. */
   follow(follower: UserRecord, target: UserRecord): boolean {
     if (follower === target) {
-      throw MockDomainError.badRequest('CANNOT_FOLLOW_SELF', 'Нельзя подписаться на себя');
+      throw MockDomainError.badRequest(
+        MockErrorCode.CannotFollowSelf,
+        'Нельзя подписаться на себя',
+      );
     }
     if (follower.following.has(target.profile.id)) return false;
     follower.following.add(target.profile.id);
@@ -179,12 +183,11 @@ export class UserService {
   #assertUsername(user: UserRecord, username: string): void {
     switch (this.validateUsername(username, user)) {
       case UsernameIssue.InvalidFormat:
-        throw MockDomainError.badRequest(
-          'VALIDATION_ERROR',
+        throw MockDomainError.validation(
           'Имя пользователя: латинские буквы, цифры и _, от 3 до 32 символов',
         );
       case UsernameIssue.Taken:
-        throw new MockDomainError(409, 'USERNAME_TAKEN', 'Username is already taken');
+        throw new MockDomainError(409, ItdErrorCode.USERNAME_TAKEN, 'Username is already taken');
     }
   }
 }

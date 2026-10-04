@@ -3,7 +3,7 @@ import type { MockRequest } from '../../http/request.types.js';
 import { apiResponse, emptyResponse, jsonResponse } from '../../http/responses.utils.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import { numberedPage, numberedPagination } from '../shared/pagination.utils.js';
-import { numberedQuery, objectBody } from '../shared/request.utils.js';
+import { numberedQuery, objectBody, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 import type { ProfilePatch, UserRecord } from './users.types.js';
 
@@ -14,14 +14,14 @@ const TOP_CLANS_LIMIT = 10;
 /** Баннер по `bannerId`: идентификатор файла сохраняется как есть, `null` удаляет баннер. */
 function bannerOf(value: unknown): string | null {
   if (value === null || typeof value === 'string') return value;
-  throw MockDomainError.badRequest('VALIDATION_ERROR', 'bannerId должен быть строкой или null');
+  throw MockDomainError.validation('bannerId должен быть строкой или null');
 }
 
 function profilePatch(body: Record<string, unknown>): ProfilePatch {
   const patch: ProfilePatch = {};
   for (const key of ['username', 'displayName', 'avatar', 'bio'] as const) {
-    const value = body[key];
-    if (typeof value === 'string') patch[key] = value;
+    const value = stringField(body, key);
+    if (value !== undefined) patch[key] = value;
   }
   if ('bannerId' in body) patch.banner = bannerOf(body.bannerId);
   return patch;

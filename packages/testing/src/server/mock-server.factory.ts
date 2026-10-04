@@ -13,6 +13,7 @@ import { registerPostRoutes } from './posts/posts.routes.js';
 import { registerSearchRoutes } from './search/search.routes.js';
 import { MockServerRuntime } from './server.runtime.js';
 import type { CreateMockServerOptions, MockServer, MockServerSeed } from './server.types.js';
+import { MockErrorCode } from './shared/domain.constants.js';
 import { createRouteContext } from './shared/route.context.js';
 import type { RegisteredHandler } from './shared/route.types.js';
 import { TokenAuthenticator } from './shared/token.authenticator.js';
@@ -93,7 +94,7 @@ export function createMockServer(options: CreateMockServerOptions = {}): MockSer
     unsupportedRequests.push(recorded);
     return apiErrorResponse(
       501,
-      'MOCK_ROUTE_NOT_IMPLEMENTED',
+      MockErrorCode.RouteNotImplemented,
       `Mock server не реализует ${request.method} ${new URL(request.url).pathname}`,
     );
   };
@@ -174,7 +175,7 @@ export function createMockServer(options: CreateMockServerOptions = {}): MockSer
     assertNoUnsupportedRequests() {
       if (unsupportedRequests.length > 0) {
         const first = unsupportedRequests[0];
-        throw new Error(`Mock server не реализует ${first?.method} ${first?.path}`);
+        throw new ItdTestingError(`Mock server не реализует ${first?.method} ${first?.path}`);
       }
     },
     clearRequests() {

@@ -87,4 +87,10 @@ describe('normalizePost', () => {
     expect(normalizePost(source)).toEqual(source);
     expect(normalizePost(post(null))).toEqual(post(null));
   });
+
+  it('не добавляет отсутствующие даты', () => {
+    const result = normalizePost({ id: 'x' } as Post);
+
+    expect(Object.keys(result)).toEqual(['id']);
+  });
 });

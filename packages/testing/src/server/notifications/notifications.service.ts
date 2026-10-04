@@ -58,20 +58,18 @@ export class NotificationService {
       (candidate) => candidate.userId === userId && candidate.id === notificationId,
     );
     if (!record) throw MockDomainError.notFound('Notification not found');
-    return this.#markUnread([record]);
+    return this.#setRead([record]);
   }
 
   markMany(userId: string, notificationIds: ReadonlySet<string>): number {
-    return this.#markUnread(
-      this.forUser(userId).filter((record) => notificationIds.has(record.id)),
-    );
+    return this.#setRead(this.forUser(userId).filter((record) => notificationIds.has(record.id)));
   }
 
   markAll(userId: string): number {
-    return this.#markUnread(this.forUser(userId));
+    return this.#setRead(this.forUser(userId));
   }
 
-  #markUnread(records: readonly NotificationRecord[]): number {
+  #setRead(records: readonly NotificationRecord[]): number {
     let marked = 0;
     for (const record of records) {
       if (record.isRead) continue;

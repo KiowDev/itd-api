@@ -1,4 +1,4 @@
-import { NotificationType } from 'itd-api';
+import { ItdErrorCode, NotificationType } from 'itd-api';
 import type { NotificationService } from '../notifications/notifications.service.js';
 import { canAccess } from '../shared/access.utils.js';
 import { MockDomainError } from '../shared/domain.errors.js';
@@ -87,20 +87,13 @@ export class PostService {
    * только если её `wallAccess` разрешает это автору.
    */
   create(author: UserRecord, input: NewPost): PostRecord {
-    const wallRecipientId = this.#wallRecipient(author, input.wallRecipientId);
-    const post: PostRecord = {
-      id: this.#store.nextPostId(),
+    const post = this.#insert({
       authorId: author.profile.id,
       content: input.content,
       spans: input.spans,
       originalPostId: null,
-      wallRecipientId,
-      createdAt: this.#store.now(),
-      editedAt: null,
-      likedBy: new Set(),
-      deleted: false,
-    };
-    this.#store.posts.set(post.id, post);
+      wallRecipientId: this.#wallRecipient(author, input.wallRecipientId),
+    });
     if (post.wallRecipientId) {
       this.#notifications.notify({
         recipientId: post.wallRecipientId,
@@ -139,19 +132,13 @@ export class PostService {
   repost(user: UserRecord, postId: string, content: string): PostRecord {
     const parent = this.requireActive(postId);
     const firstRepost = !this.hasReposted(user, parent.id);
-    const repost: PostRecord = {
-      id: this.#store.nextPostId(),
+    const repost = this.#insert({
       authorId: user.profile.id,
       content,
       spans: [],
       originalPostId: parent.id,
       wallRecipientId: null,
-      createdAt: this.#store.now(),
-      editedAt: null,
-      likedBy: new Set(),
-      deleted: false,
-    };
-    this.#store.posts.set(repost.id, repost);
+    });
     if (firstRepost) {
       this.#notifications.notify({
         recipientId: parent.authorId,
@@ -211,6 +198,21 @@ export class PostService {
     return post.likedBy.delete(user.profile.id);
   }
 
+  #insert(
+    fields: Omit<PostRecord, 'id' | 'createdAt' | 'editedAt' | 'likedBy' | 'deleted'>,
+  ): PostRecord {
+    const post: PostRecord = {
+      id: this.#store.nextPostId(),
+      ...fields,
+      createdAt: this.#store.now(),
+      editedAt: null,
+      likedBy: new Set(),
+      deleted: false,
+    };
+    this.#store.posts.set(post.id, post);
+    return post;
+  }
+
   #active(predicate: (post: PostRecord) => boolean): PostRecord[] {
     return [...this.#store.posts.values()]
       .filter((post) => this.#visible(post) && predicate(post))
@@ -240,10 +242,14 @@ export class PostService {
 
   #wallRecipient(author: UserRecord, recipientId: string | null): string | null {
     if (!recipientId || recipientId === author.profile.id) return null;
-    const recipient = this.#users.require(recipientId);
-    if (recipient === author) return null;
+    const recipient = this.#users.get(recipientId);
+    if (!recipient || recipient.deactivated) throw MockDomainError.notFound('User not found');
     if (!canAccess(recipient.profile.wallAccess, this.#users.relation(recipient, author))) {
-      throw new MockDomainError(403, 'WRITE_ACCESS_RESTRICTED', 'Стена закрыта для записей');
+      throw new MockDomainError(
+        403,
+        ItdErrorCode.WRITE_ACCESS_RESTRICTED,
+        'Стена закрыта для записей',
+      );
     }
     return recipient.profile.id;
   }

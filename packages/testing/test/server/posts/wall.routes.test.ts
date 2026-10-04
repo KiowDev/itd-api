@@ -66,4 +66,18 @@ describe('createMockServer: стена и поля поста', () => {
     ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
     expect(server.snapshot().posts).toEqual([]);
   });
+
+  it('принимает адресата стены только по id', async () => {
+    const server = makeWallServer();
+    const bob = new ItdClient(server.clientOptions({ as: 'bob' }));
+    await bob.users.follow('alice');
+
+    await expect(
+      bob.request({
+        method: HttpMethod.Post,
+        path: '/api/posts',
+        body: { content: 'x', wallRecipientId: 'alice' },
+      }),
+    ).rejects.toMatchObject({ status: 404, code: 'NOT_FOUND' });
+  });
 });

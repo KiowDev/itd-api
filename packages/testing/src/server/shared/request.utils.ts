@@ -3,17 +3,22 @@ import type { MockRequest } from '../../http/request.types.js';
 import { MockDomainError } from './domain.errors.js';
 import type { CursorQuery, NumberedQuery, OffsetQuery } from './pagination.types.js';
 
-/** JSON-тело запроса как объект; всё остальное — пустой объект. @internal */
-export function objectBody(request: MockRequest): Record<string, unknown> {
-  return typeof request.json === 'object' && request.json !== null && !Array.isArray(request.json)
-    ? (request.json as Record<string, unknown>)
-    : {};
+/** Обычный объект, не массив и не `null`. @internal */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Строковое поле тела или `undefined`. @internal */
+/** JSON-тело запроса как объект; всё остальное — пустой объект. @internal */
+export function objectBody(request: MockRequest): Record<string, unknown> {
+  return isRecord(request.json) ? request.json : {};
+}
+
+/** Строковое поле тела. Отсутствующее или `null` — `undefined`, значение другого типа — ошибка. @internal */
 export function stringField(body: Record<string, unknown>, key: string): string | undefined {
   const value = body[key];
-  return typeof value === 'string' ? value : undefined;
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string') throw MockDomainError.validation(`${key}: ожидается строка`);
+  return value;
 }
 
 function isSpan(value: unknown): value is Span {
@@ -33,10 +38,7 @@ export function spansField(body: Record<string, unknown>): Span[] | undefined {
   const value = body.spans;
   if (value === undefined) return undefined;
   if (!Array.isArray(value) || !value.every(isSpan)) {
-    throw MockDomainError.badRequest(
-      'VALIDATION_ERROR',
-      'spans: ожидается массив фрагментов разметки',
-    );
+    throw MockDomainError.validation('spans: ожидается массив фрагментов разметки');
   }
   return structuredClone(value);
 }

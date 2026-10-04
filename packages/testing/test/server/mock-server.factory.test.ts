@@ -6,6 +6,7 @@ import {
   createMockServer,
   createTestClock,
   HttpMethod,
+  ItdTestingError,
 } from '../../src/index.js';
 import { ALICE, BOB, makeServer, settleUntil } from './test-server.utils.js';
 
@@ -198,5 +199,24 @@ describe('createMockServer: жизненный цикл', () => {
 
     server.reset();
     expect(server.snapshot()).toEqual(before);
+  });
+
+  it('хранит пост seed на своей стене без адресата', () => {
+    const server = createMockServer({
+      seed: {
+        users: [{ id: ALICE, username: 'alice' }],
+        posts: [{ id: 'own', authorId: ALICE, wallRecipientId: ALICE }],
+      },
+    });
+
+    expect(server.snapshot().posts[0]?.wallRecipientId).toBeNull();
+  });
+
+  it('сообщает о неподдерживаемом запросе ошибкой пакета', async () => {
+    const server = makeServer();
+    const client = new ItdClient(server.clientOptions({ as: 'alice' }));
+    await client.request({ method: HttpMethod.Get, path: '/api/not-implemented' }).catch(() => {});
+
+    expect(() => server.assertNoUnsupportedRequests()).toThrow(ItdTestingError);
   });
 });

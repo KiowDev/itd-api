@@ -234,4 +234,17 @@ describe('createMockServer: пользователи', () => {
     await alice.users.updateMe({ avatar: '🍅' });
     await expect(alice.users.me()).resolves.toMatchObject({ avatar: '🍅', clanAvatar: '🍅' });
   });
+
+  it('отклоняет поля профиля неверного типа', async () => {
+    const server = makeServer();
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+
+    await expect(
+      alice.request({ method: HttpMethod.Put, path: '/api/users/me', body: { username: 123 } }),
+    ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
+    await expect(
+      alice.request({ method: HttpMethod.Post, path: '/api/posts', body: { content: 42 } }),
+    ).rejects.toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
+    expect(server.snapshot().posts).toEqual([]);
+  });
 });
