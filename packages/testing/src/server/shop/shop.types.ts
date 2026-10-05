@@ -1,4 +1,4 @@
-import type { ShopOrder } from 'itd-api';
+import type { ShopOrder, ShopOrderItemInput } from 'itd-api';
 
 /** Заказ магазина в хранилище mock-server. @internal */
 export interface ShopOrderRecord {
@@ -31,4 +31,25 @@ export interface ShopCredentials {
 export interface ShopAccessGrant {
   token: string;
   expiresInSec: number;
+}
+
+/** Получатель нового заказа: поля, которые учитывает магазин mock-server. @internal */
+export interface NewShopOrderRecipient {
+  email: string;
+  city: string;
+  address: string;
+  deliveryPoint: string | null;
+  comment: string | null;
+}
+
+/** Новый заказ после разбора тела запроса. @internal */
+export interface NewShopOrder {
+  items: ShopOrderItemInput[];
+  recipient: NewShopOrderRecipient;
+}
+
+/** Кто оформляет заказ и с каким ключом идемпотентности. @internal */
+export interface ShopOrderContext {
+  userId?: string | undefined;
+  idempotencyKey?: string | null;
 }

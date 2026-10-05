@@ -36,10 +36,9 @@ export class NotificationService {
     return record;
   }
 
-  /** Подписывает на новые уведомления и возвращает функцию отписки. */
-  onCreated(listener: NotificationListener): () => void {
+  /** Подписывает на новые уведомления. */
+  onCreated(listener: NotificationListener): void {
     this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
   }
 
   /** Уведомления пользователя, сначала новые. */

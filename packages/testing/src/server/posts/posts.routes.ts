@@ -97,12 +97,7 @@ export function registerPostRoutes({
       const post = posts.requireOwn(request.params.postId ?? '', user);
       const body = objectBody(request);
       posts.edit(post, { content: stringField(body, 'content'), spans: spansField(body) });
-      return apiResponse({
-        id: post.id,
-        content: post.content,
-        spans: post.spans,
-        updatedAt: post.editedAt,
-      });
+      return apiResponse(presenters.posts.updateResult(post));
     }),
   );
 
@@ -148,7 +143,7 @@ export function registerPostRoutes({
       const post = posts.requireActive(request.params.postId ?? '');
       if (liked) posts.like(user, post);
       else posts.unlike(user, post);
-      return apiResponse({ liked, likesCount: post.likedBy.size });
+      return apiResponse(presenters.posts.likeResult(post, liked));
     });
   route(HttpMethod.Post, '/api/posts/:postId/like', reaction(true));
   route(HttpMethod.Delete, '/api/posts/:postId/like', reaction(false));

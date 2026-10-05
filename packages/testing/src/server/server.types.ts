@@ -12,11 +12,13 @@ import type { RecordedRequest } from '../http/request.types.js';
 import type { MockHandler } from '../http/router.types.js';
 import type { CommentPresenter } from './comments/comments.presenter.js';
 import type { CommentService } from './comments/comments.service.js';
+import type { HashtagPresenter } from './hashtags/hashtags.presenter.js';
 import type { HashtagService } from './hashtags/hashtags.service.js';
 import type { NotificationPresenter } from './notifications/notifications.presenter.js';
 import type { NotificationService } from './notifications/notifications.service.js';
 import type { PostPresenter } from './posts/posts.presenter.js';
 import type { PostService } from './posts/posts.service.js';
+import type { SearchPresenter } from './search/search.presenter.js';
 import type { SearchService } from './search/search.service.js';
 import type { ShopService } from './shop/shop.service.js';
 import type { UserPresenter } from './users/users.presenter.js';
@@ -202,4 +204,6 @@ export interface MockPresenters {
   readonly posts: PostPresenter;
   readonly comments: CommentPresenter;
   readonly notifications: NotificationPresenter;
+  readonly hashtags: HashtagPresenter;
+  readonly search: SearchPresenter;
 }

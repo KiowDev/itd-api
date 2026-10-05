@@ -1,6 +1,7 @@
 import type { Span } from 'itd-api';
 import type { MockRequest } from '../../http/request.types.js';
 import { MockDomainError } from './domain.errors.js';
+import { nonNegativeInt, positiveInt } from './numbers.utils.js';
 import type { CursorQuery, NumberedQuery, OffsetQuery } from './pagination.types.js';
 
 /** Обычный объект, не массив и не `null`. @internal */
@@ -41,17 +42,6 @@ export function spansField(body: Record<string, unknown>): Span[] | undefined {
     throw MockDomainError.validation('spans: ожидается массив фрагментов разметки');
   }
   return structuredClone(value);
-}
-
-/** Положительное целое из параметра запроса, ограниченное сверху. @internal */
-export function positiveInt(value: string | null, fallback: number, maximum = 100): number {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, maximum) : fallback;
-}
-
-/** Неотрицательное целое из параметра запроса. */
-function nonNegativeInt(value: string | null): number {
-  return Math.max(0, Number.parseInt(value ?? '0', 10) || 0);
 }
 
 /** Размер страницы из `limit`: по умолчанию 20, не больше `maximum`. */

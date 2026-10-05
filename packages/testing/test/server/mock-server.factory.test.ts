@@ -134,6 +134,22 @@ describe('createMockServer: жизненный цикл', () => {
       },
     },
     {
+      name: 'подписка на себя',
+      seed: { users: [{ id: ALICE, username: 'alice', following: [ALICE] }] },
+    },
+    {
+      name: 'ответ на ответ',
+      seed: {
+        users: [{ id: ALICE, username: 'alice' }],
+        posts: [{ id: 'post-1', authorId: ALICE }],
+        comments: [
+          { id: 'root', postId: 'post-1', authorId: ALICE },
+          { id: 'reply', postId: 'post-1', authorId: ALICE, parentCommentId: 'root' },
+          { id: 'nested', postId: 'post-1', authorId: ALICE, parentCommentId: 'reply' },
+        ],
+      },
+    },
+    {
       name: 'репост отсутствующего поста',
       seed: {
         users: [{ id: ALICE, username: 'alice' }],

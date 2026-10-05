@@ -38,7 +38,7 @@ export class PostService {
   clanFeed(viewer: UserRecord): PostRecord[] {
     const clan = clanOf(viewer);
     return this.#active((post) => {
-      const author = this.#store.users.get(post.authorId);
+      const author = this.#users.get(post.authorId);
       return author !== undefined && clanOf(author) === clan;
     });
   }
@@ -179,9 +179,9 @@ export class PostService {
     return parent && this.#visible(parent) ? parent : undefined;
   }
 
-  /** Возвращает `true`, если реакция появилась. Только новая реакция уведомляет автора. */
-  like(user: UserRecord, post: PostRecord): boolean {
-    if (post.likedBy.has(user.profile.id)) return false;
+  /** Ставит реакцию. Уведомление автор получает только о новой реакции. */
+  like(user: UserRecord, post: PostRecord): void {
+    if (post.likedBy.has(user.profile.id)) return;
     post.likedBy.add(user.profile.id);
     this.#notifications.notify({
       recipientId: post.authorId,
@@ -190,12 +190,10 @@ export class PostService {
       entityId: post.id,
       preview: post.content,
     });
-    return true;
   }
 
-  /** Возвращает `true`, если реакция была. */
-  unlike(user: UserRecord, post: PostRecord): boolean {
-    return post.likedBy.delete(user.profile.id);
+  unlike(user: UserRecord, post: PostRecord): void {
+    post.likedBy.delete(user.profile.id);
   }
 
   #insert(

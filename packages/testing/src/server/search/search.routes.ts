@@ -5,9 +5,6 @@ import type { MockRouteContext } from '../shared/route.types.js';
 export function registerSearchRoutes({ services, presenters, route }: MockRouteContext): void {
   route(HttpMethod.Get, '/api/search', (request) => {
     const results = services.search.search(request.query.get('q') ?? '');
-    return apiResponse({
-      users: results.users.map((user) => presenters.users.searchUser(user)),
-      hashtags: results.hashtags,
-    });
+    return apiResponse(presenters.search.results(results));
   });
 }

@@ -42,13 +42,13 @@ export {
 } from './fixtures/models.fixtures.js';
 export { HttpMethod, RecordedBodyType } from './http/http.constants.js';
 export type { MockRequest, RecordedRequest, RouteParams } from './http/request.types.js';
+export type { SseFrame } from './http/responses.types.js';
 export {
   apiErrorResponse,
   apiResponse,
   binaryResponse,
   emptyResponse,
   jsonResponse,
-  type SseFrame,
   sseResponse,
   textResponse,
 } from './http/responses.utils.js';

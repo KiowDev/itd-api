@@ -1,69 +1,50 @@
-import type { CreateShopOrderInput } from 'itd-api';
+import type { ShopOrderItemInput } from 'itd-api';
 import { HttpMethod } from '../../http/http.constants.js';
 import type { MockRequest } from '../../http/request.types.js';
 import { emptyResponse, jsonResponse } from '../../http/responses.utils.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import { isRecord, objectBody, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
-import { orderSummary } from './shop.presenter.js';
-import type { ShopCredentials } from './shop.types.js';
+import { DELIVERY_COUNTRIES, DELIVERY_ESTIMATE } from './shop.constants.js';
+import { deliveryCity, deliveryPoint, orderList } from './shop.presenter.js';
+import type { NewShopOrder, ShopCredentials } from './shop.types.js';
 
-const DELIVERY_COUNTRIES = [{ code: 'RU', name: 'Россия' }];
+/** Строковое поле, без которого запрос не имеет смысла. */
+function requiredString(body: Record<string, unknown>, key: string, label = key): string {
+  const value = stringField(body, key);
+  if (value === undefined) throw MockDomainError.validation(`${label}: ожидается строка`);
+  return value;
+}
 
-const DELIVERY_ESTIMATE = {
-  costKopecks: 50_000,
-  cost: 500,
-  periodMin: 2,
-  periodMax: 5,
-  tariffCode: 136,
-  tariffName: 'Посылка склад-склад',
-  weightGrams: 500,
-};
-
-function deliveryPoint(cityCode: number) {
+function orderItem(value: unknown): ShopOrderItemInput {
+  if (!isRecord(value) || !Number.isInteger(value.qty) || (value.qty as number) <= 0) {
+    throw MockDomainError.validation('items: ожидается товар и положительное количество');
+  }
   return {
-    code: 'PVZ-1',
-    name: 'Пункт выдачи',
-    city: 'Москва',
-    cityCode,
-    countryCode: 'RU',
-    postalCode: '101000',
-    address: 'Тестовая улица, 1',
-    latitude: 55.75,
-    longitude: 37.62,
-    dressingRoom: true,
-    card: true,
-    cash: false,
+    productId: requiredString(value, 'productId', 'items.productId'),
+    size: stringField(value, 'size') ?? null,
+    color: stringField(value, 'color') ?? null,
+    qty: value.qty as number,
   };
 }
 
-const REQUIRED_RECIPIENT_FIELDS = ['email', 'city', 'address'] as const;
-const OPTIONAL_RECIPIENT_FIELDS = ['name', 'phone', 'country', 'deliveryPoint', 'comment'] as const;
-
-function isOrderItem(item: unknown): boolean {
-  if (!isRecord(item) || !Number.isInteger(item.qty) || (item.qty as number) <= 0) return false;
-  stringField(item, 'size');
-  stringField(item, 'color');
-  return stringField(item, 'productId') !== undefined;
-}
-
-/**
- * Тело заказа: непустой список позиций с товаром и количеством, получатель с адресом. Поля
- * неверного типа отклоняются `400 VALIDATION_ERROR`.
- */
-function orderInput(body: Record<string, unknown>): CreateShopOrderInput {
+/** Заказ из тела запроса: непустой список позиций и получатель с адресом. */
+function newOrder(body: Record<string, unknown>): NewShopOrder {
   const { items, recipient } = body;
-  if (!Array.isArray(items) || items.length === 0 || !items.every(isOrderItem)) {
+  if (!Array.isArray(items) || items.length === 0) {
     throw MockDomainError.validation('items: ожидается непустой список позиций заказа');
   }
   if (!isRecord(recipient)) throw MockDomainError.validation('recipient: ожидается получатель');
-  for (const key of REQUIRED_RECIPIENT_FIELDS) {
-    if (stringField(recipient, key) === undefined) {
-      throw MockDomainError.validation(`recipient.${key}: ожидается строка`);
-    }
-  }
-  for (const key of OPTIONAL_RECIPIENT_FIELDS) stringField(recipient, key);
-  return body as unknown as CreateShopOrderInput;
+  return {
+    items: items.map(orderItem),
+    recipient: {
+      email: requiredString(recipient, 'email', 'recipient.email'),
+      city: requiredString(recipient, 'city', 'recipient.city'),
+      address: requiredString(recipient, 'address', 'recipient.address'),
+      deliveryPoint: stringField(recipient, 'deliveryPoint') || null,
+      comment: stringField(recipient, 'comment') || null,
+    },
+  };
 }
 
 export function registerShopRoutes({ services, auth, route }: MockRouteContext): void {
@@ -81,9 +62,8 @@ export function registerShopRoutes({ services, auth, route }: MockRouteContext):
   route(HttpMethod.Get, '/api/v1/shop/delivery/countries', () => jsonResponse(DELIVERY_COUNTRIES));
   route(HttpMethod.Get, '/api/v1/shop/delivery/cities', (request) => {
     const query = request.query.get('q')?.trim() ?? '';
-    return jsonResponse(
-      query ? [{ code: 44, name: query, countryCode: request.query.get('country') ?? 'RU' }] : [],
-    );
+    const country = request.query.get('country') ?? 'RU';
+    return jsonResponse(query ? [deliveryCity(query, country)] : []);
   });
   route(HttpMethod.Get, '/api/v1/shop/delivery/points', (request) =>
     jsonResponse([deliveryPoint(Number(request.query.get('cityCode')))]),
@@ -92,7 +72,7 @@ export function registerShopRoutes({ services, auth, route }: MockRouteContext):
 
   route(HttpMethod.Post, '/api/v1/shop/orders', (request) =>
     jsonResponse(
-      shop.createOrder(orderInput(objectBody(request)), {
+      shop.createOrder(newOrder(objectBody(request)), {
         userId: auth.authenticate(request)?.profile.id,
         idempotencyKey: request.headers.get('idempotency-key'),
       }),
@@ -100,15 +80,15 @@ export function registerShopRoutes({ services, auth, route }: MockRouteContext):
   );
 
   route(HttpMethod.Get, '/api/v1/shop/orders/my', (request) =>
-    jsonResponse({
-      items: shop.ordersFor(credentials(request)).map((order) => orderSummary(order.value)),
-    }),
+    jsonResponse(orderList(shop.ordersFor(credentials(request)))),
   );
 
   route(HttpMethod.Post, '/api/v1/shop/orders/lookup/request', () => jsonResponse({ sent: true }));
   route(HttpMethod.Post, '/api/v1/shop/orders/lookup/verify', (request) => {
-    const { email, code } = objectBody(request);
-    return jsonResponse(shop.grantAccess(email, code));
+    const body = objectBody(request);
+    return jsonResponse(
+      shop.grantAccess(requiredString(body, 'email'), stringField(body, 'code') ?? ''),
+    );
   });
 
   route(HttpMethod.Get, '/api/v1/shop/orders/:orderNumber', (request) => {

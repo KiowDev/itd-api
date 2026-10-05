@@ -2,7 +2,7 @@ import { HttpMethod } from '../../http/http.constants.js';
 import type { MockRequest } from '../../http/request.types.js';
 import { apiResponse, emptyResponse, jsonResponse } from '../../http/responses.utils.js';
 import { MockDomainError } from '../shared/domain.errors.js';
-import { numberedPage, numberedPagination } from '../shared/pagination.utils.js';
+import { numberedPage } from '../shared/pagination.utils.js';
 import { numberedQuery, objectBody, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 import type { ProfilePatch, UserRecord } from './users.types.js';
@@ -38,11 +38,7 @@ export function registerUserRoutes({
 
   route(HttpMethod.Get, '/api/profile', (request) => {
     const user = auth.authenticate(request);
-    return apiResponse({
-      authenticated: user !== undefined,
-      banned: false,
-      user: user ? presenters.users.sessionUser(user) : null,
-    });
+    return apiResponse(presenters.users.authState(user));
   });
 
   route(
@@ -97,13 +93,13 @@ export function registerUserRoutes({
     ),
   );
 
-  const userPage = (request: MockRequest, viewer: UserRecord, list: readonly UserRecord[]) => {
-    const page = numberedPage(list, numberedQuery(request, USER_LIST_LIMIT));
-    return apiResponse({
-      users: page.items.map((user) => presenters.users.userSummary(viewer, user)),
-      pagination: numberedPagination(page),
-    });
-  };
+  const userPage = (request: MockRequest, viewer: UserRecord, list: readonly UserRecord[]) =>
+    apiResponse(
+      presenters.users.userPage(
+        numberedPage(list, numberedQuery(request, USER_LIST_LIMIT)),
+        viewer,
+      ),
+    );
 
   route(
     HttpMethod.Get,
@@ -131,7 +127,7 @@ export function registerUserRoutes({
     requireAuth((request, viewer) => {
       const target = users.require(request.params.user ?? '');
       users.follow(viewer, target);
-      return apiResponse({ following: true, followersCount: users.followersCount(target) });
+      return apiResponse(presenters.users.followResult(target));
     }),
   );
 

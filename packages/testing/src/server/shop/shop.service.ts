@@ -1,16 +1,12 @@
-import {
-  type CreateShopOrderInput,
-  type ShopOrder,
-  type ShopOrderItem,
-  ShopOrderStatus,
-  type ShopProduct,
-} from 'itd-api';
+import { type ShopOrder, type ShopOrderItem, ShopOrderStatus, type ShopProduct } from 'itd-api';
 import { MockErrorCode } from '../shared/domain.constants.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
 import type {
+  NewShopOrder,
   ShopAccessGrant,
   ShopCredentials,
+  ShopOrderContext,
   ShopOrderReceipt,
   ShopOrderRecord,
 } from './shop.types.js';
@@ -41,10 +37,7 @@ export class ShopService {
    * Создаёт заказ. Повтор с тем же ключом идемпотентности возвращает прежний результат,
    * неизвестный товар — `404`.
    */
-  createOrder(
-    input: CreateShopOrderInput,
-    options: { userId?: string | undefined; idempotencyKey?: string | null },
-  ): ShopOrderReceipt {
+  createOrder(input: NewShopOrder, options: ShopOrderContext): ShopOrderReceipt {
     const previous = options.idempotencyKey
       ? this.#store.shopIdempotency.get(options.idempotencyKey)
       : undefined;
@@ -66,9 +59,9 @@ export class ShopService {
       delivery: {
         city: input.recipient.city,
         address: input.recipient.address,
-        point: input.recipient.deliveryPoint || null,
+        point: input.recipient.deliveryPoint,
       },
-      comment: input.recipient.comment || null,
+      comment: input.recipient.comment,
       track: null,
       support: { email: 'shop@example.test' },
     };
@@ -84,8 +77,8 @@ export class ShopService {
   }
 
   /** Обменивает код из письма на временный доступ ко всем заказам этого адреса. */
-  grantAccess(email: unknown, code: unknown): ShopAccessGrant {
-    if (typeof email !== 'string' || code !== ACCESS_CODE) {
+  grantAccess(email: string, code: string): ShopAccessGrant {
+    if (code !== ACCESS_CODE) {
       throw MockDomainError.badRequest(MockErrorCode.InvalidCode, 'Неверный код');
     }
     const normalized = email.trim().toLowerCase();
@@ -154,14 +147,14 @@ export class ShopService {
     return undefined;
   }
 
-  #orderItems(input: CreateShopOrderInput): ShopOrderItem[] {
+  #orderItems(input: NewShopOrder): ShopOrderItem[] {
     return input.items.map((item) => {
       const product = this.requireProduct(item.productId);
       return {
         slug: item.productId,
         title: product.title,
-        color: item.color ?? null,
-        size: item.size ?? null,
+        color: item.color,
+        size: item.size,
         qty: item.qty,
         sum: product.price * item.qty,
       };

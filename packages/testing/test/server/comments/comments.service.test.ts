@@ -12,8 +12,9 @@ describe('CommentService', () => {
     const bob = userOf(runtime, BOB);
     const comment = comments.requireActive('comment-1');
 
-    expect(comments.like(bob, comment)).toBe(true);
-    expect(comments.like(bob, comment)).toBe(false);
+    comments.like(bob, comment);
+    comments.like(bob, comment);
+    expect(comment.likedBy.size).toBe(1);
     expect(notifications.forUser(ALICE)).toHaveLength(1);
   });
 

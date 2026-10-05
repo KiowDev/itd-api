@@ -86,6 +86,9 @@ export function buildStoreContents(
   const commentPostIds = new Map(
     commentIds.map((id, index) => [id, at(commentSeeds, index).postId]),
   );
+  const commentParentIds = new Map(
+    commentIds.map((id, index) => [id, at(commentSeeds, index).parentCommentId ?? null]),
+  );
   const userReferences = new Map<string, string>();
   userIds.forEach((id, index) => {
     for (const reference of [usernameKey(id), usernameKey(at(usernames, index))]) {
@@ -110,12 +113,10 @@ export function buildStoreContents(
   };
 
   userSeeds.forEach((item, index) => {
-    for (const followed of item.following ?? []) {
-      if (!knownUsers.has(followed)) {
-        throw new MockServerSeedError(
-          `Пользователь ${userIds[index]} подписан на отсутствующего пользователя ${followed}`,
-        );
-      }
+    const id = at(userIds, index);
+    requireKnownUsers(item.following ?? [], `Пользователь ${id} в подписках`);
+    if (item.following?.includes(id)) {
+      throw new MockServerSeedError(`Пользователь ${id} подписан сам на себя`);
     }
   });
   postSeeds.forEach((item, index) => {
@@ -149,6 +150,11 @@ export function buildStoreContents(
         `У комментария ${commentIds[index]} нет родительского комментария ${item.parentCommentId}`,
       );
     }
+    if (item.parentCommentId && commentParentIds.get(item.parentCommentId)) {
+      throw new MockServerSeedError(
+        `Комментарий ${commentIds[index]} отвечает на ответ: ветки комментариев двухуровневые`,
+      );
+    }
     if (item.parentCommentId && commentPostIds.get(item.parentCommentId) !== item.postId) {
       throw new MockServerSeedError(
         `Родительский комментарий ${item.parentCommentId} относится к другому посту`,
@@ -167,11 +173,7 @@ export function buildStoreContents(
         `Уведомление принадлежит отсутствующему пользователю ${item.userId}`,
       );
     }
-    for (const actorId of item.actorIds ?? []) {
-      if (!knownUsers.has(actorId)) {
-        throw new MockServerSeedError(`В уведомлении указан отсутствующий участник ${actorId}`);
-      }
-    }
+    requireKnownUsers(item.actorIds ?? [], `Уведомление пользователя ${item.userId}`);
   }
 
   const users = new Map<string, UserRecord>();

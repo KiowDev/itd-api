@@ -1,4 +1,4 @@
-import type { OriginalPost, Post } from 'itd-api';
+import type { LikeResult, OriginalPost, Post, PostUpdateResult } from 'itd-api';
 import { postFixture } from '../../fixtures/models.fixtures.js';
 import type { CommentService } from '../comments/comments.service.js';
 import type { CursorSlice } from '../shared/pagination.types.js';
@@ -55,6 +55,19 @@ export class PostPresenter {
       posts: slice.items.map((post) => this.post(post, viewer)),
       pagination: cursorPagination(slice),
     };
+  }
+
+  updateResult(post: PostRecord): PostUpdateResult {
+    return {
+      id: post.id,
+      content: post.content,
+      spans: structuredClone(post.spans),
+      updatedAt: post.editedAt ?? post.createdAt,
+    };
+  }
+
+  likeResult(post: PostRecord, liked: boolean): LikeResult {
+    return { liked, likesCount: post.likedBy.size };
   }
 
   /**

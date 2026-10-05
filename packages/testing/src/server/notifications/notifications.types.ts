@@ -23,3 +23,9 @@ export interface NotificationInput {
   parentEntityId?: string | null;
   preview?: string | null;
 }
+
+/** Страница уведомлений в форме ответа API: без обёртки `data` и с признаком продолжения. @internal */
+export interface NotificationPage {
+  notifications: Notification[];
+  hasMore: boolean;
+}

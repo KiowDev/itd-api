@@ -1,3 +1,5 @@
+import type { SseFrame } from './responses.types.js';
+
 /** JSON-ответ. По умолчанию возвращает статус 200. */
 export function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
@@ -35,13 +37,6 @@ export function apiErrorResponse(
   init: Omit<ResponseInit, 'status'> = {},
 ): Response {
   return jsonResponse({ error: { code, message } }, { ...init, status });
-}
-
-/** Один кадр Server-Sent Events. Строка в `data` отправляется без JSON-сериализации. */
-export interface SseFrame {
-  event?: string;
-  data: unknown;
-  id?: string;
 }
 
 function sseLine(name: string, value: string): string {

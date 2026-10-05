@@ -1,12 +1,14 @@
 import type { ItdClock } from 'itd-api';
 import { CommentPresenter } from './comments/comments.presenter.js';
 import { CommentService } from './comments/comments.service.js';
+import { HashtagPresenter } from './hashtags/hashtags.presenter.js';
 import { HashtagService } from './hashtags/hashtags.service.js';
 import { NotificationDelivery } from './notifications/notification.delivery.js';
 import { NotificationPresenter } from './notifications/notifications.presenter.js';
 import { NotificationService } from './notifications/notifications.service.js';
 import { PostPresenter } from './posts/posts.presenter.js';
 import { PostService } from './posts/posts.service.js';
+import { SearchPresenter } from './search/search.presenter.js';
 import { SearchService } from './search/search.service.js';
 import type {
   MockPresenters,
@@ -42,11 +44,14 @@ export class MockServerRuntime {
 
     this.store = store;
     this.services = { users, posts, comments, notifications, hashtags, search, shop };
+    const postPresenter = new PostPresenter(users, posts, comments, userPresenter);
     this.presenters = {
       users: userPresenter,
-      posts: new PostPresenter(users, posts, comments, userPresenter),
+      posts: postPresenter,
       comments: new CommentPresenter(users, comments, userPresenter),
       notifications: notificationPresenter,
+      hashtags: new HashtagPresenter(postPresenter),
+      search: new SearchPresenter(userPresenter),
     };
     this.delivery = new NotificationDelivery(notifications, notificationPresenter);
   }

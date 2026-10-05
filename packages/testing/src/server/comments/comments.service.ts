@@ -79,7 +79,10 @@ export class CommentService {
     return comment;
   }
 
-  /** Отвечает на комментарий. Без явного адресата ответ адресован автору комментария. */
+  /**
+   * Отвечает на комментарий. Ветки двухуровневые: ответ на ответ встаёт в ветку комментария
+   * первого уровня. Без явного адресата ответ адресован автору комментария, на который отвечают.
+   */
   reply(
     parent: CommentRecord,
     author: UserRecord,
@@ -90,7 +93,7 @@ export class CommentService {
     const reply = this.#insert({
       postId: parent.postId,
       authorId: author.profile.id,
-      parentCommentId: parent.id,
+      parentCommentId: parent.parentCommentId ?? parent.id,
       replyToUserId,
       content,
     });
@@ -119,9 +122,9 @@ export class CommentService {
     comment.deleted = false;
   }
 
-  /** Возвращает `true`, если реакция появилась. Только новая реакция уведомляет автора. */
-  like(user: UserRecord, comment: CommentRecord): boolean {
-    if (comment.likedBy.has(user.profile.id)) return false;
+  /** Ставит реакцию. Уведомление автор получает только о новой реакции. */
+  like(user: UserRecord, comment: CommentRecord): void {
+    if (comment.likedBy.has(user.profile.id)) return;
     comment.likedBy.add(user.profile.id);
     this.#notifications.notify({
       recipientId: comment.authorId,
@@ -131,12 +134,10 @@ export class CommentService {
       parentEntityId: comment.postId,
       preview: comment.content,
     });
-    return true;
   }
 
-  /** Возвращает `true`, если реакция была. */
-  unlike(user: UserRecord, comment: CommentRecord): boolean {
-    return comment.likedBy.delete(user.profile.id);
+  unlike(user: UserRecord, comment: CommentRecord): void {
+    comment.likedBy.delete(user.profile.id);
   }
 
   #insert(fields: Omit<CommentRecord, 'id' | 'createdAt' | 'likedBy' | 'deleted'>): CommentRecord {

@@ -17,10 +17,7 @@ export function registerNotificationRoutes({
     '/api/notifications/',
     requireAuth((request, user) => {
       const page = offsetPage(notifications.forUser(user.profile.id), offsetQuery(request));
-      return jsonResponse({
-        notifications: page.items.map((record) => presenters.notifications.notification(record)),
-        hasMore: page.hasMore,
-      });
+      return jsonResponse(presenters.notifications.page(page));
     }),
   );
 

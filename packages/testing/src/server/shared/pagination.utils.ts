@@ -1,3 +1,4 @@
+import { nonNegativeInt } from './numbers.utils.js';
 import type {
   CursorPagination,
   CursorQuery,
@@ -9,13 +10,9 @@ import type {
   OffsetSlice,
 } from './pagination.types.js';
 
-function offsetFromCursor(cursor: string | null | undefined): number {
-  return Math.max(0, Number.parseInt(cursor ?? '0', 10) || 0);
-}
-
 /** @internal */
 export function cursorPage<T>(items: readonly T[], options: CursorQuery): CursorSlice<T> {
-  const offset = offsetFromCursor(options.cursor);
+  const offset = nonNegativeInt(options.cursor);
   const page = items.slice(offset, offset + options.limit);
   const nextOffset = offset + page.length;
   const hasMore = nextOffset < items.length;

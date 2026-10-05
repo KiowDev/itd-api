@@ -76,15 +76,15 @@ export class UserService {
     user.deactivated = false;
   }
 
-  /** Возвращает `true`, если подписка появилась. Только новая подписка уведомляет цель. */
-  follow(follower: UserRecord, target: UserRecord): boolean {
+  /** Подписывает на пользователя. Уведомление получает только новая подписка. */
+  follow(follower: UserRecord, target: UserRecord): void {
     if (follower === target) {
       throw MockDomainError.badRequest(
         MockErrorCode.CannotFollowSelf,
         'Нельзя подписаться на себя',
       );
     }
-    if (follower.following.has(target.profile.id)) return false;
+    if (follower.following.has(target.profile.id)) return;
     follower.following.add(target.profile.id);
     this.#notifications.notify({
       recipientId: target.profile.id,
@@ -92,12 +92,10 @@ export class UserService {
       actorId: follower.profile.id,
       entityId: follower.profile.id,
     });
-    return true;
   }
 
-  /** Возвращает `true`, если подписка была. */
-  unfollow(follower: UserRecord, target: UserRecord): boolean {
-    return follower.following.delete(target.profile.id);
+  unfollow(follower: UserRecord, target: UserRecord): void {
+    follower.following.delete(target.profile.id);
   }
 
   isFollowing(follower: UserRecord, target: UserRecord): boolean {
