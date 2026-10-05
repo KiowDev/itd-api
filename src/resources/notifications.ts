@@ -44,6 +44,7 @@ const NOTIFICATIONS_UPDATE_SETTINGS = defineBuiltInOperation<NotificationSetting
 const NOTIFICATION_SETTING_KEYS = [
   'enabled',
   'sound',
+  'messages',
   'follows',
   'wallPosts',
   'likes',
@@ -71,8 +72,8 @@ export type UpdateNotificationSettingsInput = Partial<NotificationSettings>;
 /**
  * Читает настройки уведомлений.
  *
- * Сервер отдаёт плоский объект: `enabled`, `sound`, `follows`, `wallPosts`, `likes`,
- * `comments`, `mentions`. Отсутствующая настройка считается включённой — так же
+ * Сервер отдаёт плоский объект: `enabled`, `sound`, `messages`, `follows`, `wallPosts`,
+ * `likes`, `comments`, `mentions`. Отсутствующая настройка считается включённой — так же
  * ведёт себя сайт итд.com.
  */
 function readSettings(body: unknown): NotificationSettings {

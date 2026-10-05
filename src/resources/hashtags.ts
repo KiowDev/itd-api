@@ -4,17 +4,10 @@ import { encodePathSegment } from '../core/url.js';
 import { defineBuiltInOperation } from '../domain/operations.js';
 import type { Hashtag, Post } from '../models/content.js';
 import { BaseResource } from './base.js';
-import {
-  type Page,
-  PaginationMode,
-  type Paginator,
-  pageOperation,
-  readCursorPage,
-} from './pagination.js';
+import { type Page, PaginationMode, type Paginator } from './pagination.js';
+import { postPageOperation } from './post-operations.js';
 
-const HASHTAG_POSTS = pageOperation<Post>('hashtags.posts', (body) =>
-  readCursorPage<Post>(body, 'posts'),
-);
+const HASHTAG_POSTS = postPageOperation('hashtags.posts');
 const HASHTAGS_TRENDING = defineBuiltInOperation<Hashtag[]>('hashtags.trending', (body) =>
   pickArray<Hashtag>(body, 'hashtags'),
 );

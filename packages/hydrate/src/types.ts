@@ -25,6 +25,7 @@ import type {
   NotificationUpdate,
   NotificationUpdateOfType,
   NotificationUpdateType,
+  OriginalPost,
   Page,
   Paginator,
   Post,
@@ -253,6 +254,12 @@ export type HydratedComment<T extends Comment = Comment> = HydratedModel<T, Hydr
 /** Пост с действиями и гидратированными вложенными моделями. */
 export type HydratedPost<T extends Post = Post> = HydratedModel<T, HydratedPostActions>;
 
+/** Пост, на который ссылается репост, с теми же методами, что и у поста. */
+export type HydratedOriginalPost<T extends OriginalPost = OriginalPost> = HydratedModel<
+  T,
+  HydratedPostActions
+>;
+
 /** Ссылка на комментарий из уведомления. */
 export type HydratedCommentReference = Readonly<{ id: string }> & HydratedCommentActions;
 
@@ -306,33 +313,35 @@ export type HydrateValue<T> = T extends
             ? HydratedPage<Item>
             : T extends Post
               ? HydratedPost<T>
-              : T extends Comment
-                ? HydratedComment<T>
-                : T extends Notification
-                  ? HydratedNotification<T>
-                  : T extends ShopDeliveryCity
-                    ? HydratedShopDeliveryCity<T>
-                    : T extends MyProfile | PublicProfile
-                      ? HydratedProfile<T>
-                      : T extends Author
-                        ? HydratedAuthor<T>
-                        : T extends UserSummary
-                          ? HydratedUserSummary<T>
-                          : T extends Actor
-                            ? HydratedActor<T>
-                            : T extends CommentReplyTo
-                              ? HydratedCommentReplyTo<T>
-                              : T extends Attachment
-                                ? HydratedAttachment<T>
-                                : T extends { userId: string } | { username: string }
-                                  ? HydratedUserReference<T>
-                                  : T extends readonly unknown[]
-                                    ? { [Key in keyof T]: HydrateValue<T[Key]> }
-                                    : T extends (...args: never[]) => unknown
-                                      ? T
-                                      : T extends object
-                                        ? { [Key in keyof T]: HydrateValue<T[Key]> }
-                                        : T;
+              : T extends OriginalPost
+                ? HydratedOriginalPost<T>
+                : T extends Comment
+                  ? HydratedComment<T>
+                  : T extends Notification
+                    ? HydratedNotification<T>
+                    : T extends ShopDeliveryCity
+                      ? HydratedShopDeliveryCity<T>
+                      : T extends MyProfile | PublicProfile
+                        ? HydratedProfile<T>
+                        : T extends Author
+                          ? HydratedAuthor<T>
+                          : T extends UserSummary
+                            ? HydratedUserSummary<T>
+                            : T extends Actor
+                              ? HydratedActor<T>
+                              : T extends CommentReplyTo
+                                ? HydratedCommentReplyTo<T>
+                                : T extends Attachment
+                                  ? HydratedAttachment<T>
+                                  : T extends { userId: string } | { username: string }
+                                    ? HydratedUserReference<T>
+                                    : T extends readonly unknown[]
+                                      ? { [Key in keyof T]: HydrateValue<T[Key]> }
+                                      : T extends (...args: never[]) => unknown
+                                        ? T
+                                        : T extends object
+                                          ? { [Key in keyof T]: HydrateValue<T[Key]> }
+                                          : T;
 
 /** Событие уведомления с гидратированной моделью. */
 export type HydratedNotificationEvent = HydratedModel<NotificationEvent>;

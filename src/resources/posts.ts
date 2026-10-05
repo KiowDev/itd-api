@@ -30,30 +30,26 @@ import {
   PaginationMode,
   type Paginator,
   pageOperation,
-  readCursorPage,
   readFlatCursorPage,
 } from './pagination.js';
+import { postOperation, postPageOperation } from './post-operations.js';
 
-const POSTS_LIST = pageOperation<Post>('posts.list', (body) => readCursorPage<Post>(body, 'posts'));
-const POSTS_BY_USER = pageOperation<Post>('posts.byUser', (body) =>
-  readCursorPage<Post>(body, 'posts'),
-);
-const POSTS_LIKED_BY_USER = pageOperation<Post>('posts.likedByUser', (body) =>
-  readCursorPage<Post>(body, 'posts'),
-);
+const POSTS_LIST = postPageOperation('posts.list');
+const POSTS_BY_USER = postPageOperation('posts.byUser');
+const POSTS_LIKED_BY_USER = postPageOperation('posts.likedByUser');
 const POSTS_COMMENTS = pageOperation<Comment>('posts.comments', (body) =>
   readFlatCursorPage<Comment>(body, 'comments'),
 );
 const POSTS_STATS = defineBuiltInOperation<PostStats[]>('posts.stats', (body) =>
   pickArray<PostStats>(body, 'posts'),
 );
-const POSTS_CREATE = passthroughOperation<Post>('posts.create');
-const POSTS_GET = passthroughOperation<Post>('posts.get');
+const POSTS_CREATE = postOperation('posts.create');
+const POSTS_GET = postOperation('posts.get');
 const POSTS_UPDATE = passthroughOperation<PostUpdateResult>('posts.update');
 const POSTS_RESTORE = voidOperation('posts.restore');
 const POSTS_LIKE = passthroughOperation<LikeResult>('posts.like');
 const POSTS_UNLIKE = passthroughOperation<LikeResult>('posts.unlike');
-const POSTS_REPOST = passthroughOperation<Post>('posts.repost');
+const POSTS_REPOST = postOperation('posts.repost');
 const POSTS_PIN = passthroughOperation<PinPostResult>('posts.pin');
 const POSTS_UNPIN = passthroughOperation<PinPostResult>('posts.unpin');
 const POSTS_VOTE = passthroughOperation<Poll>('posts.vote');

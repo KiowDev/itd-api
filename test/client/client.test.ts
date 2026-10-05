@@ -22,7 +22,7 @@ import type {
 } from '../../src/index.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
-import { CaptchaType } from '../../src/types/enums.js';
+import { CaptchaType, UsernameUnavailableReason } from '../../src/types/enums.js';
 import { makeJwt } from '../helpers/jwt.js';
 import {
   abortError,
@@ -655,10 +655,33 @@ describe('пользователи', () => {
     expect(mock.calls[1]?.url).toContain('page=2');
   });
 
-  it('читает признак доступности имени', async () => {
-    const { itd } = makeClient([json({ available: true })]);
+  it('приводит дату исходного поста в репосте к ISO', async () => {
+    const repost = {
+      id: 'repost',
+      originalPost: { id: 'root', createdAt: '2026-10-04 22:32:04.381097+03' },
+    };
+    const { itd } = makeClient([json(repost), json({ posts: [repost], pagination: {} })]);
 
-    expect(await itd.users.checkUsername('новое_имя')).toBe(true);
+    const single = await itd.posts.get('repost');
+    const page = await itd.posts.list();
+
+    expect(single.originalPost?.createdAt).toBe('2026-10-04T19:32:04.381Z');
+    expect(page.items[0]?.originalPost?.createdAt).toBe('2026-10-04T19:32:04.381Z');
+  });
+
+  it('читает признак доступности имени и причину отказа', async () => {
+    const { itd } = makeClient([
+      json({ available: true }),
+      json({ available: false }),
+      json({ available: false, reason: 'INVALID_FORMAT' }),
+    ]);
+
+    expect(await itd.users.checkUsername('новое_имя')).toEqual({ available: true });
+    expect(await itd.users.checkUsername('kiow')).toEqual({ available: false });
+    expect(await itd.users.checkUsername('ab')).toEqual({
+      available: false,
+      reason: UsernameUnavailableReason.InvalidFormat,
+    });
   });
 
   it('читает активный значок как строку', async () => {

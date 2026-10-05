@@ -5,6 +5,7 @@ import {
   commentFixture,
   createMockFetch,
   createMockServer,
+  originalPostFixture,
   postFixture,
 } from '@itd-api/testing';
 import {
@@ -12,6 +13,7 @@ import {
   type ClientPlugin,
   ItdClient,
   NotificationType,
+  type OriginalPost,
   Paginator,
   type Post,
   type PublicProfile,
@@ -73,7 +75,7 @@ describe('hydrateClient', () => {
       replyTo: { id: 'user-bob', username: 'bob', displayName: 'Боб' },
     });
     const comment = commentFixture({ id: 'comment-1', replies: [reply] });
-    const originalPost = postFixture({ id: 'post-original' });
+    const originalPost = originalPostFixture({ id: 'post-original' });
     const source = postFixture({
       id: 'post-root',
       originalPost,
@@ -117,7 +119,7 @@ describe('hydrateClient', () => {
 
   it('добавляет городу доставки загрузку пунктов выдачи', async () => {
     const server = createMockServer();
-    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'test-user-1' })));
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'test_user_1' })));
 
     const cities = await itd.shop.delivery.cities('Москва', 'RU');
     const city = cities[0];
@@ -317,7 +319,7 @@ describe('hydrateClient', () => {
 
   it('привязывает одну модель к нужному клиенту', async () => {
     const shared = postFixture({ id: 'shared' });
-    shared.originalPost = shared;
+    shared.originalPost = shared as unknown as OriginalPost;
     const calls: string[] = [];
     const make = (name: string) => {
       const raw = new ItdClient({ auth: 'test-token', retry: false, rateLimit: false });

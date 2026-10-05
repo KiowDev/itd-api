@@ -23,6 +23,7 @@ export {
   type HydratedNotificationFilter,
   type HydratedNotificationSelector,
   type HydratedNotificationsResource,
+  type HydratedOriginalPost,
   type HydratedPage,
   type HydratedPaginator,
   type HydratedPost,
