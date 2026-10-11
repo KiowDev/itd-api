@@ -1,8 +1,33 @@
-import type { ItdClient } from 'itd-api';
+import type { ItdClient, Page, Paginator } from 'itd-api';
 import type { HydratedNotificationEvents } from '../facades/events.types.js';
 import type { HydrateValue } from '../models/model.types.js';
 import type { HydratedQrLoginTarget } from '../models/qr-login/qr-login.types.js';
+import type {
+  FieldsShape,
+  ListShape,
+  ModelShape,
+  PaginatorShape,
+  ShapeBase,
+} from '../shapes/shape.types.js';
 import type { HydratableResource } from './results.constants.js';
+
+type FieldsShapeOf<Value> = FieldsShape<{ readonly [K in keyof Value]?: ShapeBase }>;
+
+type ShapeFor<Result> =
+  Result extends Paginator<unknown>
+    ? PaginatorShape
+    : Awaited<Result> extends readonly unknown[]
+      ? ListShape
+      : Awaited<Result> extends Page<unknown>
+        ? FieldsShapeOf<Awaited<Result>>
+        : ModelShape | FieldsShapeOf<Awaited<Result>>;
+
+/** Формы результатов методов объекта ресурсов; вложенные ресурсы описываются так же. */
+export type ResourceResults<T> = {
+  readonly [K in keyof T]?: T[K] extends (...args: never[]) => infer Result
+    ? ShapeFor<Result>
+    : ResourceResults<T[K]>;
+};
 
 /** Ресурс клиента, методы которого возвращают гидратированные результаты. */
 export type HydratedResource<Resource> = {

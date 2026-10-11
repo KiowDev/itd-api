@@ -16,6 +16,7 @@ import type {
 } from 'itd-api';
 import type { HydratedAttachment } from './attachment/attachment.types.js';
 import type { HydratedComment } from './comment/comment.types.js';
+import type { MODEL_SCHEMAS, ModelKind } from './model.constants.js';
 import type { HydratedNotification } from './notification/notification.types.js';
 import type { HydratedOriginalPost, HydratedPost } from './post/post.types.js';
 import type { HydratedShopDeliveryCity } from './shop-delivery-city/shop-delivery-city.types.js';
@@ -27,6 +28,9 @@ import type {
   HydratedUserReference,
   HydratedUserSummary,
 } from './user/user.types.js';
+
+/** Поля модели вида `K`, в которых лежат другие модели. */
+export type ModelSchema<K extends ModelKind> = (typeof MODEL_SCHEMAS)[K];
 
 /** Рекурсивно гидратирует поля модели и добавляет указанный набор действий. */
 export type HydratedModel<Model, Actions extends object = object> = Omit<

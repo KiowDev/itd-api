@@ -67,7 +67,7 @@ export function modelKind(value: AnyRecord): ModelKind | undefined {
     hasNumber(value, 'followingCount') &&
     hasNumber(value, 'postsCount')
   ) {
-    return ModelKind.Profile;
+    return ModelKind.User;
   }
 
   if (hasString(value, 'userId') || hasString(value, 'username')) return ModelKind.User;
