@@ -14,6 +14,7 @@ import type {
   PinsResult,
   PrivacySettings,
   PublicProfile,
+  UsernameAvailability,
   UserSummary,
 } from '../models/users.js';
 import { passthroughOperation, voidOperation } from '../operations/common.js';
@@ -39,8 +40,12 @@ const USER_LIST_OPERATIONS = {
   'users.following': USERS_FOLLOWING,
   'users.blocked': USERS_BLOCKED,
 } as const;
-const USERS_CHECK_USERNAME = defineBuiltInOperation<boolean>('users.checkUsername', (body) =>
-  pickBoolean(body, 'available'),
+const USERS_CHECK_USERNAME = defineBuiltInOperation<UsernameAvailability>(
+  'users.checkUsername',
+  (body) => {
+    const reason = pickString(body, 'reason');
+    return { available: pickBoolean(body, 'available'), ...(reason ? { reason } : {}) };
+  },
 );
 const USERS_WHO_TO_FOLLOW = defineBuiltInOperation<UserSummary[]>('users.whoToFollow', (body) =>
   pickArray<UserSummary>(body, 'users'),
@@ -71,13 +76,13 @@ const USERS_REMOVE_PIN = voidOperation('users.removePin');
 /**
  * Параметры списков пользователей.
  *
- * ⚠️ Списки подписчиков, подписок и заблокированных на сервере **не листаются**:
- * `page` он игнорирует, а `limit` зажимает на 20. Подробности — в {@link UsersResource.followers}.
+ * ⚠️ Сервер листает только свои списки: у чужого профиля `page` игнорируется, а `limit`
+ * зажимается до 20. Подробности — в {@link UsersResource.followers}.
  */
 export interface UserListParams {
   /** Сколько записей вернуть. Значения больше 20 сервер молча уменьшает до 20. */
   limit?: number;
-  /** Номер страницы. Сервер его игнорирует — оставлен на случай, если пагинацию починят. */
+  /** Номер страницы, начиная с 1. Для чужого профиля сервер его игнорирует. */
   page?: number;
 }
 
@@ -231,8 +236,16 @@ export class UsersResource extends BaseResource {
     });
   }
 
-  /** Проверяет, свободно ли имя пользователя. */
-  checkUsername(username: string, options: RequestOptions = {}): Promise<boolean> {
+  /**
+   * Проверяет, свободно ли имя пользователя.
+   *
+   * @example
+   * ```ts
+   * const { available, reason } = await itd.users.checkUsername('new_name');
+   * if (reason === UsernameUnavailableReason.InvalidFormat) console.log('Неверный формат');
+   * ```
+   */
+  checkUsername(username: string, options: RequestOptions = {}): Promise<UsernameAvailability> {
     return this.http.execute(USERS_CHECK_USERNAME, {
       path: '/api/users/check-username',
       query: { username },
@@ -280,10 +293,11 @@ export class UsersResource extends BaseResource {
   /**
    * Загружает подписчиков пользователя.
    *
-   * ⚠️ **Сервер этот список не листает.** Возвращаются первые 20 записей и только они:
+   * Свои подписчики листаются обычным образом: `page`, `limit` до 20, `hasMore` и `total`.
+   *
+   * ⚠️ **Чужой список сервер не листает.** Возвращаются первые 20 записей и только они:
    * параметр `page` игнорируется (любая страница отдаёт те же записи и `pagination.page: 1`),
-   * `limit` больше 20 молча уменьшается, а `hasMore` всегда `false`. Последнее честно —
-   * получить продолжение нечем.
+   * `limit` больше 20 молча уменьшается, а `hasMore` всегда `false`.
    *
    * Числу `total` доверять тоже не стоит: оно расходится с `followersCount` из профиля —
    * на проверенных аккаунтах занижено примерно на 1–4%.
@@ -304,8 +318,8 @@ export class UsersResource extends BaseResource {
   /**
    * Перебирает подписчиков.
    *
-   * ⚠️ Перебор закончится после первых 20 записей: сервер список не листает —
-   * см. {@link followers}. Метод оставлен на случай, если пагинацию починят.
+   * Свой список перебирается целиком. Перебор чужого закончится после первых 20 записей:
+   * сервер его не листает — см. {@link followers}.
    */
   iterateFollowers(
     user: UserRef,
@@ -334,7 +348,7 @@ export class UsersResource extends BaseResource {
     );
   }
 
-  /** Перебирает подписки. Закончится после первых 20 записей — см. {@link followers}. */
+  /** Перебирает подписки. Чужой список закончится после первых 20 записей — см. {@link followers}. */
   iterateFollowing(
     user: UserRef,
     params: UserListParams = {},
@@ -384,12 +398,12 @@ export class UsersResource extends BaseResource {
     });
   }
 
-  /** Загружает заблокированных пользователей. Ограничения те же, что у {@link followers}. */
+  /** Загружает заблокированных пользователей. Параметры — как у {@link followers}. */
   blocked(params: UserListParams = {}, options: RequestOptions = {}): Promise<Page<UserSummary>> {
     return this.#userPage('users.blocked', '/api/users/me/blocked', params, options);
   }
 
-  /** Перебирает заблокированных. Закончится после первых 20 записей — см. {@link followers}. */
+  /** Перебирает заблокированных. Параметры — как у {@link followers}. */
   iterateBlocked(
     params: UserListParams = {},
     options: PaginationOptions = {},

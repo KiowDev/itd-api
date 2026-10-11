@@ -87,6 +87,7 @@ declare module 'itd-api' {
   }
 
   interface Post extends CryptoDecodedObject {}
+  interface OriginalPost extends CryptoDecodedObject {}
   interface PostUpdateResult extends CryptoDecodedObject {}
   interface Comment extends CryptoDecodedObject {}
   interface CommentUpdateResult extends CryptoDecodedObject {}

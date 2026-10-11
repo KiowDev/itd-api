@@ -1,0 +1,134 @@
+import type {
+  Author,
+  AuthState,
+  AuthUser,
+  CommentReplyTo,
+  FollowResult,
+  MyProfile,
+  PublicProfile,
+  UsernameAvailability,
+  UserSummary,
+} from 'itd-api';
+import { publicProfileFixture } from '../../fixtures/models.fixtures.js';
+import type { PostService } from '../posts/posts.service.js';
+import type { NumberedSlice } from '../shared/pagination.types.js';
+import { numberedPagination } from '../shared/pagination.utils.js';
+import { UsernameIssue, UserRole } from './users.constants.js';
+import type { UserService } from './users.service.js';
+import type { UserPage, UserRecord, UserReference } from './users.types.js';
+import { clanOf } from './users.utils.js';
+
+/** Профили в форме ответов API. Счётчики вычисляются при каждом вызове. @internal */
+export class UserPresenter {
+  readonly #users: UserService;
+  readonly #posts: PostService;
+
+  constructor(users: UserService, posts: PostService) {
+    this.#users = users;
+    this.#posts = posts;
+  }
+
+  reference(user: UserRecord): UserReference {
+    return {
+      id: user.profile.id,
+      username: user.profile.username,
+      displayName: user.profile.displayName,
+      avatar: user.profile.avatar,
+    };
+  }
+
+  /** Автор поста или комментария: краткая запись с признаком верификации. */
+  author(user: UserRecord): Author {
+    return { ...this.reference(user), verified: user.profile.verified };
+  }
+
+  /** Адресат ответа на комментарий. */
+  replyTo(user: UserRecord): CommentReplyTo {
+    return {
+      id: user.profile.id,
+      username: user.profile.username,
+      displayName: user.profile.displayName,
+    };
+  }
+
+  /** Состояние авторизации для `/api/profile`; без пользователя — неавторизованный ответ. */
+  authState(user: UserRecord | undefined): AuthState {
+    return {
+      authenticated: user !== undefined,
+      banned: false,
+      user: user ? this.sessionUser(user) : null,
+    };
+  }
+
+  followResult(target: UserRecord): FollowResult {
+    return { following: true, followersCount: this.#users.followersCount(target) };
+  }
+
+  userPage(slice: NumberedSlice<UserRecord>, viewer: UserRecord): UserPage {
+    return {
+      users: slice.items.map((user) => this.userSummary(viewer, user)),
+      pagination: numberedPagination(slice),
+    };
+  }
+
+  sessionUser(user: UserRecord): AuthUser {
+    return {
+      id: user.profile.id,
+      username: user.profile.username,
+      displayName: user.profile.displayName,
+      avatar: user.profile.avatar,
+      clanAvatar: clanOf(user),
+      bio: user.profile.bio,
+      verified: user.profile.verified,
+      isPhoneVerified: user.profile.isPhoneVerified,
+      roles: [UserRole.User],
+    };
+  }
+
+  myProfile(user: UserRecord): MyProfile {
+    return {
+      ...user.profile,
+      ...this.#counters(user),
+      subscription: { ...user.profile.subscription },
+    };
+  }
+
+  publicProfile(viewer: UserRecord, user: UserRecord): PublicProfile {
+    return publicProfileFixture({
+      ...user.profile,
+      ...this.#counters(user),
+      isFollowing: this.#users.isFollowing(viewer, user),
+      isFollowedBy: this.#users.isFollowing(user, viewer),
+    });
+  }
+
+  /** Запись списка подписчиков или подписок относительно текущего пользователя. */
+  userSummary(viewer: UserRecord, user: UserRecord): UserSummary {
+    return { ...this.author(user), isFollowing: this.#users.isFollowing(viewer, user) };
+  }
+
+  /** Пользователь в результатах поиска. */
+  searchUser(user: UserRecord): UserSummary {
+    return {
+      ...this.author(user),
+      hasNuksta: user.profile.subscription.isActive,
+      followersCount: this.#users.followersCount(user),
+    };
+  }
+
+  /** Свободно ли имя. Причину ответ называет только для неверного формата. */
+  usernameAvailability(issue: UsernameIssue | undefined): UsernameAvailability {
+    if (issue === undefined) return { available: true };
+    return issue === UsernameIssue.InvalidFormat
+      ? { available: false, reason: UsernameIssue.InvalidFormat }
+      : { available: false };
+  }
+
+  #counters(user: UserRecord): Pick<MyProfile, 'followersCount' | 'followingCount' | 'postsCount'> {
+    return {
+      followersCount: this.#users.followersCount(user),
+      followingCount: this.#users.followingCount(user),
+      postsCount: this.#posts.activeCountBy(user),
+    };
+  }
+}

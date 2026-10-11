@@ -3,10 +3,13 @@ import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
+import { normalizeComment } from '../domain/content.js';
 import type { Comment, CommentUpdateResult, LikeResult } from '../models/content.js';
 import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
+import { commentOperation } from './content-operations.js';
 import {
+  mapPage,
   type Page,
   PaginationMode,
   type Paginator,
@@ -15,9 +18,9 @@ import {
 } from './pagination.js';
 
 const COMMENTS_REPLIES = pageOperation<Comment>('comments.replies', (body) =>
-  readPagedPage<Comment>(body, 'replies'),
+  mapPage(readPagedPage<Comment>(body, 'replies'), normalizeComment),
 );
-const COMMENTS_REPLY = passthroughOperation<Comment>('comments.reply');
+const COMMENTS_REPLY = commentOperation('comments.reply');
 const COMMENTS_UPDATE = passthroughOperation<CommentUpdateResult>('comments.update');
 const COMMENTS_RESTORE = voidOperation('comments.restore');
 const COMMENTS_LIKE = passthroughOperation<LikeResult>('comments.like');

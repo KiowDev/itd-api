@@ -51,6 +51,30 @@ export interface Poll {
   createdAt: IsoDate;
 }
 
+/**
+ * Пост, на который ссылается репост. Сервер отдаёт его урезанным и только на один уровень:
+ * без признаков относительно текущего пользователя и без собственного `originalPost`.
+ */
+export interface OriginalPost {
+  id: string;
+  content: string;
+  /** Разметка текста, см. {@link Span}. */
+  spans: Span[];
+  author: Author;
+  attachments: Attachment[];
+  likesCount: number;
+  commentsCount: number;
+  repostsCount: number;
+  viewsCount: number;
+  /** Удалён ли пост. */
+  isDeleted: boolean;
+  /** Преобладающая реакция — эмодзи либо `null`. */
+  dominantEmoji?: string | null;
+  createdAt: IsoDate;
+  /** Служебная метка показа для телеметрии, см. {@link Post.vs}. */
+  vs?: string;
+}
+
 /** Пост ленты, стены или профиля. */
 export interface Post {
   id: string;
@@ -75,8 +99,8 @@ export interface Post {
   isViewed?: boolean;
   /** Ваш ли это пост. */
   isOwner: boolean;
-  /** Исходный пост, если это репост. */
-  originalPost?: Post | null;
+  /** Пост, который репостнули, если это репост. `null` у обычного поста. */
+  originalPost?: OriginalPost | null;
   poll?: Poll | null;
   /** Преобладающая реакция — эмодзи либо `null`. */
   dominantEmoji?: string | null;

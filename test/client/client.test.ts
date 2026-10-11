@@ -22,7 +22,7 @@ import type {
 } from '../../src/index.js';
 import type { ItdClientOptions } from '../../src/options.js';
 import { TelemetryResource } from '../../src/resources/telemetry.js';
-import { CaptchaType } from '../../src/types/enums.js';
+import { CaptchaType, UsernameUnavailableReason } from '../../src/types/enums.js';
 import { makeJwt } from '../helpers/jwt.js';
 import {
   abortError,
@@ -655,10 +655,57 @@ describe('пользователи', () => {
     expect(mock.calls[1]?.url).toContain('page=2');
   });
 
-  it('читает признак доступности имени', async () => {
-    const { itd } = makeClient([json({ available: true })]);
+  it('приводит дату исходного поста в репосте к ISO', async () => {
+    const repost = {
+      id: 'repost',
+      originalPost: { id: 'root', createdAt: '2026-10-04 22:32:04.381097+03' },
+    };
+    const { itd } = makeClient([json(repost), json({ posts: [repost], pagination: {} })]);
 
-    expect(await itd.users.checkUsername('новое_имя')).toBe(true);
+    const single = await itd.posts.get('repost');
+    const page = await itd.posts.list();
+
+    expect(single.originalPost?.createdAt).toBe('2026-10-04T19:32:04.381Z');
+    expect(page.items[0]?.originalPost?.createdAt).toBe('2026-10-04T19:32:04.381Z');
+  });
+
+  it('приводит даты комментариев и ответов к ISO', async () => {
+    const comment = {
+      id: 'c1',
+      createdAt: '2026-10-04 22:00:00.5+03',
+      replies: [{ id: 'c2', createdAt: '2026-10-04 22:01:00+03' }],
+    };
+    const { itd } = makeClient([
+      json({ comments: [comment], hasMore: false, nextCursor: null }),
+      json({ replies: [comment], pagination: { page: 1, limit: 20, total: 1, hasMore: false } }),
+      json(comment),
+      json(comment),
+    ]);
+
+    const comments = await itd.posts.comments('post-1');
+    const replies = await itd.comments.replies('c1');
+    const created = await itd.posts.comment('post-1', 'Комментарий');
+    const reply = await itd.comments.reply('c1', 'Ответ');
+
+    for (const item of [comments.items[0], replies.items[0], created, reply]) {
+      expect(item?.createdAt).toBe('2026-10-04T19:00:00.500Z');
+      expect(item?.replies?.[0]?.createdAt).toBe('2026-10-04T19:01:00.000Z');
+    }
+  });
+
+  it('читает признак доступности имени и причину отказа', async () => {
+    const { itd } = makeClient([
+      json({ available: true }),
+      json({ available: false }),
+      json({ available: false, reason: 'INVALID_FORMAT' }),
+    ]);
+
+    expect(await itd.users.checkUsername('новое_имя')).toEqual({ available: true });
+    expect(await itd.users.checkUsername('kiow')).toEqual({ available: false });
+    expect(await itd.users.checkUsername('ab')).toEqual({
+      available: false,
+      reason: UsernameUnavailableReason.InvalidFormat,
+    });
   });
 
   it('читает активный значок как строку', async () => {

@@ -432,6 +432,7 @@ describe('ресурс уведомлений', () => {
       json({
         enabled: true,
         sound: false,
+        messages: false,
         follows: true,
         wallPosts: true,
         likes: false,
@@ -445,6 +446,7 @@ describe('ресурс уведомлений', () => {
     expect(settings).toEqual({
       enabled: true,
       sound: false,
+      messages: false,
       follows: true,
       wallPosts: true,
       likes: false,

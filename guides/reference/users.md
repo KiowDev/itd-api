@@ -63,9 +63,10 @@ get(user: UserRef): Promise<PublicProfile>
 Профиль пользователя по UUID или имени. См. [`PublicProfile`](./models.md#publicprofile).
 
 ```ts
-checkUsername(username: string): Promise<boolean>
+checkUsername(username: string): Promise<UsernameAvailability>
 ```
-Свободно ли имя пользователя.
+Свободно ли имя пользователя. Своё текущее имя сервер считает занятым; при неверном формате
+в ответе есть `reason: UsernameUnavailableReason.InvalidFormat`.
 
 ## Подписки
 
@@ -93,10 +94,12 @@ iterateFollowing(user: UserRef, params?: UserListParams): Paginator<UserSummary>
 ```
 Подписчики и подписки. См. [`UserSummary`](./models.md#usersummary).
 
-> ⚠️ **Сервер эти списки не листает.** Возвращаются первые 20 записей: `page` игнорируется,
+Свои списки листаются обычным образом: `page`, `limit` до 20, `hasMore` и `total`.
+
+> ⚠️ **Чужие списки сервер не листает.** Возвращаются первые 20 записей: `page` игнорируется,
 > `limit` больше 20 молча уменьшается, `hasMore` всегда `false`. Полю `total` доверять тоже
-> нельзя — оно расходится с `followersCount` из профиля. Методы-итераторы закончатся после
-> первых 20 записей и оставлены на случай, если пагинацию починят.
+> нельзя — оно расходится с `followersCount` из профиля. Итератор по чужому списку закончится
+> после первых 20 записей.
 
 ## Блокировки
 
@@ -154,15 +157,20 @@ topClans(): Promise<Clan[]>
 interface UpdateProfileInput {
   displayName?: string;
   username?: string;
-  avatar?: string;                       // эмодзи-символ клана, а не URL картинки
+  avatar?: string;                       // эмодзи-символ клана
   bio?: string;
   bannerId?: string | null;              // ID загруженного файла; null удаляет баннер
 }
 
 type UpdatePrivacyInput = Partial<PrivacySettings>;
 
+interface UsernameAvailability {
+  available: boolean;
+  reason?: UsernameUnavailableReason;    // только при неверном формате
+}
+
 interface UserListParams {
   limit?: number;                        // > 20 сервер зажимает до 20
-  page?: number;                         // сервер игнорирует
+  page?: number;                         // для чужого профиля сервер игнорирует
 }
 ```
