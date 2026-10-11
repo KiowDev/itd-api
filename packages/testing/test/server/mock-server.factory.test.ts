@@ -1,4 +1,4 @@
-import { type ClientPlugin, ItdClient } from 'itd-api';
+import { type ClientPlugin, ItdClient, type ShopOrder, type ShopProduct } from 'itd-api';
 import { describe, expect, it } from 'vitest';
 import {
   apiErrorResponse,
@@ -9,6 +9,12 @@ import {
   ItdTestingError,
 } from '../../src/index.js';
 import { ALICE, BOB, makeServer, settleUntil } from './test-server.utils.js';
+
+const SHOP_PRODUCT = { id: 'hoodie', title: 'Худи', price: 3000 } as ShopProduct;
+const SHOP_ORDER = {
+  value: { number: 'SHOP-000001' } as ShopOrder,
+  email: 'buyer@example.test',
+};
 
 describe('createMockServer: жизненный цикл', () => {
   it('сохраняет mock-домен по умолчанию и нормализует пользовательский baseUrl', async () => {
@@ -195,6 +201,25 @@ describe('createMockServer: жизненный цикл', () => {
         ],
       },
     },
+    {
+      name: 'повторяющийся товар магазина',
+      seed: { shopProducts: [SHOP_PRODUCT, SHOP_PRODUCT] },
+    },
+    {
+      name: 'повторяющийся номер заказа магазина',
+      seed: { shopOrders: [SHOP_ORDER, SHOP_ORDER] },
+    },
+    {
+      name: 'заказ отсутствующего пользователя',
+      seed: { shopOrders: [{ ...SHOP_ORDER, userId: 'missing' }] },
+    },
+    {
+      name: 'некорректная дата записи',
+      seed: {
+        users: [{ id: ALICE, username: 'alice' }],
+        posts: [{ id: 'post-1', authorId: ALICE, createdAt: 'вчера' }],
+      },
+    },
   ])('отклоняет повреждённый seed: $name', ({ seed }) => {
     expect(() => createMockServer({ seed })).toThrow();
   });
@@ -215,6 +240,25 @@ describe('createMockServer: жизненный цикл', () => {
 
     server.reset();
     expect(server.snapshot()).toEqual(before);
+  });
+
+  it('приводит даты seed к ISO-8601, чтобы порядок не зависел от записи даты', async () => {
+    const server = createMockServer({
+      clock: createTestClock('2026-08-01T12:00:00Z'),
+      seed: {
+        users: [{ id: ALICE, username: 'alice' }],
+        posts: [
+          { id: 'later', authorId: ALICE, createdAt: '2026-08-01T10:00:00.500Z' },
+          { id: 'earlier', authorId: ALICE, createdAt: '2026-08-01T10:00:00Z' },
+        ],
+      },
+    });
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+
+    const page = await alice.posts.list();
+
+    expect(page.items.map((post) => post.id)).toEqual(['later', 'earlier']);
+    expect(server.snapshot().posts[1]?.createdAt).toBe('2026-08-01T10:00:00.000Z');
   });
 
   it('хранит пост seed на своей стене без адресата', () => {

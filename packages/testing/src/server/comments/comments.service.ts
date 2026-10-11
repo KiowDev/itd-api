@@ -1,5 +1,6 @@
 import { NotificationType } from 'itd-api';
 import type { NotificationService } from '../notifications/notifications.service.js';
+import type { PostService } from '../posts/posts.service.js';
 import type { PostRecord } from '../posts/posts.types.js';
 import { MockDomainError } from '../shared/domain.errors.js';
 import type { MockStore } from '../store/mock.store.js';
@@ -15,11 +16,18 @@ function oldestFirst(a: CommentRecord, b: CommentRecord): number {
 export class CommentService {
   readonly #store: MockStore;
   readonly #users: UserService;
+  readonly #posts: PostService;
   readonly #notifications: NotificationService;
 
-  constructor(store: MockStore, users: UserService, notifications: NotificationService) {
+  constructor(
+    store: MockStore,
+    users: UserService,
+    posts: PostService,
+    notifications: NotificationService,
+  ) {
     this.#store = store;
     this.#users = users;
+    this.#posts = posts;
     this.#notifications = notifications;
   }
 
@@ -43,7 +51,7 @@ export class CommentService {
     return this.#count((comment) => comment.parentCommentId === parent.id);
   }
 
-  /** Видимый комментарий: не удалён, автор не деактивирован. */
+  /** Видимый комментарий: он и его пост не удалены, их авторы не деактивированы. */
   requireActive(commentId: string): CommentRecord {
     const comment = this.#store.comments.get(commentId);
     if (!comment || !this.#visible(comment)) throw MockDomainError.notFound('Comment not found');
@@ -108,10 +116,9 @@ export class CommentService {
     return reply;
   }
 
-  /** Возвращает время изменения. */
-  edit(comment: CommentRecord, content: string | undefined): string {
+  edit(comment: CommentRecord, content: string | undefined): void {
     if (content !== undefined) comment.content = content;
-    return this.#store.now();
+    comment.editedAt = this.#store.now();
   }
 
   remove(comment: CommentRecord): void {
@@ -140,11 +147,14 @@ export class CommentService {
     comment.likedBy.delete(user.profile.id);
   }
 
-  #insert(fields: Omit<CommentRecord, 'id' | 'createdAt' | 'likedBy' | 'deleted'>): CommentRecord {
+  #insert(
+    fields: Omit<CommentRecord, 'id' | 'createdAt' | 'editedAt' | 'likedBy' | 'deleted'>,
+  ): CommentRecord {
     const comment: CommentRecord = {
       id: this.#store.nextCommentId(),
       ...fields,
       createdAt: this.#store.now(),
+      editedAt: null,
       likedBy: new Set(),
       deleted: false,
     };
@@ -167,6 +177,10 @@ export class CommentService {
   }
 
   #visible(comment: CommentRecord): boolean {
-    return !comment.deleted && this.#users.isActive(comment.authorId);
+    return (
+      !comment.deleted &&
+      this.#users.isActive(comment.authorId) &&
+      this.#posts.isActive(comment.postId)
+    );
   }
 }

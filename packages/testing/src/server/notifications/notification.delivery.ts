@@ -25,6 +25,11 @@ export class NotificationDelivery {
     return transport;
   }
 
+  /** Отключает все транспорты от доставки: новые уведомления они больше не получат. */
+  detachAll(): void {
+    this.#transports.clear();
+  }
+
   #deliver(record: NotificationRecord): void {
     const transports = this.#transports.get(record.userId);
     if (!transports) return;

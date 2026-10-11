@@ -6,7 +6,6 @@ import { MockDomainError } from '../shared/domain.errors.js';
 import { isRecord, objectBody, stringField } from '../shared/request.utils.js';
 import type { MockRouteContext } from '../shared/route.types.js';
 import { DELIVERY_COUNTRIES, DELIVERY_ESTIMATE } from './shop.constants.js';
-import { deliveryCity, deliveryPoint, orderList } from './shop.presenter.js';
 import type { NewShopOrder, ShopCredentials } from './shop.types.js';
 
 /** Строковое поле, без которого запрос не имеет смысла. */
@@ -47,7 +46,7 @@ function newOrder(body: Record<string, unknown>): NewShopOrder {
   };
 }
 
-export function registerShopRoutes({ services, auth, route }: MockRouteContext): void {
+export function registerShopRoutes({ services, presenters, auth, route }: MockRouteContext): void {
   const { shop } = services;
 
   const credentials = (request: MockRequest): ShopCredentials => ({
@@ -63,10 +62,10 @@ export function registerShopRoutes({ services, auth, route }: MockRouteContext):
   route(HttpMethod.Get, '/api/v1/shop/delivery/cities', (request) => {
     const query = request.query.get('q')?.trim() ?? '';
     const country = request.query.get('country') ?? 'RU';
-    return jsonResponse(query ? [deliveryCity(query, country)] : []);
+    return jsonResponse(query ? [presenters.shop.deliveryCity(query, country)] : []);
   });
   route(HttpMethod.Get, '/api/v1/shop/delivery/points', (request) =>
-    jsonResponse([deliveryPoint(Number(request.query.get('cityCode')))]),
+    jsonResponse([presenters.shop.deliveryPoint(Number(request.query.get('cityCode')))]),
   );
   route(HttpMethod.Post, '/api/v1/shop/delivery/calculate', () => jsonResponse(DELIVERY_ESTIMATE));
 
@@ -80,7 +79,7 @@ export function registerShopRoutes({ services, auth, route }: MockRouteContext):
   );
 
   route(HttpMethod.Get, '/api/v1/shop/orders/my', (request) =>
-    jsonResponse(orderList(shop.ordersFor(credentials(request)))),
+    jsonResponse(presenters.shop.orderList(shop.ordersFor(credentials(request)))),
   );
 
   route(HttpMethod.Post, '/api/v1/shop/orders/lookup/request', () => jsonResponse({ sent: true }));

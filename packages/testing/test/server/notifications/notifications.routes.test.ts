@@ -31,6 +31,30 @@ describe('createMockServer: уведомления', () => {
     stream.disconnect();
   });
 
+  it('после reset() не доставляет уведомления в прежний транспорт', async () => {
+    const server = makeServer();
+    const transport = server.notificationEvents({ as: 'bob' });
+    const bob = new ItdClient({
+      ...server.clientOptions({ as: 'bob' }),
+      events: { notifications: { transport, syncCount: false, jitter: 0 } },
+    });
+    const stream = bob.notifications.events;
+    const updates: unknown[] = [];
+    stream.onUpdate((context) => {
+      updates.push(context);
+    });
+    await stream.connect();
+    await transport.waitForConnection(0);
+
+    server.reset();
+    const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
+    await alice.users.follow('bob');
+    await stream.drain();
+
+    expect(updates).toEqual([]);
+    stream.disconnect();
+  });
+
   it('управляет переподключением через тестовые часы', async () => {
     const clock = createTestClock('2026-08-01T10:00:00Z');
     const server = createMockServer({

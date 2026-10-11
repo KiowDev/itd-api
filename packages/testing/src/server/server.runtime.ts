@@ -16,6 +16,7 @@ import type {
   MockServerSnapshot,
   MockServices,
 } from './server.types.js';
+import { ShopPresenter } from './shop/shop.presenter.js';
 import { ShopService } from './shop/shop.service.js';
 import { MockStore } from './store/mock.store.js';
 import { buildStoreContents } from './store/seed.builder.js';
@@ -35,7 +36,7 @@ export class MockServerRuntime {
     const notifications = new NotificationService(store);
     const users = new UserService(store, notifications);
     const posts = new PostService(store, users, notifications);
-    const comments = new CommentService(store, users, notifications);
+    const comments = new CommentService(store, users, posts, notifications);
     const hashtags = new HashtagService(posts);
     const search = new SearchService(users, hashtags);
     const shop = new ShopService(store);
@@ -52,6 +53,7 @@ export class MockServerRuntime {
       notifications: notificationPresenter,
       hashtags: new HashtagPresenter(postPresenter),
       search: new SearchPresenter(userPresenter),
+      shop: new ShopPresenter(),
     };
     this.delivery = new NotificationDelivery(notifications, notificationPresenter);
   }
@@ -59,6 +61,7 @@ export class MockServerRuntime {
   /** Валидирует seed полностью и заменяет данные только после успешной сборки. */
   load(seed: MockServerSeed | undefined): void {
     this.store.load(buildStoreContents(seed, () => this.store.now()));
+    this.delivery.detachAll();
   }
 
   snapshot(): MockServerSnapshot {

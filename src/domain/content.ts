@@ -7,7 +7,7 @@ function isoField<K extends string>(key: K, value: unknown): Partial<Record<K, s
 }
 
 /** Приводит даты комментария и его ответов к ISO-8601. */
-function normalizeComment(comment: Comment): Comment {
+export function normalizeComment(comment: Comment): Comment {
   if (typeof comment !== 'object' || comment === null) return comment;
   return {
     ...comment,

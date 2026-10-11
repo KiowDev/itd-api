@@ -10,6 +10,7 @@ export interface CommentRecord {
   replyToUserId: string | undefined;
   content: string;
   createdAt: string;
+  editedAt: string | null;
   likedBy: Set<string>;
   deleted: boolean;
 }

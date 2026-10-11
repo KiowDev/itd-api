@@ -37,8 +37,12 @@ export class CommentPresenter {
     };
   }
 
-  updateResult(comment: CommentRecord, editedAt: string): CommentUpdateResult {
-    return { id: comment.id, content: comment.content, editedAt };
+  updateResult(comment: CommentRecord): CommentUpdateResult {
+    return {
+      id: comment.id,
+      content: comment.content,
+      editedAt: comment.editedAt ?? comment.createdAt,
+    };
   }
 
   likeResult(comment: CommentRecord, liked: boolean): LikeResult {

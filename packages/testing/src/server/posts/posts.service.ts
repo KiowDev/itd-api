@@ -65,6 +65,12 @@ export class PostService {
     return count;
   }
 
+  /** Существует ли пост и виден ли он: не удалён, автор не деактивирован. */
+  isActive(postId: string): boolean {
+    const post = this.#store.posts.get(postId);
+    return post !== undefined && this.#visible(post);
+  }
+
   /** Видимый пост: не удалён, автор не деактивирован. */
   requireActive(postId: string): PostRecord {
     const post = this.#store.posts.get(postId);

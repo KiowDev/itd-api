@@ -25,6 +25,16 @@ function requireUnique(ids: readonly string[], kind: string): void {
   }
 }
 
+/** Дата из seed в ISO-8601 UTC, как у записей, созданных сервером; без даты — текущее время. */
+function seedTime(value: string | undefined, owner: string, now: () => string): string {
+  if (value === undefined) return now();
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) {
+    throw new MockServerSeedError(`${owner}: некорректная дата createdAt ${value}`);
+  }
+  return new Date(time).toISOString();
+}
+
 /** Цепочка репостов не может замыкаться на себя. */
 function requireAcyclicReposts(
   postSeeds: readonly MockPostSeed[],
@@ -49,12 +59,8 @@ export function buildStoreContents(
   const postSeeds = seed?.posts ?? [];
   const commentSeeds = seed?.comments ?? [];
   const notificationSeeds = seed?.notifications ?? [];
-  const shopProducts = new Map(
-    (seed?.shopProducts ?? []).map((item) => [item.id, structuredClone(item)]),
-  );
-  const shopOrders = new Map(
-    (seed?.shopOrders ?? []).map((item) => [item.value.number, structuredClone(item)]),
-  );
+  const productSeeds = seed?.shopProducts ?? [];
+  const orderSeeds = seed?.shopOrders ?? [];
   const userIds = userSeeds.map(
     (item, index) => item.id ?? `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
   );
@@ -77,8 +83,14 @@ export function buildStoreContents(
   requireUnique(postIds, 'пост');
   requireUnique(commentIds, 'комментарий');
   requireUnique(notificationIds, 'уведомление');
-  requireUnique([...shopProducts.keys()], 'товар магазина');
-  requireUnique([...shopOrders.keys()], 'заказ магазина');
+  requireUnique(
+    productSeeds.map((item) => item.id),
+    'товар магазина',
+  );
+  requireUnique(
+    orderSeeds.map((item) => item.value.number),
+    'заказ магазина',
+  );
 
   const knownUsers = new Set(userIds);
   const knownPosts = new Set(postIds);
@@ -175,6 +187,13 @@ export function buildStoreContents(
     }
     requireKnownUsers(item.actorIds ?? [], `Уведомление пользователя ${item.userId}`);
   }
+  for (const item of orderSeeds) {
+    if (item.userId !== undefined && !knownUsers.has(item.userId)) {
+      throw new MockServerSeedError(
+        `Заказ магазина ${item.value.number} принадлежит отсутствующему пользователю ${item.userId}`,
+      );
+    }
+  }
 
   const users = new Map<string, UserRecord>();
   const posts = new Map<string, PostRecord>();
@@ -184,11 +203,11 @@ export function buildStoreContents(
     const { following = [], deactivated = false, ...fields } = item;
     const id = at(userIds, index);
     const profile = userFixture({
+      ...fields,
       id,
       username: at(usernames, index),
       displayName: item.displayName ?? `Тестовый пользователь ${index + 1}`,
-      createdAt: item.createdAt ?? now(),
-      ...fields,
+      createdAt: seedTime(item.createdAt, `Пользователь ${id}`, now),
     });
     if (profile.clanAvatar === undefined && !isImageAvatar(profile.avatar)) {
       profile.clanAvatar = profile.avatar;
@@ -205,7 +224,7 @@ export function buildStoreContents(
       originalPostId: item.originalPostId ?? null,
       wallRecipientId:
         item.wallRecipientId === item.authorId ? null : (item.wallRecipientId ?? null),
-      createdAt: item.createdAt ?? now(),
+      createdAt: seedTime(item.createdAt, `Пост ${id}`, now),
       editedAt: null,
       likedBy: new Set(item.likedBy),
       deleted: item.deleted ?? false,
@@ -220,15 +239,17 @@ export function buildStoreContents(
       parentCommentId: item.parentCommentId ?? null,
       replyToUserId: item.replyToUserId,
       content: item.content ?? '',
-      createdAt: item.createdAt ?? now(),
+      createdAt: seedTime(item.createdAt, `Комментарий ${id}`, now),
+      editedAt: null,
       likedBy: new Set(item.likedBy),
       deleted: item.deleted ?? false,
     });
   });
   notificationSeeds.forEach((item, index) => {
-    const createdAt = item.createdAt ?? now();
+    const id = at(notificationIds, index);
+    const createdAt = seedTime(item.createdAt, `Уведомление ${id}`, now);
     notifications.push({
-      id: at(notificationIds, index),
+      id,
       userId: item.userId,
       type: item.type ?? NotificationType.PostReaction,
       actorIds: [...(item.actorIds ?? [])],
@@ -240,6 +261,9 @@ export function buildStoreContents(
       updatedAt: createdAt,
     });
   });
+
+  const shopProducts = new Map(productSeeds.map((item) => [item.id, structuredClone(item)]));
+  const shopOrders = new Map(orderSeeds.map((item) => [item.value.number, structuredClone(item)]));
 
   return {
     users,

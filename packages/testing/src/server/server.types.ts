@@ -20,6 +20,7 @@ import type { PostPresenter } from './posts/posts.presenter.js';
 import type { PostService } from './posts/posts.service.js';
 import type { SearchPresenter } from './search/search.presenter.js';
 import type { SearchService } from './search/search.service.js';
+import type { ShopPresenter } from './shop/shop.presenter.js';
 import type { ShopService } from './shop/shop.service.js';
 import type { UserPresenter } from './users/users.presenter.js';
 import type { UserService } from './users/users.service.js';
@@ -149,6 +150,7 @@ export interface MockCommentSnapshot {
   readonly replyToUserId: string | undefined;
   readonly content: string;
   readonly createdAt: string;
+  readonly editedAt: string | null;
   readonly likedBy: readonly string[];
   readonly deleted: boolean;
 }
@@ -178,6 +180,11 @@ export interface MockServer {
   readonly unsupportedRequests: readonly RecordedRequest[];
   clientOptions(options: MockServerClientOptions): ItdClientOptions;
   snapshot(): MockServerSnapshot;
+  /**
+   * Возвращает исходные или новые данные и очищает журнал запросов. Транспорты
+   * {@link MockServer.notificationEvents} после сброса уведомлений не получают — их создают
+   * заново.
+   */
   reset(seed?: MockServerSeed): void;
   failNext(method: string, path: string, responder: Response | Error | MockHandler): void;
   /** Устанавливает обработчик перед встроенными маршрутами и возвращает функцию снятия. */
@@ -206,4 +213,5 @@ export interface MockPresenters {
   readonly notifications: NotificationPresenter;
   readonly hashtags: HashtagPresenter;
   readonly search: SearchPresenter;
+  readonly shop: ShopPresenter;
 }

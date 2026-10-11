@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizePost } from '../../src/domain/posts.js';
-import type { OriginalPost, Post } from '../../src/models/content.js';
+import { normalizeComment, normalizePost } from '../../src/domain/content.js';
+import type { Comment, OriginalPost, Post } from '../../src/models/content.js';
 
 function post(originalPost: OriginalPost | null): Post {
   return {
@@ -92,5 +92,21 @@ describe('normalizePost', () => {
     const result = normalizePost({ id: 'x' } as Post);
 
     expect(Object.keys(result)).toEqual(['id']);
+  });
+});
+
+describe('normalizeComment', () => {
+  it('приводит даты комментария и ответов к ISO, не меняя исходный объект', () => {
+    const source = {
+      id: 'c1',
+      createdAt: '2026-10-04 22:00:00+03',
+      replies: [{ id: 'c2', createdAt: '2026-10-04T19:01:00.000Z' }],
+    } as Comment;
+
+    const result = normalizeComment(source);
+
+    expect(result.createdAt).toBe('2026-10-04T19:00:00.000Z');
+    expect(result.replies?.[0]?.createdAt).toBe('2026-10-04T19:01:00.000Z');
+    expect(source.createdAt).toBe('2026-10-04 22:00:00+03');
   });
 });

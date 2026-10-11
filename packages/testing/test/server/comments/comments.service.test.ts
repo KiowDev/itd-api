@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { TestClock } from '../../../src/index.js';
 import { makeRuntime, userOf } from '../test-runtime.utils.js';
 import { ALICE, BOB } from '../test-server.utils.js';
 
@@ -28,6 +29,35 @@ describe('CommentService', () => {
     expect(() =>
       comments.reply(comments.requireActive('comment-1'), userOf(runtime, BOB), 'Ответ', 'missing'),
     ).toThrow(expect.objectContaining({ status: 404, code: 'NOT_FOUND' }));
+  });
+
+  it('скрывает комментарии удалённого поста', () => {
+    const runtime = makeRuntime({
+      posts: [{ id: 'post-1', authorId: ALICE, deleted: true }],
+      comments: [{ id: 'comment-1', postId: 'post-1', authorId: BOB }],
+    });
+
+    expect(() => runtime.services.comments.requireActive('comment-1')).toThrow(
+      expect.objectContaining({ status: 404, code: 'NOT_FOUND' }),
+    );
+  });
+
+  it('сохраняет время изменения комментария', async () => {
+    const runtime = makeRuntime({
+      posts: [{ id: 'post-1', authorId: ALICE }],
+      comments: [{ id: 'comment-1', postId: 'post-1', authorId: ALICE }],
+    });
+    const { comments } = runtime.services;
+    const comment = comments.requireActive('comment-1');
+    await (runtime.store.clock as TestClock).advanceBy(60_000);
+
+    comments.edit(comment, 'Изменён');
+
+    expect(comment.editedAt).toBe('2026-08-01T10:01:00.000Z');
+    expect(runtime.snapshot().comments[0]).toMatchObject({
+      content: 'Изменён',
+      editedAt: '2026-08-01T10:01:00.000Z',
+    });
   });
 
   it('не учитывает удалённые комментарии и ответы в счётчиках', () => {

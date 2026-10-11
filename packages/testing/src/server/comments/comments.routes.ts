@@ -68,8 +68,8 @@ export function registerCommentRoutes({
     '/api/comments/:commentId',
     requireAuth((request, user) => {
       const comment = comments.requireOwn(request.params.commentId ?? '', user);
-      const editedAt = comments.edit(comment, stringField(objectBody(request), 'content'));
-      return apiResponse(presenters.comments.updateResult(comment, editedAt));
+      comments.edit(comment, stringField(objectBody(request), 'content'));
+      return apiResponse(presenters.comments.updateResult(comment));
     }),
   );
 
