@@ -1,4 +1,5 @@
 import type {
+  LastSeenUnit,
   LikesVisibility,
   Loose,
   MessageAccess,
@@ -181,8 +182,22 @@ export interface PublicProfile extends ProfileBase {
   canMessage: boolean;
   /** Сейчас ли пользователь в сети. */
   online: boolean;
-  /** Когда был в сети. `null`, если скрыто настройками приватности. */
-  lastSeen: IsoDate | null;
+  /** Сколько времени назад был в сети. `null` — пользователь в сети либо скрыл это время. */
+  lastSeen: LastSeen | null;
+}
+
+/**
+ * Время с последнего визита: число и единица, например `{ value: 5, unit: 'minutes' }`.
+ *
+ * @example
+ * ```ts
+ * const { lastSeen } = await itd.users.get('kiow');
+ * if (lastSeen?.unit === LastSeenUnit.Minutes) console.log(`был ${lastSeen.value} мин назад`);
+ * ```
+ */
+export interface LastSeen {
+  value: number;
+  unit: LastSeenUnit;
 }
 
 /** Профиль: свой либо чужой. Различаются функцией `isMyProfile()`. */

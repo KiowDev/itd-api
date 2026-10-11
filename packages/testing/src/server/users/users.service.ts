@@ -182,7 +182,7 @@ export class UserService {
     switch (this.validateUsername(username, user)) {
       case UsernameIssue.InvalidFormat:
         throw MockDomainError.validation(
-          'Имя пользователя: латинские буквы, цифры и _, от 3 до 32 символов',
+          'Имя пользователя: от 3 до 20 латинских букв, цифр и _: начинается с буквы, без _ в конце и двух _ подряд',
         );
       case UsernameIssue.Taken:
         throw new MockDomainError(409, ItdErrorCode.USERNAME_TAKEN, 'Username is already taken');

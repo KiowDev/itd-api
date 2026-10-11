@@ -235,12 +235,22 @@ export type LikesVisibility = AccessType;
 
 /** Почему имя пользователя нельзя занять. Тип открытый: сервер может прислать другую причину. */
 export const UsernameUnavailableReason = Object.freeze({
-  /** Имя не подходит под правила: латинские буквы, цифры и `_`, не короче трёх символов. */
+  /**
+   * Имя не подходит под правила: от 3 до 20 латинских букв, цифр и `_`, начинается с буквы,
+   * без `_` в конце и двух `_` подряд.
+   */
   InvalidFormat: 'INVALID_FORMAT',
 } as const);
 export type UsernameUnavailableReason = Loose<
   (typeof UsernameUnavailableReason)[keyof typeof UsernameUnavailableReason]
 >;
+
+/** Единица времени в {@link LastSeen}. Тип открытый: сервер может прислать другую единицу. */
+export const LastSeenUnit = Object.freeze({
+  Minutes: 'minutes',
+  Hours: 'hours',
+} as const);
+export type LastSeenUnit = Loose<(typeof LastSeenUnit)[keyof typeof LastSeenUnit]>;
 
 /** Кто может писать пользователю личные сообщения. Псевдоним {@link AccessType}. */
 export const MessageAccess = AccessType;

@@ -60,6 +60,10 @@ export interface ShopProduct {
   sizeChart?: ShopSizeChart | null | undefined;
   status: ShopProductStatus;
   stockLeft: number | null;
+  /** Когда заканчивается продажа товара. `null` — без срока. */
+  saleEndsAt: IsoDate | null;
+  /** Когда отправят предзаказ. `null` — товар не по предзаказу. */
+  preorderShipsAt: IsoDate | null;
 }
 
 /** Позиция для расчёта доставки или создания заказа. */

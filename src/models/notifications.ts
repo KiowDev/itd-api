@@ -32,6 +32,12 @@ export interface Notification {
   preview: string | null;
   /** Ссылка перехода, предложенная сервером. Обычно точнее её `resolveNotificationUrl()`. */
   clickUrl?: string;
+  /** Заголовок уведомления, если сервер его задал, иначе `null`. */
+  title: string | null;
+  /** Ивент, к которому относится уведомление, иначе `null`. */
+  eventId: string | null;
+  /** До какого момента уведомление актуально, иначе `null`. */
+  expiresAt: IsoDate | null;
   createdAt: IsoDate;
   /** Когда уведомление изменилось — например было прочитано. */
   updatedAt: IsoDate;

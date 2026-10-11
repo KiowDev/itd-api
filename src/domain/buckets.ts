@@ -16,7 +16,6 @@ export const BUCKET_LIMITS = Object.freeze({
   hashtags: 50,
   users: 40,
   notifications: 40,
-  'files.get': 40,
   auth: 35,
   'auth.refresh': 25,
   'auth.qr': 40,

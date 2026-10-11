@@ -47,6 +47,8 @@ const product = {
   },
   status: 'available',
   stockLeft: null,
+  saleEndsAt: null,
+  preorderShipsAt: null,
 };
 const deliveryPoint = {
   code: 'MSK1',

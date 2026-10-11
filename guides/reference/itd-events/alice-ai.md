@@ -638,6 +638,11 @@ interface AliceDonation {
 | `PUT /api/profile-avatar/` | `eventId`, `fileId`, `operationId` |
 | `DELETE /api/files/{fileId}` | удаление загруженного файла |
 
+Выбранная кликуха приходит в поле `activeNickname: AliceEventNickname | null` у всех
+пользователей в ответах API: у авторов постов и комментариев, в профилях, списках, поиске,
+`auth.check()` и у участника уведомления. Модели `itd-api` его не описывают, значение
+доступно через `raw`.
+
 <details>
 <summary>Модели</summary>
 
@@ -1078,6 +1083,31 @@ type BoardSocketMessage =
       /** Кто смотрит доску. */
       users: Array<{ id: string; [field: string]: unknown }>;
     };
+```
+
+</details>
+
+## Уведомления
+
+| Маршрут | Основной контракт |
+|---|---|
+| `GET /api/notifications/count` | дополнительное поле `eventReminders` — идущие ивенты и последнее напоминание |
+| `GET /api/notifications/` | у уведомлений ивента заполнены `eventId`, `title`, `expiresAt` и `eventCycle` |
+
+`eventId`, `title` и `expiresAt` есть в модели `Notification`; `eventCycle` доступен через
+`raw`.
+
+<details>
+<summary>Модели</summary>
+
+```ts
+/** Напоминания об ивентах в ответе счётчика уведомлений. */
+interface AliceEventReminders {
+  /** Идущие ивенты, например `aliceai-2026`. */
+  activeEventIds: string[];
+  /** Последнее напоминание; `null` — напоминаний нет. */
+  latest: unknown;
+}
 ```
 
 </details>
@@ -1673,6 +1703,14 @@ interface AliceEventNicknames {
   displayValidUntil: string;
 }
 
+/** Напоминания об ивентах в ответе счётчика уведомлений. */
+interface AliceEventReminders {
+  /** Идущие ивенты, например `aliceai-2026`. */
+  activeEventIds: string[];
+  /** Последнее напоминание; `null` — напоминаний нет. */
+  latest: unknown;
+}
+
 /** Право поставить свою картинку вместо эмодзи аватара. */
 interface AliceProfileAvatar {
   data: AliceEventRights & {
@@ -2259,6 +2297,8 @@ interface AliceAiApi {
    * @param ids Идентификаторы пользователей.
    */
   eventNicknames(ids: readonly string[]): Promise<AliceEventNicknames>;
+  /** Идущие ивенты и последнее напоминание из счётчика уведомлений. */
+  eventReminders(): Promise<AliceEventReminders>;
   /** Право поставить свою картинку вместо эмодзи аватара и текущая картинка. */
   profileAvatar(): Promise<AliceProfileAvatar>;
   /** Убирает свою картинку и возвращает эмодзи аватара. Потраченное право не возвращается. */
@@ -2379,7 +2419,7 @@ const aliceAiFeature: ClientFeature<AliceAiApi> = {
     portal: get, status: get, shop: get, balance: get, inventory: get, profile: get,
     place: post, throwBalloon: post, throwCushion: post, claimCushion: post,
     breakWindow: post, erase: post, setCurtains: put, donateCurtains: post,
-    nicknames: get, setActiveNickname: put, eventNicknames: get,
+    nicknames: get, setActiveNickname: put, eventNicknames: get, eventReminders: get,
     profileAvatar: get, removeProfileAvatar: del,
     postNotebooks: get, correctors: get, redPens: get,
     correctorState: get, redPenState: get,
@@ -2447,6 +2487,10 @@ const aliceAiFeature: ClientFeature<AliceAiApi> = {
           'setActiveNickname', '/api/v1/aliceai/nicknames/active', { form },
         ),
         eventNicknames: (ids) => byIds('eventNicknames', '/api/event-nicknames/', ids),
+        eventReminders: async () =>
+          (await request<{ eventReminders: AliceEventReminders }>(
+            'eventReminders', '/api/notifications/count',
+          )).eventReminders,
         profileAvatar: () => request('profileAvatar', '/api/profile-avatar/'),
         removeProfileAvatar: () => request('removeProfileAvatar', '/api/profile-avatar/'),
         postNotebooks: () => request('postNotebooks', '/api/post-notebooks/inventory'),

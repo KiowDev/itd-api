@@ -75,7 +75,7 @@ export function buildStoreContents(
   for (const username of usernames) {
     if (!isUsernameFormatValid(username)) {
       throw new MockServerSeedError(
-        `Имя пользователя ${username} должно состоять из латинских букв, цифр и _, от 3 до 32 символов`,
+        `Имя пользователя ${username}: от 3 до 20 латинских букв, цифр и _: начинается с буквы, без _ в конце и двух _ подряд`,
       );
     }
   }

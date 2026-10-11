@@ -181,7 +181,6 @@ clientB.use(shared);
 | Notifications | `notifications.list`, `notifications.count`, `notifications.getSettings` |
 | Hashtags | `hashtags.trending`, `hashtags.posts` |
 | Search | `search.all` |
-| Files | `files.get` |
 | Subscription | `subscription.status`, `subscription.methods` |
 | Verification | `verification.status` |
 | Platform | `platform.changelog`, `platform.announcements`, `platform.portal`, `status.get` |

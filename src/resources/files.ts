@@ -14,7 +14,6 @@ import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
 
 const FILES_UPLOAD = passthroughOperation<UploadedFile>('files.upload');
-const FILES_GET = passthroughOperation<unknown>('files.get');
 const FILES_REMOVE = voidOperation('files.remove');
 
 /** Ответ загрузки файла. */
@@ -89,18 +88,6 @@ export class FilesResource extends BaseResource {
       ids.push((await this.upload(file, uploadOptions, requestOptions)).id);
     }
     return ids;
-  }
-
-  /**
-   * Загружает сведения о файле.
-   *
-   * Для ещё не прикреплённого файла сервер может ответить `404`.
-   */
-  get(fileId: string, options: RequestOptions = {}): Promise<unknown> {
-    return this.http.execute(FILES_GET, {
-      path: `/api/files/${encodePathSegment(fileId, 'fileId')}`,
-      ...options,
-    });
   }
 
   /** Удаляет загруженный файл. */

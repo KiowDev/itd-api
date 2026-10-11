@@ -1,6 +1,7 @@
 import {
   type Author,
   type Comment,
+  LastSeenUnit,
   LikesVisibility,
   type MyProfile,
   type Notification,
@@ -78,7 +79,7 @@ export function publicProfileFixture(input: PublicProfileFixtureInput = {}): Pub
     isFollowedBy: false,
     canMessage: false,
     online: false,
-    lastSeen: FIXTURE_TIME,
+    lastSeen: { value: 5, unit: LastSeenUnit.Minutes },
     ...input,
   };
 }
@@ -162,6 +163,9 @@ export function notificationFixture(input: NotificationFixtureInput = {}): Notif
     })),
     count: Math.max(1, actors?.length ?? 1),
     preview: null,
+    title: null,
+    eventId: null,
+    expiresAt: null,
     createdAt: FIXTURE_TIME,
     updatedAt: FIXTURE_TIME,
     raw: {},

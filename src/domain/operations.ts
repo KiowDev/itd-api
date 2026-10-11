@@ -112,7 +112,6 @@ export const OPERATIONS = freezeOperations({
   },
 
   'files.upload': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'files.upload' },
-  'files.get': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'files.get' },
   'files.remove': { method: 'DELETE', retrySafety: RetrySafety.Unsafe, bucket: 'files.remove' },
 
   'notifications.list': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'notifications' },

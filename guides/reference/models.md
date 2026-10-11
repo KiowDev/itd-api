@@ -134,11 +134,18 @@ interface PublicProfile {
   isFollowedBy: boolean;                 // подписан ли он на вас
   canMessage: boolean;                   // можете ли вы написать ему личное сообщение
   online: boolean;
-  lastSeen: IsoDate | null;              // null, если скрыто приватностью
+  lastSeen: LastSeen | null;             // null — в сети либо время скрыто
 }
 
 type Profile = MyProfile | PublicProfile;
 isMyProfile(profile): profile is MyProfile   // различает их
+```
+
+```ts
+interface LastSeen {
+  value: number;                         // сколько единиц назад
+  unit: LastSeenUnit;                    // LastSeenUnit.Minutes или Hours, тип открытый
+}
 ```
 
 ### Pin
@@ -373,6 +380,9 @@ interface Notification {
   count: number;                         // сколько участников схлопнуто; минимум 1
   preview: string | null;
   clickUrl?: string;                     // ссылка от сервера (resolveNotificationUrl обычно точнее)
+  title: string | null;                  // заголовок, если сервер его задал
+  eventId: string | null;                // ивент уведомления
+  expiresAt: IsoDate | null;             // до какого момента актуально
   createdAt: IsoDate; updatedAt: IsoDate;
   raw: unknown;                          // исходный объект
 }
@@ -574,6 +584,8 @@ interface ShopProduct {
   sizeChart?: ShopSizeChart | null;
   status: ShopProductStatus;
   stockLeft: number | null;
+  saleEndsAt: IsoDate | null;            // конец продажи, null — без срока
+  preorderShipsAt: IsoDate | null;       // отправка предзаказа, null — не предзаказ
 }
 ```
 

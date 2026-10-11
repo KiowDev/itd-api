@@ -8,7 +8,6 @@
 ```ts
 upload(input: FileInput, uploadOptions?: UploadOptions, requestOptions?: RequestOptions): Promise<UploadedFile>
 uploadMany(files: FileInput[], uploadOptions?: UploadOptions, requestOptions?: RequestOptions): Promise<string[]>
-get(fileId: string, options?: RequestOptions): Promise<unknown>
 remove(fileId: string, options?: RequestOptions): Promise<void>
 ```
 
@@ -16,8 +15,6 @@ remove(fileId: string, options?: RequestOptions): Promise<void>
 `uploadMany()` загружает файлы последовательно и возвращает их идентификаторы в исходном
 порядке. Таймаут загрузки по умолчанию — 300 000 мс; он охватывает
 получение исходного файла и его отправку.
-
-`get()` может вернуть `404` для загруженного, но ещё не прикреплённого файла.
 
 ## Формы вложений
 

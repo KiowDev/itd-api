@@ -1,3 +1,4 @@
+import { DEFAULT_BASE_URL } from '../core/config.js';
 import type { ClientConnection } from '../core/connection.js';
 import type { CookieJar } from '../core/cookies.js';
 import { ItdConfigError, isItdApiError } from '../core/errors.js';
@@ -6,8 +7,6 @@ import type { RequestOptions } from '../core/options.js';
 import type { QrLoginTarget, Session } from '../models/account.js';
 import type { AuthState } from '../models/users.js';
 import {
-  AUTH_CAPTCHA_PAGE,
-  AUTH_CAPTCHA_PROVIDER,
   AUTH_CHANGE_PASSWORD,
   AUTH_CHECK,
   AUTH_FORGOT_PASSWORD,
@@ -25,6 +24,7 @@ import {
   AUTH_SIGN_IN,
   AUTH_SIGN_UP,
   AUTH_VERIFY_OTP,
+  CAPTCHA_FIELDS,
   type CaptchaPage,
   type CaptchaProvider,
   type CaptchaToken,
@@ -38,6 +38,7 @@ import {
 } from '../operations/auth.js';
 import { AUTH_PATHS, type AuthManager } from '../session/auth.js';
 import { openQrLoginStream } from '../session/qr-stream.js';
+import { CaptchaType } from '../types/enums.js';
 import { BaseResource } from './base.js';
 
 /** Учётные данные для входа. */
@@ -217,14 +218,20 @@ export class AuthResource extends BaseResource {
    *
    * Сервер может переключить провайдера или переименовать поле без выпуска новой версии SDK.
    * Автоматическому входу этот вызов не нужен — клиент делает его сам.
+   *
+   * @deprecated Сервер отвечает `404`; метод возвращает Cloudflare Turnstile.
    */
-  captchaProvider(options: RequestOptions = {}): Promise<CaptchaProvider> {
-    return this.http.execute(AUTH_CAPTCHA_PROVIDER, {
-      path: AUTH_PATHS.captchaProvider,
-      skipAuth: true,
-      skipAuthRefresh: true,
-      ...options,
+  captchaProvider(_options: RequestOptions = {}): Promise<CaptchaProvider> {
+    return Promise.resolve({
+      provider: CaptchaType.Cloudflare,
+      field: CAPTCHA_FIELDS[CaptchaType.Cloudflare],
     });
+    // return this.http.execute(AUTH_CAPTCHA_PROVIDER, {
+    //   path: AUTH_PATHS.captchaProvider,
+    //   skipAuth: true,
+    //   skipAuthRefresh: true,
+    //   ...options,
+    // });
   }
 
   /**
@@ -233,14 +240,17 @@ export class AuthResource extends BaseResource {
    * То же, что {@link captchaProvider}, плюс `url` — готовая страница на домене итд.com,
    * где ключ виджета действителен. Пригодится встроенному браузеру: открыть её и забрать
    * токен, ничего не собирая самому.
+   *
+   * @deprecated Сервер отвечает `404`; метод возвращает Cloudflare Turnstile на домене итд.com.
    */
-  captchaPage(options: RequestOptions = {}): Promise<CaptchaPage> {
-    return this.http.execute(AUTH_CAPTCHA_PAGE, {
-      path: AUTH_PATHS.captchaPage,
-      skipAuth: true,
-      skipAuthRefresh: true,
-      ...options,
-    });
+  async captchaPage(options: RequestOptions = {}): Promise<CaptchaPage> {
+    return { ...(await this.captchaProvider(options)), url: DEFAULT_BASE_URL };
+    // return this.http.execute(AUTH_CAPTCHA_PAGE, {
+    //   path: AUTH_PATHS.captchaPage,
+    //   skipAuth: true,
+    //   skipAuthRefresh: true,
+    //   ...options,
+    // });
   }
 
   /** Создаёт короткоживущую сессию QR-входа. */

@@ -48,7 +48,6 @@ export const CACHE_OPERATIONS = freezeOperations([
   { id: 'hashtags.posts', category: 'hashtags' },
 
   { id: 'search.all', category: 'search' },
-  { id: 'files.get', category: 'files' },
 
   { id: 'subscription.status', category: 'subscription' },
   { id: 'subscription.methods', category: 'subscription' },

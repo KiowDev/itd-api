@@ -227,6 +227,27 @@ describe('приведение к единой форме', () => {
     expect(normalizeNotification({ id: 'n', type: 'follow' }).isRead).toBe(false);
   });
 
+  it('читает заголовок, ивент и срок уведомления, без них — null', () => {
+    const event = normalizeNotification({
+      id: 'n',
+      type: 'event_reminder',
+      title: 'Ивент начался',
+      eventId: 'aliceai-2026',
+      expiresAt: '2026-10-29T21:00:00.000Z',
+    });
+
+    expect(event).toMatchObject({
+      title: 'Ивент начался',
+      eventId: 'aliceai-2026',
+      expiresAt: '2026-10-29T21:00:00.000Z',
+    });
+    expect(normalizeNotification({ id: 'n', type: 'follow', title: null })).toMatchObject({
+      title: null,
+      eventId: null,
+      expiresAt: null,
+    });
+  });
+
   it('count по умолчанию равен единице', () => {
     expect(normalizeNotification(restNotification).count).toBe(1);
     expect(normalizeNotification(streamEvent).count).toBe(3);

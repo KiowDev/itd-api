@@ -59,12 +59,25 @@ describe('UserService', () => {
     expect(() => runtime.services.users.follow(alice, alice)).toThrow(MockDomainError);
   });
 
-  it.each([['ab'], ['with-dash'], ['пользователь'], ['a'.repeat(33)]])(
-    'отклоняет имя неверного формата: %s',
+  it.each([
+    ['ab'],
+    ['with-dash'],
+    ['пользователь'],
+    ['a'.repeat(21)],
+    ['_abc'],
+    ['abc_'],
+    ['a__b'],
+    ['1abc'],
+  ])('отклоняет имя неверного формата: %s', (username) => {
+    expect(makeRuntime().services.users.validateUsername(username)).toBe(
+      UsernameIssue.InvalidFormat,
+    );
+  });
+
+  it.each([['abc'], ['Q_X'], ['q_v_w'], ['a1b2'], ['a'.repeat(20)]])(
+    'принимает имя допустимого формата: %s',
     (username) => {
-      expect(makeRuntime().services.users.validateUsername(username)).toBe(
-        UsernameIssue.InvalidFormat,
-      );
+      expect(makeRuntime().services.users.validateUsername(username)).toBeUndefined();
     },
   );
 
