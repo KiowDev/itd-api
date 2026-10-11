@@ -472,6 +472,19 @@ describe('посты', () => {
     });
   });
 
+  it('возвращает время правки поста в editedAt в формате ISO', async () => {
+    const { itd } = makeClient([
+      json({ id: 'p1', content: 'текст', spans: [], updatedAt: '2026-10-12 01:54:12.498+03' }),
+    ]);
+
+    await expect(itd.posts.update('p1', post('текст'))).resolves.toEqual({
+      id: 'p1',
+      content: 'текст',
+      spans: [],
+      editedAt: '2026-10-11T22:54:12.498Z',
+    });
+  });
+
   it('не отправляет update без явно заданного content', () => {
     const { itd, mock } = makeClient([]);
 

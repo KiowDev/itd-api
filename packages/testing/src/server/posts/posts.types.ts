@@ -1,4 +1,4 @@
-import type { Post, Span } from 'itd-api';
+import type { Post, PostUpdateResult, Span } from 'itd-api';
 import type { CursorPagination } from '../shared/pagination.types.js';
 
 /** Пост в хранилище mock-server. @internal */
@@ -27,6 +27,11 @@ export interface NewPost {
 export interface PostEdit {
   content?: string | undefined;
   spans?: Span[] | undefined;
+}
+
+/** Ответ на редактирование поста в форме API: время правки в `updatedAt`. @internal */
+export interface PostUpdateResponse extends Omit<PostUpdateResult, 'editedAt'> {
+  updatedAt: string;
 }
 
 /** Курсорная страница постов в форме ответа API. @internal */

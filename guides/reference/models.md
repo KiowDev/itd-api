@@ -18,15 +18,24 @@ type UserRef = string;                   // UUID или username
 
 ## Пользователи
 
+### UserBase
+
+Общая часть всех моделей пользователя ниже.
+
+```ts
+interface UserBase {
+  id: UserId;
+  username: string;
+  displayName: string;
+}
+```
+
 ### Author
 
 Автор поста или комментария (`post.author`, `comment.author`).
 
 ```ts
-interface Author {
-  id: UserId;
-  username: string;
-  displayName: string;
+interface Author extends UserBase {
   avatar: string;                        // обычно эмодзи, может быть URL
   verified: boolean;
   pin?: Pin | null;                      // активный значок
@@ -39,10 +48,7 @@ interface Author {
 Участник события в уведомлении.
 
 ```ts
-interface Actor {
-  id: UserId;
-  username: string;
-  displayName: string;
+interface Actor extends UserBase {
   avatar: string;
   isFollowing?: boolean;                 // подписаны ли вы на него
   isFollowedBy?: boolean;                // подписан ли он на вас
@@ -54,10 +60,7 @@ interface Actor {
 Пользователь в списках. Набор необязательных полей зависит от эндпоинта.
 
 ```ts
-interface UserSummary {
-  id: UserId;
-  username: string;
-  displayName: string;
+interface UserSummary extends UserBase {
   avatar: string;
   verified: boolean;
   isFollowing?: boolean;                 // в списках подписчиков/подписок
@@ -71,8 +74,7 @@ interface UserSummary {
 Свой профиль — ответ `itd.users.me()`.
 
 ```ts
-interface MyProfile {
-  id: UserId; username: string; displayName: string;
+interface MyProfile extends UserBase {
   avatar: string; clanAvatar?: string;   // эмодзи клана
   banner: string | null; bio: string;
   verified: boolean; pin?: Pin | null;
@@ -99,8 +101,7 @@ interface SubscriptionState {
 Состояние авторизации — ответ `itd.auth.check()`.
 
 ```ts
-interface AuthUser {
-  id: UserId; username: string; displayName: string;
+interface AuthUser extends UserBase {
   avatar: string; clanAvatar?: string; bio: string; verified: boolean;
   isPhoneVerified: boolean;
   roles: string[];
@@ -120,8 +121,7 @@ interface AuthState {
 Чужой профиль — ответ `itd.users.get()`.
 
 ```ts
-interface PublicProfile {
-  id: UserId; username: string; displayName: string;
+interface PublicProfile extends UserBase {
   avatar: string; clanAvatar?: string;   // эмодзи клана
   banner: string | null; bio: string;
   verified: boolean; pin?: Pin | null;
@@ -204,25 +204,38 @@ interface Clan {
 
 ## Посты и комментарии
 
-### Post
+### PostBase
+
+Общая часть поста ленты (`Post`) и поста, на который ссылается репост (`OriginalPost`).
+Счётчики вынесены в `PostCounters`, их же содержит `PostStats`.
 
 ```ts
-interface Post {
+interface PostCounters {
+  likesCount: number; commentsCount: number; repostsCount: number; viewsCount: number;
+  dominantEmoji?: string | null;         // преобладающая реакция
+}
+
+interface PostBase extends PostCounters {
   id: string;
   content: string;
   spans: Span[];                         // разметка текста
   author: Author;
   attachments: Attachment[];
-  likesCount: number; commentsCount: number; repostsCount: number; viewsCount: number;
+  createdAt: IsoDate;
+  vs?: string;                           // служебная метка показа для itd.telemetry
+}
+```
+
+### Post
+
+```ts
+interface Post extends PostBase {
   wallRecipientId: UserId | null;        // чья стена, если пост не у себя
   wallRecipient?: Author | null;         // владелец стены
   isLiked: boolean; isReposted: boolean; isViewed?: boolean; isOwner: boolean;
   originalPost?: OriginalPost | null;    // если это репост
   poll?: Poll | null;
-  dominantEmoji?: string | null;         // преобладающая реакция
   editedAt?: IsoDate | null;
-  createdAt: IsoDate;
-  vs?: string;                           // служебная метка показа для itd.telemetry
   comments?: Comment[];                  // только в ответе itd.posts.get()
 }
 ```
@@ -234,17 +247,8 @@ interface Post {
 присылает в формате PostgreSQL (`2026-10-04 22:32:04.381097+03`), библиотека приводит его к ISO.
 
 ```ts
-interface OriginalPost {
-  id: string;
-  content: string;
-  spans: Span[];
-  author: Author;
-  attachments: Attachment[];
-  likesCount: number; commentsCount: number; repostsCount: number; viewsCount: number;
+interface OriginalPost extends PostBase {
   isDeleted: boolean;
-  dominantEmoji?: string | null;
-  createdAt: IsoDate;
-  vs?: string;
 }
 ```
 
@@ -268,21 +272,16 @@ interface Comment {
 Редактирование возвращает компактные модели, а не полные `Post` / `Comment`:
 
 ```ts
-interface PostUpdateResult {
-  id: string; content: string; spans: Span[]; updatedAt: IsoDate;
-}
-
-interface CommentUpdateResult {
+interface UpdateResultBase {
   id: string; content: string; editedAt: IsoDate;
 }
+
+interface PostUpdateResult extends UpdateResultBase { spans: Span[]; }
+interface CommentUpdateResult extends UpdateResultBase {}
 ```
 
 ```ts
-interface CommentReplyTo {
-  id: string;
-  username: string;
-  displayName: string;
-}
+interface CommentReplyTo extends UserBase {}
 ```
 
 ### Attachment
@@ -327,9 +326,8 @@ interface PollOption {
 ### PostStats
 
 ```ts
-interface PostStats {
+interface PostStats extends PostCounters {
   id: string;
-  likesCount: number; commentsCount: number; repostsCount: number; viewsCount: number;
   dominantEmoji: string | null;
 }
 ```
@@ -787,15 +785,18 @@ interface ShopCreatedOrder {
 
 ### ShopOrderSummary
 
-Краткие сведения о заказе в `orders.list()`.
+Краткие сведения о заказе в `orders.list()`. Общие с `ShopOrder` поля — в `ShopOrderBase`.
 
 ```ts
-interface ShopOrderSummary {
+interface ShopOrderBase {
   number: string;
-  titles: string[];
   status: ShopOrderStatus;
   total: number;
   createdAt: IsoDate;
+}
+
+interface ShopOrderSummary extends ShopOrderBase {
+  titles: string[];
 }
 ```
 
@@ -804,15 +805,11 @@ interface ShopOrderSummary {
 Полные сведения о заказе. `itemsTotal`, `shipping` и `total` указаны в рублях.
 
 ```ts
-interface ShopOrder {
-  number: string;
-  status: ShopOrderStatus;
-  createdAt: IsoDate;
+interface ShopOrder extends ShopOrderBase {
   payment: { pending: boolean };
   items: ShopOrderItem[];
   itemsTotal: number;
   shipping: number;
-  total: number;
   delivery: ShopOrderDelivery;
   track?: string | null;
   comment?: string | null;

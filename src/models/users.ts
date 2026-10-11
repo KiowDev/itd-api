@@ -23,14 +23,21 @@ export interface Pin {
 }
 
 /**
+ * Общая часть всех моделей пользователя: автора, участника уведомления, пользователя
+ * из списка, профиля.
+ */
+export interface UserBase {
+  id: UserId;
+  username: string;
+  displayName: string;
+}
+
+/**
  * Автор поста или комментария.
  *
  * Встречается внутри `post.author` и `comment.author`.
  */
-export interface Author {
-  id: UserId;
-  username: string;
-  displayName: string;
+export interface Author extends UserBase {
   /**
    * Аватар: обычно эмодзи — символ клана (`🩵`, `🦎`), который отрисовывают как текст.
    *
@@ -51,10 +58,7 @@ export interface Author {
  *
  * Отличается от {@link Author} набором полей: вместо значков приходит связь с вами.
  */
-export interface Actor {
-  id: UserId;
-  username: string;
-  displayName: string;
+export interface Actor extends UserBase {
   /** Аватар: эмодзи или адрес изображения, см. {@link Author.avatar}. */
   avatar: string;
   /** Подписаны ли вы на этого пользователя. */
@@ -70,10 +74,7 @@ export interface Actor {
  * поиск и рекомендации — `followersCount` и `hasNuksta`. Необязательные поля отражают
  * это различие.
  */
-export interface UserSummary {
-  id: UserId;
-  username: string;
-  displayName: string;
+export interface UserSummary extends UserBase {
   /** Аватар: эмодзи или адрес изображения, см. {@link Author.avatar}. */
   avatar: string;
   verified: boolean;
@@ -86,10 +87,7 @@ export interface UserSummary {
 }
 
 /** Поля профиля, общие для своего и чужого. */
-interface ProfileBase {
-  id: UserId;
-  username: string;
-  displayName: string;
+interface ProfileBase extends UserBase {
   /** Аватар: эмодзи или адрес изображения, см. {@link Author.avatar}. */
   avatar: string;
   /**
@@ -135,16 +133,8 @@ export interface MyProfile extends ProfileBase {
   subscription: SubscriptionState;
 }
 
-/**
- * Состояние авторизации — ответ `GET /api/profile`.
- *
- * Endpoint доступен без сессии: в этом случае `authenticated` равен `false`,
- * а `user` — `null`.
- */
-export interface AuthUser {
-  id: UserId;
-  username: string;
-  displayName: string;
+/** Компактные данные текущего пользователя из {@link AuthState}. */
+export interface AuthUser extends UserBase {
   /** Аватар: эмодзи или адрес изображения, см. {@link Author.avatar}. */
   avatar: string;
   /** Эмодзи клана. Совпадает с `avatar`, пока аватар — эмодзи. */
@@ -156,6 +146,12 @@ export interface AuthUser {
   roles: string[];
 }
 
+/**
+ * Состояние авторизации — ответ `GET /api/profile`.
+ *
+ * Endpoint доступен без сессии: в этом случае `authenticated` равен `false`,
+ * а `user` — `null`.
+ */
 export interface AuthState {
   /** Есть ли действующая сессия. */
   authenticated: boolean;

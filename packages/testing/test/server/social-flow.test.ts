@@ -20,7 +20,7 @@ describe('createMockServer: социальный сценарий', () => {
       id: post.id,
       content: 'Проверяем обновление',
       spans: [],
-      updatedAt: expect.any(String),
+      editedAt: expect.any(String),
     });
     await alice.posts.like(post.id);
     const comment = await alice.posts.comment(post.id, 'Работает');
