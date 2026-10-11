@@ -25,8 +25,8 @@ cd itd-api
 npm install
 ```
 
-Проект использует workspaces из `packages/*` (`captcha`, `crypto`, `proxy`, `cache`) — они
-устанавливаются вместе с основным пакетом.
+Проект использует workspaces из `packages/*` (`cache`, `captcha`, `crypto`, `hydrate`,
+`proxy`, `testing`) — они устанавливаются вместе с основным пакетом.
 
 ## Рабочий цикл
 
