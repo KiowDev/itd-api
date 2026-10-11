@@ -63,9 +63,9 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "publint": "^0.3.25",
-    "tsdown": "^0.23.0",
+    "tsdown": "^0.23.1",
     "typescript": "^5.9.3",
     "vitest": "^5.0.3"
   }
