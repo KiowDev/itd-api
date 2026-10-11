@@ -1,5 +1,6 @@
-import { modelContext } from '../runtime/context.js';
-import { type AnyRecord, modelId } from '../runtime/records.js';
+import { modelContext } from '../../runtime/context.utils.js';
+import type { AnyRecord } from '../../runtime/records.types.js';
+import { modelId } from '../../runtime/records.utils.js';
 
 function commentLike(this: AnyRecord, ...args: unknown[]): unknown {
   const context = modelContext(this);

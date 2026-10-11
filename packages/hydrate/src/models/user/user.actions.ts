@@ -1,5 +1,6 @@
-import { modelContext } from '../runtime/context.js';
-import { type AnyRecord, userReference } from '../runtime/records.js';
+import { modelContext } from '../../runtime/context.utils.js';
+import type { AnyRecord } from '../../runtime/records.types.js';
+import { userReference } from '../../runtime/records.utils.js';
 
 function userGet(this: AnyRecord, ...args: unknown[]): unknown {
   const context = modelContext(this);

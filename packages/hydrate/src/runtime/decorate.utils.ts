@@ -1,9 +1,10 @@
-import { COMMENT_ACTIONS } from './actions/comment.js';
-import { notificationCommentId } from './actions/notification.js';
-import { actionsFor } from './actions/registry.js';
-import { bindModelContext, type HydrationContext } from './runtime/context.js';
-import { ModelKind, type ModelKind as ModelKindValue } from './runtime/model-kind.js';
-import type { AnyRecord, ModelAction } from './runtime/records.js';
+import { actionsFor } from '../actions/registry.js';
+import { COMMENT_ACTIONS } from '../models/comment/comment.actions.js';
+import { ModelKind, type ModelKind as ModelKindValue } from '../models/model.constants.js';
+import { notificationCommentId } from '../models/notification/notification.actions.js';
+import type { HydrationContext } from './context.types.js';
+import { bindModelContext } from './context.utils.js';
+import type { AnyRecord, ModelAction } from './records.types.js';
 
 const BOUND_MODEL_ACTIONS = new WeakMap<object, Map<ModelAction, ModelAction>>();
 const MODEL_ACTION_GETTERS = new WeakMap<ModelAction, () => ModelAction>();

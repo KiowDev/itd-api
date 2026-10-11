@@ -1,8 +1,8 @@
 import type { NotificationEventContext, NotificationEvents } from 'itd-api';
 import { hydrateResolved } from '../graph.js';
-import type { HydrationContext } from '../runtime/context.js';
-import type { AnyRecord } from '../runtime/records.js';
-import type { HydratedEventContext, HydratedNotificationEvents } from '../types.js';
+import type { HydrationContext } from '../runtime/context.types.js';
+import type { AnyRecord } from '../runtime/records.types.js';
+import type { HydratedEventContext, HydratedNotificationEvents } from './events.types.js';
 
 const EVENT_FACADES = new WeakMap<NotificationEvents, NotificationEvents>();
 

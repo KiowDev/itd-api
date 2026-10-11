@@ -1,9 +1,11 @@
 import type { ItdClient } from 'itd-api';
-import { decorate, isReservedModelKey } from './decorate.js';
-import { type HydrationContext, hasModelContext } from './runtime/context.js';
+import type { HydrateValue } from './models/model.types.js';
+import type { HydrationContext } from './runtime/context.types.js';
+import { hasModelContext } from './runtime/context.utils.js';
+import { decorate, isReservedModelKey } from './runtime/decorate.utils.js';
 import { modelKind } from './runtime/model-kind.js';
-import { type AnyRecord, isObject, isRecord } from './runtime/records.js';
-import type { HydrateValue } from './types.js';
+import type { AnyRecord } from './runtime/records.types.js';
+import { isObject, isRecord } from './runtime/records.utils.js';
 
 const ITERABLE_FACADES = new WeakMap<object, WeakMap<ItdClient, object>>();
 

@@ -1,16 +1,7 @@
 import { AttachmentType } from 'itd-api';
-import { type AnyRecord, dataField, isRecord } from './records.js';
-
-export const ModelKind = Object.freeze({
-  Post: 'post',
-  Comment: 'comment',
-  Profile: 'profile',
-  User: 'user',
-  Attachment: 'attachment',
-  Notification: 'notification',
-  ShopDeliveryCity: 'shop-delivery-city',
-} as const);
-export type ModelKind = (typeof ModelKind)[keyof typeof ModelKind];
+import { ModelKind } from '../models/model.constants.js';
+import type { AnyRecord } from './records.types.js';
+import { dataField, isRecord } from './records.utils.js';
 
 function hasString(value: AnyRecord, key: PropertyKey): boolean {
   return typeof dataField(value, key) === 'string';

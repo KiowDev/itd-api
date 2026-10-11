@@ -1,5 +1,4 @@
-export type AnyRecord = Record<PropertyKey, unknown>;
-export type ModelAction = (this: AnyRecord, ...args: unknown[]) => unknown;
+import type { AnyRecord } from './records.types.js';
 
 export function isObject(value: unknown): value is object {
   return (typeof value === 'object' && value !== null) || typeof value === 'function';

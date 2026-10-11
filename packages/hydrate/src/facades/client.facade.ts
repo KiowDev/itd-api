@@ -1,10 +1,11 @@
 import type { ItdClient, NotificationEvents } from 'itd-api';
 import { createHydrationContext } from '../graph.js';
-import { isObject } from '../runtime/records.js';
-import { HydratableResource, type HydrateFlavor } from '../types.js';
+import { HydratableResource } from '../results/results.constants.js';
+import type { HydrateFlavor } from '../results/results.types.js';
+import { isObject } from '../runtime/records.utils.js';
 import { authFacade } from './auth.js';
-import { createNotificationEvents } from './events.js';
-import { resourceFacade } from './resource.js';
+import { createNotificationEvents } from './events.facade.js';
+import { resourceFacade } from './resource.facade.js';
 
 const HYDRATABLE_RESOURCES = new Set<PropertyKey>(Object.values(HydratableResource));
 const CLIENT_FACADES = new WeakMap<ItdClient, ItdClient>();

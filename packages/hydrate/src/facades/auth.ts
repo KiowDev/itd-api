@@ -1,8 +1,9 @@
 import type { QrLoginSecrets, QrLoginTarget } from 'itd-api';
-import { QR_LOGIN_TARGET_ACTIONS, rememberQrSecrets } from '../actions/qr-login.js';
-import { decorateWith } from '../decorate.js';
-import type { HydrationContext } from '../runtime/context.js';
-import { type AnyRecord, isObject } from '../runtime/records.js';
+import { QR_LOGIN_TARGET_ACTIONS, rememberQrSecrets } from '../models/qr-login/qr-login.actions.js';
+import type { HydrationContext } from '../runtime/context.types.js';
+import { decorateWith } from '../runtime/decorate.utils.js';
+import type { AnyRecord } from '../runtime/records.types.js';
+import { isObject } from '../runtime/records.utils.js';
 
 type ScanQrLogin = (...args: never[]) => Promise<QrLoginTarget>;
 

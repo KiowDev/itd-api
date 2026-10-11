@@ -1,6 +1,6 @@
 import type { ItdClient } from 'itd-api';
-import { createClientFacade } from './facades/client.js';
-import type { HydrateFlavor } from './types.js';
+import { createClientFacade } from './facades/client.facade.js';
+import type { HydrateFlavor } from './results/results.types.js';
 
 /**
  * Создаёт фасад клиента, который добавляет действия к моделям из результатов ресурсов и

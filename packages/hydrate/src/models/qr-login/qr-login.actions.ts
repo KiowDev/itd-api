@@ -1,6 +1,6 @@
 import type { QrLoginSecrets } from 'itd-api';
-import { modelContext } from '../runtime/context.js';
-import type { AnyRecord } from '../runtime/records.js';
+import { modelContext } from '../../runtime/context.utils.js';
+import type { AnyRecord } from '../../runtime/records.types.js';
 
 /**
  * Секреты кода, из которого получено описание устройства.

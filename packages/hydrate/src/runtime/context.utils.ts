@@ -1,11 +1,4 @@
-import type { ItdClient } from 'itd-api';
-import type { HydrateValue } from '../types.js';
-
-/** Общая среда одного гидратированного клиента. */
-export interface HydrationContext {
-  readonly client: ItdClient;
-  hydrate<T>(value: T): HydrateValue<T>;
-}
+import type { HydrationContext } from './context.types.js';
 
 const MODEL_CONTEXTS = new WeakMap<object, HydrationContext>();
 

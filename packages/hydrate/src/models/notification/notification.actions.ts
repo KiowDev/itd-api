@@ -1,6 +1,6 @@
 import { NotificationType } from 'itd-api';
-import { modelContext } from '../runtime/context.js';
-import type { AnyRecord } from '../runtime/records.js';
+import { modelContext } from '../../runtime/context.utils.js';
+import type { AnyRecord } from '../../runtime/records.types.js';
 
 const POST_NOTIFICATION_TYPES = new Set<string>([
   NotificationType.PostReaction,

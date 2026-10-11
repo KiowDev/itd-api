@@ -1,5 +1,5 @@
 import { AttachmentType } from 'itd-api';
-import type { AnyRecord } from '../runtime/records.js';
+import type { AnyRecord } from '../../runtime/records.types.js';
 
 function attachmentIsImage(this: AnyRecord): boolean {
   return Reflect.get(this, 'type', this) === AttachmentType.Image;

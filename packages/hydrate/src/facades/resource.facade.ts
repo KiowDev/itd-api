@@ -1,5 +1,5 @@
-import type { HydrationContext } from '../runtime/context.js';
-import { isObject } from '../runtime/records.js';
+import type { HydrationContext } from '../runtime/context.types.js';
+import { isObject } from '../runtime/records.utils.js';
 
 /** Оборачивает методы одного API-ресурса рекурсивной гидратацией результата. */
 export function resourceFacade(resource: object, context: HydrationContext): object {

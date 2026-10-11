@@ -1,11 +1,11 @@
-import { ModelKind } from '../runtime/model-kind.js';
-import type { ModelAction } from '../runtime/records.js';
-import { ATTACHMENT_ACTIONS } from './attachment.js';
-import { COMMENT_ACTIONS } from './comment.js';
-import { NOTIFICATION_ACTIONS } from './notification.js';
-import { POST_ACTIONS } from './post.js';
-import { SHOP_DELIVERY_CITY_ACTIONS } from './shop-delivery-city.js';
-import { USER_ACTIONS } from './user.js';
+import { ATTACHMENT_ACTIONS } from '../models/attachment/attachment.actions.js';
+import { COMMENT_ACTIONS } from '../models/comment/comment.actions.js';
+import { ModelKind } from '../models/model.constants.js';
+import { NOTIFICATION_ACTIONS } from '../models/notification/notification.actions.js';
+import { POST_ACTIONS } from '../models/post/post.actions.js';
+import { SHOP_DELIVERY_CITY_ACTIONS } from '../models/shop-delivery-city/shop-delivery-city.actions.js';
+import { USER_ACTIONS } from '../models/user/user.actions.js';
+import type { ModelAction } from '../runtime/records.types.js';
 
 export function actionsFor(kind: ModelKind): Readonly<Record<string, ModelAction>> {
   if (kind === ModelKind.Post) return POST_ACTIONS;
