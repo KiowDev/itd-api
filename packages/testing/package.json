@@ -1,6 +1,6 @@
 {
   "name": "@itd-api/testing",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Средства тестирования клиентов и плагинов itd-api без сетевых запросов",
   "repository": {
     "type": "git",
@@ -59,7 +59,7 @@
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run check:pack"
   },
   "peerDependencies": {
-    "itd-api": ">=0.12.0 <1.0.0"
+    "itd-api": ">=0.12.1 <1.0.0"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
@@ -67,6 +67,6 @@
     "publint": "^0.3.25",
     "tsdown": "^0.23.1",
     "typescript": "^5.9.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.4"
   }
 }
