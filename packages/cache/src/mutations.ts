@@ -112,6 +112,11 @@ const SUBSCRIPTION = [
   'subscription.methods',
 ] as const satisfies readonly CacheOperationId[];
 
+const SHOP_PRODUCTS = [
+  'shop.products.list',
+  'shop.products.get',
+] as const satisfies readonly CacheOperationId[];
+
 const NOTHING = [] as const satisfies readonly CacheOperationId[];
 
 /**
@@ -150,7 +155,6 @@ const CACHE_MUTATIONS = Object.freeze([
     invalidates: ['auth.sessions'],
     scope: CachePolicyScope.Account,
   },
-  { operationId: 'auth.captchaProvider', invalidates: NOTHING },
 
   // Посты и комментарии.
   { operationId: 'posts.create', invalidates: POST_CONTENT },
@@ -244,6 +248,13 @@ const CACHE_MUTATIONS = Object.freeze([
     scope: CachePolicyScope.Account,
   },
 
+  // Магазин: заказ уменьшает остаток товара.
+  { operationId: 'shop.orders.create', invalidates: SHOP_PRODUCTS },
+  { operationId: 'shop.orders.pay', invalidates: SHOP_PRODUCTS },
+  { operationId: 'shop.orders.requestAccessCode', invalidates: NOTHING },
+  { operationId: 'shop.orders.verifyAccessCode', invalidates: NOTHING },
+  { operationId: 'shop.consents.record', invalidates: NOTHING },
+
   // Эти запросы не меняют ни один доступный для кэширования ответ.
   { operationId: 'reports.create', invalidates: NOTHING },
   { operationId: 'telemetry.dwell', invalidates: NOTHING },
@@ -257,6 +268,9 @@ for (const mutation of CACHE_MUTATIONS) {
   Object.freeze(mutation.invalidates);
   Object.freeze(mutation);
 }
+
+/** ID мутации из каталога. */
+export type CacheMutationId = (typeof CACHE_MUTATIONS)[number]['operationId'];
 
 const MUTATIONS = new Map<OperationId, CacheMutation>(
   CACHE_MUTATIONS.map((mutation) => [mutation.operationId, mutation]),
