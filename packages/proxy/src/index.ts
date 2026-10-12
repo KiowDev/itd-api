@@ -23,7 +23,7 @@ import { createProxyDispatcher } from './dispatcher.js';
 
 export { createProxyDispatcher } from './dispatcher.js';
 export { ProxyError } from './errors.js';
-export { type ParsedProxy, type ProxyKind, parseProxy } from './parse.js';
+export { type ParsedProxy, ProxyKind, parseProxy } from './parse.js';
 
 /** Тело запроса `fetch` с непубличным полем undici. */
 type WithDispatcher = RequestInit & { dispatcher?: Dispatcher };
@@ -106,8 +106,7 @@ export function proxyFetch(proxy: string | URL, options: ProxyFetchOptions = {})
 function createFetch(dispatcher: Dispatcher, base?: typeof fetch): ProxyFetch {
   // Именно undici, а не globalThis.fetch: опция `dispatcher` появилась в undici 6.3,
   // а Node 18 и 20 несут внутри undici 5, где она молча отбрасывается — запрос уходит
-  // напрямую, с настоящим адресом и без единой ошибки. Пакет тянет undici ради
-  // ProxyAgent, так что своей версии тут не занимать.
+  // напрямую, с настоящим адресом и без единой ошибки.
   const baseFetch = base ?? (undiciFetch as unknown as typeof fetch);
 
   const proxied = (input: Parameters<typeof fetch>[0], init?: RequestInit) =>

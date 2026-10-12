@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ProxyError } from '../src/errors.js';
-import { parseProxy } from '../src/parse.js';
+import { ProxyKind, parseProxy } from '../src/parse.js';
 
 describe('parseProxy', () => {
   it('разбирает socks5 с портом', () => {
     expect(parseProxy('socks5://127.0.0.1:1080')).toMatchObject({
-      kind: 'socks5',
+      kind: ProxyKind.Socks5,
       host: '127.0.0.1',
       port: 1080,
       username: undefined,
@@ -15,7 +15,7 @@ describe('parseProxy', () => {
 
   it('разбирает http с авторизацией', () => {
     expect(parseProxy('http://user:pass@proxy.example:8080')).toMatchObject({
-      kind: 'http',
+      kind: ProxyKind.Http,
       secure: false,
       host: 'proxy.example',
       port: 8080,
@@ -26,14 +26,14 @@ describe('parseProxy', () => {
 
   it('распознаёт https как защищённый http-прокси', () => {
     expect(parseProxy('https://proxy.example')).toMatchObject({
-      kind: 'http',
+      kind: ProxyKind.Http,
       secure: true,
       port: 443,
     });
   });
 
   it('socks5h ведёт себя как socks5', () => {
-    expect(parseProxy('socks5h://host')).toMatchObject({ kind: 'socks5', port: 1080 });
+    expect(parseProxy('socks5h://host')).toMatchObject({ kind: ProxyKind.Socks5, port: 1080 });
   });
 
   it('раскодирует спецсимволы в логине и пароле', () => {

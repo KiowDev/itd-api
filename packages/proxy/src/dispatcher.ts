@@ -1,7 +1,7 @@
 import { connect as tlsConnect } from 'node:tls';
 import { SocksClient } from 'socks';
 import { Agent, type buildConnector, type Dispatcher, ProxyAgent } from 'undici';
-import { formatHost, type ParsedProxy, parseProxy } from './parse.js';
+import { formatHost, type ParsedProxy, ProxyKind, parseProxy, stripBrackets } from './parse.js';
 
 /**
  * Собирает диспетчер undici, направляющий соединения через прокси.
@@ -21,7 +21,7 @@ import { formatHost, type ParsedProxy, parseProxy } from './parse.js';
  */
 export function createProxyDispatcher(proxy: string | URL): Dispatcher {
   const parsed = parseProxy(proxy);
-  return parsed.kind === 'http' ? httpDispatcher(parsed) : socksDispatcher(parsed);
+  return parsed.kind === ProxyKind.Http ? httpDispatcher(parsed) : socksDispatcher(parsed);
 }
 
 /** HTTP/HTTPS-прокси через undici `ProxyAgent`. */
@@ -60,7 +60,7 @@ function socksDispatcher(parsed: ParsedProxy): Dispatcher {
     SocksClient.createConnection({
       command: 'connect',
       proxy: {
-        host: stripBrackets(parsed.host),
+        host: parsed.host,
         port: parsed.port,
         type: 5,
         ...(parsed.username !== undefined ? { userId: parsed.username } : {}),
@@ -100,14 +100,4 @@ function socksDispatcher(parsed: ParsedProxy): Dispatcher {
   };
 
   return new Agent({ connect });
-}
-
-/**
- * Убирает скобки из literal-формы IPv6.
- *
- * `URL.hostname` отдаёт `[::1]`, а `socks` ждёт чистый адрес `::1` — со скобками он
- * пытается его резолвить как имя и падает с ENOTFOUND.
- */
-function stripBrackets(host: string): string {
-  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
 }

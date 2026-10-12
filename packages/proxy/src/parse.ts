@@ -1,11 +1,17 @@
 import { ProxyError } from './errors.js';
 
-/** Семейство прокси: HTTP CONNECT-туннель или SOCKS5. */
-export type ProxyKind = 'http' | 'socks5';
+/** Семейство прокси. */
+export const ProxyKind = Object.freeze({
+  /** HTTP CONNECT-туннель: схемы `http:` и `https:`. */
+  Http: 'http',
+  /** SOCKS5: схемы `socks5:`, `socks5h:` и `socks:`. */
+  Socks5: 'socks5',
+} as const);
+export type ProxyKind = (typeof ProxyKind)[keyof typeof ProxyKind];
 
 /** Разобранный адрес прокси. */
 export interface ParsedProxy {
-  /** Семейство: `http` для `http:`/`https:`, `socks5` для `socks5:`/`socks5h:`/`socks:`. */
+  /** Семейство прокси, см. {@link ProxyKind}. */
   kind: ProxyKind;
   /** Использует ли сам прокси TLS (`https:`) — важно только для HTTP-прокси. */
   secure: boolean;
@@ -52,9 +58,9 @@ export function formatHost(host: string): string {
 }
 
 function schemeToKind(scheme: string): ProxyKind {
-  if (scheme === 'http' || scheme === 'https') return 'http';
+  if (scheme === 'http' || scheme === 'https') return ProxyKind.Http;
   // socks5, socks5h и socks обрабатываются одинаково: `socks` резолвит DNS на стороне прокси.
-  if (scheme === 'socks5' || scheme === 'socks5h' || scheme === 'socks') return 'socks5';
+  if (scheme === 'socks5' || scheme === 'socks5h' || scheme === 'socks') return ProxyKind.Socks5;
 
   throw new ProxyError(
     `Неизвестная схема прокси «${scheme}». Поддерживаются http, https, socks5 (и socks5h).`,
