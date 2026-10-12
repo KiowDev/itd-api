@@ -1,5 +1,7 @@
+import { ReportTargetType } from 'itd-api';
 import { resourceAction } from '../../actions/action.factory.js';
-import type { ModelAction } from '../../runtime/records.types.js';
+import type { ModelAction } from '../../actions/action.types.js';
+import { reportAction } from '../../actions/report.factory.js';
 import { modelId } from '../../runtime/records.utils.js';
 import type { HydratedUserActions } from './user.types.js';
 
@@ -17,4 +19,5 @@ export const USER_ACTIONS = Object.freeze({
   iterateFollowers: resourceAction('users', 'iterateFollowers', modelId),
   getFollowing: resourceAction('users', 'following', modelId),
   iterateFollowing: resourceAction('users', 'iterateFollowing', modelId),
+  report: reportAction(ReportTargetType.User),
 } satisfies Record<keyof HydratedUserActions, ModelAction>);

@@ -242,6 +242,7 @@ export {
   type ShopOrder,
   type ShopOrderAccessSession,
   type ShopOrderAccessVerification,
+  type ShopOrderBase,
   type ShopOrderDelivery,
   type ShopOrderItem,
   type ShopOrderItemInput,

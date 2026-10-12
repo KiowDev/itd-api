@@ -732,6 +732,18 @@ describe('пользователи', () => {
 });
 
 describe('комментарии', () => {
+  it('возвращает время правки комментария в формате ISO', async () => {
+    const { itd } = makeClient([
+      json({ id: 'c1', content: 'текст', editedAt: '2026-10-12 01:54:12.498+03' }),
+    ]);
+
+    await expect(itd.comments.update('c1', 'текст')).resolves.toEqual({
+      id: 'c1',
+      content: 'текст',
+      editedAt: '2026-10-11T22:54:12.498Z',
+    });
+  });
+
   it('отвечает с указанием адресата', async () => {
     const { itd, mock } = makeClient([json({ id: 'c2' })]);
 

@@ -1,7 +1,8 @@
 import { NotificationType } from 'itd-api';
 import { resourceAction } from '../../actions/action.factory.js';
+import type { ModelAction } from '../../actions/action.types.js';
 import { modelContext } from '../../runtime/context.utils.js';
-import type { AnyRecord, ModelAction } from '../../runtime/records.types.js';
+import type { AnyRecord } from '../../runtime/records.types.js';
 import { modelId } from '../../runtime/records.utils.js';
 import type { HydratedNotificationActions } from './notification.types.js';
 
@@ -19,7 +20,7 @@ const COMMENT_NOTIFICATION_TYPES = new Set<string>([
   NotificationType.CommentMention,
 ]);
 
-export function notificationPostId(target: AnyRecord): string | undefined {
+function notificationPostId(target: AnyRecord): string | undefined {
   const type = Reflect.get(target, 'type', target) as unknown;
   if (typeof type !== 'string') return undefined;
 

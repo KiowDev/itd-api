@@ -1,10 +1,9 @@
-import { COMMENT_ACTIONS } from '../models/comment/comment.actions.js';
+import type { ModelAction } from '../actions/action.types.js';
 import { MODEL_ACTIONS } from '../models/model.actions.js';
-import { ModelKind } from '../models/model.constants.js';
-import { notificationCommentId } from '../models/notification/notification.actions.js';
+import { MODEL_REFERENCES, type ModelKind } from '../models/model.constants.js';
 import type { HydrationContext } from './context.types.js';
 import { bindModelContext } from './context.utils.js';
-import type { AnyRecord, ModelAction } from './records.types.js';
+import type { AnyRecord } from './records.types.js';
 
 const BOUND_MODEL_ACTIONS = new WeakMap<object, Map<ModelAction, ModelAction>>();
 const MODEL_ACTION_GETTERS = new WeakMap<ModelAction, () => ModelAction>();
@@ -41,13 +40,15 @@ function defineActions(target: AnyRecord, actions: Readonly<Record<string, Model
   }
 }
 
-/** Занято ли имя поля действием модели вида `kind`. */
+/** Занято ли имя поля действием или ссылкой модели вида `kind`. */
 export function isReservedModelKey(kind: ModelKind, key: PropertyKey): boolean {
-  if (kind === ModelKind.Notification && key === 'comment') return true;
-  return typeof key === 'string' && Object.hasOwn(MODEL_ACTIONS[kind], key);
+  if (typeof key !== 'string') return false;
+  return (
+    Object.hasOwn(MODEL_ACTIONS[kind], key) || Object.hasOwn(MODEL_REFERENCES[kind] ?? {}, key)
+  );
 }
 
-function createCommentReference(id: string, context: HydrationContext): AnyRecord {
+function createReference(id: string, kind: ModelKind, context: HydrationContext): AnyRecord {
   const reference: AnyRecord = {};
   Object.defineProperty(reference, 'id', {
     configurable: false,
@@ -55,23 +56,23 @@ function createCommentReference(id: string, context: HydrationContext): AnyRecor
     writable: false,
     value: id,
   });
-  bindModelContext(reference, context);
-  defineActions(reference, COMMENT_ACTIONS);
+  decorate(reference, kind, context);
   return reference;
 }
 
-/** Привязывает модель вида `kind` к контексту клиента и добавляет её действия. */
+/** Привязывает модель вида `kind` к контексту клиента и добавляет её действия и ссылки. */
 export function decorate(target: AnyRecord, kind: ModelKind, context: HydrationContext): void {
   bindModelContext(target, context);
   defineActions(target, MODEL_ACTIONS[kind]);
 
-  if (kind !== ModelKind.Notification) return;
-  const commentId = notificationCommentId(target);
-  if (!commentId) return;
-  Object.defineProperty(target, 'comment', {
-    configurable: false,
-    enumerable: false,
-    writable: false,
-    value: createCommentReference(commentId, context),
-  });
+  for (const [name, reference] of Object.entries(MODEL_REFERENCES[kind] ?? {})) {
+    const id = reference.id(target);
+    if (!id) continue;
+    Object.defineProperty(target, name, {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: createReference(id, reference.model, context),
+    });
+  }
 }

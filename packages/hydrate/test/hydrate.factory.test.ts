@@ -16,10 +16,12 @@ import {
   type OriginalPost,
   Paginator,
   type Post,
+  ReportReason,
+  ReportTargetType,
   SpanType,
 } from 'itd-api';
-import { describe, expect, it } from 'vitest';
-import { type HydratedPost, hydrateClient } from '../src/index.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { type HydratedClient, type HydratedPost, hydrateClient } from '../src/index.js';
 
 const seed = {
   users: [
@@ -56,8 +58,18 @@ describe('hydrateClient', () => {
     expect(hydrateClient(first as unknown as ItdClient)).toBe(first);
 
     const plugin: ClientPlugin = { name: 'empty', install() {} };
-    expect(first.use(plugin)).toBe(first);
+    const chained = first.use(plugin);
+    expect(chained).toBe(first);
+    expectTypeOf(chained).toEqualTypeOf<HydratedClient<ItdClient>>();
     expect(raw.hasPlugin('empty')).toBe(true);
+
+    const extended = first.withFeature('ping', {
+      name: 'ping',
+      operations: {},
+      setup: () => ({ api: () => 'pong' as const }),
+    });
+    expect(extended.ping()).toBe('pong');
+    expectTypeOf(extended.posts.get).returns.toEqualTypeOf<Promise<HydratedPost>>();
   });
 
   it('гидратирует вложенные модели и не меняет JSON', async () => {
@@ -220,6 +232,55 @@ describe('hydrateClient', () => {
     const [notification] = (await itd.notifications.list()).items;
     await expect(notification?.markRead()).resolves.toEqual(expect.any(Number));
     server.assertNoUnsupportedRequests();
+  });
+
+  it('загружает посты хэштега из списка популярных', async () => {
+    const server = createMockServer({
+      seed: {
+        ...seed,
+        posts: [
+          ...seed.posts,
+          {
+            id: 'post-tag',
+            authorId: 'user-alice',
+            content: 'Пост #новости',
+            spans: [{ type: SpanType.Hashtag, offset: 5, length: 8, tag: 'новости' }],
+          },
+        ],
+      },
+    });
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
+
+    const [hashtag] = await itd.hashtags.trending();
+    const page = await hashtag?.getPosts();
+    expect(page?.items.map((post) => post.id)).toContain('post-tag');
+    expect(typeof page?.items[0]?.like).toBe('function');
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('отправляет жалобу с типом и идентификатором модели', async () => {
+    const mock = createMockFetch();
+    mock.get('/api/posts/reported', apiResponse(postFixture({ id: 'reported' })));
+    mock.post('/api/reports', apiResponse({ id: 'report-1', createdAt: '2026-10-12T00:00:00Z' }));
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+
+    const post = await itd.posts.get('reported');
+    await expect(post.report({ reason: ReportReason.Spam })).resolves.toMatchObject({
+      id: 'report-1',
+    });
+    expect(mock.requests.at(-1)?.body).toEqual({
+      targetType: ReportTargetType.Post,
+      targetId: 'reported',
+      reason: ReportReason.Spam,
+    });
   });
 
   it('распознаёт пост по пути, а не по набору полей', async () => {

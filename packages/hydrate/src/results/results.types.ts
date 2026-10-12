@@ -1,14 +1,11 @@
-import type { ItdClient, Page, Paginator } from 'itd-api';
-import type { HydratedNotificationEvents } from '../facades/events.types.js';
+import type { Page, Paginator } from 'itd-api';
 import type {
   FieldsShape,
-  Hydrated,
   ListShape,
   ModelShape,
   PaginatorShape,
   ShapeBase,
 } from '../shapes/shape.types.js';
-import type { RESOURCE_RESULTS } from './results.constants.js';
 
 type FieldsShapeOf<Value> = FieldsShape<{ readonly [K in keyof Value]?: ShapeBase }>;
 
@@ -36,35 +33,6 @@ export type ResourceBindings<T> = {
   readonly [K in keyof T]?: T[K] extends (...args: never[]) => unknown
     ? ResultBinding
     : ResourceBindings<T[K]>;
-};
-
-type HydratedReturn<Result, S> =
-  Result extends Promise<infer Value> ? Promise<Hydrated<Value, S>> : Hydrated<Result, S>;
-
-type HydratedResource<Resource, Results> = {
-  [K in keyof Resource]: K extends keyof Results
-    ? Resource[K] extends (...args: infer Args) => infer Result
-      ? (...args: Args) => HydratedReturn<Result, Results[K]>
-      : HydratedResource<Resource[K], Results[K]>
-    : Resource[K];
-};
-
-type ResultResource = keyof typeof RESOURCE_RESULTS;
-
-/**
- * Вариант клиента, ресурсы которого возвращают модели с действиями.
- *
- * @example
- * ```ts
- * type AppClient = HydrateFlavor<ItdClient>;
- * ```
- */
-export type HydrateFlavor<Client extends ItdClient = ItdClient> = Omit<Client, ResultResource> & {
-  readonly [K in ResultResource]: K extends 'notifications'
-    ? Omit<HydratedResource<Client[K], (typeof RESOURCE_RESULTS)[K]>, 'events'> & {
-        readonly events: HydratedNotificationEvents;
-      }
-    : HydratedResource<Client[K], (typeof RESOURCE_RESULTS)[K]>;
 };
 
 /** Карта результатов в рантайме: форма метода либо карта вложенного ресурса. */

@@ -10,11 +10,6 @@ export function isRecord(value: unknown): value is AnyRecord {
   return prototype === Object.prototype || prototype === null;
 }
 
-export function dataField(value: AnyRecord, key: PropertyKey): unknown {
-  const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptor && 'value' in descriptor ? descriptor.value : undefined;
-}
-
 export function stringProperty(target: AnyRecord, key: PropertyKey, label: string): string {
   const value = Reflect.get(target, key, target) as unknown;
   if (typeof value !== 'string' || value === '') {

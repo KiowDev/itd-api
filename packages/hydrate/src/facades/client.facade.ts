@@ -1,8 +1,9 @@
 import type { ItdClient, NotificationEvents } from 'itd-api';
 import { RESOURCE_BINDINGS, RESOURCE_RESULTS } from '../results/results.constants.js';
-import type { BindingMap, HydrateFlavor, ResultMap } from '../results/results.types.js';
+import type { BindingMap, ResultMap } from '../results/results.types.js';
 import type { HydrationContext } from '../runtime/context.types.js';
 import { isObject } from '../runtime/records.utils.js';
+import type { HydratedClient } from './client.types.js';
 import { createNotificationEvents } from './events.facade.js';
 import { resourceFacade } from './resource.facade.js';
 
@@ -10,6 +11,12 @@ const RESULTS: ResultMap = RESOURCE_RESULTS;
 const BINDINGS: BindingMap = RESOURCE_BINDINGS;
 const CLIENT_FACADES = new WeakMap<ItdClient, ItdClient>();
 const FACADE_CLIENTS = new WeakMap<ItdClient, ItdClient>();
+
+/** Неизменяемое собственное свойство: `Proxy` обязан вернуть его значение как есть. */
+function isFrozenOwn(target: object, key: PropertyKey): boolean {
+  const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+  return descriptor !== undefined && !descriptor.configurable && descriptor.writable === false;
+}
 
 function notificationsFacade(
   resource: object,
@@ -33,10 +40,10 @@ function notificationsFacade(
 /** Собирает и кэширует фасад одного исходного клиента. */
 export function createClientFacade<Client extends ItdClient>(
   client: Client,
-): HydrateFlavor<Client> {
+): HydratedClient<Client> {
   const rawClient = FACADE_CLIENTS.get(client) ?? client;
   const existing = CLIENT_FACADES.get(rawClient);
-  if (existing !== undefined) return existing as unknown as HydrateFlavor<Client>;
+  if (existing !== undefined) return existing as unknown as HydratedClient<Client>;
 
   const resources = new Map<PropertyKey, unknown>();
   const methods = new Map<PropertyKey, unknown>();
@@ -64,7 +71,7 @@ export function createClientFacade<Client extends ItdClient>(
         return wrapped;
       }
 
-      if (typeof member !== 'function') return member;
+      if (typeof member !== 'function' || isFrozenOwn(target, key)) return member;
       const cached = methods.get(key);
       if (cached !== undefined) return cached;
 
@@ -76,9 +83,9 @@ export function createClientFacade<Client extends ItdClient>(
       return wrapped;
     },
   });
-  const context: HydrationContext = { facade: facade as unknown as HydrateFlavor };
+  const context: HydrationContext = { facade: facade as unknown as HydratedClient };
 
   CLIENT_FACADES.set(rawClient, facade);
   FACADE_CLIENTS.set(facade, rawClient);
-  return facade as unknown as HydrateFlavor<Client>;
+  return facade as unknown as HydratedClient<Client>;
 }

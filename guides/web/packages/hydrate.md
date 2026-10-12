@@ -48,7 +48,8 @@ const wall = await author.getPosts({ limit: 20 });
 - `vote()` голосует в опросе;
 - `repost()` и `unrepost()` управляют репостом;
 - `remove()` и `restore()` управляют удалением;
-- `pin()` и `unpin()` управляют закреплением.
+- `pin()` и `unpin()` управляют закреплением;
+- `report()` отправляет жалобу.
 
 ### Комментарий
 
@@ -56,17 +57,36 @@ const wall = await author.getPosts({ limit: 20 });
 - `reply()` добавляет ответ;
 - `update()` изменяет текст;
 - `remove()` и `restore()` управляют удалением;
-- `getReplies()` и `iterateReplies()` загружают ответы.
+- `getReplies()` и `iterateReplies()` загружают ответы;
+- `report()` отправляет жалобу.
 
 `get…()` загружает страницу связанной коллекции, `iterate…()` возвращает пагинатор по ней.
-Поля `post.comments` и `comment.replies` с предварительно загруженными элементами остаются
-нетронутыми.
+Поля `post.comments` и `comment.replies` содержат только предварительно загруженные элементы
+ответа, тоже с действиями.
 
 ### Пользователь
 
 Авторы постов и комментариев, профили, участники уведомлений и пользователи из списков получают
 методы `get()`, `follow()`, `unfollow()`, `block()`, `unblock()`, а также коллекции:
 `getPosts()`, `getLikedPosts()`, `getFollowers()`, `getFollowing()` и их варианты `iterate…()`.
+`report()` отправляет жалобу на пользователя.
+
+`report()` у поста, комментария и пользователя сам подставляет тип и идентификатор объекта:
+
+```ts
+import { ReportReason } from 'itd-api';
+
+await post.report({ reason: ReportReason.Spam });
+```
+
+### Хэштег
+
+Хэштеги из `hashtags.trending()` и `search.all()` получают `getPosts()` и `iteratePosts()`:
+
+```ts
+const [hashtag] = await itd.hashtags.trending();
+const page = await hashtag?.getPosts({ limit: 20 });
+```
 
 ### Вложение
 
@@ -125,6 +145,7 @@ await target.approve(); // либо target.reject()
 | `user.get()` | `HydratedUser<PublicProfile>` |
 | `user.follow()` | `FollowResult` |
 | `notification.markRead()` | число непрочитанных |
+| `report()` | `Report` |
 
 ```ts
 const result = await post.like();
@@ -208,7 +229,7 @@ await stream.connect();
 передал его идентификатор. Поле `comment` присутствует у уведомлений о комментариях, ответах,
 упоминаниях и реакциях на комментарии.
 
-Гидратированный контекст доступен в `sequentialize`, `use()`, `onUpdate()`,
+Гидратированный контекст доступен в `use()`, `onUpdate()`,
 `onNotification()` и событиях `notification`, `middlewareError` и `handlerError`. Событие
 `message` и поле `context.raw` содержат исходные данные транспорта.
 
@@ -258,16 +279,16 @@ await post.like();
 
 ```ts
 const itd = hydrateClient(new ItdClient());
-// itd: HydrateFlavor<ItdClient>
+// itd: HydratedClient<ItdClient>
 ```
 
-Для полей приложения и функций-фабрик можно использовать `HydrateFlavor` явно:
+Для полей приложения и функций-фабрик можно использовать `HydratedClient` явно:
 
 ```ts
 import type { ItdClient } from 'itd-api';
-import type { HydrateFlavor, HydratedPost } from '@itd-api/hydrate';
+import type { HydratedClient, HydratedPost } from '@itd-api/hydrate';
 
-type AppClient = HydrateFlavor<ItdClient>;
+type AppClient = HydratedClient<ItdClient>;
 
 async function publish(itd: AppClient): Promise<HydratedPost> {
   return itd.posts.create({ content: 'Новая запись' });
@@ -285,7 +306,7 @@ const me: HydratedUser<MyProfile> = await itd.users.me();
 ```
 
 Страница и пагинатор — `HydratedPage<Item>` и `HydratedPaginator<Item>`, тип гидратированного
-ресурса — `HydrateFlavor['posts']`.
+ресурса — `HydratedClient['posts']`.
 
 Методы моделей неперечисляемы: `Object.keys()`, оператор расширения и JSON сохраняют поля ответа
 API. Повторная гидратация того же клиента возвращает тот же фасад.

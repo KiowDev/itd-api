@@ -2,7 +2,7 @@ import type { HydrationContext } from './context.types.js';
 
 const MODEL_CONTEXTS = new WeakMap<object, HydrationContext>();
 
-/** Привязывает модель к клиенту и его функции рекурсивной гидратации. */
+/** Привязывает модель к контексту клиента. */
 export function bindModelContext(target: object, context: HydrationContext): void {
   MODEL_CONTEXTS.set(target, context);
 }

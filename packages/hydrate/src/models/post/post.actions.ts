@@ -1,5 +1,7 @@
+import { ReportTargetType } from 'itd-api';
 import { resourceAction } from '../../actions/action.factory.js';
-import type { ModelAction } from '../../runtime/records.types.js';
+import type { ModelAction } from '../../actions/action.types.js';
+import { reportAction } from '../../actions/report.factory.js';
 import { modelId } from '../../runtime/records.utils.js';
 import type { HydratedPostActions } from './post.types.js';
 
@@ -19,4 +21,5 @@ export const POST_ACTIONS = Object.freeze({
   restore: resourceAction('posts', 'restore', modelId),
   pin: resourceAction('posts', 'pin', modelId),
   unpin: resourceAction('posts', 'unpin', modelId),
+  report: reportAction(ReportTargetType.Post),
 } satisfies Record<keyof HydratedPostActions, ModelAction>);

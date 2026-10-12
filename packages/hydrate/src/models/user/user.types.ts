@@ -1,5 +1,6 @@
 import type { UserBase } from 'itd-api';
 import type { ResourceAction } from '../../actions/action.types.js';
+import type { ReportAction } from '../../actions/report.types.js';
 import type { ModelKind } from '../model.constants.js';
 import type { HydratedModel } from '../model.types.js';
 
@@ -31,6 +32,8 @@ export interface HydratedUserActions {
   readonly getFollowing: ResourceAction<'users', 'following'>;
   /** Перебирает подписки постранично. */
   readonly iterateFollowing: ResourceAction<'users', 'iterateFollowing'>;
+  /** Отправляет жалобу. */
+  readonly report: ReportAction;
 }
 
 /** Пользователь любого вида — автор, участник уведомления, профиль — с действиями над ним. */

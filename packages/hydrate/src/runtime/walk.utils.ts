@@ -9,8 +9,6 @@ import { decorate, isReservedModelKey } from './decorate.utils.js';
 import type { AnyRecord } from './records.types.js';
 import { isObject, isRecord } from './records.utils.js';
 
-type Seen = WeakMap<object, unknown>;
-
 /**
  * Гидратирует значение по форме `shape`.
  *
@@ -21,7 +19,12 @@ export function hydrateValue(value: unknown, shape: ShapeBase, context: Hydratio
   return walk(value, shape as Shape, context, new WeakMap());
 }
 
-function walk(value: unknown, shape: Shape, context: HydrationContext, seen: Seen): unknown {
+function walk(
+  value: unknown,
+  shape: Shape,
+  context: HydrationContext,
+  seen: WeakMap<object, unknown>,
+): unknown {
   if (!isObject(value)) return value;
   if (isPromiseLike(value)) {
     return Promise.resolve(value).then((resolved) => hydrateValue(resolved, shape, context));
@@ -45,7 +48,7 @@ function walkModel(
   value: AnyRecord,
   kind: ModelKind,
   context: HydrationContext,
-  seen: Seen,
+  seen: WeakMap<object, unknown>,
 ): AnyRecord {
   if (hasModelContext(value, context)) return value;
   const target = copyRecord(value, MODEL_SCHEMAS[kind], context, seen, (key) =>
@@ -55,7 +58,12 @@ function walkModel(
   return target;
 }
 
-function walkList(value: unknown[], item: Shape, context: HydrationContext, seen: Seen): unknown[] {
+function walkList(
+  value: unknown[],
+  item: Shape,
+  context: HydrationContext,
+  seen: WeakMap<object, unknown>,
+): unknown[] {
   const result: unknown[] = [];
   seen.set(value, result);
   for (const element of value) result.push(walk(element, item, context, seen));
@@ -66,7 +74,7 @@ function copyRecord(
   value: AnyRecord,
   shapes: FieldShapes,
   context: HydrationContext,
-  seen: Seen,
+  seen: WeakMap<object, unknown>,
   skip?: (key: PropertyKey) => boolean,
 ): AnyRecord {
   const target = Object.create(Object.getPrototypeOf(value)) as AnyRecord;
@@ -90,7 +98,7 @@ function hydrateDescriptor(
   descriptor: PropertyDescriptor,
   shape: Shape,
   context: HydrationContext,
-  seen: Seen,
+  seen: WeakMap<object, unknown>,
 ): PropertyDescriptor {
   if ('value' in descriptor) {
     return { ...descriptor, value: walk(descriptor.value, shape, context, seen) };

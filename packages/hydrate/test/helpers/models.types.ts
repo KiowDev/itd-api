@@ -1,6 +1,7 @@
 import type {
   Attachment,
   Comment,
+  Hashtag,
   Notification,
   Paginator,
   PostBase,
@@ -16,7 +17,8 @@ type CoreModel =
   | Attachment
   | Notification
   | ShopDeliveryCity
-  | QrLoginTarget;
+  | QrLoginTarget
+  | Hashtag;
 
 type Deeper<Depth extends unknown[]> = [...Depth, unknown];
 

@@ -1,5 +1,6 @@
 import type { Post, PostBase } from 'itd-api';
 import type { ResourceAction } from '../../actions/action.types.js';
+import type { ReportAction } from '../../actions/report.types.js';
 import type { ModelKind } from '../model.constants.js';
 import type { HydratedModel } from '../model.types.js';
 
@@ -35,6 +36,8 @@ export interface HydratedPostActions {
   readonly pin: ResourceAction<'posts', 'pin'>;
   /** Открепляет пост. */
   readonly unpin: ResourceAction<'posts', 'unpin'>;
+  /** Отправляет жалобу. */
+  readonly report: ReportAction;
 }
 
 /** Пост ленты или пост, на который ссылается репост, с действиями и гидратированными моделями. */

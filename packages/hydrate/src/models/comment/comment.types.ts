@@ -1,5 +1,6 @@
 import type { Comment } from 'itd-api';
 import type { ResourceAction } from '../../actions/action.types.js';
+import type { ReportAction } from '../../actions/report.types.js';
 import type { ModelKind } from '../model.constants.js';
 import type { HydratedModel } from '../model.types.js';
 
@@ -21,6 +22,8 @@ export interface HydratedCommentActions {
   readonly getReplies: ResourceAction<'comments', 'replies'>;
   /** Перебирает ответы постранично. */
   readonly iterateReplies: ResourceAction<'comments', 'iterateReplies'>;
+  /** Отправляет жалобу. */
+  readonly report: ReportAction;
 }
 
 /** Комментарий с действиями и гидратированными вложенными моделями. */

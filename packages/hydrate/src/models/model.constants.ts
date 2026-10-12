@@ -1,5 +1,7 @@
 import { list, model } from '../shapes/shape.factory.js';
 import type { FieldShapes } from '../shapes/shape.types.js';
+import type { ModelReference } from './model.types.js';
+import { notificationCommentId } from './notification/notification.actions.js';
 
 export const ModelKind = Object.freeze({
   Post: 'post',
@@ -9,6 +11,7 @@ export const ModelKind = Object.freeze({
   Notification: 'notification',
   ShopDeliveryCity: 'shop-delivery-city',
   QrLoginTarget: 'qr-login-target',
+  Hashtag: 'hashtag',
 } as const);
 export type ModelKind = (typeof ModelKind)[keyof typeof ModelKind];
 
@@ -35,4 +38,14 @@ export const MODEL_SCHEMAS = {
   [ModelKind.Notification]: { actors: list(user) },
   [ModelKind.ShopDeliveryCity]: {},
   [ModelKind.QrLoginTarget]: {},
+  [ModelKind.Hashtag]: {},
 } satisfies { readonly [K in ModelKind]: FieldShapes };
+
+/** Поля-ссылки, которые модель получает при гидратации. */
+export const MODEL_REFERENCES: {
+  readonly [K in ModelKind]?: Readonly<Record<string, ModelReference>>;
+} = {
+  [ModelKind.Notification]: {
+    comment: { model: ModelKind.Comment, id: notificationCommentId },
+  },
+};

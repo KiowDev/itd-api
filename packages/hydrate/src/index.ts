@@ -1,3 +1,4 @@
+export type { HydratedClient } from './facades/client.types.js';
 export type {
   HydratedEventContext,
   HydratedEventHandler,
@@ -5,7 +6,6 @@ export type {
   HydratedNotificationContext,
   HydratedNotificationEvent,
   HydratedNotificationEvents,
-  HydratedNotificationEventsEvent,
   HydratedNotificationFilter,
   HydratedNotificationSelector,
 } from './facades/events.types.js';
@@ -15,6 +15,7 @@ export type {
   HydratedAttachmentActions,
 } from './models/attachment/attachment.types.js';
 export type { HydratedComment, HydratedCommentActions } from './models/comment/comment.types.js';
+export type { HydratedHashtag, HydratedHashtagActions } from './models/hashtag/hashtag.types.js';
 export type {
   HydratedCommentReference,
   HydratedNotification,
@@ -30,5 +31,4 @@ export type {
   HydratedShopDeliveryCityActions,
 } from './models/shop-delivery-city/shop-delivery-city.types.js';
 export type { HydratedUser, HydratedUserActions } from './models/user/user.types.js';
-export type { HydrateFlavor } from './results/results.types.js';
 export type { HydratedPage, HydratedPaginator } from './shapes/shape.types.js';

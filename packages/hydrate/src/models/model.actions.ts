@@ -1,6 +1,7 @@
-import type { ModelAction } from '../runtime/records.types.js';
+import type { ModelAction } from '../actions/action.types.js';
 import { ATTACHMENT_ACTIONS } from './attachment/attachment.actions.js';
 import { COMMENT_ACTIONS } from './comment/comment.actions.js';
+import { HASHTAG_ACTIONS } from './hashtag/hashtag.actions.js';
 import { ModelKind } from './model.constants.js';
 import { NOTIFICATION_ACTIONS } from './notification/notification.actions.js';
 import { POST_ACTIONS } from './post/post.actions.js';
@@ -17,4 +18,5 @@ export const MODEL_ACTIONS = Object.freeze({
   [ModelKind.Notification]: NOTIFICATION_ACTIONS,
   [ModelKind.ShopDeliveryCity]: SHOP_DELIVERY_CITY_ACTIONS,
   [ModelKind.QrLoginTarget]: QR_LOGIN_TARGET_ACTIONS,
+  [ModelKind.Hashtag]: HASHTAG_ACTIONS,
 } satisfies { readonly [K in ModelKind]: Readonly<Record<string, ModelAction>> });

@@ -8,6 +8,7 @@ const post = model(ModelKind.Post);
 const comment = model(ModelKind.Comment);
 const user = model(ModelKind.User);
 const notification = model(ModelKind.Notification);
+const hashtag = model(ModelKind.Hashtag);
 
 /** Формы результатов методов ресурсов, которые возвращают модели. */
 export const RESOURCE_RESULTS = {
@@ -55,11 +56,12 @@ export const RESOURCE_RESULTS = {
     iterate: paginator(notification),
   },
   hashtags: {
+    trending: list(hashtag),
     posts: page(post),
     iteratePosts: paginator(post),
   },
   search: {
-    all: fields({ users: list(user) }),
+    all: fields({ users: list(user), hashtags: list(hashtag) }),
   },
   shop: {
     delivery: {

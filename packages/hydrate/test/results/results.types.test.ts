@@ -9,18 +9,18 @@ import {
 } from 'itd-api';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
+  type HydratedClient,
   type HydratedComment,
   type HydratedPaginator,
   type HydratedPost,
   type HydratedShopDeliveryCity,
   type HydratedUser,
-  type HydrateFlavor,
   hydrateClient,
 } from '../../src/index.js';
 
-describe('HydrateFlavor', () => {
+describe('HydratedClient', () => {
   it('выводит гидратированные результаты без ручного приведения', () => {
-    const check = async (client: HydrateFlavor<ItdClient>) => {
+    const check = async (client: HydratedClient<ItdClient>) => {
       const post = await client.posts.get('post-id');
       const profile = await post.author.get();
       const comment = await post.comment('Текст');
@@ -53,7 +53,7 @@ describe('HydrateFlavor', () => {
   });
 
   it('добавляет действия городу доставки', () => {
-    type CitiesResult = ReturnType<HydrateFlavor<ItdClient>['shop']['delivery']['cities']>;
+    type CitiesResult = ReturnType<HydratedClient<ItdClient>['shop']['delivery']['cities']>;
     expectTypeOf<CitiesResult>().toEqualTypeOf<Promise<HydratedShopDeliveryCity[]>>();
   });
 

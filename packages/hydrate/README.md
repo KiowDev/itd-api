@@ -33,30 +33,31 @@ const wall = await author.getPosts({ limit: 20 });
 ```
 
 Тип результата выводится автоматически. Для собственного типа клиента можно явно применить
-`HydrateFlavor`:
+`HydratedClient`:
 
 ```ts
 import type { ItdClient } from 'itd-api';
-import type { HydrateFlavor } from '@itd-api/hydrate';
+import type { HydratedClient } from '@itd-api/hydrate';
 
-type AppClient = HydrateFlavor<ItdClient>;
+type AppClient = HydratedClient<ItdClient>;
 ```
 
 ## Методы моделей
 
 | Модель | Методы |
 |---|---|
-| пост | `get()`, `like()`, `unlike()`, `comment()`, `voiceComment()`, `getComments()`, `iterateComments()`, `update()`, `vote()`, `repost()`, `unrepost()`, `remove()`, `restore()`, `pin()`, `unpin()` |
-| комментарий | `like()`, `unlike()`, `reply()`, `update()`, `remove()`, `restore()`, `getReplies()`, `iterateReplies()` |
-| пользователь: автор, профиль, участник уведомления, пользователь из списка | `get()`, `follow()`, `unfollow()`, `block()`, `unblock()`, `getPosts()`, `iteratePosts()`, `getLikedPosts()`, `iterateLikedPosts()`, `getFollowers()`, `iterateFollowers()`, `getFollowing()`, `iterateFollowing()` |
+| пост | `get()`, `like()`, `unlike()`, `comment()`, `voiceComment()`, `getComments()`, `iterateComments()`, `update()`, `vote()`, `repost()`, `unrepost()`, `remove()`, `restore()`, `pin()`, `unpin()`, `report()` |
+| комментарий | `like()`, `unlike()`, `reply()`, `update()`, `remove()`, `restore()`, `getReplies()`, `iterateReplies()`, `report()` |
+| пользователь: автор, профиль, участник уведомления, пользователь из списка | `get()`, `follow()`, `unfollow()`, `block()`, `unblock()`, `getPosts()`, `iteratePosts()`, `getLikedPosts()`, `iterateLikedPosts()`, `getFollowers()`, `iterateFollowers()`, `getFollowing()`, `iterateFollowing()`, `report()` |
 | вложение | `isImage()`, `isVideo()`, `isAudio()` |
 | уведомление | `getPost()`, `markRead()`, `comment` |
+| хэштег из `hashtags.trending()` и `search.all()` | `getPosts()`, `iteratePosts()` |
 | город доставки | `points()` |
 | устройство из `scanQrLogin()` | `approve()`, `reject()` |
 
 `get…()` загружает страницу связанной коллекции, `iterate…()` возвращает пагинатор по ней.
-Поля `post.comments` и `comment.replies` по-прежнему содержат предварительно загруженные
-элементы из исходной модели.
+Поля `post.comments` и `comment.replies` содержат только предварительно загруженные элементы
+ответа, тоже с действиями.
 Проверки вложений одновременно сужают поле `type` в TypeScript.
 `approve()` и `reject()` помнят секреты кода, которым получено описание устройства, поэтому
 `{ qrId, secret }` повторять не нужно.
@@ -90,6 +91,7 @@ for await (const post of itd.posts.iterate({ limit: 20 })) {
 | `user.get()` | `HydratedUser<PublicProfile>` |
 | `user.follow()` | `FollowResult` |
 | `notification.markRead()` | число непрочитанных |
+| `report()` | `Report` |
 
 ```ts
 const result = await post.like();
@@ -147,7 +149,7 @@ await stream.connect();
 содержит ссылку `{ id }` с действиями комментария. Для остальных видов уведомлений эти
 связанные сущности отсутствуют.
 
-Гидратированный контекст передаётся в `sequentialize`, `use()`, `onUpdate()`,
+Гидратированный контекст передаётся в `use()`, `onUpdate()`,
 `onNotification()` и обработчики нормализованных событий. Событие `message` и поле `raw`
 сохраняют исходные данные транспорта.
 
@@ -160,4 +162,4 @@ await stream.connect();
 
 Пользователь любого вида — `HydratedUser<T>`, пост и оригинал репоста — `HydratedPost<T>`,
 страница и пагинатор — `HydratedPage<Item>` и `HydratedPaginator<Item>`. Тип гидратированного
-ресурса — `HydrateFlavor['posts']`.
+ресурса — `HydratedClient['posts']`.

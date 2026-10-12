@@ -1,4 +1,4 @@
-import { crypt } from '@itd-api/crypto';
+import { crypt, encodeInvisible } from '@itd-api/crypto';
 import { createMockServer, notificationFixture } from '@itd-api/testing';
 import {
   EventRouter,
@@ -164,6 +164,106 @@ describe('гидратация событий', () => {
       'user-alice',
     );
     server.assertNoUnsupportedRequests();
+    stream.disconnect();
+  });
+
+  it('гидратирует уведомление заново, если middleware заменил его копией', async () => {
+    const server = createMockServer({ seed });
+    const transport = server.notificationEvents({ as: 'bob' });
+    const itd = hydrateClient(
+      new ItdClient({
+        ...server.clientOptions({ as: 'bob' }),
+        events: { notifications: { transport, syncCount: false } },
+      }),
+    );
+    const stream = itd.notifications.events;
+    stream.use(crypt());
+
+    const handled: HydratedNotificationEvent['notification'][] = [];
+    const events: HydratedNotificationEvent[] = [];
+    stream.onNotification(
+      {
+        type: NotificationType.PostComment,
+        predicate: ({ update }) => typeof update.data.notification.getPost === 'function',
+      },
+      ({ update }) => {
+        handled.push(update.data.notification);
+      },
+    );
+    stream.on('notification', (event) => events.push(event));
+
+    await stream.connect();
+    await transport.waitForConnection();
+    transport.notification({ ...commentNotification(), preview: encodeInvisible('Секрет') });
+    await stream.drain();
+
+    const notification = handled[0];
+    expect(notification?.decoded?.preview?.text).toBe('Секрет');
+    expect(typeof notification?.getPost).toBe('function');
+    expect(notification?.comment?.id).toBe('comment-1');
+    expect(events[0]?.notification).toBe(notification);
+    stream.disconnect();
+  });
+
+  it('сохраняет маршруты, действовавшие при постановке события в очередь', async () => {
+    const { transport, stream } = await eventsClient();
+    const routed: string[] = [];
+    let releaseFirst: () => void = () => undefined;
+    let firstStarted: () => void = () => undefined;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstEntered = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+
+    const router = new EventRouter((context: HydratedEventContext) => context.update.type);
+    stream.use(router);
+    stream.onNotification(NotificationType.PostComment, async ({ update }) => {
+      if (update.data.notification.id === 'first') {
+        firstStarted();
+        await firstBlocked;
+      }
+    });
+
+    transport.notification({ ...commentNotification(), id: 'first' });
+    await firstEntered;
+    transport.notification({ ...commentNotification(), id: 'second' });
+    router.route(NotificationUpdateType.Notification, async ({ update }, next) => {
+      if (update.type === NotificationUpdateType.Notification) {
+        routed.push(update.data.notification.id);
+      }
+      await next();
+    });
+    releaseFirst();
+    await stream.drain();
+    transport.notification({ ...commentNotification(), id: 'third' });
+    await stream.drain();
+
+    expect(routed).toEqual(['third']);
+    stream.disconnect();
+  });
+
+  it('сохраняет действия при возврате из next() после преобразования middleware', async () => {
+    const { transport, stream } = await eventsClient();
+    const handled: HydratedNotificationEvent['notification'][] = [];
+    const errors: unknown[] = [];
+    stream.on('middlewareError', ({ error }) => errors.push(error));
+    stream.use(async (context, next) => {
+      await next();
+      if (context.update.type === NotificationUpdateType.Notification) {
+        const notification = context.update.data.notification;
+        await notification.getPost();
+        handled.push(notification);
+      }
+    });
+    stream.use(crypt());
+
+    transport.notification({ ...commentNotification(), preview: encodeInvisible('Секрет') });
+    await stream.drain();
+
+    expect(errors).toEqual([]);
+    expect(handled[0]?.decoded?.preview?.text).toBe('Секрет');
     stream.disconnect();
   });
 

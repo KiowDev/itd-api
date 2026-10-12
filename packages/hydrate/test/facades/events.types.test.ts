@@ -1,16 +1,16 @@
 import { type ItdClient, NotificationType, NotificationUpdateType } from 'itd-api';
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
+  HydratedClient,
   HydratedComment,
   HydratedNotification,
   HydratedNotificationEvents,
   HydratedPost,
-  HydrateFlavor,
 } from '../../src/index.js';
 
 describe('типы событий', () => {
   it('выводит гидратированные уведомления в обработчиках', () => {
-    const check = (client: HydrateFlavor<ItdClient>) => {
+    const check = (client: HydratedClient<ItdClient>) => {
       const stream = client.notifications.events;
       expectTypeOf(stream).toEqualTypeOf<HydratedNotificationEvents>();
 

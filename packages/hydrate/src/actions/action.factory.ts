@@ -1,9 +1,7 @@
 import type { ItdClient } from 'itd-api';
 import { modelContext } from '../runtime/context.utils.js';
-import type { AnyRecord, ModelAction } from '../runtime/records.types.js';
-import type { ActionResource } from './action.types.js';
-
-type Method = (...args: unknown[]) => unknown;
+import type { AnyRecord } from '../runtime/records.types.js';
+import type { ActionResource, ModelAction } from './action.types.js';
 
 /**
  * Действие, которое вызывает `method` ресурса `resource` гидратированного фасада:
@@ -16,8 +14,11 @@ export function resourceAction<R extends ActionResource>(
 ): ModelAction {
   return function action(this: AnyRecord, ...args: unknown[]): unknown {
     const target = modelContext(this).facade[resource] as unknown as Readonly<
-      Record<string, Method>
+      Record<string, (...args: unknown[]) => unknown>
     >;
-    return Reflect.apply(target[method] as Method, target, [idOf(this), ...args]);
+    return Reflect.apply(target[method] as (...args: unknown[]) => unknown, target, [
+      idOf(this),
+      ...args,
+    ]);
   };
 }

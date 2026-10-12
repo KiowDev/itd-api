@@ -1,6 +1,7 @@
 import type { QrLoginSecrets } from 'itd-api';
+import type { ModelAction } from '../../actions/action.types.js';
 import { modelContext } from '../../runtime/context.utils.js';
-import type { AnyRecord, ModelAction } from '../../runtime/records.types.js';
+import type { AnyRecord } from '../../runtime/records.types.js';
 import { isObject } from '../../runtime/records.utils.js';
 import type { HydratedQrLoginTargetActions } from './qr-login.types.js';
 
