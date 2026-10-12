@@ -1,72 +1,13 @@
-import { modelContext } from '../../runtime/context.utils.js';
-import type { AnyRecord } from '../../runtime/records.types.js';
-import { userReference } from '../../runtime/records.utils.js';
-
-function userGet(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.users.get, context.client.users, [
-      userReference(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function userFollow(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.users.follow, context.client.users, [
-      userReference(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function userUnfollow(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.users.unfollow, context.client.users, [
-      userReference(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function userBlock(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.users.block, context.client.users, [
-      userReference(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function userUnblock(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.users.unblock, context.client.users, [
-      userReference(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function userPosts(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.byUser, context.client.posts, [
-      userReference(this),
-      ...args,
-    ]) as unknown,
-  );
-}
+import { resourceAction } from '../../actions/action.factory.js';
+import type { ModelAction } from '../../runtime/records.types.js';
+import { modelId } from '../../runtime/records.utils.js';
+import type { HydratedUserActions } from './user.types.js';
 
 export const USER_ACTIONS = Object.freeze({
-  get: userGet,
-  follow: userFollow,
-  unfollow: userUnfollow,
-  block: userBlock,
-  unblock: userUnblock,
-  posts: userPosts,
-});
+  get: resourceAction('users', 'get', modelId),
+  follow: resourceAction('users', 'follow', modelId),
+  unfollow: resourceAction('users', 'unfollow', modelId),
+  block: resourceAction('users', 'block', modelId),
+  unblock: resourceAction('users', 'unblock', modelId),
+  posts: resourceAction('posts', 'byUser', modelId),
+} satisfies Record<keyof HydratedUserActions, ModelAction>);

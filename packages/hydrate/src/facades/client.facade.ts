@@ -1,17 +1,36 @@
 import type { ItdClient, NotificationEvents } from 'itd-api';
-import { createHydrationContext } from '../graph.js';
-import { HydratableResource } from '../results/results.constants.js';
-import type { HydrateFlavor } from '../results/results.types.js';
+import { RESOURCE_BINDINGS, RESOURCE_RESULTS } from '../results/results.constants.js';
+import type { BindingMap, HydrateFlavor, ResultMap } from '../results/results.types.js';
+import type { HydrationContext } from '../runtime/context.types.js';
 import { isObject } from '../runtime/records.utils.js';
-import { authFacade } from './auth.js';
 import { createNotificationEvents } from './events.facade.js';
 import { resourceFacade } from './resource.facade.js';
 
-const HYDRATABLE_RESOURCES = new Set<PropertyKey>(Object.values(HydratableResource));
+const RESULTS: ResultMap = RESOURCE_RESULTS;
+const BINDINGS: BindingMap = RESOURCE_BINDINGS;
 const CLIENT_FACADES = new WeakMap<ItdClient, ItdClient>();
 const FACADE_CLIENTS = new WeakMap<ItdClient, ItdClient>();
 
-/** Собирает и кэширует внутренний proxy-фасад одного исходного клиента. */
+function notificationsFacade(
+  resource: object,
+  results: ResultMap,
+  context: HydrationContext,
+): object {
+  const wrapped = resourceFacade(resource, results, undefined, context);
+  let events: unknown;
+  return new Proxy(wrapped, {
+    get(target, key, receiver) {
+      if (key !== 'events') return Reflect.get(target, key, receiver) as unknown;
+      events ??= createNotificationEvents(
+        context,
+        (resource as { readonly events: NotificationEvents }).events,
+      );
+      return events;
+    },
+  });
+}
+
+/** Собирает и кэширует фасад одного исходного клиента. */
 export function createClientFacade<Client extends ItdClient>(
   client: Client,
 ): HydrateFlavor<Client> {
@@ -19,33 +38,28 @@ export function createClientFacade<Client extends ItdClient>(
   const existing = CLIENT_FACADES.get(rawClient);
   if (existing !== undefined) return existing as unknown as HydrateFlavor<Client>;
 
-  const context = createHydrationContext(rawClient);
   const resources = new Map<PropertyKey, unknown>();
   const methods = new Map<PropertyKey, unknown>();
-  let facade: ItdClient;
 
-  facade = new Proxy(rawClient, {
+  const facade: ItdClient = new Proxy(rawClient, {
     get(target, key) {
       const member = Reflect.get(target, key, target) as unknown;
 
-      if (HYDRATABLE_RESOURCES.has(key) && isObject(member)) {
+      const results =
+        typeof key === 'string' && Object.hasOwn(RESULTS, key) ? RESULTS[key] : undefined;
+      if (results !== undefined && isObject(member)) {
         const cached = resources.get(key);
         if (cached !== undefined) return cached;
-        let wrapped = resourceFacade(member, context);
-        if (key === HydratableResource.Auth) wrapped = authFacade(wrapped, context);
-        if (key === HydratableResource.Notifications) {
-          let eventFacade: unknown;
-          wrapped = new Proxy(wrapped, {
-            get(target, property, receiver) {
-              if (property !== 'events') return Reflect.get(target, property, receiver) as unknown;
-              eventFacade ??= createNotificationEvents(
+        const resultMap = results as ResultMap;
+        const wrapped =
+          key === 'notifications'
+            ? notificationsFacade(member, resultMap, context)
+            : resourceFacade(
+                member,
+                resultMap,
+                BINDINGS[key as string] as BindingMap | undefined,
                 context,
-                (member as { readonly events: NotificationEvents }).events,
               );
-              return eventFacade;
-            },
-          });
-        }
         resources.set(key, wrapped);
         return wrapped;
       }
@@ -62,6 +76,7 @@ export function createClientFacade<Client extends ItdClient>(
       return wrapped;
     },
   });
+  const context: HydrationContext = { facade: facade as unknown as HydrateFlavor };
 
   CLIENT_FACADES.set(rawClient, facade);
   FACADE_CLIENTS.set(facade, rawClient);

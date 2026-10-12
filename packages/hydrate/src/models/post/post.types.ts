@@ -1,44 +1,29 @@
-import type { OriginalPost, Post, PostsResource } from 'itd-api';
-import type { HydratedMethodResult, TailParameters } from '../../actions/action.types.js';
+import type { Post, PostBase } from 'itd-api';
+import type { ResourceAction } from '../../actions/action.types.js';
+import type { ModelKind } from '../model.constants.js';
 import type { HydratedModel } from '../model.types.js';
 
 /** Действия над постом. Идентификатор поста подставляется автоматически. */
 export interface HydratedPostActions {
   /** Загружает свежее состояние поста. */
-  get(...args: TailParameters<PostsResource['get']>): HydratedMethodResult<PostsResource['get']>;
+  readonly get: ResourceAction<'posts', 'get'>;
   /** Ставит реакцию. */
-  like(...args: TailParameters<PostsResource['like']>): HydratedMethodResult<PostsResource['like']>;
+  readonly like: ResourceAction<'posts', 'like'>;
   /** Убирает реакцию. */
-  unlike(
-    ...args: TailParameters<PostsResource['unlike']>
-  ): HydratedMethodResult<PostsResource['unlike']>;
+  readonly unlike: ResourceAction<'posts', 'unlike'>;
   /** Добавляет комментарий. */
-  comment(
-    ...args: TailParameters<PostsResource['comment']>
-  ): HydratedMethodResult<PostsResource['comment']>;
+  readonly comment: ResourceAction<'posts', 'comment'>;
   /** Делает репост. */
-  repost(
-    ...args: TailParameters<PostsResource['repost']>
-  ): HydratedMethodResult<PostsResource['repost']>;
+  readonly repost: ResourceAction<'posts', 'repost'>;
   /** Удаляет пост. */
-  remove(
-    ...args: TailParameters<PostsResource['remove']>
-  ): HydratedMethodResult<PostsResource['remove']>;
+  readonly remove: ResourceAction<'posts', 'remove'>;
   /** Восстанавливает удалённый пост. */
-  restore(...args: TailParameters<PostsResource['restore']>): Promise<HydratedPost>;
+  readonly restore: ResourceAction<'posts', 'restore'>;
   /** Закрепляет пост. */
-  pin(...args: TailParameters<PostsResource['pin']>): HydratedMethodResult<PostsResource['pin']>;
+  readonly pin: ResourceAction<'posts', 'pin'>;
   /** Открепляет пост. */
-  unpin(
-    ...args: TailParameters<PostsResource['unpin']>
-  ): HydratedMethodResult<PostsResource['unpin']>;
+  readonly unpin: ResourceAction<'posts', 'unpin'>;
 }
 
-/** Пост с действиями и гидратированными вложенными моделями. */
-export type HydratedPost<T extends Post = Post> = HydratedModel<T, HydratedPostActions>;
-
-/** Пост, на который ссылается репост, с теми же методами, что и у поста. */
-export type HydratedOriginalPost<T extends OriginalPost = OriginalPost> = HydratedModel<
-  T,
-  HydratedPostActions
->;
+/** Пост ленты или пост, на который ссылается репост, с действиями и гидратированными моделями. */
+export type HydratedPost<T extends PostBase = Post> = HydratedModel<typeof ModelKind.Post, T>;

@@ -1,101 +1,16 @@
-import { modelContext } from '../../runtime/context.utils.js';
-import type { AnyRecord } from '../../runtime/records.types.js';
+import { resourceAction } from '../../actions/action.factory.js';
+import type { ModelAction } from '../../runtime/records.types.js';
 import { modelId } from '../../runtime/records.utils.js';
-
-function postGet(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.get, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function postLike(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.like, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function postUnlike(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.unlike, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function postComment(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.comment, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function postRepost(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.repost, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function postRemove(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.remove, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-async function postRestore(this: AnyRecord, ...args: unknown[]): Promise<unknown> {
-  const context = modelContext(this);
-  await Reflect.apply(context.client.posts.restore, context.client.posts, [modelId(this), ...args]);
-  return this;
-}
-
-function postPin(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.pin, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function postUnpin(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.posts.unpin, context.client.posts, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
+import type { HydratedPostActions } from './post.types.js';
 
 export const POST_ACTIONS = Object.freeze({
-  get: postGet,
-  like: postLike,
-  unlike: postUnlike,
-  comment: postComment,
-  repost: postRepost,
-  remove: postRemove,
-  restore: postRestore,
-  pin: postPin,
-  unpin: postUnpin,
-});
+  get: resourceAction('posts', 'get', modelId),
+  like: resourceAction('posts', 'like', modelId),
+  unlike: resourceAction('posts', 'unlike', modelId),
+  comment: resourceAction('posts', 'comment', modelId),
+  repost: resourceAction('posts', 'repost', modelId),
+  remove: resourceAction('posts', 'remove', modelId),
+  restore: resourceAction('posts', 'restore', modelId),
+  pin: resourceAction('posts', 'pin', modelId),
+  unpin: resourceAction('posts', 'unpin', modelId),
+} satisfies Record<keyof HydratedPostActions, ModelAction>);

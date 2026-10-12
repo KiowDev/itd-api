@@ -1,6 +1,6 @@
-import { actionsFor } from '../actions/registry.js';
 import { COMMENT_ACTIONS } from '../models/comment/comment.actions.js';
-import { ModelKind, type ModelKind as ModelKindValue } from '../models/model.constants.js';
+import { MODEL_ACTIONS } from '../models/model.actions.js';
+import { ModelKind } from '../models/model.constants.js';
 import { notificationCommentId } from '../models/notification/notification.actions.js';
 import type { HydrationContext } from './context.types.js';
 import { bindModelContext } from './context.utils.js';
@@ -41,9 +41,10 @@ function defineActions(target: AnyRecord, actions: Readonly<Record<string, Model
   }
 }
 
-export function isReservedModelKey(kind: ModelKindValue, key: PropertyKey): boolean {
+/** Занято ли имя поля действием модели вида `kind`. */
+export function isReservedModelKey(kind: ModelKind, key: PropertyKey): boolean {
   if (kind === ModelKind.Notification && key === 'comment') return true;
-  return typeof key === 'string' && Object.hasOwn(actionsFor(kind), key);
+  return typeof key === 'string' && Object.hasOwn(MODEL_ACTIONS[kind], key);
 }
 
 function createCommentReference(id: string, context: HydrationContext): AnyRecord {
@@ -59,26 +60,10 @@ function createCommentReference(id: string, context: HydrationContext): AnyRecor
   return reference;
 }
 
-/**
- * Привязывает готовый набор действий к модели, которую нельзя распознать по форме.
- *
- * Нужно там, где действия зависят не от полей ответа, а от того, каким вызовом он получен:
- * например, описание устройства из `scanQrLogin()` подтверждается секретами кода,
- * а в самом ответе их нет.
- */
-export function decorateWith(
-  target: AnyRecord,
-  actions: Readonly<Record<string, ModelAction>>,
-  context: HydrationContext,
-): void {
+/** Привязывает модель вида `kind` к контексту клиента и добавляет её действия. */
+export function decorate(target: AnyRecord, kind: ModelKind, context: HydrationContext): void {
   bindModelContext(target, context);
-  defineActions(target, actions);
-}
-
-/** Привязывает действия распознанной модели к контексту клиента. */
-export function decorate(target: AnyRecord, kind: ModelKindValue, context: HydrationContext): void {
-  bindModelContext(target, context);
-  defineActions(target, actionsFor(kind));
+  defineActions(target, MODEL_ACTIONS[kind]);
 
   if (kind !== ModelKind.Notification) return;
   const commentId = notificationCommentId(target);

@@ -1,34 +1,28 @@
-import type { Comment, CommentsResource } from 'itd-api';
-import type { HydratedMethodResult, TailParameters } from '../../actions/action.types.js';
+import type { Comment } from 'itd-api';
+import type { ResourceAction } from '../../actions/action.types.js';
+import type { ModelKind } from '../model.constants.js';
 import type { HydratedModel } from '../model.types.js';
 
 /** Действия над комментарием. Идентификатор комментария подставляется автоматически. */
 export interface HydratedCommentActions {
   /** Ставит реакцию. */
-  like(
-    ...args: TailParameters<CommentsResource['like']>
-  ): HydratedMethodResult<CommentsResource['like']>;
+  readonly like: ResourceAction<'comments', 'like'>;
   /** Убирает реакцию. */
-  unlike(
-    ...args: TailParameters<CommentsResource['unlike']>
-  ): HydratedMethodResult<CommentsResource['unlike']>;
+  readonly unlike: ResourceAction<'comments', 'unlike'>;
   /** Отвечает на комментарий. */
-  reply(
-    ...args: TailParameters<CommentsResource['reply']>
-  ): HydratedMethodResult<CommentsResource['reply']>;
+  readonly reply: ResourceAction<'comments', 'reply'>;
   /** Изменяет текст комментария. */
-  update(...args: TailParameters<CommentsResource['update']>): Promise<HydratedComment>;
+  readonly update: ResourceAction<'comments', 'update'>;
   /** Удаляет комментарий. */
-  remove(
-    ...args: TailParameters<CommentsResource['remove']>
-  ): HydratedMethodResult<CommentsResource['remove']>;
+  readonly remove: ResourceAction<'comments', 'remove'>;
   /** Восстанавливает удалённый комментарий. */
-  restore(...args: TailParameters<CommentsResource['restore']>): Promise<HydratedComment>;
+  readonly restore: ResourceAction<'comments', 'restore'>;
   /** Загружает страницу ответов. */
-  getReplies(
-    ...args: TailParameters<CommentsResource['replies']>
-  ): HydratedMethodResult<CommentsResource['replies']>;
+  readonly getReplies: ResourceAction<'comments', 'replies'>;
 }
 
 /** Комментарий с действиями и гидратированными вложенными моделями. */
-export type HydratedComment<T extends Comment = Comment> = HydratedModel<T, HydratedCommentActions>;
+export type HydratedComment<T extends Comment = Comment> = HydratedModel<
+  typeof ModelKind.Comment,
+  T
+>;

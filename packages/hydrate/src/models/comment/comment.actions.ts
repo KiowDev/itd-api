@@ -1,81 +1,14 @@
-import { modelContext } from '../../runtime/context.utils.js';
-import type { AnyRecord } from '../../runtime/records.types.js';
+import { resourceAction } from '../../actions/action.factory.js';
+import type { ModelAction } from '../../runtime/records.types.js';
 import { modelId } from '../../runtime/records.utils.js';
-
-function commentLike(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.comments.like, context.client.comments, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function commentUnlike(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.comments.unlike, context.client.comments, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-function commentReply(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.comments.reply, context.client.comments, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-async function commentUpdate(this: AnyRecord, ...args: unknown[]): Promise<unknown> {
-  const context = modelContext(this);
-  const updated = (await Reflect.apply(context.client.comments.update, context.client.comments, [
-    modelId(this),
-    ...args,
-  ])) as AnyRecord;
-  return context.hydrate({ ...this, ...updated });
-}
-
-function commentRemove(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.comments.remove, context.client.comments, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
-
-async function commentRestore(this: AnyRecord, ...args: unknown[]): Promise<unknown> {
-  const context = modelContext(this);
-  await Reflect.apply(context.client.comments.restore, context.client.comments, [
-    modelId(this),
-    ...args,
-  ]);
-  return this;
-}
-
-function commentGetReplies(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.comments.replies, context.client.comments, [
-      modelId(this),
-      ...args,
-    ]) as unknown,
-  );
-}
+import type { HydratedCommentActions } from './comment.types.js';
 
 export const COMMENT_ACTIONS = Object.freeze({
-  like: commentLike,
-  unlike: commentUnlike,
-  reply: commentReply,
-  update: commentUpdate,
-  remove: commentRemove,
-  restore: commentRestore,
-  getReplies: commentGetReplies,
-});
+  like: resourceAction('comments', 'like', modelId),
+  unlike: resourceAction('comments', 'unlike', modelId),
+  reply: resourceAction('comments', 'reply', modelId),
+  update: resourceAction('comments', 'update', modelId),
+  remove: resourceAction('comments', 'remove', modelId),
+  restore: resourceAction('comments', 'restore', modelId),
+  getReplies: resourceAction('comments', 'replies', modelId),
+} satisfies Record<keyof HydratedCommentActions, ModelAction>);

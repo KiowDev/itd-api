@@ -16,19 +16,10 @@ import {
   type OriginalPost,
   Paginator,
   type Post,
-  type PublicProfile,
-  type TelemetryBatch,
-  type ViewTracker,
+  SpanType,
 } from 'itd-api';
-import { describe, expect, expectTypeOf, it } from 'vitest';
-import {
-  type HydratedComment,
-  type HydratedPaginator,
-  type HydratedPost,
-  type HydratedProfile,
-  type HydrateFlavor,
-  hydrateClient,
-} from '../src/index.js';
+import { describe, expect, it } from 'vitest';
+import { type HydratedPost, hydrateClient } from '../src/index.js';
 
 const seed = {
   users: [
@@ -140,7 +131,7 @@ describe('hydrateClient', () => {
     const wall = await profile.posts({ limit: 1 });
     const created = await post.comment('Новый комментарий');
     const updated = await created.update('Исправленный комментарий');
-    const reply = await updated.reply('Ответ');
+    const reply = await created.reply('Ответ');
 
     expect(server.snapshot().posts.find((item) => item.id === post.id)?.likedBy).toContain(
       'user-bob',
@@ -150,17 +141,19 @@ describe('hydrateClient', () => {
     );
     expect(typeof profile.block).toBe('function');
     expect(typeof wall.items[0]?.remove).toBe('function');
-    expect(updated.content).toBe('Исправленный комментарий');
+    expect(updated).toEqual({
+      id: created.id,
+      content: 'Исправленный комментарий',
+      editedAt: expect.any(String),
+    });
     expect(typeof reply.restore).toBe('function');
 
     await reply.remove();
-    const restored = await reply.restore();
-    expect(restored.id).toBe(reply.id);
+    await expect(reply.restore()).resolves.toBeUndefined();
 
     const ownPost = await itd.posts.create({ content: 'Запись Боба' });
     await ownPost.remove();
-    const restoredPost = await ownPost.restore();
-    expect(restoredPost.id).toBe(ownPost.id);
+    await expect(ownPost.restore()).resolves.toBeUndefined();
     server.assertNoUnsupportedRequests();
   });
 
@@ -193,6 +186,89 @@ describe('hydrateClient', () => {
     expect(typeof post?.like).toBe('function');
     expect(reply?.replyTo?.id).toBe('user-alice');
     expect(typeof notification?.actors[0]?.follow).toBe('function');
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('распознаёт пост по пути, а не по набору полей', async () => {
+    const bare: Record<string, unknown> = { ...postFixture({ id: 'bare' }) };
+    delete bare.attachments;
+    delete bare.spans;
+    const mock = createMockFetch();
+    mock.get('/api/posts/bare', apiResponse(bare));
+    mock.post('/api/posts/bare/like', apiResponse({ liked: true, likesCount: 1 }));
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+
+    const post = await itd.posts.get('bare');
+    await post.like();
+
+    expect(typeof post.repost).toBe('function');
+    expect(mock.requests.at(-1)?.url).toContain('/api/posts/bare/like');
+  });
+
+  it('не добавляет действия объектам вне схемы', async () => {
+    const source = postFixture({
+      id: 'mention',
+      spans: [{ type: SpanType.Mention, offset: 0, length: 4, username: 'bob' }],
+    });
+    const mock = createMockFetch();
+    mock.get('/api/posts/mention', apiResponse(source));
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+
+    const post = await itd.posts.get('mention');
+    expect('follow' in (post.spans[0] ?? {})).toBe(false);
+  });
+
+  it('возвращает результат ресурса из действий ссылки на комментарий', async () => {
+    const server = createMockServer({
+      seed: {
+        ...seed,
+        comments: [
+          ...seed.comments,
+          {
+            id: 'comment-own',
+            postId: 'post-1',
+            authorId: 'user-bob',
+            content: 'Комментарий Боба',
+          },
+        ],
+        notifications: [
+          {
+            id: 'notification-reaction',
+            userId: 'user-bob',
+            type: NotificationType.CommentReaction,
+            actorIds: ['user-alice'],
+            entityId: 'comment-own',
+            parentEntityId: 'post-1',
+          },
+        ],
+      },
+    });
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
+
+    const comment = (await itd.notifications.list()).items[0]?.comment;
+    await expect(comment?.update('Правка')).resolves.toEqual({
+      id: 'comment-own',
+      content: 'Правка',
+      editedAt: expect.any(String),
+    });
+    await comment?.remove();
+    await expect(comment?.restore()).resolves.toBeUndefined();
     server.assertNoUnsupportedRequests();
   });
 
@@ -347,47 +423,5 @@ describe('hydrateClient', () => {
     await second.like();
 
     expect(calls).toEqual(['first', 'second']);
-  });
-});
-
-describe('типы', () => {
-  it('выводит гидратированные результаты без ручного приведения', () => {
-    const check = async (client: HydrateFlavor<ItdClient>) => {
-      const post = await client.posts.get('post-id');
-      const profile = await post.author.get();
-      const comments = await post.comment('Текст').then((value) => value.getReplies());
-      const refreshed = await post.get({
-        extensions: { cache: 'reload', crypto: { decrypt: false } },
-      });
-
-      expectTypeOf(post).toEqualTypeOf<HydratedPost>();
-      expectTypeOf(refreshed).toEqualTypeOf<HydratedPost>();
-      expectTypeOf(profile).toEqualTypeOf<HydratedProfile<PublicProfile>>();
-      expectTypeOf(comments.items[0]).toEqualTypeOf<HydratedComment | undefined>();
-      expectTypeOf(client.posts.iterate()).toEqualTypeOf<HydratedPaginator<Post>>();
-      expectTypeOf(client.telemetry.startView({ vs: 'view' })).toEqualTypeOf<ViewTracker>();
-      expectTypeOf(client.telemetry.batch()).toEqualTypeOf<TelemetryBatch>();
-    };
-
-    expectTypeOf(check).returns.toEqualTypeOf<Promise<void>>();
-  });
-
-  it('сохраняет дополнительные поля наследника клиента', () => {
-    class AppClient extends ItdClient {
-      readonly appName = 'example';
-    }
-
-    const client = hydrateClient(new AppClient());
-    expectTypeOf(client.appName).toEqualTypeOf<string>();
-    expect(client.appName).toBe('example');
-  });
-
-  it('не меняет типы обычного клиента', () => {
-    const check = async (client: ItdClient) => {
-      const post = await client.posts.get('post-id');
-      expectTypeOf(post).toEqualTypeOf<Post>();
-    };
-
-    expectTypeOf(check).returns.toEqualTypeOf<Promise<void>>();
   });
 });

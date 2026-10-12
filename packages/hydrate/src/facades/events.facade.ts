@@ -1,8 +1,13 @@
-import type { NotificationEventContext, NotificationEvents } from 'itd-api';
-import { hydrateResolved } from '../graph.js';
+import {
+  type NotificationEventContext,
+  type NotificationEvents,
+  NotificationUpdateType,
+} from 'itd-api';
 import type { HydrationContext } from '../runtime/context.types.js';
 import type { AnyRecord } from '../runtime/records.types.js';
-import type { HydratedEventContext, HydratedNotificationEvents } from './events.types.js';
+import { hydrateValue } from '../runtime/walk.utils.js';
+import { NOTIFICATION_UPDATE_SHAPE } from './events.constants.js';
+import type { HydratedNotificationEvents } from './events.types.js';
 
 const EVENT_FACADES = new WeakMap<NotificationEvents, NotificationEvents>();
 
@@ -14,28 +19,19 @@ function replaceValue(target: AnyRecord, key: PropertyKey, value: unknown): void
   Object.defineProperty(target, key, { ...descriptor, value });
 }
 
-function hydrateNotificationEventContext(
-  eventContext: NotificationEventContext,
+/**
+ * Оборачивает канал уведомлений: до пользовательских обработчиков контекст получает
+ * гидратированное обновление и фасад канала вместо исходного.
+ */
+export function createNotificationEvents(
   context: HydrationContext,
-  stream: () => NotificationEvents,
-  seen: WeakMap<object, unknown>,
-): HydratedEventContext {
-  const target = eventContext as unknown as AnyRecord;
-  replaceValue(target, 'update', hydrateResolved(eventContext.update, context, seen));
-  replaceValue(target, 'stream', stream());
-  return eventContext as unknown as HydratedEventContext;
-}
-
-function notificationEventsFacade(
   stream: NotificationEvents,
-  hydrateContext: (context: NotificationEventContext) => HydratedEventContext,
-): NotificationEvents {
+): HydratedNotificationEvents {
   const existing = EVENT_FACADES.get(stream);
-  if (existing) return existing;
+  if (existing) return existing as unknown as HydratedNotificationEvents;
 
   const methods = new Map<PropertyKey, unknown>();
-  let facade: NotificationEvents;
-  facade = new Proxy(stream, {
+  const facade: NotificationEvents = new Proxy(stream, {
     get(target, key) {
       const member = Reflect.get(target, key, target) as unknown;
       if (typeof member !== 'function') return member;
@@ -53,23 +49,17 @@ function notificationEventsFacade(
   });
   EVENT_FACADES.set(stream, facade);
 
-  stream.use(async (eventContext, next) => {
-    hydrateContext(eventContext);
+  stream.use(async (eventContext: NotificationEventContext, next) => {
+    const target = eventContext as unknown as AnyRecord;
+    if (eventContext.update.type === NotificationUpdateType.Notification) {
+      replaceValue(
+        target,
+        'update',
+        hydrateValue(eventContext.update, NOTIFICATION_UPDATE_SHAPE, context),
+      );
+    }
+    replaceValue(target, 'stream', facade);
     await next();
   });
-  return facade;
-}
-
-/** Оборачивает канал уведомлений и дополняет контексты до пользовательских обработчиков. */
-export function createNotificationEvents(
-  context: HydrationContext,
-  raw: NotificationEvents,
-): HydratedNotificationEvents {
-  const seen = new WeakMap<object, unknown>();
-  let facade!: NotificationEvents;
-  const hydrateContext = (eventContext: NotificationEventContext) =>
-    hydrateNotificationEventContext(eventContext, context, () => facade, seen);
-
-  facade = notificationEventsFacade(raw, hydrateContext);
   return facade as unknown as HydratedNotificationEvents;
 }

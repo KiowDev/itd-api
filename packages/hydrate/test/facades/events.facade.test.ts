@@ -13,7 +13,7 @@ import {
   type HydratedEventContext,
   type HydratedNotificationEvent,
   hydrateClient,
-} from '../src/index.js';
+} from '../../src/index.js';
 
 const seed = {
   users: [

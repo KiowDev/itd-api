@@ -26,13 +26,3 @@ export function stringProperty(target: AnyRecord, key: PropertyKey, label: strin
 export function modelId(target: AnyRecord): string {
   return stringProperty(target, 'id', 'идентификатор');
 }
-
-export function userReference(target: AnyRecord): string {
-  const userId = Reflect.get(target, 'userId', target) as unknown;
-  if (typeof userId === 'string' && userId !== '') return userId;
-
-  const id = Reflect.get(target, 'id', target) as unknown;
-  if (typeof id === 'string' && id !== '') return id;
-
-  return stringProperty(target, 'username', 'имя пользователя');
-}

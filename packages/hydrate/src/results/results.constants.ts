@@ -1,46 +1,8 @@
 import type { ItdClient } from 'itd-api';
 import { ModelKind } from '../models/model.constants.js';
+import { rememberQrSecrets } from '../models/qr-login/qr-login.actions.js';
 import { fields, list, model, page, paginator } from '../shapes/shape.factory.js';
-import type { ResourceResults } from './results.types.js';
-
-type ClientResourceName = {
-  [Key in keyof ItdClient]: ItdClient[Key] extends (...args: never[]) => unknown
-    ? never
-    : ItdClient[Key] extends object
-      ? Key
-      : never;
-}[keyof ItdClient] &
-  string;
-
-function defineHydratableResources<const Resources extends Record<string, ClientResourceName>>(
-  resources: Resources &
-    ([ClientResourceName] extends [Resources[keyof Resources]]
-      ? unknown
-      : { readonly __missingResource: Exclude<ClientResourceName, Resources[keyof Resources]> }),
-): Readonly<Resources> {
-  return Object.freeze(resources);
-}
-
-/** Ресурсы клиента, результаты которых проходят гидратацию. */
-export const HydratableResource = defineHydratableResources({
-  Auth: 'auth',
-  Users: 'users',
-  Posts: 'posts',
-  Comments: 'comments',
-  Files: 'files',
-  Notifications: 'notifications',
-  Hashtags: 'hashtags',
-  Search: 'search',
-  Reports: 'reports',
-  Verification: 'verification',
-  Subscription: 'subscription',
-  Platform: 'platform',
-  Telemetry: 'telemetry',
-  Shop: 'shop',
-});
-
-/** Имя ресурса, результаты которого проходят гидратацию. */
-export type HydratableResource = (typeof HydratableResource)[keyof typeof HydratableResource];
+import type { ResourceBindings, ResourceResults } from './results.types.js';
 
 const post = model(ModelKind.Post);
 const comment = model(ModelKind.Comment);
@@ -105,3 +67,10 @@ export const RESOURCE_RESULTS = {
     },
   },
 } satisfies ResourceResults<ItdClient>;
+
+/** Обработчики результатов, которым нужны аргументы вызова. */
+export const RESOURCE_BINDINGS = {
+  auth: {
+    scanQrLogin: rememberQrSecrets,
+  },
+} satisfies ResourceBindings<ItdClient>;

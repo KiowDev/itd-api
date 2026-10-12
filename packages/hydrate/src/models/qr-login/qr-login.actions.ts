@@ -1,18 +1,17 @@
 import type { QrLoginSecrets } from 'itd-api';
 import { modelContext } from '../../runtime/context.utils.js';
-import type { AnyRecord } from '../../runtime/records.types.js';
+import type { AnyRecord, ModelAction } from '../../runtime/records.types.js';
+import { isObject } from '../../runtime/records.utils.js';
+import type { HydratedQrLoginTargetActions } from './qr-login.types.js';
 
-/**
- * Секреты кода, из которого получено описание устройства.
- *
- * Сам ответ сервера их не содержит, поэтому они запоминаются на стороне пакета: без них
- * подтвердить или отклонить вход нечем.
- */
+/** Секреты кода, из которого получено описание устройства: ответ сервера их не содержит. */
 const QR_SECRETS = new WeakMap<object, QrLoginSecrets>();
 
-/** Связывает описание устройства с секретами кода, по которому оно получено. */
-export function rememberQrSecrets(target: object, secrets: QrLoginSecrets): void {
-  QR_SECRETS.set(target, { qrId: secrets.qrId, secret: secrets.secret });
+/** Запоминает секреты из аргументов `scanQrLogin(secrets)` для описания устройства. */
+export function rememberQrSecrets(target: object, [secrets]: readonly unknown[]): void {
+  if (!isObject(secrets)) return;
+  const { qrId, secret } = secrets as QrLoginSecrets;
+  QR_SECRETS.set(target, { qrId, secret });
 }
 
 function secretsOf(target: AnyRecord): QrLoginSecrets {
@@ -24,23 +23,16 @@ function secretsOf(target: AnyRecord): QrLoginSecrets {
 }
 
 function approve(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.auth.approveQrLogin, context.client.auth, [
-      secretsOf(this),
-      ...args,
-    ]) as unknown,
-  );
+  const { auth } = modelContext(this).facade;
+  return Reflect.apply(auth.approveQrLogin, auth, [secretsOf(this), ...args]);
 }
 
 function reject(this: AnyRecord, ...args: unknown[]): unknown {
-  const context = modelContext(this);
-  return context.hydrate(
-    Reflect.apply(context.client.auth.rejectQrLogin, context.client.auth, [
-      secretsOf(this),
-      ...args,
-    ]) as unknown,
-  );
+  const { auth } = modelContext(this).facade;
+  return Reflect.apply(auth.rejectQrLogin, auth, [secretsOf(this), ...args]);
 }
 
-export const QR_LOGIN_TARGET_ACTIONS = Object.freeze({ approve, reject });
+export const QR_LOGIN_TARGET_ACTIONS = Object.freeze({
+  approve,
+  reject,
+} satisfies Record<keyof HydratedQrLoginTargetActions, ModelAction>);

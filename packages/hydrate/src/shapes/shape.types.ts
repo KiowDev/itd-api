@@ -1,6 +1,6 @@
 import type { Page, Paginator } from 'itd-api';
 import type { ModelKind } from '../models/model.constants.js';
-import type { ModelSchema } from '../models/model.types.js';
+import type { HydratedModel } from '../models/model.types.js';
 import type { ShapeKind } from './shape.constants.js';
 
 /** Общая часть дескрипторов формы. */
@@ -35,35 +35,42 @@ export interface FieldsShape<F extends FieldShapes = FieldShapes> extends ShapeB
   readonly fields: F;
 }
 
-/** Запись `Raw`, у которой поля из `F` гидратированы, а остальные сохранили свой тип. */
-export type HydratedFields<Raw, F> = {
-  [K in keyof Raw]: K extends keyof F ? Hydrated<Raw[K], F[K]> : Raw[K];
+/** Любой дескриптор формы. */
+export type Shape = ModelShape | ListShape | PaginatorShape | FieldsShape;
+
+/** Запись `Raw` без ключей `Without`, у которой поля из `F` гидратированы, а остальные сохранены. */
+export type HydratedFields<Raw, F, Without = never> = {
+  [K in keyof Raw as K extends Without ? never : K]: K extends keyof F
+    ? Hydrated<Raw[K], F[K]>
+    : Raw[K];
 };
 
-type HydratedPage<Item, I extends ShapeBase> = HydratedFields<Page<Item>, { items: ListShape<I> }>;
+/** Страница с гидратированными элементами. */
+export type HydratedPage<Item> = Omit<Page<Item>, 'items'> & { items: Item[] };
 
-type HydratedPaginator<Item, I extends ShapeBase> = Omit<
+/** Пагинатор, отдающий гидратированные страницы и элементы. */
+export type HydratedPaginator<Item> = Omit<
   Paginator<Item>,
   'next' | 'pages' | 'collect' | typeof Symbol.asyncIterator
 > & {
-  next(): Promise<HydratedPage<Item, I> | null>;
-  pages(): AsyncGenerator<HydratedPage<Item, I>, void, undefined>;
-  collect(max?: number): Promise<Hydrated<Item, I>[]>;
-  [Symbol.asyncIterator](): AsyncGenerator<Hydrated<Item, I>, void, undefined>;
+  next(): Promise<HydratedPage<Item> | null>;
+  pages(): AsyncGenerator<HydratedPage<Item>, void, undefined>;
+  collect(max?: number): Promise<Item[]>;
+  [Symbol.asyncIterator](): AsyncGenerator<Item, void, undefined>;
 };
 
 /** Значение `Raw` после гидратации по форме `S`. */
 export type Hydrated<Raw, S> = Raw extends null | undefined
   ? Raw
   : S extends ModelShape<infer K>
-    ? HydratedFields<Raw, ModelSchema<K>>
+    ? HydratedModel<K, Raw>
     : S extends ListShape<infer I>
       ? Raw extends readonly (infer Item)[]
         ? Hydrated<Item, I>[]
         : Raw
-      : S extends PaginatorShape<infer I extends ShapeBase>
+      : S extends PaginatorShape<infer I>
         ? Raw extends Paginator<infer Item>
-          ? HydratedPaginator<Item, I>
+          ? HydratedPaginator<Hydrated<Item, I>>
           : Raw
         : S extends FieldsShape<infer F>
           ? HydratedFields<Raw, F>

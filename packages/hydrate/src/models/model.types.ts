@@ -1,102 +1,28 @@
-import type {
-  Actor,
-  Attachment,
-  Author,
-  Comment,
-  CommentReplyTo,
-  MyProfile,
-  Notification,
-  OriginalPost,
-  Page,
-  Paginator,
-  Post,
-  PublicProfile,
-  ShopDeliveryCity,
-  UserSummary,
-} from 'itd-api';
-import type { HydratedAttachment } from './attachment/attachment.types.js';
-import type { HydratedComment } from './comment/comment.types.js';
-import type { MODEL_SCHEMAS, ModelKind } from './model.constants.js';
-import type { HydratedNotification } from './notification/notification.types.js';
-import type { HydratedOriginalPost, HydratedPost } from './post/post.types.js';
-import type { HydratedShopDeliveryCity } from './shop-delivery-city/shop-delivery-city.types.js';
-import type {
-  HydratedActor,
-  HydratedAuthor,
-  HydratedCommentReplyTo,
-  HydratedProfile,
-  HydratedUserReference,
-  HydratedUserSummary,
-} from './user/user.types.js';
+import type { HydratedFields } from '../shapes/shape.types.js';
+import type { HydratedAttachmentActions } from './attachment/attachment.types.js';
+import type { HydratedCommentActions } from './comment/comment.types.js';
+import { type MODEL_SCHEMAS, ModelKind } from './model.constants.js';
+import type { HydratedNotificationActions } from './notification/notification.types.js';
+import type { HydratedPostActions } from './post/post.types.js';
+import type { HydratedQrLoginTargetActions } from './qr-login/qr-login.types.js';
+import type { HydratedShopDeliveryCityActions } from './shop-delivery-city/shop-delivery-city.types.js';
+import type { HydratedUserActions } from './user/user.types.js';
 
 /** Поля модели вида `K`, в которых лежат другие модели. */
 export type ModelSchema<K extends ModelKind> = (typeof MODEL_SCHEMAS)[K];
 
-/** Рекурсивно гидратирует поля модели и добавляет указанный набор действий. */
-export type HydratedModel<Model, Actions extends object = object> = Omit<
-  { [Key in keyof Model]: HydrateValue<Model[Key]> },
-  keyof Actions
-> &
-  Actions;
+/** Действия каждого вида модели. */
+export interface ModelActions {
+  [ModelKind.Post]: HydratedPostActions;
+  [ModelKind.Comment]: HydratedCommentActions;
+  [ModelKind.User]: HydratedUserActions;
+  [ModelKind.Attachment]: HydratedAttachmentActions;
+  [ModelKind.Notification]: HydratedNotificationActions;
+  [ModelKind.ShopDeliveryCity]: HydratedShopDeliveryCityActions;
+  [ModelKind.QrLoginTarget]: HydratedQrLoginTargetActions;
+}
 
-/** Страница, элементы которой получили методы гидратации. */
-export type HydratedPage<T> = HydratedModel<Page<T>>;
-
-/** Одноразовый перебор, возвращающий гидратированные элементы и страницы. */
-export type HydratedPaginator<T> = {
-  [Key in keyof Paginator<T>]: Paginator<T>[Key] extends (...args: infer Args) => infer Result
-    ? (...args: Args) => HydrateValue<Result>
-    : HydrateValue<Paginator<T>[Key]>;
-};
-
-/** Преобразует тип результата клиента в его гидратированный вариант. */
-export type HydrateValue<T> = T extends
-  | string
-  | number
-  | boolean
-  | bigint
-  | symbol
-  | null
-  | undefined
-  ? T
-  : T extends Promise<infer Value>
-    ? Promise<HydrateValue<Value>>
-    : T extends Paginator<infer Item>
-      ? HydratedPaginator<Item>
-      : T extends AsyncGenerator<infer Yield, infer Return, infer Next>
-        ? AsyncGenerator<HydrateValue<Yield>, HydrateValue<Return>, Next>
-        : T extends AsyncIterable<infer Item>
-          ? AsyncIterable<HydrateValue<Item>>
-          : T extends Page<infer Item>
-            ? HydratedPage<Item>
-            : T extends Post
-              ? HydratedPost<T>
-              : T extends OriginalPost
-                ? HydratedOriginalPost<T>
-                : T extends Comment
-                  ? HydratedComment<T>
-                  : T extends Notification
-                    ? HydratedNotification<T>
-                    : T extends ShopDeliveryCity
-                      ? HydratedShopDeliveryCity<T>
-                      : T extends MyProfile | PublicProfile
-                        ? HydratedProfile<T>
-                        : T extends Author
-                          ? HydratedAuthor<T>
-                          : T extends UserSummary
-                            ? HydratedUserSummary<T>
-                            : T extends Actor
-                              ? HydratedActor<T>
-                              : T extends CommentReplyTo
-                                ? HydratedCommentReplyTo<T>
-                                : T extends Attachment
-                                  ? HydratedAttachment<T>
-                                  : T extends { userId: string } | { username: string }
-                                    ? HydratedUserReference<T>
-                                    : T extends readonly unknown[]
-                                      ? { [Key in keyof T]: HydrateValue<T[Key]> }
-                                      : T extends (...args: never[]) => unknown
-                                        ? T
-                                        : T extends object
-                                          ? { [Key in keyof T]: HydrateValue<T[Key]> }
-                                          : T;
+/** Модель вида `K`: поля схемы гидратированы, остальные сохранены, действия добавлены. */
+export type HydratedModel<K extends ModelKind, Raw> = Raw extends unknown
+  ? HydratedFields<Raw, ModelSchema<K>, keyof ModelActions[K]> & ModelActions[K]
+  : never;

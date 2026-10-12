@@ -1,5 +1,4 @@
 import type {
-  EventContext,
   EventHandler,
   EventMiddleware,
   EventMiddlewareObject,
@@ -17,35 +16,38 @@ import type {
   NotificationUpdateType,
   Unsubscribe,
 } from 'itd-api';
-import type { HydratedModel, HydrateValue } from '../models/model.types.js';
+import type { Hydrated } from '../shapes/shape.types.js';
+import type { NOTIFICATION_EVENT_SHAPE, NOTIFICATION_UPDATE_SHAPE } from './events.constants.js';
 
 /** Событие уведомления с гидратированной моделью. */
-export type HydratedNotificationEvent = HydratedModel<NotificationEvent>;
+export type HydratedNotificationEvent = Hydrated<
+  NotificationEvent,
+  typeof NOTIFICATION_EVENT_SHAPE
+>;
+
+type HydratedUpdate<U> = U extends NotificationUpdate
+  ? Hydrated<U, typeof NOTIFICATION_UPDATE_SHAPE>
+  : U;
 
 /** Контекст события с гидратированным обновлением и каналом. */
-export type HydratedEventContext<C extends EventContext = NotificationEventContext> = HydratedModel<
-  C,
-  {
-    readonly update: HydrateValue<C['update']>;
-    readonly stream: C extends NotificationEventContext ? HydratedNotificationEvents : C['stream'];
-    readonly raw: C['raw'];
-  }
->;
+export type HydratedEventContext<C extends NotificationEventContext = NotificationEventContext> =
+  Omit<C, 'update' | 'stream'> & {
+    readonly update: HydratedUpdate<C['update']>;
+    readonly stream: HydratedNotificationEvents;
+  };
 
 /** Контекст уведомления с типом, суженным селектором. */
 export type HydratedNotificationContext<T extends NotificationType = NotificationType> =
   HydratedEventContext<NotificationContext<T>>;
 
 /** Асинхронный обработчик гидратированного обновления. */
-export type HydratedEventHandler<C extends EventContext = NotificationEventContext> = (
+export type HydratedEventHandler<C extends NotificationEventContext = NotificationEventContext> = (
   context: HydratedEventContext<C>,
 ) => ReturnType<EventHandler<C>>;
 
 /** Промежуточный обработчик гидратированных обновлений. */
-export type HydratedEventMiddleware<C extends EventContext = NotificationEventContext> = (
-  context: HydratedEventContext<C>,
-  next: EventNext,
-) => ReturnType<EventMiddleware<C>>;
+export type HydratedEventMiddleware<C extends NotificationEventContext = NotificationEventContext> =
+  (context: HydratedEventContext<C>, next: EventNext) => ReturnType<EventMiddleware<C>>;
 
 /** Условия отбора гидратированных уведомлений. */
 export type HydratedNotificationFilter<T extends NotificationType = NotificationType> = Omit<

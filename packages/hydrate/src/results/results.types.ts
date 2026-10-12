@@ -1,15 +1,14 @@
 import type { ItdClient, Page, Paginator } from 'itd-api';
 import type { HydratedNotificationEvents } from '../facades/events.types.js';
-import type { HydrateValue } from '../models/model.types.js';
-import type { HydratedQrLoginTarget } from '../models/qr-login/qr-login.types.js';
 import type {
   FieldsShape,
+  Hydrated,
   ListShape,
   ModelShape,
   PaginatorShape,
   ShapeBase,
 } from '../shapes/shape.types.js';
-import type { HydratableResource } from './results.constants.js';
+import type { RESOURCE_RESULTS } from './results.constants.js';
 
 type FieldsShapeOf<Value> = FieldsShape<{ readonly [K in keyof Value]?: ShapeBase }>;
 
@@ -29,55 +28,47 @@ export type ResourceResults<T> = {
     : ResourceResults<T[K]>;
 };
 
-/** Ресурс клиента, методы которого возвращают гидратированные результаты. */
-export type HydratedResource<Resource> = {
-  [Key in keyof Resource]: Resource[Key] extends (...args: infer Args) => infer Result
-    ? (...args: Args) => HydrateValue<Result>
-    : Resource[Key] extends object
-      ? HydratedResource<Resource[Key]>
-      : HydrateValue<Resource[Key]>;
+/** Обработчик гидратированного результата, которому нужны аргументы вызова. */
+export type ResultBinding = (result: object, args: readonly unknown[]) => void;
+
+/** Обработчики результатов методов объекта ресурсов; вложенные ресурсы описываются так же. */
+export type ResourceBindings<T> = {
+  readonly [K in keyof T]?: T[K] extends (...args: never[]) => unknown
+    ? ResultBinding
+    : ResourceBindings<T[K]>;
 };
 
-/** API уведомлений с гидратированными REST-методами и стабильным каналом событий. */
-export type HydratedNotificationsResource<Resource extends ItdClient['notifications']> = Omit<
-  HydratedResource<Resource>,
-  'events'
-> & {
-  readonly events: HydratedNotificationEvents;
+type HydratedReturn<Result, S> =
+  Result extends Promise<infer Value> ? Promise<Hydrated<Value, S>> : Hydrated<Result, S>;
+
+type HydratedResource<Resource, Results> = {
+  [K in keyof Resource]: K extends keyof Results
+    ? Resource[K] extends (...args: infer Args) => infer Result
+      ? (...args: Args) => HydratedReturn<Result, Results[K]>
+      : HydratedResource<Resource[K], Results[K]>
+    : Resource[K];
 };
 
-/**
- * API авторизации, где `scanQrLogin()` возвращает устройство с методами подтверждения.
- *
- * Секреты кода приходят аргументом вызова, а не полем ответа, поэтому действия появляются
- * только у результата этого метода.
- */
-export type HydratedAuthResource<Resource extends ItdClient['auth']> = Omit<
-  HydratedResource<Resource>,
-  'scanQrLogin'
-> & {
-  scanQrLogin(...args: Parameters<Resource['scanQrLogin']>): Promise<HydratedQrLoginTarget>;
-};
+type ResultResource = keyof typeof RESOURCE_RESULTS;
 
 /**
- * Вариант клиента с гидратированными результатами ресурсов.
+ * Вариант клиента, ресурсы которого возвращают модели с действиями.
  *
  * @example
  * ```ts
- * type MyClient = HydrateFlavor<ItdClient>;
+ * type AppClient = HydrateFlavor<ItdClient>;
  * ```
  */
-export type HydrateFlavor<Client extends ItdClient = ItdClient> = Omit<
-  Client,
-  HydratableResource
-> & {
-  readonly [Key in Extract<keyof Client, HydratableResource>]: Key extends 'notifications'
-    ? Client[Key] extends ItdClient['notifications']
-      ? HydratedNotificationsResource<Client[Key]>
-      : never
-    : Key extends 'auth'
-      ? Client[Key] extends ItdClient['auth']
-        ? HydratedAuthResource<Client[Key]>
-        : never
-      : HydratedResource<Client[Key]>;
+export type HydrateFlavor<Client extends ItdClient = ItdClient> = Omit<Client, ResultResource> & {
+  readonly [K in ResultResource]: K extends 'notifications'
+    ? Omit<HydratedResource<Client[K], (typeof RESOURCE_RESULTS)[K]>, 'events'> & {
+        readonly events: HydratedNotificationEvents;
+      }
+    : HydratedResource<Client[K], (typeof RESOURCE_RESULTS)[K]>;
 };
+
+/** Карта результатов в рантайме: форма метода либо карта вложенного ресурса. */
+export type ResultMap = { readonly [key: string]: ShapeBase | ResultMap };
+
+/** Карта обработчиков результатов в рантайме. */
+export type BindingMap = { readonly [key: string]: ResultBinding | BindingMap };

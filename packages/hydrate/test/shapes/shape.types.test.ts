@@ -1,6 +1,7 @@
 import type { Author, OriginalPost, Page, Paginator, Post, Span } from 'itd-api';
 import { describe, expectTypeOf, it } from 'vitest';
 import type { ModelKind } from '../../src/models/model.constants.js';
+import type { HydratedPostActions } from '../../src/models/post/post.types.js';
 import type {
   FieldsShape,
   Hydrated,
@@ -21,7 +22,9 @@ describe('Hydrated', () => {
     expectTypeOf<Result['wallRecipient']>().toEqualTypeOf<
       Hydrated<Author, UserShape> | null | undefined
     >();
-    expectTypeOf<keyof Hydrated<OriginalPost, PostShape>>().toEqualTypeOf<keyof OriginalPost>();
+    expectTypeOf<
+      Exclude<keyof Hydrated<OriginalPost, PostShape>, keyof HydratedPostActions>
+    >().toEqualTypeOf<keyof OriginalPost>();
   });
 
   it('гидратирует элементы страниц и пагинаторов', () => {

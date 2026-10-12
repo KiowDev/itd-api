@@ -1,8 +1,7 @@
-import type { ItdClient } from 'itd-api';
-import type { HydrateValue } from '../models/model.types.js';
+import type { HydrateFlavor } from '../results/results.types.js';
 
 /** Общая среда одного гидратированного клиента. */
 export interface HydrationContext {
-  readonly client: ItdClient;
-  hydrate<T>(value: T): HydrateValue<T>;
+  /** Гидратированный фасад клиента: через него действия вызывают ресурсы. */
+  readonly facade: HydrateFlavor;
 }
