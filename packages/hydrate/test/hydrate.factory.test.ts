@@ -100,7 +100,7 @@ describe('hydrateClient', () => {
     expect(typeof post.wallRecipient?.follow).toBe('function');
     expect(typeof post.originalPost?.repost).toBe('function');
     expect(typeof post.comments?.[0]?.reply).toBe('function');
-    expect(typeof post.comments?.[0]?.replies?.[0]?.replyTo?.posts).toBe('function');
+    expect(typeof post.comments?.[0]?.replies?.[0]?.replyTo?.getPosts).toBe('function');
     expect(post.attachments[0]?.isImage()).toBe(true);
     expect(post.attachments[0]?.isVideo()).toBe(false);
     expect(Object.keys(post)).not.toContain('like');
@@ -128,7 +128,7 @@ describe('hydrateClient', () => {
     await post.like();
     await post.author.follow();
     const profile = await post.author.get();
-    const wall = await profile.posts({ limit: 1 });
+    const wall = await profile.getPosts({ limit: 1 });
     const created = await post.comment('Новый комментарий');
     const updated = await created.update('Исправленный комментарий');
     const reply = await created.reply('Ответ');
@@ -186,6 +186,39 @@ describe('hydrateClient', () => {
     expect(typeof post?.like).toBe('function');
     expect(reply?.replyTo?.id).toBe('user-alice');
     expect(typeof notification?.actors[0]?.follow).toBe('function');
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('загружает связанные коллекции и отмечает уведомление прочитанным', async () => {
+    const server = createMockServer({
+      seed: {
+        ...seed,
+        notifications: [
+          {
+            id: 'notification-1',
+            userId: 'user-bob',
+            type: NotificationType.PostComment,
+            actorIds: ['user-alice'],
+            entityId: 'comment-1',
+            parentEntityId: 'post-1',
+          },
+        ],
+      },
+    });
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
+
+    const post = await itd.posts.get('post-1');
+    const comments = await post.iterateComments().collect();
+    expect(comments.map((comment) => comment.id)).toContain('comment-1');
+    expect(typeof comments[0]?.reply).toBe('function');
+
+    await post.author.follow();
+    const followers = await post.author.getFollowers();
+    expect(followers.items.map((user) => user.id)).toContain('user-bob');
+    expect(typeof followers.items[0]?.getFollowing).toBe('function');
+
+    const [notification] = (await itd.notifications.list()).items;
+    await expect(notification?.markRead()).resolves.toEqual(expect.any(Number));
     server.assertNoUnsupportedRequests();
   });
 
@@ -294,7 +327,7 @@ describe('hydrateClient', () => {
 
     const collected = await itd.posts.iterate({ limit: 1 }).collect();
     expect(collected).toHaveLength(2);
-    expect(collected.every((post) => typeof post.author.posts === 'function')).toBe(true);
+    expect(collected.every((post) => typeof post.author.getPosts === 'function')).toBe(true);
   });
 
   it('гидратирует сетевой ответ и ответ из кэша одинаково', async () => {

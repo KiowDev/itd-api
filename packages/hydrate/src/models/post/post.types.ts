@@ -13,8 +13,20 @@ export interface HydratedPostActions {
   readonly unlike: ResourceAction<'posts', 'unlike'>;
   /** Добавляет комментарий. */
   readonly comment: ResourceAction<'posts', 'comment'>;
+  /** Добавляет голосовой комментарий. */
+  readonly voiceComment: ResourceAction<'posts', 'voiceComment'>;
+  /** Загружает страницу комментариев. */
+  readonly getComments: ResourceAction<'posts', 'comments'>;
+  /** Перебирает комментарии постранично. */
+  readonly iterateComments: ResourceAction<'posts', 'iterateComments'>;
+  /** Изменяет текст поста. */
+  readonly update: ResourceAction<'posts', 'update'>;
+  /** Голосует в опросе поста. */
+  readonly vote: ResourceAction<'posts', 'vote'>;
   /** Делает репост. */
   readonly repost: ResourceAction<'posts', 'repost'>;
+  /** Отменяет репост. */
+  readonly unrepost: ResourceAction<'posts', 'unrepost'>;
   /** Удаляет пост. */
   readonly remove: ResourceAction<'posts', 'remove'>;
   /** Восстанавливает удалённый пост. */

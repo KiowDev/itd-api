@@ -11,4 +11,5 @@ export const COMMENT_ACTIONS = Object.freeze({
   remove: resourceAction('comments', 'remove', modelId),
   restore: resourceAction('comments', 'restore', modelId),
   getReplies: resourceAction('comments', 'replies', modelId),
+  iterateReplies: resourceAction('comments', 'iterateReplies', modelId),
 } satisfies Record<keyof HydratedCommentActions, ModelAction>);

@@ -9,5 +9,12 @@ export const USER_ACTIONS = Object.freeze({
   unfollow: resourceAction('users', 'unfollow', modelId),
   block: resourceAction('users', 'block', modelId),
   unblock: resourceAction('users', 'unblock', modelId),
-  posts: resourceAction('posts', 'byUser', modelId),
+  getPosts: resourceAction('posts', 'byUser', modelId),
+  iteratePosts: resourceAction('posts', 'iterateByUser', modelId),
+  getLikedPosts: resourceAction('posts', 'likedByUser', modelId),
+  iterateLikedPosts: resourceAction('posts', 'iterateLikedByUser', modelId),
+  getFollowers: resourceAction('users', 'followers', modelId),
+  iterateFollowers: resourceAction('users', 'iterateFollowers', modelId),
+  getFollowing: resourceAction('users', 'following', modelId),
+  iterateFollowing: resourceAction('users', 'iterateFollowing', modelId),
 } satisfies Record<keyof HydratedUserActions, ModelAction>);

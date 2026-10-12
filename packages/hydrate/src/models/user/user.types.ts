@@ -15,8 +15,22 @@ export interface HydratedUserActions {
   readonly block: ResourceAction<'users', 'block'>;
   /** Снимает блокировку. */
   readonly unblock: ResourceAction<'users', 'unblock'>;
-  /** Загружает страницу стены пользователя. */
-  readonly posts: ResourceAction<'posts', 'byUser'>;
+  /** Загружает страницу стены. */
+  readonly getPosts: ResourceAction<'posts', 'byUser'>;
+  /** Перебирает стену постранично. */
+  readonly iteratePosts: ResourceAction<'posts', 'iterateByUser'>;
+  /** Загружает страницу постов с реакцией пользователя. */
+  readonly getLikedPosts: ResourceAction<'posts', 'likedByUser'>;
+  /** Перебирает посты с реакцией пользователя постранично. */
+  readonly iterateLikedPosts: ResourceAction<'posts', 'iterateLikedByUser'>;
+  /** Загружает страницу подписчиков. */
+  readonly getFollowers: ResourceAction<'users', 'followers'>;
+  /** Перебирает подписчиков постранично. */
+  readonly iterateFollowers: ResourceAction<'users', 'iterateFollowers'>;
+  /** Загружает страницу подписок. */
+  readonly getFollowing: ResourceAction<'users', 'following'>;
+  /** Перебирает подписки постранично. */
+  readonly iterateFollowing: ResourceAction<'users', 'iterateFollowing'>;
 }
 
 /** Пользователь любого вида — автор, участник уведомления, профиль — с действиями над ним. */

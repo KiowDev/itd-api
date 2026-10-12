@@ -1,6 +1,8 @@
 import { NotificationType } from 'itd-api';
+import { resourceAction } from '../../actions/action.factory.js';
 import { modelContext } from '../../runtime/context.utils.js';
 import type { AnyRecord, ModelAction } from '../../runtime/records.types.js';
+import { modelId } from '../../runtime/records.utils.js';
 import type { HydratedNotificationActions } from './notification.types.js';
 
 const POST_NOTIFICATION_TYPES = new Set<string>([
@@ -50,4 +52,5 @@ function notificationGetPost(this: AnyRecord, ...args: unknown[]): unknown {
 
 export const NOTIFICATION_ACTIONS = Object.freeze({
   getPost: notificationGetPost,
+  markRead: resourceAction('notifications', 'markRead', modelId),
 } satisfies Record<Exclude<keyof HydratedNotificationActions, 'comment'>, ModelAction>);

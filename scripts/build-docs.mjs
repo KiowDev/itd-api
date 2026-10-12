@@ -47,6 +47,27 @@ const builds = [
     entryPoint: 'packages/hydrate/src/index.ts',
     tsconfig: 'packages/hydrate/tsconfig.json',
     out: 'guides/web/api/generated/hydrate',
+    // Публичные типы выводятся из внутренних дескрипторов форм, видов моделей и карты
+    // результатов ресурсов.
+    intentionallyNotExported: [
+      'Hydrated',
+      'HydratedFields',
+      'HydratedModel',
+      'HydratedResource',
+      'HydratedUpdate',
+      'ListShape',
+      'ModelShape',
+      'NOTIFICATION_EVENT_SHAPE',
+      'RESOURCE_RESULTS',
+      'ResultResource',
+      'Attachment',
+      'Comment',
+      'Notification',
+      'Post',
+      'QrLoginTarget',
+      'ShopDeliveryCity',
+      'User',
+    ],
   },
   {
     name: '@itd-api/cache',

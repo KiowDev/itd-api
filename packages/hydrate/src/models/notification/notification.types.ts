@@ -12,6 +12,8 @@ export type HydratedCommentReference = Readonly<{ id: string }> & HydratedCommen
 export interface HydratedNotificationActions {
   /** Загружает пост, к которому относится уведомление. */
   getPost(...args: Parameters<ResourceAction<'posts', 'get'>>): Promise<HydratedPost | undefined>;
+  /** Отмечает уведомление прочитанным и возвращает число непрочитанных. */
+  readonly markRead: ResourceAction<'notifications', 'markRead'>;
   /** Комментарий, к которому относится уведомление. */
   readonly comment?: HydratedCommentReference;
 }

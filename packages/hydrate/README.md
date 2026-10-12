@@ -12,7 +12,7 @@
 npm install itd-api @itd-api/hydrate
 ```
 
-Требуется `itd-api >=0.10.2 <1.0.0`.
+Требуется `itd-api >=0.13.0 <1.0.0`.
 
 ## Использование
 
@@ -28,8 +28,8 @@ await post.like();
 const comment = await post.comment('Согласен');
 await comment.reply('Дополню мысль');
 
-const profile = await post.author.get();
-const wall = await profile.posts({ limit: 20 });
+const author = await post.author.get();
+const wall = await author.getPosts({ limit: 20 });
 ```
 
 Тип результата выводится автоматически. Для собственного типа клиента можно явно применить
@@ -46,16 +46,17 @@ type AppClient = HydrateFlavor<ItdClient>;
 
 | Модель | Методы |
 |---|---|
-| пост | `get()`, `like()`, `unlike()`, `comment()`, `repost()`, `remove()`, `restore()`, `pin()`, `unpin()` |
-| комментарий | `like()`, `unlike()`, `reply()`, `update()`, `remove()`, `restore()`, `getReplies()` |
-| автор, профиль, пользователь из списка или уведомления | `get()`, `follow()`, `unfollow()`, `block()`, `unblock()`, `posts()` |
+| пост | `get()`, `like()`, `unlike()`, `comment()`, `voiceComment()`, `getComments()`, `iterateComments()`, `update()`, `vote()`, `repost()`, `unrepost()`, `remove()`, `restore()`, `pin()`, `unpin()` |
+| комментарий | `like()`, `unlike()`, `reply()`, `update()`, `remove()`, `restore()`, `getReplies()`, `iterateReplies()` |
+| пользователь: автор, профиль, участник уведомления, пользователь из списка | `get()`, `follow()`, `unfollow()`, `block()`, `unblock()`, `getPosts()`, `iteratePosts()`, `getLikedPosts()`, `iterateLikedPosts()`, `getFollowers()`, `iterateFollowers()`, `getFollowing()`, `iterateFollowing()` |
 | вложение | `isImage()`, `isVideo()`, `isAudio()` |
-| уведомление | `getPost()`, `comment` |
+| уведомление | `getPost()`, `markRead()`, `comment` |
 | город доставки | `points()` |
 | устройство из `scanQrLogin()` | `approve()`, `reject()` |
 
-`getReplies()` загружает полную страницу ответов. Поле `comment.replies` по-прежнему содержит
-предварительно загруженные ответы из исходной модели.
+`get…()` загружает страницу связанной коллекции, `iterate…()` возвращает пагинатор по ней.
+Поля `post.comments` и `comment.replies` по-прежнему содержат предварительно загруженные
+элементы из исходной модели.
 Проверки вложений одновременно сужают поле `type` в TypeScript.
 `approve()` и `reject()` помнят секреты кода, которым получено описание устройства, поэтому
 `{ qrId, secret }` повторять не нужно.
@@ -68,6 +69,42 @@ for await (const post of itd.posts.iterate({ limit: 20 })) {
   if (!post.isLiked) await post.like();
 }
 ```
+
+## Модели — снимки
+
+Модель описывает состояние на момент ответа. Действие выполняет запрос и возвращает результат
+метода ресурса, не меняя исходный объект; свежее состояние загружает `get()`:
+
+| Действие | Возвращает |
+|---|---|
+| `post.get()`, `post.repost()` | `HydratedPost` |
+| `post.comment()`, `post.voiceComment()`, `comment.reply()` | `HydratedComment` |
+| `post.like()`, `post.unlike()`, `comment.like()`, `comment.unlike()` | `LikeResult` |
+| `post.pin()`, `post.unpin()` | `PinPostResult` |
+| `post.update()` | `PostUpdateResult` |
+| `comment.update()` | `CommentUpdateResult` |
+| `post.vote()` | `Poll` |
+| `remove()`, `restore()`, `post.unrepost()` | `void` |
+| `get…()` коллекций: `getComments()`, `getReplies()`, `getPosts()`, `getFollowers()` и другие | `HydratedPage` гидратированных моделей |
+| `iterate…()` коллекций | `HydratedPaginator` гидратированных моделей |
+| `user.get()` | `HydratedUser<PublicProfile>` |
+| `user.follow()` | `FollowResult` |
+| `notification.markRead()` | число непрочитанных |
+
+```ts
+const result = await post.like();
+result.liked;  // true
+post.isLiked;  // прежнее значение снимка
+
+const fresh = await post.get();
+```
+
+## Что гидратируется
+
+Модели находятся по известным путям ответа, а не по набору полей: результат метода ресурса,
+`author`, `wallRecipient`, `originalPost`, `comments`, `attachments` поста, `author`, `replyTo`,
+`replies`, `attachments` комментария, `actors` уведомления. Поля, которые добавил плагин,
+передаются как есть и методов не получают.
 
 ## События
 
@@ -107,8 +144,7 @@ await stream.connect();
 ```
 
 `getPost()` возвращает связанный пост для событий о постах и комментариях. Поле `comment`
-содержит ссылку на комментарий и поддерживает действия `reply()`, `like()`, `unlike()`,
-`update()`, `remove()`, `restore()` и `getReplies()`. Для остальных видов уведомлений эти
+содержит ссылку `{ id }` с действиями комментария. Для остальных видов уведомлений эти
 связанные сущности отсутствуют.
 
 Гидратированный контекст передаётся в `sequentialize`, `use()`, `onUpdate()`,
@@ -119,3 +155,9 @@ await stream.connect();
 повторы и подключённые плагины применяются как при прямом вызове ресурса.
 
 Добавленные методы не перечисляются в `Object.keys()` и не попадают в JSON.
+
+## Типы
+
+Пользователь любого вида — `HydratedUser<T>`, пост и оригинал репоста — `HydratedPost<T>`,
+страница и пагинатор — `HydratedPage<Item>` и `HydratedPaginator<Item>`. Тип гидратированного
+ресурса — `HydrateFlavor['posts']`.

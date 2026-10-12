@@ -19,6 +19,8 @@ export interface HydratedCommentActions {
   readonly restore: ResourceAction<'comments', 'restore'>;
   /** Загружает страницу ответов. */
   readonly getReplies: ResourceAction<'comments', 'replies'>;
+  /** Перебирает ответы постранично. */
+  readonly iterateReplies: ResourceAction<'comments', 'iterateReplies'>;
 }
 
 /** Комментарий с действиями и гидратированными вложенными моделями. */
