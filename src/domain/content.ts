@@ -1,4 +1,10 @@
-import type { Comment, OriginalPost, Post } from '../models/content.js';
+import type {
+  Comment,
+  CommentUpdateResult,
+  OriginalPost,
+  Post,
+  PostUpdateResult,
+} from '../models/content.js';
 import { utcStampToIso } from './time.js';
 
 /** Поле с датой, приведённой к ISO-8601; без строкового значения поле не появляется. */
@@ -30,4 +36,18 @@ export function normalizePost(post: Post): Post {
     ...(post.originalPost ? { originalPost: normalizeOriginalPost(post.originalPost) } : {}),
     ...(Array.isArray(post.comments) ? { comments: post.comments.map(normalizeComment) } : {}),
   };
+}
+
+/** Читает ответ редактирования поста: `updatedAt` сервера становится `editedAt`. */
+export function normalizePostUpdate(body: unknown): PostUpdateResult {
+  const { updatedAt, ...rest } = body as Omit<PostUpdateResult, 'editedAt'> & {
+    updatedAt: string;
+  };
+  return { ...rest, editedAt: utcStampToIso(updatedAt) };
+}
+
+/** Читает ответ редактирования комментария. */
+export function normalizeCommentUpdate(body: unknown): CommentUpdateResult {
+  const result = body as CommentUpdateResult;
+  return { ...result, editedAt: utcStampToIso(result.editedAt) };
 }

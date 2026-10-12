@@ -1,0 +1,521 @@
+import { cache } from '@itd-api/cache';
+import { crypt, encodeInvisible } from '@itd-api/crypto';
+import {
+  apiResponse,
+  commentFixture,
+  createMockFetch,
+  createMockServer,
+  originalPostFixture,
+  postFixture,
+} from '@itd-api/testing';
+import {
+  AttachmentType,
+  type ClientPlugin,
+  ItdClient,
+  NotificationType,
+  type OriginalPost,
+  Paginator,
+  type Post,
+  ReportReason,
+  ReportTargetType,
+  SpanType,
+} from 'itd-api';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { type HydratedClient, type HydratedPost, hydrateClient } from '../src/index.js';
+
+const seed = {
+  users: [
+    { id: 'user-alice', username: 'alice', displayName: 'Алиса' },
+    { id: 'user-bob', username: 'bob', displayName: 'Боб' },
+  ],
+  posts: [
+    { id: 'post-1', authorId: 'user-alice', content: 'Первая запись' },
+    { id: 'post-2', authorId: 'user-alice', content: 'Вторая запись' },
+  ],
+  comments: [
+    {
+      id: 'comment-1',
+      postId: 'post-1',
+      authorId: 'user-alice',
+      content: 'Первый комментарий',
+    },
+  ],
+} as const;
+
+function hydratedServerClient() {
+  const server = createMockServer({ seed });
+  const raw = new ItdClient(server.clientOptions({ as: 'bob' }));
+  return { server, raw, itd: hydrateClient(raw) };
+}
+
+describe('hydrateClient', () => {
+  it('возвращает один фасад и сохраняет цепочки методов клиента', () => {
+    const raw = new ItdClient({ auth: 'test-token', retry: false, rateLimit: false });
+    const first = hydrateClient(raw);
+    const second = hydrateClient(raw);
+
+    expect(first).toBe(second);
+    expect(hydrateClient(first as unknown as ItdClient)).toBe(first);
+
+    const plugin: ClientPlugin = { name: 'empty', install() {} };
+    const chained = first.use(plugin);
+    expect(chained).toBe(first);
+    expectTypeOf(chained).toEqualTypeOf<HydratedClient<ItdClient>>();
+    expect(raw.hasPlugin('empty')).toBe(true);
+
+    const extended = first.withFeature('ping', {
+      name: 'ping',
+      operations: {},
+      setup: () => ({ api: () => 'pong' as const }),
+    });
+    expect(extended.ping()).toBe('pong');
+    expectTypeOf(extended.posts.get).returns.toEqualTypeOf<Promise<HydratedPost>>();
+  });
+
+  it('гидратирует вложенные модели и не меняет JSON', async () => {
+    const reply = commentFixture({
+      id: 'reply-1',
+      replyTo: { id: 'user-bob', username: 'bob', displayName: 'Боб' },
+    });
+    const comment = commentFixture({ id: 'comment-1', replies: [reply] });
+    const originalPost = originalPostFixture({ id: 'post-original' });
+    const source = postFixture({
+      id: 'post-root',
+      originalPost,
+      comments: [comment],
+      wallRecipient: originalPost.author,
+      attachments: [
+        {
+          id: 'attachment-1',
+          type: AttachmentType.Image,
+          url: 'https://cdn.test/image.webp',
+          mimeType: 'image/webp',
+        },
+      ],
+    });
+    const mock = createMockFetch();
+    mock.get('/api/posts/post-root', apiResponse(source));
+
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+    const post = await itd.posts.get('post-root');
+
+    expect(typeof post.like).toBe('function');
+    expect(typeof post.author.get).toBe('function');
+    expect(typeof post.wallRecipient?.follow).toBe('function');
+    expect(typeof post.originalPost?.repost).toBe('function');
+    expect(typeof post.comments?.[0]?.reply).toBe('function');
+    expect(typeof post.comments?.[0]?.replies?.[0]?.replyTo?.getPosts).toBe('function');
+    expect(post.attachments[0]?.isImage()).toBe(true);
+    expect(post.attachments[0]?.isVideo()).toBe(false);
+    expect(Object.keys(post)).not.toContain('like');
+    expect(Object.keys(post.author)).not.toContain('follow');
+    expect(JSON.parse(JSON.stringify(post))).toEqual(source);
+  });
+
+  it('добавляет городу доставки загрузку пунктов выдачи', async () => {
+    const server = createMockServer();
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'test_user_1' })));
+
+    const cities = await itd.shop.delivery.cities('Москва', 'RU');
+    const city = cities[0];
+
+    expect(typeof city?.points).toBe('function');
+    expect(Object.keys(city ?? {})).not.toContain('points');
+    await expect(city?.points()).resolves.toMatchObject([{ cityCode: 44 }]);
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('выполняет действия через обычные ресурсы клиента', async () => {
+    const { server, itd } = hydratedServerClient();
+    const post = await itd.posts.get('post-1');
+
+    await post.like();
+    await post.author.follow();
+    const profile = await post.author.get();
+    const wall = await profile.getPosts({ limit: 1 });
+    const created = await post.comment('Новый комментарий');
+    const updated = await created.update('Исправленный комментарий');
+    const reply = await created.reply('Ответ');
+
+    expect(server.snapshot().posts.find((item) => item.id === post.id)?.likedBy).toContain(
+      'user-bob',
+    );
+    expect(server.snapshot().users.find((item) => item.id === 'user-bob')?.following).toContain(
+      'user-alice',
+    );
+    expect(typeof profile.block).toBe('function');
+    expect(typeof wall.items[0]?.remove).toBe('function');
+    expect(updated).toEqual({
+      id: created.id,
+      content: 'Исправленный комментарий',
+      editedAt: expect.any(String),
+    });
+    expect(typeof reply.restore).toBe('function');
+
+    await reply.remove();
+    await expect(reply.restore()).resolves.toBeUndefined();
+
+    const ownPost = await itd.posts.create({ content: 'Запись Боба' });
+    await ownPost.remove();
+    await expect(ownPost.restore()).resolves.toBeUndefined();
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('гидратирует связанные сущности уведомлений из REST API', async () => {
+    const server = createMockServer({
+      seed: {
+        ...seed,
+        notifications: [
+          {
+            id: 'notification-1',
+            userId: 'user-bob',
+            type: NotificationType.PostComment,
+            actorIds: ['user-alice'],
+            entityId: 'comment-1',
+            parentEntityId: 'post-1',
+          },
+        ],
+      },
+    });
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
+
+    const page = await itd.notifications.list();
+    const notification = page.items[0];
+    const post = await notification?.getPost();
+    const reply = await notification?.comment?.reply((builder) =>
+      builder.content('Ответ из REST-уведомления').replyTo('user-alice'),
+    );
+
+    expect(post?.id).toBe('post-1');
+    expect(typeof post?.like).toBe('function');
+    expect(reply?.replyTo?.id).toBe('user-alice');
+    expect(typeof notification?.actors[0]?.follow).toBe('function');
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('загружает связанные коллекции и отмечает уведомление прочитанным', async () => {
+    const server = createMockServer({
+      seed: {
+        ...seed,
+        notifications: [
+          {
+            id: 'notification-1',
+            userId: 'user-bob',
+            type: NotificationType.PostComment,
+            actorIds: ['user-alice'],
+            entityId: 'comment-1',
+            parentEntityId: 'post-1',
+          },
+        ],
+      },
+    });
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
+
+    const post = await itd.posts.get('post-1');
+    const comments = await post.iterateComments().collect();
+    expect(comments.map((comment) => comment.id)).toContain('comment-1');
+    expect(typeof comments[0]?.reply).toBe('function');
+
+    await post.author.follow();
+    const followers = await post.author.getFollowers();
+    expect(followers.items.map((user) => user.id)).toContain('user-bob');
+    expect(typeof followers.items[0]?.getFollowing).toBe('function');
+
+    const [notification] = (await itd.notifications.list()).items;
+    await expect(notification?.markRead()).resolves.toEqual(expect.any(Number));
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('загружает посты хэштега из списка популярных', async () => {
+    const server = createMockServer({
+      seed: {
+        ...seed,
+        posts: [
+          ...seed.posts,
+          {
+            id: 'post-tag',
+            authorId: 'user-alice',
+            content: 'Пост #новости',
+            spans: [{ type: SpanType.Hashtag, offset: 5, length: 8, tag: 'новости' }],
+          },
+        ],
+      },
+    });
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
+
+    const [hashtag] = await itd.hashtags.trending();
+    const page = await hashtag?.getPosts();
+    expect(page?.items.map((post) => post.id)).toContain('post-tag');
+    expect(typeof page?.items[0]?.like).toBe('function');
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('отправляет жалобу с типом и идентификатором модели', async () => {
+    const mock = createMockFetch();
+    mock.get('/api/posts/reported', apiResponse(postFixture({ id: 'reported' })));
+    mock.post('/api/reports', apiResponse({ id: 'report-1', createdAt: '2026-10-12T00:00:00Z' }));
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+
+    const post = await itd.posts.get('reported');
+    await expect(post.report({ reason: ReportReason.Spam })).resolves.toMatchObject({
+      id: 'report-1',
+    });
+    expect(mock.requests.at(-1)?.body).toEqual({
+      targetType: ReportTargetType.Post,
+      targetId: 'reported',
+      reason: ReportReason.Spam,
+    });
+  });
+
+  it('распознаёт пост по пути, а не по набору полей', async () => {
+    const bare: Record<string, unknown> = { ...postFixture({ id: 'bare' }) };
+    delete bare.attachments;
+    delete bare.spans;
+    const mock = createMockFetch();
+    mock.get('/api/posts/bare', apiResponse(bare));
+    mock.post('/api/posts/bare/like', apiResponse({ liked: true, likesCount: 1 }));
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+
+    const post = await itd.posts.get('bare');
+    await post.like();
+
+    expect(typeof post.repost).toBe('function');
+    expect(mock.requests.at(-1)?.url).toContain('/api/posts/bare/like');
+  });
+
+  it('не добавляет действия объектам вне схемы', async () => {
+    const source = postFixture({
+      id: 'mention',
+      spans: [{ type: SpanType.Mention, offset: 0, length: 4, username: 'bob' }],
+    });
+    const mock = createMockFetch();
+    mock.get('/api/posts/mention', apiResponse(source));
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+
+    const post = await itd.posts.get('mention');
+    expect('follow' in (post.spans[0] ?? {})).toBe(false);
+  });
+
+  it('возвращает результат ресурса из действий ссылки на комментарий', async () => {
+    const server = createMockServer({
+      seed: {
+        ...seed,
+        comments: [
+          ...seed.comments,
+          {
+            id: 'comment-own',
+            postId: 'post-1',
+            authorId: 'user-bob',
+            content: 'Комментарий Боба',
+          },
+        ],
+        notifications: [
+          {
+            id: 'notification-reaction',
+            userId: 'user-bob',
+            type: NotificationType.CommentReaction,
+            actorIds: ['user-alice'],
+            entityId: 'comment-own',
+            parentEntityId: 'post-1',
+          },
+        ],
+      },
+    });
+    const itd = hydrateClient(new ItdClient(server.clientOptions({ as: 'bob' })));
+
+    const comment = (await itd.notifications.list()).items[0]?.comment;
+    await expect(comment?.update('Правка')).resolves.toEqual({
+      id: 'comment-own',
+      content: 'Правка',
+      editedAt: expect.any(String),
+    });
+    await comment?.remove();
+    await expect(comment?.restore()).resolves.toBeUndefined();
+    server.assertNoUnsupportedRequests();
+  });
+
+  it('гидратирует страницы и все способы перебора Paginator', async () => {
+    const { itd } = hydratedServerClient();
+
+    const page = await itd.posts.list({ limit: 1 });
+    expect(typeof page.items[0]?.like).toBe('function');
+
+    const byNext = itd.posts.iterate({ limit: 1 });
+    expect(byNext).toBeInstanceOf(Paginator);
+    expect(typeof (await byNext.next())?.items[0]?.comment).toBe('function');
+
+    const byPages = itd.posts.iterate({ limit: 1 });
+    const firstPage = await byPages.pages().next();
+    expect(typeof firstPage.value?.items[0]?.author.follow).toBe('function');
+
+    const byIterator = itd.posts.iterate({ limit: 1 });
+    const iterated: HydratedPost[] = [];
+    for await (const post of byIterator) iterated.push(post);
+    expect(iterated).toHaveLength(2);
+    expect(iterated.every((post) => typeof post.pin === 'function')).toBe(true);
+
+    const collected = await itd.posts.iterate({ limit: 1 }).collect();
+    expect(collected).toHaveLength(2);
+    expect(collected.every((post) => typeof post.author.getPosts === 'function')).toBe(true);
+  });
+
+  it('гидратирует сетевой ответ и ответ из кэша одинаково', async () => {
+    const { server, raw } = hydratedServerClient();
+    raw.use(cache({ ttl: 60_000, operations: ['posts.get'] }));
+    const itd = hydrateClient(raw);
+
+    const plain = await raw.posts.get('post-1');
+    const first = await itd.posts.get('post-1');
+    const second = await itd.posts.get('post-1');
+
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+    expect(typeof first.like).toBe('function');
+    expect(typeof second.author.get).toBe('function');
+    expect('like' in plain).toBe(false);
+    expect(server.requests.filter((request) => request.path === '/api/posts/post-1')).toHaveLength(
+      1,
+    );
+  });
+
+  it('подтверждает QR-вход прямо на описании устройства', async () => {
+    const mock = createMockFetch();
+    mock.post(
+      '/api/v1/auth/qr/scan',
+      apiResponse({ client: 'Chrome', ipCity: null, requestedAt: '2026-09-02' }),
+    );
+    mock.post('/api/v1/auth/qr/approve', apiResponse({}));
+
+    const itd = hydrateClient(
+      new ItdClient({
+        baseUrl: 'https://mock.itd.test',
+        fetch: mock.fetch,
+        auth: 'test-token',
+        retry: false,
+        rateLimit: false,
+      }),
+    );
+
+    const target = await itd.auth.scanQrLogin({ qrId: 'qr-1', secret: 'from-code' });
+    expect(target.client).toBe('Chrome');
+    expect(target.ipCity).toBeNull();
+
+    await target.approve();
+
+    // Секретов в ответе нет — действие берёт их из вызова, которым получено описание.
+    // Сам секрет в журнале запросов замаскирован, поэтому сверяется только его наличие.
+    const approve = mock.requests.at(-1);
+    expect(approve?.url).toContain('/api/v1/auth/qr/approve');
+    expect(approve?.body).toEqual({ qrId: 'qr-1', secret: expect.any(String) });
+  });
+
+  it('поддерживает замороженные результаты плагинов', async () => {
+    const mock = createMockFetch();
+    mock.get('/api/posts/frozen', apiResponse(postFixture({ id: 'frozen' })));
+    const raw = new ItdClient({
+      baseUrl: 'https://mock.itd.test',
+      fetch: mock.fetch,
+      auth: 'test-token',
+      retry: false,
+      rateLimit: false,
+    });
+    raw.use({
+      name: 'freeze',
+      install({ operations }) {
+        operations.use(async (request, next) => {
+          const result = await next(request);
+          Object.defineProperty(result, 'pluginMeta', { value: 'сохранено' });
+          return Object.freeze(result);
+        });
+      },
+    });
+
+    const post = await hydrateClient(raw).posts.get('frozen');
+    expect(Object.isFrozen(post)).toBe(false);
+    expect(typeof post.like).toBe('function');
+    expect((post as unknown as Post & { pluginMeta: string }).pluginMeta).toBe('сохранено');
+  });
+
+  it('гидратирует модель после преобразования crypto', async () => {
+    const mock = createMockFetch();
+    mock.get(
+      '/api/posts/encrypted',
+      apiResponse(postFixture({ id: 'encrypted', content: encodeInvisible('Скрытый текст') })),
+    );
+    const raw = new ItdClient({
+      baseUrl: 'https://mock.itd.test',
+      fetch: mock.fetch,
+      auth: 'test-token',
+      retry: false,
+      rateLimit: false,
+    });
+    raw.use(crypt());
+
+    const post = await hydrateClient(raw).posts.get('encrypted');
+    expect(post.decoded?.content?.text).toBe('Скрытый текст');
+    expect(typeof post.like).toBe('function');
+  });
+
+  it('привязывает одну модель к нужному клиенту', async () => {
+    const shared = postFixture({ id: 'shared' });
+    shared.originalPost = shared as unknown as OriginalPost;
+    const calls: string[] = [];
+    const make = (name: string) => {
+      const raw = new ItdClient({ auth: 'test-token', retry: false, rateLimit: false });
+      raw.use({
+        name: `shared-${name}`,
+        install({ operations }) {
+          operations.use(async (request) => {
+            if (request.path.endsWith('/like')) {
+              calls.push(name);
+              return { liked: true, likesCount: 1 };
+            }
+            return shared;
+          });
+        },
+      });
+      return hydrateClient(raw);
+    };
+
+    const first = await make('first').posts.get('shared');
+    const second = await make('second').posts.get('shared');
+    expect(first.originalPost).toBe(first);
+    expect(second.originalPost).toBe(second);
+    expect(second).not.toBe(first);
+    await first.like();
+    await second.like();
+
+    expect(calls).toEqual(['first', 'second']);
+  });
+});

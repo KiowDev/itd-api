@@ -1,6 +1,6 @@
 import type { AttachmentType } from '../types/enums.js';
 import type { IsoDate, Span, UserId } from './common.js';
-import type { Author } from './users.js';
+import type { Author, UserBase } from './users.js';
 
 /** Вложение поста или комментария. */
 export interface Attachment {
@@ -51,42 +51,44 @@ export interface Poll {
   createdAt: IsoDate;
 }
 
-/**
- * Пост, на который ссылается репост. Сервер отдаёт его урезанным и только на один уровень:
- * без признаков относительно текущего пользователя и без собственного `originalPost`.
- */
-export interface OriginalPost {
-  id: string;
-  content: string;
-  /** Разметка текста, см. {@link Span}. */
-  spans: Span[];
-  author: Author;
-  attachments: Attachment[];
+/** Счётчики поста. */
+export interface PostCounters {
   likesCount: number;
   commentsCount: number;
   repostsCount: number;
   viewsCount: number;
-  /** Удалён ли пост. */
-  isDeleted: boolean;
   /** Преобладающая реакция — эмодзи либо `null`. */
   dominantEmoji?: string | null;
-  createdAt: IsoDate;
-  /** Служебная метка показа для телеметрии, см. {@link Post.vs}. */
-  vs?: string;
 }
 
-/** Пост ленты, стены или профиля. */
-export interface Post {
+/** Общая часть поста ленты и поста, на который ссылается репост. */
+export interface PostBase extends PostCounters {
   id: string;
   content: string;
   /** Разметка текста. Передаётся без изменений, см. {@link Span}. */
   spans: Span[];
   author: Author;
   attachments: Attachment[];
-  likesCount: number;
-  commentsCount: number;
-  repostsCount: number;
-  viewsCount: number;
+  createdAt: IsoDate;
+  /**
+   * Служебная метка показа для телеметрии.
+   *
+   * Нужна только эндпоинтам `itd.telemetry.*`. В остальных случаях игнорируйте.
+   */
+  vs?: string;
+}
+
+/**
+ * Пост, на который ссылается репост. Сервер отдаёт его урезанным и только на один уровень:
+ * без признаков относительно текущего пользователя и без собственного `originalPost`.
+ */
+export interface OriginalPost extends PostBase {
+  /** Удалён ли пост. */
+  isDeleted: boolean;
+}
+
+/** Пост ленты, стены или профиля. */
+export interface Post extends PostBase {
   /** Чья это стена, если пост опубликован не у себя. */
   wallRecipientId: UserId | null;
   /** Владелец стены. Приходит не во всех ответах. */
@@ -102,17 +104,8 @@ export interface Post {
   /** Пост, который репостнули, если это репост. `null` у обычного поста. */
   originalPost?: OriginalPost | null;
   poll?: Poll | null;
-  /** Преобладающая реакция — эмодзи либо `null`. */
-  dominantEmoji?: string | null;
   /** Когда пост отредактировали. `null`, если не редактировали. */
   editedAt?: IsoDate | null;
-  createdAt: IsoDate;
-  /**
-   * Служебная метка показа для телеметрии.
-   *
-   * Нужна только эндпоинтам `itd.telemetry.*`. В остальных случаях игнорируйте.
-   */
-  vs?: string;
   /**
    * Топовые комментарии. Приходят только в ответе `GET /api/posts/{id}`.
    *
@@ -122,11 +115,7 @@ export interface Post {
 }
 
 /** На чей комментарий дан ответ. */
-export interface CommentReplyTo {
-  id: string;
-  username: string;
-  displayName: string;
-}
+export interface CommentReplyTo extends UserBase {}
 
 /** Комментарий к посту или ответ на комментарий. */
 export interface Comment {
@@ -155,20 +144,21 @@ export interface Comment {
   replyTo?: CommentReplyTo | null;
 }
 
-/** Компактный ответ редактирования поста. */
-export interface PostUpdateResult {
+/** Общая часть компактных ответов редактирования поста и комментария. */
+export interface UpdateResultBase {
   id: string;
   content: string;
+  /** Когда сохранена правка. */
+  editedAt: IsoDate;
+}
+
+/** Компактный ответ редактирования поста. */
+export interface PostUpdateResult extends UpdateResultBase {
   spans: Span[];
-  updatedAt: IsoDate;
 }
 
 /** Компактный ответ редактирования комментария. */
-export interface CommentUpdateResult {
-  id: string;
-  content: string;
-  editedAt: IsoDate;
-}
+export interface CommentUpdateResult extends UpdateResultBase {}
 
 /** Хэштег. */
 export interface Hashtag {
@@ -180,12 +170,8 @@ export interface Hashtag {
 }
 
 /** Счётчики поста из `itd.posts.stats()`. */
-export interface PostStats {
+export interface PostStats extends PostCounters {
   id: string;
-  likesCount: number;
-  commentsCount: number;
-  repostsCount: number;
-  viewsCount: number;
   /** Преобладающая реакция — эмодзи либо `null`. */
   dominantEmoji: string | null;
 }

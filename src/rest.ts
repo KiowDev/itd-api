@@ -206,12 +206,16 @@ export type {
   CommentUpdateResult,
   Hashtag,
   LikeResult,
+  OriginalPost,
   PinPostResult,
   Poll,
   PollOption,
   Post,
+  PostBase,
+  PostCounters,
   PostStats,
   PostUpdateResult,
+  UpdateResultBase,
 } from './models/content.js';
 export { isMyProfile } from './models/guards.js';
 export type { Notification, NotificationSettings } from './models/notifications.js';
@@ -238,6 +242,7 @@ export {
   type ShopOrder,
   type ShopOrderAccessSession,
   type ShopOrderAccessVerification,
+  type ShopOrderBase,
   type ShopOrderDelivery,
   type ShopOrderItem,
   type ShopOrderItemInput,
@@ -275,6 +280,7 @@ export type {
   Profile,
   PublicProfile,
   SubscriptionState,
+  UserBase,
   UsernameAvailability,
   UserSummary,
 } from './models/users.js';

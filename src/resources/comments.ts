@@ -3,7 +3,8 @@ import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
-import { normalizeComment } from '../domain/content.js';
+import { normalizeComment, normalizeCommentUpdate } from '../domain/content.js';
+import { defineBuiltInOperation } from '../domain/operations.js';
 import type { Comment, CommentUpdateResult, LikeResult } from '../models/content.js';
 import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
@@ -21,7 +22,10 @@ const COMMENTS_REPLIES = pageOperation<Comment>('comments.replies', (body) =>
   mapPage(readPagedPage<Comment>(body, 'replies'), normalizeComment),
 );
 const COMMENTS_REPLY = commentOperation('comments.reply');
-const COMMENTS_UPDATE = passthroughOperation<CommentUpdateResult>('comments.update');
+const COMMENTS_UPDATE = defineBuiltInOperation<CommentUpdateResult>(
+  'comments.update',
+  normalizeCommentUpdate,
+);
 const COMMENTS_RESTORE = voidOperation('comments.restore');
 const COMMENTS_LIKE = passthroughOperation<LikeResult>('comments.like');
 const COMMENTS_UNLIKE = passthroughOperation<LikeResult>('comments.unlike');

@@ -1,4 +1,4 @@
-import type { LikeResult, OriginalPost, Post, PostUpdateResult } from 'itd-api';
+import type { LikeResult, OriginalPost, Post } from 'itd-api';
 import { postFixture } from '../../fixtures/models.fixtures.js';
 import type { CommentService } from '../comments/comments.service.js';
 import type { CursorSlice } from '../shared/pagination.types.js';
@@ -7,7 +7,7 @@ import type { UserPresenter } from '../users/users.presenter.js';
 import type { UserService } from '../users/users.service.js';
 import type { UserRecord } from '../users/users.types.js';
 import type { PostService } from './posts.service.js';
-import type { PostPage, PostRecord } from './posts.types.js';
+import type { PostPage, PostRecord, PostUpdateResponse } from './posts.types.js';
 import { postgresStamp } from './posts.utils.js';
 
 /** Посты в форме ответов API относительно текущего пользователя. @internal */
@@ -57,7 +57,7 @@ export class PostPresenter {
     };
   }
 
-  updateResult(post: PostRecord): PostUpdateResult {
+  updateResult(post: PostRecord): PostUpdateResponse {
     return {
       id: post.id,
       content: post.content,

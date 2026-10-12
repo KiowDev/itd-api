@@ -188,13 +188,17 @@ export const ShopOrderStatus = Object.freeze({
 } as const);
 export type ShopOrderStatus = Loose<(typeof ShopOrderStatus)[keyof typeof ShopOrderStatus]>;
 
-/** Заказ в списке заказов. */
-export interface ShopOrderSummary {
+/** Общая часть заказа в списке и оформленного заказа. */
+export interface ShopOrderBase {
   number: string;
-  titles: string[];
   status: ShopOrderStatus;
   total: number;
   createdAt: IsoDate;
+}
+
+/** Заказ в списке заказов. */
+export interface ShopOrderSummary extends ShopOrderBase {
+  titles: string[];
 }
 
 /** Товар в оформленном заказе. */
@@ -221,15 +225,11 @@ export interface ShopOrderSupport {
 }
 
 /** Оформленный заказ. */
-export interface ShopOrder {
-  number: string;
-  status: ShopOrderStatus;
-  createdAt: IsoDate;
+export interface ShopOrder extends ShopOrderBase {
   payment: { pending: boolean };
   items: ShopOrderItem[];
   itemsTotal: number;
   shipping: number;
-  total: number;
   delivery: ShopOrderDelivery;
   track?: string | null | undefined;
   comment?: string | null | undefined;

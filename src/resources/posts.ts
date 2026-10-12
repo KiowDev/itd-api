@@ -10,7 +10,7 @@ import type { HttpClient } from '../core/execution/http.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { pickArray } from '../core/unwrap.js';
 import { encodePathSegment } from '../core/url.js';
-import { normalizeComment } from '../domain/content.js';
+import { normalizeComment, normalizePostUpdate } from '../domain/content.js';
 import { defineBuiltInOperation } from '../domain/operations.js';
 import type { CreateCommentInput, CreatePostData } from '../domain/params.js';
 import type { UserRef } from '../models/common.js';
@@ -47,7 +47,7 @@ const POSTS_STATS = defineBuiltInOperation<PostStats[]>('posts.stats', (body) =>
 );
 const POSTS_CREATE = postOperation('posts.create');
 const POSTS_GET = postOperation('posts.get');
-const POSTS_UPDATE = passthroughOperation<PostUpdateResult>('posts.update');
+const POSTS_UPDATE = defineBuiltInOperation<PostUpdateResult>('posts.update', normalizePostUpdate);
 const POSTS_RESTORE = voidOperation('posts.restore');
 const POSTS_LIKE = passthroughOperation<LikeResult>('posts.like');
 const POSTS_UNLIKE = passthroughOperation<LikeResult>('posts.unlike');

@@ -13,7 +13,7 @@
 npm install itd-api @itd-api/hydrate
 ```
 
-Требуется `itd-api >=0.10.2 <1.0.0`.
+Требуется `itd-api >=0.13.0 <1.0.0`.
 
 ## Начало работы
 
@@ -30,7 +30,7 @@ const comment = await post.comment('Согласен');
 await comment.reply('Дополню мысль');
 
 const author = await post.author.get();
-const wall = await author.posts({ limit: 20 });
+const wall = await author.getPosts({ limit: 20 });
 ```
 
 `hydrateClient()` возвращает типизированный фасад. Исходный `ItdClient` остаётся владельцем
@@ -42,10 +42,14 @@ const wall = await author.posts({ limit: 20 });
 
 - `get()` загружает свежее состояние;
 - `like()` и `unlike()` управляют реакцией;
-- `comment()` добавляет комментарий;
-- `repost()` делает репост;
+- `comment()` и `voiceComment()` добавляют комментарий;
+- `getComments()` и `iterateComments()` загружают комментарии;
+- `update()` изменяет текст;
+- `vote()` голосует в опросе;
+- `repost()` и `unrepost()` управляют репостом;
 - `remove()` и `restore()` управляют удалением;
-- `pin()` и `unpin()` управляют закреплением.
+- `pin()` и `unpin()` управляют закреплением;
+- `report()` отправляет жалобу.
 
 ### Комментарий
 
@@ -53,15 +57,36 @@ const wall = await author.posts({ limit: 20 });
 - `reply()` добавляет ответ;
 - `update()` изменяет текст;
 - `remove()` и `restore()` управляют удалением;
-- `getReplies()` загружает страницу ответов.
+- `getReplies()` и `iterateReplies()` загружают ответы;
+- `report()` отправляет жалобу.
 
-У модели уже есть поле `replies` с предварительно загруженными ответами. Для запроса полного
-списка используется отдельное имя `getReplies()`.
+`get…()` загружает страницу связанной коллекции, `iterate…()` возвращает пагинатор по ней.
+Поля `post.comments` и `comment.replies` содержат только предварительно загруженные элементы
+ответа, тоже с действиями.
 
 ### Пользователь
 
 Авторы постов и комментариев, профили, участники уведомлений и пользователи из списков получают
-методы `get()`, `follow()`, `unfollow()`, `block()`, `unblock()` и `posts()`.
+методы `get()`, `follow()`, `unfollow()`, `block()`, `unblock()`, а также коллекции:
+`getPosts()`, `getLikedPosts()`, `getFollowers()`, `getFollowing()` и их варианты `iterate…()`.
+`report()` отправляет жалобу на пользователя.
+
+`report()` у поста, комментария и пользователя сам подставляет тип и идентификатор объекта:
+
+```ts
+import { ReportReason } from 'itd-api';
+
+await post.report({ reason: ReportReason.Spam });
+```
+
+### Хэштег
+
+Хэштеги из `hashtags.trending()` и `search.all()` получают `getPosts()` и `iteratePosts()`:
+
+```ts
+const [hashtag] = await itd.hashtags.trending();
+const page = await hashtag?.getPosts({ limit: 20 });
+```
 
 ### Вложение
 
@@ -70,9 +95,9 @@ const wall = await author.posts({ limit: 20 });
 
 ### Уведомление
 
-`getPost()` загружает пост, к которому относится уведомление. Для уведомления о комментарии
-доступно поле `comment` со ссылкой на комментарий и действиями `reply()`, `like()`, `unlike()`,
-`update()`, `remove()`, `restore()` и `getReplies()`.
+`getPost()` загружает пост, к которому относится уведомление, `markRead()` отмечает его
+прочитанным. Для уведомления о комментарии
+доступно поле `comment` — ссылка `{ id }` с действиями комментария.
 
 Аргументы действий совпадают с аргументами ресурсов. Например, `reply()` принимает строку,
 функцию настройки построителя комментария и параметры подключённых плагинов.
@@ -99,6 +124,43 @@ const target = await itd.auth.scanQrLogin({ qrId, secret });
 console.log(target.client, target.ipCity);
 await target.approve(); // либо target.reject()
 ```
+
+## Модели — снимки
+
+Модель описывает состояние на момент ответа. Действие выполняет запрос и возвращает результат
+метода ресурса, не меняя исходный объект; свежее состояние загружает `get()`:
+
+| Действие | Возвращает |
+|---|---|
+| `post.get()`, `post.repost()` | `HydratedPost` |
+| `post.comment()`, `post.voiceComment()`, `comment.reply()` | `HydratedComment` |
+| `post.like()`, `post.unlike()`, `comment.like()`, `comment.unlike()` | `LikeResult` |
+| `post.pin()`, `post.unpin()` | `PinPostResult` |
+| `post.update()` | `PostUpdateResult` |
+| `comment.update()` | `CommentUpdateResult` |
+| `post.vote()` | `Poll` |
+| `remove()`, `restore()`, `post.unrepost()` | `void` |
+| `get…()` коллекций: `getComments()`, `getReplies()`, `getPosts()`, `getFollowers()` и другие | `HydratedPage` гидратированных моделей |
+| `iterate…()` коллекций | `HydratedPaginator` гидратированных моделей |
+| `user.get()` | `HydratedUser<PublicProfile>` |
+| `user.follow()` | `FollowResult` |
+| `notification.markRead()` | число непрочитанных |
+| `report()` | `Report` |
+
+```ts
+const result = await post.like();
+result.liked;  // true
+post.isLiked;  // прежнее значение снимка
+
+const fresh = await post.get();
+```
+
+## Что гидратируется
+
+Модели находятся по известным путям ответа, а не по набору полей: результат метода ресурса,
+`author`, `wallRecipient`, `originalPost`, `comments`, `attachments` поста, `author`, `replyTo`,
+`replies`, `attachments` комментария, `actors` уведомления. Поля, которые добавил плагин,
+передаются как есть и методов не получают.
 
 ## Страницы и перебор
 
@@ -167,7 +229,7 @@ await stream.connect();
 передал его идентификатор. Поле `comment` присутствует у уведомлений о комментариях, ответах,
 упоминаниях и реакциях на комментарии.
 
-Гидратированный контекст доступен в `sequentialize`, `use()`, `onUpdate()`,
+Гидратированный контекст доступен в `use()`, `onUpdate()`,
 `onNotification()` и событиях `notification`, `middlewareError` и `handlerError`. Событие
 `message` и поле `context.raw` содержат исходные данные транспорта.
 
@@ -194,7 +256,8 @@ stream.use(router);
 ## Плагины и кэш
 
 Гидратация выполняется после результата ресурса. Одинаковые методы доступны у сетевого ответа,
-ответа из `@itd-api/cache` и модели, преобразованной другим плагином.
+ответа из `@itd-api/cache` и модели, преобразованной другим плагином. Поля, которые плагин
+добавил к ответу, гидратации не подлежат.
 
 ```ts
 import { cache } from '@itd-api/cache';
@@ -216,21 +279,34 @@ await post.like();
 
 ```ts
 const itd = hydrateClient(new ItdClient());
-// itd: HydrateFlavor<ItdClient>
+// itd: HydratedClient<ItdClient>
 ```
 
-Для полей приложения и функций-фабрик можно использовать `HydrateFlavor` явно:
+Для полей приложения и функций-фабрик можно использовать `HydratedClient` явно:
 
 ```ts
 import type { ItdClient } from 'itd-api';
-import type { HydrateFlavor, HydratedPost } from '@itd-api/hydrate';
+import type { HydratedClient, HydratedPost } from '@itd-api/hydrate';
 
-type AppClient = HydrateFlavor<ItdClient>;
+type AppClient = HydratedClient<ItdClient>;
 
 async function publish(itd: AppClient): Promise<HydratedPost> {
   return itd.posts.create({ content: 'Новая запись' });
 }
 ```
+
+Пользователь любого вида — автор, участник уведомления, профиль — описывается типом
+`HydratedUser<T>`, пост и оригинал репоста — `HydratedPost<T>`:
+
+```ts
+import type { MyProfile } from 'itd-api';
+import type { HydratedUser } from '@itd-api/hydrate';
+
+const me: HydratedUser<MyProfile> = await itd.users.me();
+```
+
+Страница и пагинатор — `HydratedPage<Item>` и `HydratedPaginator<Item>`, тип гидратированного
+ресурса — `HydratedClient['posts']`.
 
 Методы моделей неперечисляемы: `Object.keys()`, оператор расширения и JSON сохраняют поля ответа
 API. Повторная гидратация того же клиента возвращает тот же фасад.

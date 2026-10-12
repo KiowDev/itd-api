@@ -86,17 +86,9 @@ declare module 'itd-api' {
     cipher?: CipherRef | undefined;
   }
 
-  interface Post extends CryptoDecodedObject {}
-  interface OriginalPost extends CryptoDecodedObject {}
-  interface PostUpdateResult extends CryptoDecodedObject {}
+  interface PostBase extends CryptoDecodedObject {}
   interface Comment extends CryptoDecodedObject {}
-  interface CommentUpdateResult extends CryptoDecodedObject {}
-  interface CommentReplyTo extends CryptoDecodedObject {}
-  interface Author extends CryptoDecodedObject {}
-  interface UserSummary extends CryptoDecodedObject {}
-  interface Actor extends CryptoDecodedObject {}
-  interface AuthUser extends CryptoDecodedObject {}
+  interface UpdateResultBase extends CryptoDecodedObject {}
+  interface UserBase extends CryptoDecodedObject {}
   interface Notification extends CryptoDecodedObject {}
-  interface MyProfile extends CryptoDecodedObject {}
-  interface PublicProfile extends CryptoDecodedObject {}
 }
