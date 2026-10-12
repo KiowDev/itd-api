@@ -1,14 +1,16 @@
 import type { Span } from 'itd-api';
+import { CipherRegistry } from '../ciphers/cipher.registry.js';
+import type { Cipher } from '../ciphers/cipher.types.js';
+import { SCANNED_FIELDS } from '../fields/field.constants.js';
+import type { TextFieldDefinition } from '../fields/field.types.js';
+import { responseFieldDefinition } from '../fields/field.utils.js';
+import { scanFrames } from '../frames/frame.utils.js';
 import type {
-  Cipher,
   CryptoDecodedObject,
   CryptoSpan,
   DecodedField,
   DecodedFields,
-} from './cipher.js';
-import { responseFieldDefinition, SCANNED_FIELDS, type TextFieldDefinition } from './fields.js';
-import { scanFrames } from './protocol.js';
-import { CipherRegistry } from './registry.js';
+} from './response.types.js';
 
 const MAX_DEPTH = 12;
 interface WireReplacement {
@@ -25,7 +27,8 @@ interface WireReplacement {
  * объектам.
  *
  * Исходное дерево не изменяется. Если находок нет, функция возвращает тот же объект; если
- * находки есть, копируются только изменённые ветви. Строковые поля ответа и связанные
+ * находки есть, копируются только изменённые ветви. Свойства копии переносятся
+ * дескрипторами как есть, геттеры не вычисляются. Строковые поля ответа и связанные
  * с ними серверные `spans` всегда сохраняются в первоначальном виде.
  *
  * Обычно вызывать функцию вручную не требуется: {@link crypt} применяет её к HTTP-ответам
@@ -79,38 +82,55 @@ function cloneAndDecode<T>(
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return value;
 
-  const source = value as Record<string, unknown>;
-  const entries: Array<[string, unknown]> = [];
+  const source = value as Record<PropertyKey, unknown>;
+  const descriptors: Array<[PropertyKey, PropertyDescriptor]> = [];
   let changed = false;
-  for (const [key, item] of Object.entries(source)) {
-    const transformed =
-      key === 'raw' ? item : cloneAndDecode(item, registry, fields, depth + 1, copies);
-    entries.push([key, transformed]);
-    if (transformed !== item) changed = true;
+  for (const key of Reflect.ownKeys(source)) {
+    const descriptor = Object.getOwnPropertyDescriptor(source, key);
+    if (!descriptor) continue;
+    if (
+      typeof key === 'string' &&
+      key !== 'raw' &&
+      descriptor.enumerable &&
+      'value' in descriptor
+    ) {
+      const transformed = cloneAndDecode(descriptor.value, registry, fields, depth + 1, copies);
+      if (transformed !== descriptor.value) {
+        changed = true;
+        descriptors.push([key, { ...descriptor, value: transformed }]);
+        continue;
+      }
+    }
+    descriptors.push([key, descriptor]);
   }
 
   const decoded = decodeRecord(source, registry, fields);
   if (!decoded && !changed) return value;
 
-  const copy = Object.create(prototype) as Record<string, unknown>;
-  for (const [key, item] of entries) copy[key] = item;
+  const copy = Object.create(prototype) as Record<PropertyKey, unknown>;
+  for (const [key, descriptor] of descriptors) {
+    if (decoded && key === 'decoded') continue;
+    Object.defineProperty(copy, key, descriptor);
+  }
   if (decoded) copy.decoded = decoded;
   copies.set(value, copy);
   return copy as T;
 }
 
 function decodeRecord(
-  record: Record<string, unknown>,
+  record: Record<PropertyKey, unknown>,
   registry: CipherRegistry,
   fields: readonly TextFieldDefinition[],
 ): DecodedFields | undefined {
   let decoded: DecodedFields | undefined;
 
   for (const definition of fields) {
-    const wireText = record[definition.name];
+    const wireText = dataValue(record, definition.name);
     if (typeof wireText !== 'string' || wireText === '') continue;
 
-    const serverSpans = definition.spansField ? readServerSpans(record[definition.spansField]) : [];
+    const serverSpans = definition.spansField
+      ? readServerSpans(dataValue(record, definition.spansField))
+      : [];
     const result = decodeField(
       wireText,
       serverSpans,
@@ -267,6 +287,11 @@ function mergeCryptoSpans(spans: readonly CryptoSpan[]): CryptoSpan[] {
     }
   }
   return merged;
+}
+
+function dataValue(record: Record<PropertyKey, unknown>, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(record, key);
+  return descriptor && 'value' in descriptor ? descriptor.value : undefined;
 }
 
 function readServerSpans(value: unknown): Span[] {

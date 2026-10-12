@@ -1,4 +1,5 @@
-import { type Cipher, CipherName } from '../cipher.js';
+import { CipherName } from './cipher.constants.js';
+import type { Cipher } from './cipher.types.js';
 
 /**
  * Алфавит из шести невидимых управляющих символов `U+206A`…`U+206F`.

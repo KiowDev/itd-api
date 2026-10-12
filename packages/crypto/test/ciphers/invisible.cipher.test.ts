@@ -8,7 +8,7 @@ import {
   INVISIBLE_ALPHABET,
   INVISIBLE_WIDTH,
   invisible,
-} from '../src/index.js';
+} from '../../src/index.js';
 
 /**
  * Что сервер итд.com делает с текстом поста при сохранении: символы алфавита пропускает

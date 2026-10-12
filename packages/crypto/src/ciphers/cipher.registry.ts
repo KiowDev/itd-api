@@ -1,5 +1,5 @@
-import type { Cipher, CipherRef } from './cipher.js';
-import { CryptError } from './errors.js';
+import { CryptError } from '../crypt.errors.js';
+import type { Cipher, CipherRef } from './cipher.types.js';
 
 const RESERVED_IDS = new Map<number, string>([
   [0, 'invisible'],

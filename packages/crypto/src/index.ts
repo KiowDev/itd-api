@@ -27,54 +27,56 @@
  * @packageDocumentation
  */
 
-import type { CipherRef, CryptoDecodedObject } from './cipher.js';
-import type { CryptRequestOptions } from './plugin.js';
+import type { CipherRef } from './ciphers/cipher.types.js';
+import type { CryptRequestOptions } from './crypt.types.js';
+import type { CryptoOperationMetadata } from './fields/field.types.js';
+import type { CryptoDecodedObject, DecodedFields } from './response/response.types.js';
 
-export type {
-  Cipher,
-  CipherRef,
-  CryptoDecodedObject,
-  CryptoRange,
-  CryptoSpan,
-  DecodedField,
-  DecodedFields,
-  RawCryptoOptions,
-} from './cipher.js';
-export { CipherName } from './cipher.js';
 export {
   BEECRYPT_ALPHABET,
-  BUILT_IN_CIPHERS,
   beecrypt,
   decodeBeeCrypt,
+  encodeBeeCrypt,
+  hasBeeCrypt,
+} from './ciphers/beecrypt.cipher.js';
+export { BUILT_IN_CIPHERS } from './ciphers/built-in.constants.js';
+export { CipherName } from './ciphers/cipher.constants.js';
+export type { Cipher, CipherRef } from './ciphers/cipher.types.js';
+export {
   decodeInvisible,
   decodeInvisiblePayload,
-  encodeBeeCrypt,
   encodeInvisible,
   extractInvisible,
-  hasBeeCrypt,
   hasInvisible,
   INVISIBLE_ALPHABET,
   INVISIBLE_BASE,
   INVISIBLE_WIDTH,
   invisible,
   stripInvisible,
-} from './ciphers/index.js';
-export { CryptError } from './errors.js';
-export {
-  type CryptoFieldMetadata,
-  type CryptoOperationMetadata,
-  SCANNED_FIELDS,
-  TEXT_FIELDS,
-  type TextOperationId,
-  textFields,
-} from './fields.js';
-export { type CryptOptions, type CryptPlugin, type CryptRequestOptions, crypt } from './plugin.js';
-export { decodeTree } from './walk.js';
+} from './ciphers/invisible.cipher.js';
+export { CryptError } from './crypt.errors.js';
+export { crypt } from './crypt.factory.js';
+export type { CryptOptions, CryptPlugin, CryptRequestOptions } from './crypt.types.js';
+export { SCANNED_FIELDS, TEXT_FIELDS } from './fields/field.constants.js';
+export type {
+  CryptoFieldMetadata,
+  CryptoOperationMetadata,
+  TextOperationId,
+} from './fields/field.types.js';
+export { textFields } from './fields/field.utils.js';
+export type { CryptoRange, RawCryptoOptions } from './request/request.types.js';
+export type {
+  CryptoDecodedObject,
+  CryptoSpan,
+  DecodedField,
+  DecodedFields,
+} from './response/response.types.js';
+export { decodeTree } from './response/response.utils.js';
 
 declare module 'itd-api' {
   interface OperationAnnotations {
     /** Текстовые поля, доступные crypto-плагину в подключаемой операции. */
-    readonly crypto?: import('./fields.js').CryptoOperationMetadata | undefined;
+    readonly crypto?: CryptoOperationMetadata | undefined;
   }
 
   interface RequestExtensions {
@@ -86,9 +88,19 @@ declare module 'itd-api' {
     cipher?: CipherRef | undefined;
   }
 
-  interface PostBase extends CryptoDecodedObject {}
-  interface Comment extends CryptoDecodedObject {}
-  interface UpdateResultBase extends CryptoDecodedObject {}
-  interface UserBase extends CryptoDecodedObject {}
-  interface Notification extends CryptoDecodedObject {}
+  interface PostBase extends CryptoDecodedObject<'content'> {}
+  interface Comment extends CryptoDecodedObject<'content'> {}
+  interface UpdateResultBase extends CryptoDecodedObject<'content'> {}
+  interface UserBase extends CryptoDecodedObject<'displayName'> {}
+  interface Notification extends CryptoDecodedObject<'preview'> {}
+
+  interface MyProfile {
+    decoded?: DecodedFields<'displayName' | 'bio'> | undefined;
+  }
+  interface PublicProfile {
+    decoded?: DecodedFields<'displayName' | 'bio'> | undefined;
+  }
+  interface AuthUser {
+    decoded?: DecodedFields<'displayName' | 'bio'> | undefined;
+  }
 }

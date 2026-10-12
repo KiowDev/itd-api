@@ -1,34 +1,16 @@
-import type { Cipher } from './cipher.js';
-import { INVISIBLE_ALPHABET } from './ciphers/invisible.js';
-import { CryptError } from './errors.js';
-import type { CipherRegistry } from './registry.js';
+import type { CipherRegistry } from '../ciphers/cipher.registry.js';
+import type { Cipher } from '../ciphers/cipher.types.js';
+import { INVISIBLE_ALPHABET } from '../ciphers/invisible.cipher.js';
+import { CryptError } from '../crypt.errors.js';
+import { FRAME_END, FRAME_START } from './frame.constants.js';
+import type { FrameMatch, FrameScanResult } from './frame.types.js';
 
 const DIGITS = [...INVISIBLE_ALPHABET];
 const DIGIT_INDEX = new Map(DIGITS.map((digit, index) => [digit, index]));
 
-/** Маркер начала транспортного контейнера: четыре символа `U+206F`. */
-export const FRAME_START = (DIGITS[5] ?? '').repeat(4);
-/** Маркер конца транспортного контейнера: `U+206F U+206F U+206F U+206E`. */
-export const FRAME_END = (DIGITS[5] ?? '').repeat(3) + (DIGITS[4] ?? '');
-
-/** @internal */
 interface DecodedId {
   id: number;
   end: number;
-}
-
-/** @internal */
-export interface FrameMatch {
-  start: number;
-  end: number;
-  cipher: Cipher;
-  text: string;
-}
-
-/** @internal */
-export interface FrameScanResult {
-  matches: FrameMatch[];
-  occupied: Array<readonly [start: number, end: number]>;
 }
 
 /** Длина заголовка с идентификатором шифра без выделения строки. @internal */

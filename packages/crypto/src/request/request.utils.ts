@@ -1,9 +1,10 @@
 import type { OperationRequestOptions, Span } from 'itd-api';
-import type { Cipher, CipherRef, CryptoRange, RawCryptoOptions } from './cipher.js';
-import { CryptError } from './errors.js';
-import type { TextFieldDefinition } from './fields.js';
-import { cipherIdWidth, encodeFrame } from './protocol.js';
-import type { CipherRegistry } from './registry.js';
+import type { CipherRegistry } from '../ciphers/cipher.registry.js';
+import type { Cipher, CipherRef } from '../ciphers/cipher.types.js';
+import { CryptError } from '../crypt.errors.js';
+import type { TextFieldDefinition } from '../fields/field.types.js';
+import { cipherIdWidth, encodeFrame } from '../frames/frame.utils.js';
+import type { CryptoRange, RawCryptoOptions } from './request.types.js';
 
 const VISUAL_SPANS = new Set([
   'bold',

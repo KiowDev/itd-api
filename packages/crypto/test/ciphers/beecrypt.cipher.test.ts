@@ -6,7 +6,7 @@ import {
   decodeBeeCrypt,
   encodeBeeCrypt,
   hasBeeCrypt,
-} from '../src/index.js';
+} from '../../src/index.js';
 
 describe('кодирование', () => {
   it('возвращает только буквы алфавита', () => {

@@ -1,4 +1,5 @@
-import { type Cipher, CipherName } from '../cipher.js';
+import { CipherName } from './cipher.constants.js';
+import type { Cipher } from './cipher.types.js';
 
 /**
  * Алфавит: четыре кириллические буквы, по две на пару битов.
