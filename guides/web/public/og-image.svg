@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <title>itd-api — TypeScript SDK для итд.com</title>
+  <defs>
+    <linearGradient id="background" x2="1" y2="1">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#0b282a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#background)"/>
+  <rect x="60" y="60" width="1080" height="510" rx="28" fill="none" stroke="#58E6C2" stroke-opacity=".2"/>
+  <svg x="80" y="130" width="320" height="320" viewBox="0 0 512 512">
+    <path d="M60 416H140L192 364H272L324 312H452" fill="none" stroke="#58E6C2" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <g fill="#58E6C2">
+      <circle cx="60" cy="416" r="13"/><circle cx="192" cy="364" r="13"/>
+      <circle cx="324" cy="312" r="13"/><circle cx="452" cy="312" r="13"/>
+    </g>
+    <g fill="none" stroke="#F8FAFC" stroke-width="48" stroke-linecap="square" stroke-linejoin="miter">
+      <path d="M84 108V294L204 108V294"/><path d="M198 184H346M272 184V346"/>
+      <path d="M350 242H434V372H320"/><path d="M350 242V314Q350 372 320 372"/>
+      <path d="M312 372H458M328 372V422M442 372V422"/>
+    </g>
+    <circle cx="452" cy="312" r="7" fill="#000"/>
+  </svg>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="450" y="260" fill="#F8FAFC" font-size="94" font-weight="700">itd-api</text>
+    <text x="454" y="335" fill="#58E6C2" font-size="34" font-weight="600">TypeScript SDK для итд.com</text>
+    <text x="454" y="395" fill="#CBD5E1" font-size="25">Посты · Файлы · События · Сессии</text>
+    <text x="454" y="480" fill="#94A3B8" font-size="21">Неофициальный SDK · Открытый исходный код</text>
+  </g>
+</svg>

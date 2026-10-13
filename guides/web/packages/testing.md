@@ -1,3 +1,8 @@
+---
+title: "Тестирование — @itd-api/testing"
+description: "Тестируйте приложения на itd-api без запросов к рабочему API. Установка @itd-api/testing, тестовые инструменты и примеры проверок."
+---
+
 # @itd-api/testing
 
 [![Версия @itd-api/testing в npm](https://img.shields.io/npm/v/%40itd-api%2Ftesting?logo=npm)](https://www.npmjs.com/package/@itd-api/testing)

@@ -1,3 +1,7 @@
+---
+description: "itd.notifications.events: подключение к уведомлениям, SSE, опрос REST, обновление токена и восстановление соединения."
+---
+
 # События уведомлений — `itd.notifications.events`
 
 Стабильный канал уведомлений, принадлежащий `itd.notifications`. Соединение

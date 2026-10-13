@@ -1,3 +1,8 @@
+---
+title: "Модели и ресурсы — @itd-api/hydrate"
+description: "Добавьте методы действий к моделям itd-api с @itd-api/hydrate. Настройка типизированного фасада и примеры работы с объектами API."
+---
+
 # @itd-api/hydrate
 
 [![Версия @itd-api/hydrate в npm](https://img.shields.io/npm/v/%40itd-api%2Fhydrate?logo=npm)](https://www.npmjs.com/package/@itd-api/hydrate)

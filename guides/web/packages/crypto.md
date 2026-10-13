@@ -1,3 +1,8 @@
+---
+title: "Шифрование текста — @itd-api/crypto"
+description: "Работайте с шифрованными участками текста в итд.com через @itd-api/crypto. Настройка плагина, транспортные форматы и декодирование ответов."
+---
+
 # @itd-api/crypto
 
 [![Версия @itd-api/crypto в npm](https://img.shields.io/npm/v/%40itd-api%2Fcrypto?logo=npm)](https://www.npmjs.com/package/@itd-api/crypto)

@@ -1,3 +1,8 @@
+---
+title: "Прокси — @itd-api/proxy"
+description: "Настройте работу itd-api через прокси с @itd-api/proxy. Установка пакета, параметры подключения и примеры сетевой конфигурации."
+---
+
 # @itd-api/proxy
 
 [![Версия @itd-api/proxy в npm](https://img.shields.io/npm/v/%40itd-api%2Fproxy?logo=npm)](https://www.npmjs.com/package/@itd-api/proxy)

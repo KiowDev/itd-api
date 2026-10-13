@@ -9,6 +9,7 @@ import proxySidebar from './api/generated/proxy/typedoc-sidebar.json';
 import testingSidebar from './api/generated/testing/typedoc-sidebar.json';
 import webSidebar from './api/generated/web/typedoc-sidebar.json';
 import packageJson from '../../package.json';
+import { applySeo, siteUrl } from './seo';
 
 const guideSidebar = [
   {
@@ -173,7 +174,15 @@ export default defineConfig({
   description: 'TypeScript-клиент REST API и событий социальной сети итд.com',
   base: '/itd-api/',
   sitemap: {
-    hostname: 'https://kiowdev.github.io/itd-api/',
+    hostname: siteUrl,
+  },
+  transformPageData(pageData, { siteConfig }) {
+    applySeo(pageData, siteConfig.site);
+  },
+  transformHead({ pageData }) {
+    if (pageData.relativePath === '404.md' || pageData.isNotFound) {
+      return [['meta', { name: 'robots', content: 'noindex' }]];
+    }
   },
   cleanUrls: true,
   lastUpdated: true,
@@ -189,6 +198,7 @@ export default defineConfig({
     'web/packages/:path*': 'packages/:path*',
   },
   markdown: {
+    codeCopyButtonTitle: 'Скопировать код',
     config: (md) => {
       // Таблицу заворачиваем в контейнер: прокрутку берёт на себя он, а сама таблица
       // остаётся полноценной (`display: table`) и растягивается на всю ширину колонки.
@@ -228,6 +238,12 @@ export default defineConfig({
     ],
   ],
   themeConfig: {
+    notFound: {
+      title: 'Страница не найдена',
+      quote: 'Возможно, ссылка устарела или в адресе опечатка. Найдите нужный раздел через поиск или вернитесь на главную.',
+      linkLabel: 'Вернуться на главную страницу документации',
+      linkText: 'На главную',
+    },
     logo: {
       light: '/logos/itd-api-logo-transparent.svg',
       dark: '/logos/itd-api-logo-transparent-dark.svg',

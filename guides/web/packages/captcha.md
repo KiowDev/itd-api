@@ -1,3 +1,8 @@
+---
+title: "Решение капчи — @itd-api/captcha"
+description: "Подключите @itd-api/captcha для решения капчи при авторизации в итд.com. Установка, настройка решателя и интеграция с клиентом itd-api."
+---
+
 # @itd-api/captcha
 
 [![Версия @itd-api/captcha в npm](https://img.shields.io/npm/v/%40itd-api%2Fcaptcha?logo=npm)](https://www.npmjs.com/package/@itd-api/captcha)

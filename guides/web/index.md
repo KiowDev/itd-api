@@ -28,7 +28,7 @@ head:
       content: https://kiowdev.github.io/itd-api/
   - - meta
     - name: twitter:card
-      content: summary
+      content: summary_large_image
 
 hero:
   name: "itd-api "

@@ -1,3 +1,8 @@
+---
+title: "Кэш и дедупликация — @itd-api/cache"
+description: "Ускорьте повторные запросы itd-api с TTL/LRU-кэшем и дедупликацией. Установка @itd-api/cache, настройка кэша и примеры использования."
+---
+
 # @itd-api/cache
 
 [![Версия @itd-api/cache в npm](https://img.shields.io/npm/v/%40itd-api%2Fcache?logo=npm)](https://www.npmjs.com/package/@itd-api/cache)
