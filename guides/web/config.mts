@@ -95,8 +95,9 @@ const referenceSidebar = [
     text: 'Ивенты',
     collapsed: true,
     items: [
-      { text: 'Алиса AI', link: '/reference/itd-events/alice-ai' },
       { text: 'ЕПЭПЮ 2026', link: '/reference/itd-events/epepuy' },
+      { text: 'Алиса AI', link: '/reference/itd-events/alice-ai' },
+      { text: 'Хеллоуин', link: '/reference/itd-events/halloween' },
       { text: 'Pixel Battle', link: '/reference/itd-events/pixel-battle' },
     ],
   },

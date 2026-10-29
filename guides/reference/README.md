@@ -52,6 +52,7 @@ description: "Справочник методов itd-api для итд.com: а�
 
 | Страница | О чём |
 |---|---|
+| [Хеллоуин](./itd-events/halloween.md) | призраки в ленте, посты-оборотни, банка конфет, тыква и пример подключения через `ClientFeature` |
 | [Алиса AI](./itd-events/alice-ai.md) | маршруты ивента, возможности интерфейса и пример подключения через `ClientFeature` |
 | [ЕПЭПЮ 2026](./itd-events/epepuy.md) | экзамен, офлайн-результаты, галерея рисунков и пример подключения через `ClientFeature` |
 | [Pixel Battle](./itd-events/pixel-battle.md) | холст, бинарный протокол WebSocket и пример подключения через `ClientFeature` |
