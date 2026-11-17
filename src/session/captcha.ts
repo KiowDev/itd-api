@@ -126,15 +126,22 @@ export async function solveCaptchaBody(
   askProvider: () => Promise<CaptchaProvider>,
   context: CaptchaSolveContext,
 ): Promise<CaptchaBody> {
+  return captchaBody(await solveCaptchaToken(solver, askProvider, context));
+}
+
+/** Сохраняет провайдера и токен для API, принимающих доказательство капчи объектом. */
+export async function solveCaptchaToken(
+  solver: CaptchaSolver,
+  askProvider: () => Promise<CaptchaProvider>,
+  context: CaptchaSolveContext,
+): Promise<CaptchaToken> {
   const choice = solver.type ?? CaptchaChoice.Auto;
-
-  if (choice === CaptchaChoice.Auto) {
-    const { provider, field } = await askProvider();
-    return { [field]: await requireSolvedToken(solver, provider, context) };
-  }
-
+  const { provider, field } =
+    choice === CaptchaChoice.Auto ? await askProvider() : { provider: choice, field: solver.field };
   return {
-    [resolveField(choice, solver.field)]: await requireSolvedToken(solver, choice, context),
+    type: provider,
+    field,
+    token: await requireSolvedToken(solver, provider, context),
   };
 }
 
@@ -143,10 +150,8 @@ export async function solveCaptchaBody(
  *
  * Поле берётся из самого токена либо из умолчания провайдера; запроса к серверу нет.
  *
- * @throws {ItdConfigError} если токен или его тип не указаны
+ * @throws {ItdConfigError} если для провайдера не определено поле запроса
  */
 export function captchaBody(captcha: CaptchaToken): CaptchaBody {
-  validateCaptchaToken(captcha, 'captcha');
-
   return { [resolveField(captcha.type, captcha.field)]: captcha.token };
 }

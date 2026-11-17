@@ -39,6 +39,7 @@ import {
 import { AUTH_PATHS, type AuthManager } from '../session/auth.js';
 import { openQrLoginStream } from '../session/qr-stream.js';
 import { BaseResource } from './base.js';
+import { PhoneAuthResource } from './phone-auth.js';
 
 /** Учётные данные для входа. */
 export interface Credentials {
@@ -155,6 +156,8 @@ interface QrCookieFlow {
  * Доступна как `itd.auth`.
  */
 export class AuthResource extends BaseResource {
+  /** Вход и регистрация по номеру телефона. */
+  readonly phone: PhoneAuthResource;
   readonly #auth: AuthManager;
   readonly #connection: ClientConnection;
   readonly #qrFlows = new Map<string, QrCookieFlow>();
@@ -163,6 +166,7 @@ export class AuthResource extends BaseResource {
     super(http);
     this.#auth = deps.auth;
     this.#connection = deps.connection;
+    this.phone = new PhoneAuthResource(http, deps);
   }
 
   #pruneQrFlows(): void {
@@ -387,6 +391,7 @@ export class AuthResource extends BaseResource {
    * Регистрирует аккаунт и запускает подтверждение по коду.
    *
    * @returns `flowToken`, который нужно передать в {@link verifyOtp}
+   * @deprecated Регистрация по email отключена. Используйте auth.phone.start().
    */
   async signUp(credentials: CredentialsWithCaptcha, options: RequestOptions = {}): Promise<string> {
     const { captcha, ...rest } = credentials;

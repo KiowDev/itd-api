@@ -28,7 +28,7 @@ import {
   captchaBody,
   readCaptchaProvider,
   resolveCaptchaSolver,
-  solveCaptchaBody,
+  solveCaptchaToken,
   validateCaptchaToken,
 } from './captcha.js';
 import { readTokenMetadata, type TokenMetadata } from './jwt.js';
@@ -1170,14 +1170,25 @@ export class AuthManager implements AuthProvider {
    * @throws {ItdConfigError} если токен неполный или источник его не вернул
    */
   async captchaBody(explicit?: CaptchaToken | undefined): Promise<CaptchaBody> {
-    if (explicit) return captchaBody(explicit);
+    const token = await this.captchaToken(explicit);
+    return token ? captchaBody(token) : {};
+  }
+
+  /** Доказательство капчи с провайдером для телефонного API. @internal */
+  async captchaToken(explicit?: CaptchaToken | undefined): Promise<CaptchaToken | undefined> {
+    if (explicit) {
+      validateCaptchaToken(explicit, 'captcha');
+      return explicit;
+    }
 
     const configured = this.#takeConfiguredCaptcha();
-    if (configured) return captchaBody(configured);
+    if (configured) {
+      return configured;
+    }
 
     const solver = this.#config.captcha;
     if (solver) {
-      return solveCaptchaBody(solver, () => this.#resolveCaptchaProvider(), {
+      return solveCaptchaToken(solver, () => this.#resolveCaptchaProvider(), {
         logger: this.#config.logger,
       });
     }
@@ -1185,7 +1196,7 @@ export class AuthManager implements AuthProvider {
     this.#config.logger?.debug(
       'Запрос уходит без токена капчи: не передан аргумент captcha и не задана опция captcha',
     );
-    return {};
+    return undefined;
   }
 
   /** Отдаёт разовый токен из `auth.captcha`, помечая его потраченным. */

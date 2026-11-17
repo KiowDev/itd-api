@@ -288,6 +288,16 @@ export interface ErrorContext {
 export function createApiError(context: ErrorContext): ItdApiError {
   const parsed = parseErrorBody(context.body, context.status, context.statusText);
   const rateLimit = readRateLimit(context.headers);
+  const retryDelays: number[] = [];
+  const headerDelay = parseRetryAfter(context.headers?.get('retry-after'), context.now);
+  if (headerDelay !== undefined) retryDelays.push(headerDelay);
+  const body = isRecord(context.body) ? context.body : undefined;
+  const errorBody = isRecord(body?.error) ? body.error : body;
+  for (const delay of [errorBody?.retryIn, errorBody?.retryAfter]) {
+    if (typeof delay === 'number' && Number.isFinite(delay) && delay >= 0) {
+      retryDelays.push(delay * 1000);
+    }
+  }
 
   const init = {
     rateLimit: rateLimit.limit,
@@ -303,7 +313,7 @@ export function createApiError(context: ErrorContext): ItdApiError {
     path: context.path,
     raw: safeRawBody(context.body),
     response: context.response,
-    retryAfter: parseRetryAfter(context.headers?.get('retry-after'), context.now),
+    retryAfter: retryDelays.length ? Math.max(...retryDelays) : undefined,
   };
 
   if (parsed.code === 'PHONE_VERIFICATION_REQUIRED') {

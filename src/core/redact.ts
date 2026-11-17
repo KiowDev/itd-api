@@ -18,6 +18,7 @@ const SECRET_FIELDS = new Set([
   'refreshtoken',
   'currentpassword',
   'flowtoken',
+  'contexttoken',
   'token',
   'turnstiletoken',
   'otp',

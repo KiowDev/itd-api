@@ -104,7 +104,7 @@ export interface ItdApiErrorInit {
   raw: unknown;
   /** Сам объект ответа. Тело уже прочитано. */
   response?: Response | undefined;
-  /** Значение `Retry-After` в миллисекундах, если заголовок был. */
+  /** Пауза из Retry-After или тела ошибки, в миллисекундах. */
   retryAfter?: number | undefined;
   /** Сколько запросов разрешено в окне (`x-ratelimit-limit`). */
   rateLimit?: number | undefined;
@@ -157,7 +157,7 @@ export class ItdApiError extends ItdError {
   readonly raw: unknown;
   /** Объект ответа. Тело уже прочитано и повторно прочитано быть не может. */
   readonly response: Response | undefined;
-  /** Пауза из заголовка `Retry-After` в миллисекундах. Сервер итд.com его не присылает. */
+  /** Пауза из Retry-After либо retryIn/retryAfter тела ошибки, в миллисекундах. */
   readonly retryAfter: number | undefined;
   /**
    * Сколько запросов разрешено в окне — заголовок `x-ratelimit-limit`.
@@ -256,7 +256,7 @@ export class ItdConflictError extends ItdApiError {
 /**
  * `429` — превышен лимит запросов.
  *
- * Если сервер прислал `Retry-After`, пауза доступна в {@link ItdApiError.retryAfter}
+ * Пауза из `Retry-After` или тела ошибки доступна в {@link ItdApiError.retryAfter}
  * (в миллисекундах). При включённых ретраях библиотека выдерживает её автоматически.
  */
 export class ItdRateLimitError extends ItdApiError {

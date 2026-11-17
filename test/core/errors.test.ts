@@ -322,6 +322,32 @@ describe('createApiError', () => {
 
     expect(error.retryAfter).toBe(5_000);
   });
+
+  it('выбирает наибольшую паузу из заголовка и тела ошибки доставки', () => {
+    const error = createApiError({
+      ...ctx,
+      status: 429,
+      headers: new Headers({ 'retry-after': '10' }),
+      body: { error: { code: 'PHONE_VERIFICATION_PENDING', retryIn: 60, retryAfter: 30 } },
+    });
+    expect(error.retryAfter).toBe(60000);
+    expect(error.code).toBe('PHONE_VERIFICATION_PENDING');
+  });
+
+  it('читает retryIn без обёртки и сохраняет нулевую паузу', () => {
+    expect(createApiError({ ...ctx, status: 429, body: { retryIn: 0 } }).retryAfter).toBe(0);
+    expect(createApiError({ ...ctx, status: 429, body: { retryAfter: 15 } }).retryAfter).toBe(
+      15000,
+    );
+  });
+
+  it('отбрасывает неподдерживаемые значения паузы в теле', () => {
+    for (const delay of [-1, Number.NaN, Number.POSITIVE_INFINITY, '60', null]) {
+      expect(
+        createApiError({ ...ctx, status: 429, body: { error: { retryIn: delay } } }).retryAfter,
+      ).toBeUndefined();
+    }
+  });
 });
 
 describe('parseRetryAfter', () => {

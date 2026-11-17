@@ -297,6 +297,24 @@ export type {
 export { isMyProfile } from './models/guards.js';
 export type { Notification, NotificationSettings } from './models/notifications.js';
 export type {
+  ConsentDocument,
+  PhoneConfig,
+  PhoneConsent,
+  PhoneDelivery,
+  PhoneLoginResult,
+  PhoneLoginStart,
+  PhoneRegion,
+  PhoneReverseOptions,
+  PhoneReverseStatus,
+} from './models/phone-auth.js';
+export {
+  AuthVerificationMode,
+  PhoneDeliveryChannel,
+  PhoneLoginStep,
+  PhoneReverseState,
+  PhoneVerificationMethod,
+} from './models/phone-auth.js';
+export type {
   Announcement,
   AnnouncementButton,
   ChangelogEntry,
@@ -408,6 +426,7 @@ export type {
 } from './resources/notifications.js';
 export type { Page, PageState, PaginatorOptions } from './resources/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './resources/pagination.js';
+export type { PhoneAuthResource, PhoneFlowInput, PhoneLoginInput } from './resources/phone-auth.js';
 export type {
   PlatformClientVersion,
   PlatformResource,
