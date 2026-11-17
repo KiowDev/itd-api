@@ -16,7 +16,6 @@ import {
   type MultiTokenStorage,
 } from '../../src/session/multi-storage.js';
 import type { ItdSession } from '../../src/session/storage.js';
-import { CaptchaType } from '../../src/types/enums.js';
 import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
@@ -902,10 +901,13 @@ describe('своё хранилище', () => {
 
 describe('события', () => {
   it('ретранслирует события авторизации с именем аккаунта', async () => {
-    const { accounts } = makeAccounts([json({ accessToken: makeJwt({ sub: 'user-1' }) })]);
+    const { accounts } = makeAccounts([
+      json({ provider: 'cloudflare', field: 'turnstileToken' }),
+      json({ accessToken: makeJwt({ sub: 'user-1' }) }),
+    ]);
     accounts.addAccount('kiow', {
       auth: { email: 'a@b.c', password: 'p' },
-      captcha: { type: CaptchaType.Cloudflare, getToken: () => 'cap' },
+      captcha: () => 'cap',
     });
 
     const signIn = vi.fn();

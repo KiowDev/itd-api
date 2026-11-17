@@ -14,8 +14,8 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
-| `GET /api/v1/auth/captcha/provider` | `itd.auth.captchaProvider()` | нет | активный провайдер и поле `token` либо `turnstileToken` | 2026-10-11, `404` |
-| `GET /api/v1/auth/captcha/page` | `itd.auth.captchaPage()` | нет | активный провайдер, поле и адрес страницы виджета | 2026-10-11, `404` |
+| `GET /api/v1/auth/captcha/provider` | `itd.auth.captchaProvider()` | нет | активный провайдер и поле `token` либо `turnstileToken` | 2026-11-17, `200` |
+| `GET /api/v1/auth/captcha/page` | `itd.auth.captchaPage()` | нет | активный провайдер, поле и адрес страницы виджета | 2026-11-17, `200` |
 | `POST /api/v1/auth/sign-up` | `itd.auth.signUp()` | нет | `email`, `password`, подтверждение капчи → `flowToken` | — |
 | `POST /api/v1/auth/sign-in` | `itd.auth.signIn()` | нет | `email`, `password`, подтверждение капчи → access token или `flowToken` | — |
 | `POST /api/v1/auth/verify-otp` | `itd.auth.verifyOtp()` | нет | `email`, `password`, `otp`, `flowToken` → access token | — |

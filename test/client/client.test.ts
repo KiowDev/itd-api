@@ -767,10 +767,8 @@ describe('комментарии', () => {
 });
 
 describe('авторизация', () => {
-  it.skip('получает выбранный сервером captcha-провайдер', async () => {
-    const { itd, mock } = makeClient([json({ provider: 'itd', field: 'token' })], {
-      auth: undefined,
-    });
+  it('получает выбранный сервером captcha-провайдер', async () => {
+    const { itd, mock } = makeClient([json({ provider: 'itd', field: 'token' })]);
 
     await expect(itd.auth.captchaProvider()).resolves.toEqual({ provider: 'itd', field: 'token' });
     expect(mock.calls[0]?.method).toBe('GET');
@@ -821,9 +819,9 @@ describe('авторизация', () => {
     });
   });
 
-  it.skip('отдаёт адрес страницы виджета капчи', async () => {
+  it('отдаёт адрес страницы виджета капчи', async () => {
     const page = { provider: 'itd', field: 'token', url: 'https://итд.com/captcha?x=1' };
-    const { itd, mock } = makeClient([json(page)], { auth: undefined });
+    const { itd, mock } = makeClient([json(page)]);
 
     await expect(itd.auth.captchaPage()).resolves.toEqual(page);
     expect(mock.calls[0]?.method).toBe('GET');
@@ -882,9 +880,10 @@ describe('авторизация', () => {
     const { itd, mock } = makeClient(
       [
         json({ status: 'captcha_required', expiresIn: 100 }),
+        json({ provider: 'itd', field: 'token' }),
         json({ status: 'authorized', accessToken: 'qr-token' }),
       ],
-      { auth: undefined, captcha: { type: CaptchaType.Itd, getToken } },
+      { auth: undefined, captcha: { getToken } },
     );
 
     await itd.auth.claimQrLogin({ qrId: 'qr-c', claimToken: 'claim-c' });
@@ -895,7 +894,7 @@ describe('авторизация', () => {
 
     await itd.auth.claimQrLogin({ qrId: 'qr-c', claimToken: 'claim-c' });
 
-    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+    expect(JSON.parse(mock.calls[2]?.body ?? '{}')).toEqual({
       qrId: 'qr-c',
       claimToken: 'claim-c',
       token: 'свежая',
@@ -1099,16 +1098,15 @@ describe('авторизация', () => {
   it('берёт токен капчи входа из опции клиента и передаёт источнику логгер', async () => {
     const getToken = vi.fn().mockResolvedValue('свежая');
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const { itd, mock } = makeClient([json({ accessToken: 'in' })], {
-      auth: undefined,
-      captcha: { type: CaptchaType.Cloudflare, getToken },
-      logger,
-    });
+    const { itd, mock } = makeClient(
+      [json({ provider: 'cloudflare', field: 'turnstileToken' }), json({ accessToken: 'in' })],
+      { auth: undefined, captcha: { getToken }, logger },
+    );
 
     await itd.auth.signIn({ email: 'a@b.c', password: 'p' });
 
     expect(getToken).toHaveBeenCalledExactlyOnceWith(CaptchaType.Cloudflare, { logger });
-    expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
       email: 'a@b.c',
       password: 'p',
       turnstileToken: 'свежая',
@@ -1135,15 +1133,20 @@ describe('авторизация', () => {
   it('добывает токен капчи для регистрации и сброса пароля', async () => {
     const getToken = vi.fn().mockResolvedValue('свежая');
     const { itd, mock } = makeClient(
-      [json({ flowToken: 'signup' }), json({ flowToken: 'reset' })],
-      { auth: undefined, captcha: { type: CaptchaType.Itd, getToken } },
+      [
+        json({ provider: 'itd', field: 'token' }),
+        json({ flowToken: 'signup' }),
+        json({ provider: 'itd', field: 'token' }),
+        json({ flowToken: 'reset' }),
+      ],
+      { auth: undefined, captcha: { getToken } },
     );
 
     await itd.auth.signUp({ email: 'a@b.c', password: 'p' });
     await itd.auth.forgotPassword({ email: 'a@b.c' });
 
-    expect(JSON.parse(mock.calls[0]?.body ?? '{}').token).toBe('свежая');
-    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}').token).toBe('свежая');
+    expect(JSON.parse(mock.calls[3]?.body ?? '{}')).toEqual({
       email: 'a@b.c',
       token: 'свежая',
     });
@@ -1329,19 +1332,23 @@ describe('очередь и авторизация', () => {
   it('отложенный вход проходит через общий pipeline без deadlock', async () => {
     const { itd, mock } = makeClient(
       (request) => {
+        if (request.url.endsWith('/captcha/provider')) {
+          return json({ provider: 'cloudflare', field: 'turnstileToken' });
+        }
         return request.url.endsWith('/sign-in')
           ? json({ accessToken: 'at' })
           : json({ data: { ok: true } });
       },
       {
         auth: { email: 'a@b.c', password: 'p' },
-        captcha: { type: CaptchaType.Cloudflare, getToken: () => 'cap' },
+        captcha: () => 'cap',
         rateLimit: { concurrency: 1 },
       },
     );
 
     await expect(itd.users.me()).resolves.toEqual({ ok: true });
     expect(mock.calls.map((call) => call.url)).toEqual([
+      expect.stringContaining('/captcha/provider'),
       expect.stringContaining('/sign-in'),
       expect.stringContaining('/users/me'),
     ]);
