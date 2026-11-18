@@ -204,7 +204,6 @@ export const AUTH_PATHS = {
   logout: '/api/v1/auth/logout',
   forgotPassword: '/api/v1/auth/forgot-password',
   resetPassword: '/api/v1/auth/reset-password',
-  changePassword: '/api/v1/auth/change-password',
   sessions: '/api/v1/auth/sessions',
   qrStart: '/api/v1/auth/qr/start',
   qrClaim: '/api/v1/auth/qr/claim',

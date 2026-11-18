@@ -288,6 +288,7 @@ export { type NotificationEvent, normalizeNotification } from './notifications/n
 export { formatNotificationText } from './notifications/text.js';
 export { canonicalNotificationType, isKnownNotificationType } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
+export type { AccountLifecycleResource } from './resources/account/lifecycle.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export type { FilesResource, UploadedFile, UploadOptions } from './resources/files.js';
 export type { HashtagPostsParams, HashtagsResource } from './resources/hashtags.js';

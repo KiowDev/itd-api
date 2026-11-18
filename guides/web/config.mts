@@ -54,6 +54,7 @@ const referenceSidebar = [
       { text: 'Обзор', link: '/reference/' },
       { text: 'Клиент', link: '/reference/client' },
       { text: 'Авторизация', link: '/reference/auth' },
+      { text: 'Аккаунт', link: '/reference/account' },
       { text: 'Пользователи', link: '/reference/users' },
       { text: 'Посты', link: '/reference/posts' },
       { text: 'Комментарии', link: '/reference/comments' },

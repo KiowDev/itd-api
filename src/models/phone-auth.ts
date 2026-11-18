@@ -5,7 +5,6 @@ export const PHONE_CONSENT_FLOW = 'phone_entry';
 
 /** Назначение ответа общего endpoint подтверждения кода. */
 export const AuthVerificationMode = Object.freeze({ SignIn: 'signin', Change: 'change' } as const);
-export type AuthVerificationMode = (typeof AuthVerificationMode)[keyof typeof AuthVerificationMode];
 
 /** Регион, для которого сервер разрешает телефонный вход. */
 export interface PhoneRegion {
@@ -75,6 +74,7 @@ export type PhoneVerificationMethod =
 
 /** Продолжение телефонного входа, ещё не выдавшее access token. */
 export const PhoneLoginStep = Object.freeze({ Password: 'password' } as const);
+export type PhoneLoginStep = (typeof PhoneLoginStep)[keyof typeof PhoneLoginStep];
 
 /** Как получить код и когда можно повторить запрос. */
 export interface PhoneDelivery {
@@ -89,9 +89,17 @@ export interface PhoneDelivery {
   nextChannel: PhoneDeliveryChannel | null;
 }
 
-/** Параметры проверки номера после start(). */
-export interface PhoneLoginStart extends PhoneDelivery {
-  /** Секрет потока, который передают в последующие операции вместе с номером. */
+/** Данные для продолжения проверки номера. */
+export interface PhoneFlowInput {
+  /** Номер в международном формате с `+`. */
+  phone: string;
+  /** Значение из ответа на запрос проверки номера. Если после кода нужен пароль, используйте новое значение из ответа. */
+  flowToken: string;
+}
+
+/** Данные для подтверждения номера после запроса кода. */
+export interface PhoneFlowStart extends PhoneDelivery {
+  /** Значение для следующих вызовов проверки. Передаётся вместе с тем же номером. */
   flowToken: string;
 }
 
@@ -100,10 +108,10 @@ export interface PhoneLoginStart extends PhoneDelivery {
  * Служебный mode ответа сервера не переносится; результат различается по step/accessToken.
  */
 export type PhoneLoginResult =
-  | { step: typeof PhoneLoginStep.Password; flowToken: string }
+  | { step: PhoneLoginStep; flowToken: string }
   | { accessToken: string };
 
-/** Доступность исходящего звонка для уже начатого телефонного потока. */
+/** Доступность исходящего звонка для начатой проверки номера. */
 export interface PhoneReverseOptions {
   available: boolean;
   /** Время до доступности способа, в секундах. */

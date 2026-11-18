@@ -65,8 +65,6 @@ const USERS_FOLLOW = passthroughOperation<FollowResult>('users.follow');
 const USERS_FOLLOW_STATUS = passthroughOperation<Record<string, boolean>>('users.followStatus');
 const USERS_GET_PRIVACY = passthroughOperation<PrivacySettings>('users.getPrivacy');
 const USERS_UPDATE_PRIVACY = passthroughOperation<PrivacySettings>('users.updatePrivacy');
-const USERS_DEACTIVATE = voidOperation('users.deactivate');
-const USERS_RESTORE = voidOperation('users.restore');
 const USERS_UNFOLLOW = voidOperation('users.unfollow');
 const USERS_BLOCK = voidOperation('users.block');
 const USERS_UNBLOCK = voidOperation('users.unblock');
@@ -188,22 +186,6 @@ export class UsersResource extends BaseResource {
   /** Удаляет баннер профиля, устанавливая `bannerId` в `null`. */
   removeBanner(options: RequestOptions = {}): Promise<MyProfile> {
     return this.updateMe({ bannerId: null }, options);
-  }
-
-  /** Деактивирует аккаунт. Вернуть его можно через {@link restore}. */
-  deactivate(options: RequestOptions = {}): Promise<void> {
-    return this.voidOperation(USERS_DEACTIVATE, {
-      path: '/api/users/me',
-      ...options,
-    });
-  }
-
-  /** Восстанавливает деактивированный аккаунт. */
-  restore(options: RequestOptions = {}): Promise<void> {
-    return this.voidOperation(USERS_RESTORE, {
-      path: '/api/users/me/restore',
-      ...options,
-    });
   }
 
   /** Создаёт профиль после регистрации. */

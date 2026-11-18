@@ -275,6 +275,15 @@ export {
   type UnreadCountUpdate,
 } from './events.js';
 export type { PaymentMethod, QrLoginTarget, Session, Subscription } from './models/account.js';
+export type {
+  AccountInfo,
+  ContactActionResult,
+  ContactChange,
+  ContactChangeSchedule,
+  ContactProofDelivery,
+  PendingContactChange,
+} from './models/account-access.js';
+export { ContactKind, ContactProofMethod } from './models/account-access.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
   Attachment,
@@ -301,14 +310,14 @@ export type {
   PhoneConfig,
   PhoneConsent,
   PhoneDelivery,
+  PhoneFlowInput,
+  PhoneFlowStart,
   PhoneLoginResult,
-  PhoneLoginStart,
   PhoneRegion,
   PhoneReverseOptions,
   PhoneReverseStatus,
 } from './models/phone-auth.js';
 export {
-  AuthVerificationMode,
   PhoneDeliveryChannel,
   PhoneLoginStep,
   PhoneReverseState,
@@ -388,6 +397,16 @@ export { resolveNotificationUrl } from './notifications/url.js';
 export type { NotificationsApi } from './notifications-api.js';
 export type { ItdClientOptions } from './options.js';
 export type {
+  AccountChangesResource,
+  ContactChangeConfirmation,
+} from './resources/account/changes.js';
+export type { AccountEmailResource } from './resources/account/email.js';
+export type { AccountLifecycleResource } from './resources/account/lifecycle.js';
+export type { AccountPasswordResource } from './resources/account/password.js';
+export type { AccountPhoneResource } from './resources/account/phone.js';
+export type { AccountResource } from './resources/account.js';
+export type { PhoneAuthResource, PhoneLoginInput } from './resources/auth/phone.js';
+export type {
   AuthResource,
   CaptchaPage,
   CaptchaProvider,
@@ -426,7 +445,6 @@ export type {
 } from './resources/notifications.js';
 export type { Page, PageState, PaginatorOptions } from './resources/pagination.js';
 export { mapPage, PaginationMode, Paginator } from './resources/pagination.js';
-export type { PhoneAuthResource, PhoneFlowInput, PhoneLoginInput } from './resources/phone-auth.js';
 export type {
   PlatformClientVersion,
   PlatformResource,

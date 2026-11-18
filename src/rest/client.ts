@@ -10,6 +10,7 @@ import type { ClientPlugin } from '../core/plugins/contracts.js';
 import type { RateLimitBucketState } from '../core/scheduling/rate-limit.js';
 import type { ServiceDefinition } from '../core/services.js';
 import { ITD_CATALOG } from '../domain/catalog.js';
+import { AccountLifecycleResource } from '../resources/account/lifecycle.js';
 import type { CommentsResource } from '../resources/comments.js';
 import type { FilesResource } from '../resources/files.js';
 import type { HashtagsResource } from '../resources/hashtags.js';
@@ -61,6 +62,13 @@ export class ItdRestClient {
   /** Общий результат терминальной очистки для идемпотентных повторных вызовов. */
   #disposePromise: Promise<void> | undefined;
   #disposed = false;
+  #account: AccountLifecycleResource | undefined;
+
+  /** Деактивация и восстановление текущего аккаунта. */
+  get account(): AccountLifecycleResource {
+    this.#account ??= new AccountLifecycleResource(this.#runtime.http);
+    return this.#account;
+  }
 
   /** Профили, подписки, блокировки, приватность. */
   get users(): UsersResource {

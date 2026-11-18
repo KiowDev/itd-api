@@ -154,12 +154,14 @@ console.log(target.client, target.ipCity); // Chrome Москва
 await itd.auth.approveQrLogin(secrets);
 ```
 
+Управление способами входа текущего аккаунта описано в разделе [Аккаунт](./account.md).
+
 ## Телефонный вход и регистрация
 
 Методы доступны через `itd.auth.phone`. Получите условия входа через `consent()`,
 покажите их пользователю и вызовите `start()`. Затем подтвердите номер через `verify()`.
 Если нужен облачный пароль, завершите вход через `password()`. Клиент сохраняет сессию
-автоматически. Для нового номера этот же поток создаёт аккаунт.
+автоматически. Если номер ещё не привязан к аккаунту, эти же шаги создают новый аккаунт.
 
 | Метод | Назначение |
 | --- | --- |
@@ -245,11 +247,7 @@ resetPasswordWithOtp(input: ForgotPasswordInput & { newPassword: string; getOtp:
 ```
 Полный сброс: код запрашивается функцией `getOtp`, остальное — само.
 
-```ts
-changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
-```
-Меняет пароль. Требует действующей сессии. При неверном текущем пароле — код
-`ACCOUNT_CURRENT_PASSWORD_INCORRECT`.
+В действующей сессии пароль меняется через [`itd.account.password.change()`](./account.md#пароль).
 
 ## Управление сессиями
 

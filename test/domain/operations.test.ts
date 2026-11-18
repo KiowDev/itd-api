@@ -81,7 +81,7 @@ describe('карта серверных счётчиков частоты', () =
     // три метода дают три разных счётчика — 40, 3 и умолчание 150.
     const read = operationBucket('users.me');
     const write = operationBucket('users.updateMe');
-    const remove = operationBucket('users.deactivate');
+    const remove = operationBucket('account.deactivate');
 
     expect(new Set([read, write, remove]).size).toBe(3);
     expect(BUCKET_LIMITS[read]).toBe(40);

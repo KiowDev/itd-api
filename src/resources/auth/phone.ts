@@ -1,20 +1,20 @@
-import type { CookieJar } from '../core/cookies.js';
-import type { HttpClient } from '../core/execution/http.js';
-import type { OperationContract } from '../core/operation.js';
-import type { RequestOptions } from '../core/options.js';
-import type { BuiltInOperationId } from '../domain/operations.js';
+import type { CookieJar } from '../../core/cookies.js';
+import type { HttpClient } from '../../core/execution/http.js';
+import type { OperationContract } from '../../core/operation.js';
+import type { RequestOptions } from '../../core/options.js';
+import type { BuiltInOperationId } from '../../domain/operations.js';
 import {
   PHONE_CONSENT_FLOW,
   type PhoneConfig,
   type PhoneConsent,
   type PhoneDelivery,
+  type PhoneFlowInput,
+  type PhoneFlowStart,
   type PhoneLoginResult,
-  type PhoneLoginStart,
   type PhoneReverseOptions,
   type PhoneReverseStatus,
   PhoneVerificationMethod,
-} from '../models/phone-auth.js';
-import type { CaptchaToken } from '../operations/auth.js';
+} from '../../models/phone-auth.js';
 import {
   AUTH_PHONE_CONFIG,
   AUTH_PHONE_CONSENT,
@@ -27,17 +27,10 @@ import {
   AUTH_PHONE_REVERSE_STATUS,
   AUTH_PHONE_START,
   AUTH_PHONE_VERIFY,
-} from '../operations/phone-auth.js';
-import type { AuthManager } from '../session/auth.js';
-import { BaseResource } from './base.js';
-
-/** Номер и секрет уже начатого телефонного потока. */
-export interface PhoneFlowInput {
-  /** Номер в международном формате с `+`. */
-  phone: string;
-  /** Секрет из start() либо обновлённый секрет из шага пароля. */
-  flowToken: string;
-}
+} from '../../operations/auth/phone.js';
+import type { CaptchaToken } from '../../operations/auth.js';
+import type { AuthManager } from '../../session/auth.js';
+import { BaseResource } from '../base.js';
 
 /** Данные запуска телефонного входа после принятия документов пользователем. */
 export interface PhoneLoginInput {
@@ -81,13 +74,13 @@ export class PhoneAuthResource extends BaseResource {
   }
 
   /**
-   * Запрашивает подтверждение номера. Новый номер регистрируется тем же потоком.
+   * Запрашивает подтверждение номера для входа или регистрации.
    *
    * Токен капчи отправляется объектом { provider, token }.
    *
-   * @returns секрет потока, канал доставки, длина кода и пауза повтора в секундах
+   * @returns `flowToken` для продолжения входа, канал доставки, длина кода и пауза повтора в секундах
    */
-  async start(input: PhoneLoginInput, options: RequestOptions = {}): Promise<PhoneLoginStart> {
+  async start(input: PhoneLoginInput, options: RequestOptions = {}): Promise<PhoneFlowStart> {
     const captcha = await this.#auth.captchaToken(input.captcha);
     return this.#request(
       AUTH_PHONE_START,
@@ -116,7 +109,7 @@ export class PhoneAuthResource extends BaseResource {
    * Подтверждает код без email и пароля.
    *
    * При accessToken сохраняет новую сессию; при step: 'password' возвращает секрет
-   * для password(). Ответ смены контакта не считается успешным входом.
+   * для password().
    */
   verify(
     input: PhoneFlowInput & { otp: string },
@@ -148,7 +141,7 @@ export class PhoneAuthResource extends BaseResource {
     return this.#authenticate(AUTH_PHONE_PASSWORD, '/phone/password', input, options);
   }
 
-  /** Устанавливает новый пароль в подтверждённом телефонном потоке и сохраняет сессию. */
+  /** Устанавливает новый пароль после подтверждения номера и сохраняет сессию. */
   resetPassword(
     input: PhoneFlowInput & { newPassword: string },
     options: RequestOptions = {},
@@ -156,7 +149,7 @@ export class PhoneAuthResource extends BaseResource {
     return this.#authenticate(AUTH_PHONE_RESET_PASSWORD, '/phone/reset-password', input, options);
   }
 
-  /** Доступность исходящего звонка для текущего потока. */
+  /** Проверяет, доступен ли исходящий звонок для подтверждения номера. */
   reverseOptions(
     input: PhoneFlowInput,
     options: RequestOptions = {},

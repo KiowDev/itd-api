@@ -20,6 +20,7 @@ import type { UserId } from './models/common.js';
 import { createNotificationsApi, type NotificationsApi } from './notifications-api.js';
 import { EVENT_OPERATIONS } from './operations/events.js';
 import type { ItdClientOptions } from './options.js';
+import { AccountResource } from './resources/account.js';
 import { AuthResource } from './resources/auth.js';
 import type { CommentsResource } from './resources/comments.js';
 import type { FilesResource } from './resources/files.js';
@@ -127,6 +128,7 @@ export class ItdClient {
   readonly #resources: RestResources<NotificationsApi>;
   /** Сессионный ресурс живёт у фасада: он управляет входом и продлением. */
   #auth: AuthResource | undefined;
+  #account: AccountResource | undefined;
 
   /** Авторизация, сессии и пароли. */
   get auth(): AuthResource {
@@ -135,6 +137,12 @@ export class ItdClient {
       connection: this.#runtime.connection(),
     });
     return this.#auth;
+  }
+
+  /** Настройки текущего аккаунта и управление его состоянием. */
+  get account(): AccountResource {
+    this.#account ??= new AccountResource(this.#runtime.http, this.#runtime.auth);
+    return this.#account;
   }
 
   /** Профили, подписки, блокировки, приватность. */

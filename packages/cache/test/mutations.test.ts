@@ -9,6 +9,14 @@ type UncachedRead =
   | 'auth.check'
   | 'auth.captchaProvider'
   | 'auth.captchaPage'
+  | 'auth.phone.config'
+  | 'auth.phone.consent'
+  | 'auth.phone.reverseOptions'
+  | 'auth.phone.reverseStatus'
+  | 'account.getInfo'
+  | 'account.phone.reverseOptions'
+  | 'account.phone.reverseStatus'
+  | 'account.changes.pending'
   | 'events.notifications.poll.updates'
   | 'events.notifications.poll.unread'
   | 'platform.version'
@@ -32,6 +40,8 @@ describe('каталог мутаций', () => {
     ['notifications.markAllRead', 'notifications.count'],
     ['subscription.removeMethod', 'subscription.methods'],
     ['shop.orders.create', 'shop.products.get'],
+    ['account.phone.sync', 'users.me'],
+    ['account.changes.confirm', 'users.me'],
   ] as const)('%s инвалидирует %s', (operationId, operation) => {
     const mutation = cacheMutation(operationId);
     expect(mutation).toBeDefined();

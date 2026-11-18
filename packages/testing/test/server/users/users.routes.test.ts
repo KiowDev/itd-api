@@ -266,7 +266,7 @@ describe('createMockServer: деактивация', () => {
     const server = makeDeactivationServer();
     const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
 
-    await alice.users.deactivate();
+    await alice.account.deactivate();
 
     await expect(alice.users.me()).resolves.toMatchObject({ id: ALICE });
     await expect(alice.auth.check()).resolves.toMatchObject({ authenticated: true });
@@ -276,7 +276,7 @@ describe('createMockServer: деактивация', () => {
     });
     await expect(alice.users.follow('bob')).rejects.toMatchObject({ status: 403 });
 
-    await alice.users.restore();
+    await alice.account.restore();
     await expect(alice.posts.create({ content: 'Можно' })).resolves.toMatchObject({
       content: 'Можно',
     });
@@ -288,7 +288,7 @@ describe('createMockServer: деактивация', () => {
     const alice = new ItdClient(server.clientOptions({ as: 'alice' }));
     const bob = new ItdClient(server.clientOptions({ as: 'bob' }));
 
-    await alice.users.deactivate();
+    await alice.account.deactivate();
 
     const notFound = { status: 404, code: 'NOT_FOUND' };
     await expect(bob.users.get('alice')).rejects.toMatchObject(notFound);
@@ -297,7 +297,7 @@ describe('createMockServer: деактивация', () => {
     await expect(bob.users.follow(ALICE)).rejects.toMatchObject(notFound);
     expect((await bob.posts.list()).items).toEqual([]);
 
-    await alice.users.restore();
+    await alice.account.restore();
     await expect(bob.users.get('alice')).resolves.toMatchObject({ id: ALICE });
     expect((await bob.posts.list()).items.map((post) => post.id)).toEqual(['alice-post']);
   });

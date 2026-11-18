@@ -8,7 +8,6 @@ import type { AuthState } from '../models/users.js';
 import {
   AUTH_CAPTCHA_PAGE,
   AUTH_CAPTCHA_PROVIDER,
-  AUTH_CHANGE_PASSWORD,
   AUTH_CHECK,
   AUTH_FORGOT_PASSWORD,
   AUTH_LOGOUT,
@@ -38,8 +37,8 @@ import {
 } from '../operations/auth.js';
 import { AUTH_PATHS, type AuthManager } from '../session/auth.js';
 import { openQrLoginStream } from '../session/qr-stream.js';
+import { PhoneAuthResource } from './auth/phone.js';
 import { BaseResource } from './base.js';
-import { PhoneAuthResource } from './phone-auth.js';
 
 /** Учётные данные для входа. */
 export interface Credentials {
@@ -644,27 +643,6 @@ export class AuthResource extends BaseResource {
     const otp = await getOtp();
 
     await this.resetPassword({ email: input.email, otp, flowToken, newPassword }, options);
-  }
-
-  /**
-   * Меняет пароль. Требует действующей сессии.
-   *
-   * При неверном текущем пароле сервер отвечает `ACCOUNT_CURRENT_PASSWORD_INCORRECT`.
-   *
-   * @example
-   * ```ts
-   * await itd.auth.changePassword({ currentPassword, newPassword });
-   * ```
-   */
-  changePassword(
-    input: { currentPassword: string; newPassword: string },
-    options: RequestOptions = {},
-  ): Promise<void> {
-    return this.voidOperation(AUTH_CHANGE_PASSWORD, {
-      path: AUTH_PATHS.changePassword,
-      body: { currentPassword: input.currentPassword, newPassword: input.newPassword },
-      ...options,
-    });
   }
 
   /** Загружает список активных сессий. У текущей поле `isCurrent` равно `true`. */

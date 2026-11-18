@@ -144,7 +144,13 @@ const CACHE_MUTATIONS = Object.freeze([
   { operationId: 'auth.verifyOtp', invalidates: CacheInvalidation.All },
   { operationId: 'auth.logout', invalidates: CacheInvalidation.All },
   { operationId: 'auth.resetPassword', invalidates: CacheInvalidation.All },
-  { operationId: 'auth.changePassword', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.phone.start', invalidates: NOTHING },
+  { operationId: 'auth.phone.resend', invalidates: NOTHING },
+  { operationId: 'auth.phone.reverseStart', invalidates: NOTHING },
+  { operationId: 'auth.phone.verify', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.phone.password', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.phone.resetPassword', invalidates: CacheInvalidation.All },
+  { operationId: 'auth.phone.reverseComplete', invalidates: CacheInvalidation.All },
   {
     operationId: 'auth.revokeSession',
     invalidates: ['auth.sessions'],
@@ -153,6 +159,44 @@ const CACHE_MUTATIONS = Object.freeze([
   {
     operationId: 'auth.revokeOtherSessions',
     invalidates: ['auth.sessions'],
+    scope: CachePolicyScope.Account,
+  },
+
+  // Способы входа текущего аккаунта.
+  { operationId: 'account.password.change', invalidates: CacheInvalidation.All },
+  { operationId: 'account.deactivate', invalidates: PROFILE },
+  { operationId: 'account.restore', invalidates: PROFILE },
+  { operationId: 'account.password.set', invalidates: CacheInvalidation.All },
+  { operationId: 'account.email.attach', invalidates: NOTHING },
+  { operationId: 'account.phone.attach', invalidates: NOTHING },
+  { operationId: 'account.email.startChange', invalidates: NOTHING },
+  { operationId: 'account.phone.startChange', invalidates: NOTHING },
+  { operationId: 'account.verifyChange', invalidates: NOTHING },
+  { operationId: 'account.email.resendOtp', invalidates: NOTHING },
+  { operationId: 'account.phone.resendOtp', invalidates: NOTHING },
+  { operationId: 'account.phone.reverseStart', invalidates: NOTHING },
+  { operationId: 'account.phone.reverseChangeComplete', invalidates: NOTHING },
+  { operationId: 'account.changes.requestProof', invalidates: NOTHING },
+  { operationId: 'account.changes.wait', invalidates: NOTHING },
+  { operationId: 'account.changes.cancelPending', invalidates: NOTHING },
+  {
+    operationId: 'account.verifyAttach',
+    invalidates: ['users.me'],
+    scope: CachePolicyScope.Account,
+  },
+  {
+    operationId: 'account.phone.sync',
+    invalidates: ['users.me'],
+    scope: CachePolicyScope.Account,
+  },
+  {
+    operationId: 'account.phone.reverseAttachComplete',
+    invalidates: ['users.me'],
+    scope: CachePolicyScope.Account,
+  },
+  {
+    operationId: 'account.changes.confirm',
+    invalidates: ['users.me'],
     scope: CachePolicyScope.Account,
   },
 
@@ -178,8 +222,6 @@ const CACHE_MUTATIONS = Object.freeze([
 
   // Профиль и связи между пользователями.
   { operationId: 'users.updateMe', invalidates: PROFILE },
-  { operationId: 'users.deactivate', invalidates: PROFILE },
-  { operationId: 'users.restore', invalidates: PROFILE },
   { operationId: 'users.createProfile', invalidates: PROFILE },
   { operationId: 'users.follow', invalidates: FOLLOWING },
   { operationId: 'users.unfollow', invalidates: FOLLOWING },

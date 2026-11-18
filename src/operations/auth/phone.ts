@@ -1,20 +1,19 @@
-import { ItdConfigError } from '../core/errors.js';
-import { pickString } from '../core/unwrap.js';
-import { isRecord } from '../core/validate.js';
-import { defineBuiltInOperation } from '../domain/operations.js';
+import { ItdConfigError } from '../../core/errors.js';
+import { pickString } from '../../core/unwrap.js';
+import { isRecord } from '../../core/validate.js';
+import { defineBuiltInOperation } from '../../domain/operations.js';
 import {
   AuthVerificationMode,
   type PhoneConfig,
   type PhoneConsent,
-  type PhoneDelivery,
-  type PhoneDeliveryChannel,
+  type PhoneFlowStart,
   type PhoneLoginResult,
-  type PhoneLoginStart,
   PhoneLoginStep,
   type PhoneReverseOptions,
   type PhoneReverseStatus,
-} from '../models/phone-auth.js';
-import { passthroughOperation } from './common.js';
+} from '../../models/phone-auth.js';
+import { passthroughOperation } from '../common.js';
+import { readPhoneDelivery, readPhoneStart } from '../phone-flow.js';
 
 /** Отклоняет неизвестный контракт до принятия результата входа. */
 function invalidResponse(): never {
@@ -26,22 +25,6 @@ function readFlowToken(body: unknown): string {
   const value = pickString(body, 'flowToken');
   if (!value) return invalidResponse();
   return value;
-}
-
-/** Приводит вложенные и плоские параметры доставки к одному результату. */
-function readDelivery(body: unknown): PhoneDelivery {
-  const response = body as PhoneDelivery & {
-    delivery?: { type: PhoneDeliveryChannel; codeLength: number };
-    next?: PhoneDeliveryChannel | null;
-  };
-  const next = response.next ?? response.nextChannel;
-  return {
-    channel: response.delivery?.type ?? response.channel,
-    codeLength: response.delivery?.codeLength ?? response.codeLength,
-    retryIn: response.retryIn,
-    ...(response.reverseOnly === true ? { reverseOnly: true } : {}),
-    nextChannel: next ?? null,
-  };
 }
 
 /** Разделяет access token и шаг пароля; режимы привязки/смены контакта не принимает. */
@@ -66,12 +49,9 @@ function readAccessToken(body: unknown): string {
 
 export const AUTH_PHONE_CONFIG = passthroughOperation<PhoneConfig>('auth.phone.config');
 export const AUTH_PHONE_CONSENT = passthroughOperation<PhoneConsent>('auth.phone.consent');
-export const AUTH_PHONE_START = defineBuiltInOperation<PhoneLoginStart>(
+export const AUTH_PHONE_START = defineBuiltInOperation<PhoneFlowStart>(
   'auth.phone.start',
-  (body) => ({
-    ...readDelivery(body),
-    flowToken: readFlowToken(body),
-  }),
+  readPhoneStart,
 );
 export const AUTH_PHONE_VERIFY = defineBuiltInOperation('auth.phone.verify', readLoginResult);
 export const AUTH_PHONE_PASSWORD = defineBuiltInOperation('auth.phone.password', readAccessToken);
@@ -79,7 +59,7 @@ export const AUTH_PHONE_RESET_PASSWORD = defineBuiltInOperation(
   'auth.phone.resetPassword',
   readAccessToken,
 );
-export const AUTH_PHONE_RESEND = defineBuiltInOperation('auth.phone.resend', readDelivery);
+export const AUTH_PHONE_RESEND = defineBuiltInOperation('auth.phone.resend', readPhoneDelivery);
 export const AUTH_PHONE_REVERSE_OPTIONS = passthroughOperation<PhoneReverseOptions>(
   'auth.phone.reverseOptions',
 );

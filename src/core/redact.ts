@@ -19,6 +19,7 @@ const SECRET_FIELDS = new Set([
   'currentpassword',
   'flowtoken',
   'contexttoken',
+  'changetoken',
   'token',
   'turnstiletoken',
   'otp',
@@ -128,10 +129,14 @@ export function redactBody(body: unknown): unknown {
   if (typeof body === 'object') {
     const result: Record<string, unknown> = {};
     const entries = Object.entries(body);
-    const containsEmail = entries.some(([key]) => key.toLowerCase() === 'email');
+    const containsVerification = entries.some(([key]) => {
+      const field = key.toLowerCase();
+      return field === 'email' || field === 'changetoken';
+    });
     for (const [key, value] of entries) {
       const normalized = key.toLowerCase();
-      const secret = SECRET_FIELDS.has(normalized) || (normalized === 'code' && containsEmail);
+      const secret =
+        SECRET_FIELDS.has(normalized) || (normalized === 'code' && containsVerification);
       result[key] = secret ? '[скрыто]' : redactBody(value);
     }
     return result;

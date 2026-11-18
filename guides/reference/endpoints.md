@@ -35,7 +35,28 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 | `POST /api/v1/auth/logout` | `itd.auth.logout()`, `itd.auth.logoutAll()` | Bearer + refresh cookie | body отсутствует | — |
 | `POST /api/v1/auth/forgot-password` | `itd.auth.forgotPassword()` | нет | `email`, подтверждение капчи → `flowToken` | — |
 | `POST /api/v1/auth/reset-password` | `itd.auth.resetPassword()` | нет | `email`, `newPassword`, `otp`, `flowToken` | — |
-| `POST /api/v1/auth/change-password` | `itd.auth.changePassword()` | Bearer | `currentPassword`, `newPassword` | — |
+| `GET /api/v1/auth/methods` | `itd.account.getInfo()` | Bearer | привязанные номер и почта, наличие облачного пароля | 2026-11-17, `200` |
+| `POST /api/v1/auth/set-password` | `itd.account.password.set()` | Bearer | создание облачного пароля | — |
+| `POST /api/v1/auth/email/attach` | `itd.account.email.attach()` | Bearer | отправка кода на почту для привязки | — |
+| `POST /api/v1/auth/phone/attach` | `itd.account.phone.attach()` | Bearer | подтверждение номера для привязки | — |
+| `POST /api/v1/auth/email/change` | `itd.account.email.startChange()` | Bearer | отправка кода на новую почту | — |
+| `POST /api/v1/auth/phone/change` | `itd.account.phone.startChange()` | Bearer | подтверждение нового номера | — |
+| `POST /api/v1/auth/verify-otp` | `itd.account.phone.verifyAttach()`, `itd.account.email.verifyAttach()` | Bearer | код привязки почты или номера | — |
+| `POST /api/v1/auth/verify-otp` | `itd.account.phone.verifyChange()`, `itd.account.email.verifyChange()` | Bearer | код подтверждения нового номера или почты → способы завершить смену | — |
+| `POST /api/v1/auth/resend-otp` | `itd.account.email.resendOtp()` | Bearer | повторная отправка кода на почту | — |
+| `POST /api/v1/auth/resend-otp` | `itd.account.phone.resendOtp()` | Bearer | повторная доставка кода на номер | — |
+| `POST /api/v1/auth/phone/sync` | `itd.account.phone.sync()` | Bearer | синхронизация привязанного номера с профилем | — |
+| `POST /api/v1/auth/phone/reverse/options` | `itd.account.phone.reverseOptions()` | Bearer | доступность исходящего звонка | — |
+| `POST /api/v1/auth/phone/reverse/start` | `itd.account.phone.reverseStart()` | Bearer | подготовка исходящего звонка | — |
+| `POST /api/v1/auth/phone/reverse/status` | `itd.account.phone.reverseStatus()` | Bearer | состояние звонка | — |
+| `POST /api/v1/auth/phone/reverse/complete` | `itd.account.phone.reverseAttachComplete()` | Bearer | завершение привязки номера звонком | — |
+| `POST /api/v1/auth/phone/reverse/complete` | `itd.account.phone.reverseChangeComplete()` | Bearer | подтверждение нового номера звонком | — |
+| `POST /api/v1/auth/change/proof` | `itd.account.changes.requestProof()` | Bearer | отправка кода на привязанный номер или почту | — |
+| `POST /api/v1/auth/change/confirm` | `itd.account.changes.confirm()` | Bearer | завершение смены кодом или паролем | — |
+| `POST /api/v1/auth/change/wait` | `itd.account.changes.wait()` | Bearer | создание отложенной заявки | — |
+| `GET /api/v1/auth/change/pending` | `itd.account.changes.pending()` | Bearer | список отложенных заявок | 2026-11-17, `200` |
+| `DELETE /api/v1/auth/change/pending/{id}` | `itd.account.changes.cancelPending()` | Bearer | отмена заявки по ID | — |
+| `POST /api/v1/auth/change-password` | `itd.account.password.change()` | Bearer | `currentPassword`, `newPassword` | — |
 | `GET /api/profile` | `itd.auth.check()` | необязательно | ответ: `authenticated`, `banned`, `user` | 2026-10-11, `200` |
 | `GET /api/v1/auth/sessions` | `itd.auth.sessions()` | Bearer | ответ: `sessions[]` | 2026-10-11, `200` |
 | `DELETE /api/v1/auth/sessions/{sessionId}` | `itd.auth.revokeSession()` | Bearer | идентификатор сессии в пути | — |
@@ -57,8 +78,8 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 |---|---|---|---|---|
 | `GET /api/users/me` | `itd.users.me()` | Bearer | ответ: текущий пользователь | 2026-10-11, `200` |
 | `PUT /api/users/me` | `itd.users.updateMe()`, `setBanner()`, `removeBanner()` | Bearer | изменяемые поля профиля | 2026-10-11, `200` |
-| `DELETE /api/users/me` | `itd.users.deactivate()` | Bearer | body отсутствует | — |
-| `POST /api/users/me/restore` | `itd.users.restore()` | Bearer | body отсутствует | — |
+| `DELETE /api/users/me` | `itd.account.deactivate()` | Bearer | body отсутствует | — |
+| `POST /api/users/me/restore` | `itd.account.restore()` | Bearer | body отсутствует | — |
 | `POST /api/users/profile` | `itd.users.createProfile()` | Bearer | `username`, `displayName`, `avatar` | — |
 | `GET /api/users/{user}` | `itd.users.get()` | Bearer | id или username в path | 2026-10-11, `200` |
 | `GET /api/users/check-username` | `itd.users.checkUsername()` | необязательно | query: `username` | 2026-10-11, `200` |

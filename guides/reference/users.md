@@ -53,11 +53,7 @@ createProfile(input: { username: string; displayName: string; avatar?: string })
 ```
 Создаёт профиль после регистрации.
 
-```ts
-deactivate(): Promise<void>
-restore(): Promise<void>
-```
-Деактивирует / восстанавливает аккаунт.
+Деактивация и восстановление доступны в [`itd.account`](./account.md#деактивация-и-восстановление).
 
 ## Чужие профили
 

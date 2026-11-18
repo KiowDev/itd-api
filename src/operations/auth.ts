@@ -133,7 +133,6 @@ export const AUTH_FORGOT_PASSWORD = defineBuiltInOperation<string>('auth.forgotP
   requireString(body, 'flowToken', 'Сервер не вернул flowToken при запросе сброса пароля'),
 );
 export const AUTH_RESET_PASSWORD = voidOperation('auth.resetPassword');
-export const AUTH_CHANGE_PASSWORD = voidOperation('auth.changePassword');
 export const AUTH_SESSIONS = defineBuiltInOperation<Session[]>('auth.sessions', (body) =>
   pickArray<Session>(body, 'sessions'),
 );
