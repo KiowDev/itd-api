@@ -165,12 +165,13 @@ export function parseRetryAfter(
   if (!header) return undefined;
 
   const seconds = Number(header);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  if (Number.isFinite(seconds)) {
+    const delay = seconds * 1000;
+    return delay > 0 && Number.isFinite(delay) ? delay : undefined;
+  }
 
-  const date = Date.parse(header);
-  if (Number.isFinite(date)) return Math.max(0, date - now);
-
-  return undefined;
+  const delay = Date.parse(header) - now;
+  return delay > 0 && Number.isFinite(delay) ? delay : undefined;
 }
 
 /** Читает целое число из заголовка. */
@@ -294,9 +295,8 @@ export function createApiError(context: ErrorContext): ItdApiError {
   const body = isRecord(context.body) ? context.body : undefined;
   const errorBody = isRecord(body?.error) ? body.error : body;
   for (const delay of [errorBody?.retryIn, errorBody?.retryAfter]) {
-    if (typeof delay === 'number' && Number.isFinite(delay) && delay >= 0) {
-      retryDelays.push(delay * 1000);
-    }
+    const milliseconds = typeof delay === 'number' ? delay * 1000 : 0;
+    if (milliseconds > 0 && Number.isFinite(milliseconds)) retryDelays.push(milliseconds);
   }
 
   const init = {

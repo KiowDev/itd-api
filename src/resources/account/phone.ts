@@ -1,3 +1,4 @@
+import { ItdStateError } from '../../core/errors.js';
 import type { HttpClient } from '../../core/execution/http.js';
 import type { RequestOptions } from '../../core/options.js';
 import type { ContactActionResult, ContactChange } from '../../models/account-access.js';
@@ -50,17 +51,11 @@ export class AccountPhoneResource extends BaseResource {
    * await itd.account.phone.verifyAttach({ phone, flowToken, otp: await getOtp() });
    * ```
    */
-  async attach(
+  attach(
     input: { phone: string; captcha?: CaptchaToken },
     options: RequestOptions = {},
   ): Promise<PhoneFlowStart> {
-    return requestAccount(
-      this.http,
-      ACCOUNT_PHONE_ATTACH,
-      '/phone/attach',
-      await this.#phoneBody(input),
-      options,
-    );
+    return this.#start(ACCOUNT_PHONE_ATTACH, '/phone/attach', input, options);
   }
 
   /**
@@ -70,17 +65,11 @@ export class AccountPhoneResource extends BaseResource {
    *
    * @returns параметры доставки и `flowToken` для {@link verifyChange}
    */
-  async startChange(
+  startChange(
     input: { phone: string; captcha?: CaptchaToken },
     options: RequestOptions = {},
   ): Promise<PhoneFlowStart> {
-    return requestAccount(
-      this.http,
-      ACCOUNT_PHONE_START_CHANGE,
-      '/phone/change',
-      await this.#phoneBody(input),
-      options,
-    );
+    return this.#start(ACCOUNT_PHONE_START_CHANGE, '/phone/change', input, options);
   }
 
   /**
@@ -194,9 +183,26 @@ export class AccountPhoneResource extends BaseResource {
     );
   }
 
-  /** Готовит тело телефонного запроса с токеном капчи. */
-  async #phoneBody({ phone, captcha }: { phone: string; captcha?: CaptchaToken }) {
+  /** Запускает проверку номера, если за время получения капчи сессия не сменилась. */
+  async #start(
+    operation: typeof ACCOUNT_PHONE_ATTACH | typeof ACCOUNT_PHONE_START_CHANGE,
+    path: string,
+    { phone, captcha }: { phone: string; captcha?: CaptchaToken },
+    options: RequestOptions,
+  ): Promise<PhoneFlowStart> {
+    const revision = this.#auth.revision();
     const proof = await this.#auth.captchaToken(captcha);
-    return { phone, captcha: proof ? { provider: proof.type, token: proof.token } : undefined };
+    if (this.#auth.revision() !== revision) {
+      throw new ItdStateError(
+        'Сессия сменилась во время получения капчи. Начните проверку номера заново.',
+      );
+    }
+    return requestAccount(
+      this.http,
+      operation,
+      path,
+      { phone, captcha: proof ? { provider: proof.type, token: proof.token } : undefined },
+      options,
+    );
   }
 }

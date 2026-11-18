@@ -1,4 +1,5 @@
 import type { RequestOptions } from '../../core/options.js';
+import { encodePathSegment } from '../../core/url.js';
 import type {
   ContactChangeSchedule,
   ContactProofDelivery,
@@ -87,7 +88,7 @@ export class AccountChangesResource extends BaseResource {
     return requestAccount(
       this.http,
       ACCOUNT_CHANGES_CANCEL_PENDING,
-      `/change/pending/${encodeURIComponent(requestId)}`,
+      `/change/pending/${encodePathSegment(requestId, 'requestId')}`,
       undefined,
       options,
     );

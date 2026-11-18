@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ItdClient } from '../../src/client.js';
-import { ItdConfigError } from '../../src/core/errors.js';
+import { ItdConfigError, ItdStateError } from '../../src/core/errors.js';
 import { redactBody } from '../../src/core/redact.js';
 import { ContactProofMethod } from '../../src/models/account-access.js';
 import { createRestClient } from '../../src/rest.js';
@@ -84,6 +84,30 @@ describe('способы входа текущего аккаунта', () => {
     expect((await api.getSession())?.accessToken).toBe('current-token');
   });
 
+  it.each(['attach', 'startChange'] as const)(
+    '%s не отправляет запрос, если сессия сменилась во время получения капчи',
+    async (method) => {
+      const mock = createMockFetch([]);
+      let resolveProof!: (token: string) => void;
+      const proof = new Promise<string>((resolve) => {
+        resolveProof = resolve;
+      });
+      const api = new ItdClient({
+        baseUrl: 'https://itd.test',
+        auth: 'account-a',
+        fetch: mock.fetch,
+        captcha: { type: CaptchaType.Itd, getToken: () => proof },
+      });
+      await api.getSession();
+      const pending = api.account.phone[method]({ phone: '+79991234567' });
+      const rejected = expect(pending).rejects.toBeInstanceOf(ItdStateError);
+      await api.setSession({ accessToken: 'account-b' });
+      resolveProof('proof');
+      await rejected;
+      expect(mock.callCount).toBe(0);
+    },
+  );
+
   it('поддерживает привязку номера исходящим звонком с авторизацией', async () => {
     const phone = '+79991234567';
     const { account, mock } = setup([
@@ -127,6 +151,12 @@ describe('способы входа текущего аккаунта', () => {
     await account.changes.cancelPending(request.id);
     expect(mock.calls[1]?.method).toBe('DELETE');
     expect(mock.calls[1]?.url).toBe('https://itd.test/api/v1/auth/change/pending/req%2F1');
+  });
+
+  it('не отправляет отмену заявки с сегментом родительского пути', () => {
+    const { account, mock } = setup([]);
+    expect(() => account.changes.cancelPending('..')).toThrow(ItdConfigError);
+    expect(mock.callCount).toBe(0);
   });
 });
 

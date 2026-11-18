@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ItdClient } from '../../src/client.js';
-import { ItdNotFoundError } from '../../src/core/errors.js';
+import { ItdConfigError, ItdNotFoundError } from '../../src/core/errors.js';
 import { LegalDocumentScope } from '../../src/index.js';
 import { createRestClient } from '../../src/rest.js';
 import { createMockFetch, json } from '../helpers/mock-fetch.js';
@@ -74,5 +74,15 @@ describe('публичные документы', () => {
       '/api/legal-documents/area%2Bname/terms%2Fdraft',
       '/api/legal-documents/social/terms/versions/v%2F1%3F%23',
     ]);
+  });
+
+  it('отклоняет сегменты, которые URL нормализует как текущий или родительский путь', () => {
+    const mock = createMockFetch([]);
+    const itd = createRestClient({ baseUrl: 'https://itd.test', fetch: mock.fetch });
+
+    expect(() => itd.legal.current('..', 'terms')).toThrow(ItdConfigError);
+    expect(() => itd.legal.versions(scope, '.')).toThrow(ItdConfigError);
+    expect(() => itd.legal.version(scope, 'terms', '..')).toThrow(ItdConfigError);
+    expect(mock.callCount).toBe(0);
   });
 });

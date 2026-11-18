@@ -65,6 +65,9 @@ export function encodePathSegment(value: string, name = 'параметр пут
       `${name} должен быть непустой строкой, получено: ${JSON.stringify(value)}`,
     );
   }
+  if (value === '.' || value === '..') {
+    throw new ItdConfigError(`${name} не должен быть «.» или «..»`);
+  }
   return encodeURIComponent(value);
 }
 

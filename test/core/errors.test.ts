@@ -334,15 +334,26 @@ describe('createApiError', () => {
     expect(error.code).toBe('PHONE_VERIFICATION_PENDING');
   });
 
-  it('читает retryIn без обёртки и сохраняет нулевую паузу', () => {
-    expect(createApiError({ ...ctx, status: 429, body: { retryIn: 0 } }).retryAfter).toBe(0);
-    expect(createApiError({ ...ctx, status: 429, body: { retryAfter: 15 } }).retryAfter).toBe(
-      15000,
-    );
+  it('берёт положительную паузу из тела при нулевом Retry-After', () => {
+    const headers = new Headers({ 'Retry-After': '0' });
+    expect(
+      createApiError({ ...ctx, status: 429, headers, body: { retryIn: 0 } }).retryAfter,
+    ).toBeUndefined();
+    expect(
+      createApiError({ ...ctx, status: 429, headers, body: { retryAfter: 15 } }).retryAfter,
+    ).toBe(15_000);
   });
 
   it('отбрасывает неподдерживаемые значения паузы в теле', () => {
-    for (const delay of [-1, Number.NaN, Number.POSITIVE_INFINITY, '60', null]) {
+    for (const delay of [
+      0,
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_VALUE,
+      '60',
+      null,
+    ]) {
       expect(
         createApiError({ ...ctx, status: 429, body: { error: { retryIn: delay } } }).retryAfter,
       ).toBeUndefined();
@@ -360,9 +371,12 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter('Thu, 01 Jan 2026 00:00:30 GMT', now)).toBe(30_000);
   });
 
-  it('не уходит в минус для даты в прошлом', () => {
+  it('игнорирует неположительную паузу и дату в прошлом', () => {
     const now = Date.parse('2026-01-01T00:01:00Z');
-    expect(parseRetryAfter('Thu, 01 Jan 2026 00:00:00 GMT', now)).toBe(0);
+    expect(parseRetryAfter('Thu, 01 Jan 2026 00:00:00 GMT', now)).toBeUndefined();
+    expect(parseRetryAfter('Thu, 01 Jan 2026 00:01:00 GMT', now)).toBeUndefined();
+    expect(parseRetryAfter('0')).toBeUndefined();
+    expect(parseRetryAfter('-1')).toBeUndefined();
   });
 
   it('возвращает undefined на мусор и на отсутствие заголовка', () => {
