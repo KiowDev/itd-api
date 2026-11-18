@@ -284,6 +284,13 @@ export type {
   PendingContactChange,
 } from './models/account-access.js';
 export { ContactKind, ContactProofMethod } from './models/account-access.js';
+export type {
+  BannerDrawing,
+  BannerDrawingOperation,
+  BannerDrawingPoint,
+  UploadedBannerDrawing,
+} from './models/banner-drawing.js';
+export { BannerDrawingTool } from './models/banner-drawing.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
   Attachment,

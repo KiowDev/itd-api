@@ -160,6 +160,7 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
 | `POST /api/files/upload` | `itd.files.upload()`, `uploadMany()` | Bearer | `multipart/form-data`, поле `file` | 2026-08-13, `201` |
+| `POST /api/files/banner-drawing` | `itd.files.uploadBannerDrawing()` | Bearer | JSON с размерами холста и операциями рисования → `id`, `url`, `width`, `height` | — |
 | `DELETE /api/files/{fileId}` | `itd.files.remove()` | Bearer | идентификатор файла в path | 2026-08-13, `204` |
 
 ## Жалобы и верификация

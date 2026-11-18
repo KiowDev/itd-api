@@ -198,6 +198,13 @@ export type {
 } from './domain/params.js';
 export { toDate, utcStampToIso } from './domain/time.js';
 export type { PaymentMethod, Session, Subscription } from './models/account.js';
+export type {
+  BannerDrawing,
+  BannerDrawingOperation,
+  BannerDrawingPoint,
+  UploadedBannerDrawing,
+} from './models/banner-drawing.js';
+export { BannerDrawingTool } from './models/banner-drawing.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
   Attachment,

@@ -10,10 +10,14 @@ import { createMultipartFileBody } from '../core/multipart.js';
 import type { RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
 import { assertAllowedMime, mimeFromFilename } from '../domain/mime.js';
+import type { BannerDrawing, UploadedBannerDrawing } from '../models/banner-drawing.js';
 import { passthroughOperation, voidOperation } from '../operations/common.js';
 import { BaseResource } from './base.js';
 
 const FILES_UPLOAD = passthroughOperation<UploadedFile>('files.upload');
+const FILES_UPLOAD_BANNER_DRAWING = passthroughOperation<UploadedBannerDrawing>(
+  'files.uploadBannerDrawing',
+);
 const FILES_REMOVE = voidOperation('files.remove');
 
 /** Ответ загрузки файла. */
@@ -74,6 +78,24 @@ export class FilesResource extends BaseResource {
       bodyFactory,
       ...requestOptions,
       timeout: requestOptions.timeout ?? DEFAULT_UPLOAD_TIMEOUT,
+    });
+  }
+
+  /**
+   * Отправляет описание рисунка и возвращает созданное сервером изображение.
+   *
+   * Чтобы установить баннер, передайте полученный `id` в
+   * `itd.users.updateMe({ bannerId: id })`.
+   */
+  uploadBannerDrawing(
+    drawing: BannerDrawing,
+    options: RequestOptions = {},
+  ): Promise<UploadedBannerDrawing> {
+    return this.http.execute(FILES_UPLOAD_BANNER_DRAWING, {
+      path: '/api/files/banner-drawing',
+      body: drawing,
+      ...options,
+      timeout: options.timeout ?? DEFAULT_UPLOAD_TIMEOUT,
     });
   }
 

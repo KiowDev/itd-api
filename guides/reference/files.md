@@ -21,6 +21,31 @@ remove(fileId: string, options?: RequestOptions): Promise<void>
 порядке. Таймаут загрузки по умолчанию — 300 000 мс; он охватывает
 получение исходного файла и его отправку.
 
+## Рисунок для баннера
+
+`uploadBannerDrawing(drawing, options?)` отправляет описание рисунка в JSON.
+Сервер возвращает идентификатор, URL и размеры изображения. Чтобы установить баннер,
+передайте идентификатор в `users.updateMe()`.
+
+```ts
+import { BannerDrawingTool } from 'itd-api';
+
+const banner = await itd.files.uploadBannerDrawing({
+  version: 1,
+  width: 1100,
+  height: 380,
+  ops: [{
+    tool: BannerDrawingTool.Line,
+    color: '#3366ff',
+    width: 8,
+    points: [[40, 190], [1060, 190]],
+  }],
+});
+await itd.users.updateMe({ bannerId: banner.id });
+```
+
+Координаты и толщина линии задаются в пикселях холста. Операции применяются по порядку.
+
 ## Формы вложений
 
 ```ts

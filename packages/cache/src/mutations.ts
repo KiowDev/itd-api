@@ -258,6 +258,7 @@ const CACHE_MUTATIONS = Object.freeze([
 
   // Файлы и настройки аккаунта.
   { operationId: 'files.upload', invalidates: NOTHING },
+  { operationId: 'files.uploadBannerDrawing', invalidates: NOTHING },
   { operationId: 'files.remove', invalidates: POST_CONTENT },
   {
     operationId: 'verification.submit',
