@@ -311,6 +311,13 @@ export type {
   UpdateResultBase,
 } from './models/content.js';
 export { isMyProfile } from './models/guards.js';
+export type {
+  LegalDocument,
+  LegalDocumentBlock,
+  LegalDocumentSummary,
+  LegalDocumentVersion,
+} from './models/legal.js';
+export { LegalDocumentBlockType, LegalDocumentScope } from './models/legal.js';
 export type { Notification, NotificationSettings } from './models/notifications.js';
 export type {
   ConsentDocument,
@@ -445,6 +452,7 @@ export type {
   UploadOptions,
 } from './resources/files.js';
 export type { HashtagPostsParams, HashtagsResource } from './resources/hashtags.js';
+export type { LegalResource } from './resources/legal.js';
 export type {
   NotificationListParams,
   NotificationsResource,

@@ -5,6 +5,7 @@ import type { RequestOptions } from '../core/options.js';
 import { CommentsResource } from '../resources/comments.js';
 import { FilesResource, type UploadOptions } from '../resources/files.js';
 import { HashtagsResource } from '../resources/hashtags.js';
+import { LegalResource } from '../resources/legal.js';
 import type { NotificationsResource } from '../resources/notifications.js';
 import { PlatformResource } from '../resources/platform.js';
 import { PostsResource } from '../resources/posts.js';
@@ -45,6 +46,7 @@ export interface RestResources<N extends NotificationsResource = NotificationsRe
   readonly files: FilesResource;
   readonly notifications: N;
   readonly hashtags: HashtagsResource;
+  readonly legal: LegalResource;
   readonly search: SearchResource;
   readonly reports: ReportsResource;
   readonly verification: VerificationResource;
@@ -80,6 +82,7 @@ export function createResources<N extends NotificationsResource>(
   let files: FilesResource | undefined;
   let notifications: N | undefined;
   let hashtags: HashtagsResource | undefined;
+  let legal: LegalResource | undefined;
   let search: SearchResource | undefined;
   let reports: ReportsResource | undefined;
   let verification: VerificationResource | undefined;
@@ -112,6 +115,10 @@ export function createResources<N extends NotificationsResource>(
     get hashtags() {
       hashtags ??= new HashtagsResource(deps.http);
       return hashtags;
+    },
+    get legal() {
+      legal ??= new LegalResource(deps.http);
+      return legal;
     },
     get search() {
       search ??= new SearchResource(deps.http);

@@ -14,6 +14,7 @@ import { AccountLifecycleResource } from '../resources/account/lifecycle.js';
 import type { CommentsResource } from '../resources/comments.js';
 import type { FilesResource } from '../resources/files.js';
 import type { HashtagsResource } from '../resources/hashtags.js';
+import type { LegalResource } from '../resources/legal.js';
 import { NotificationsResource } from '../resources/notifications.js';
 import type { PlatformResource } from '../resources/platform.js';
 import type { PostsResource } from '../resources/posts.js';
@@ -123,6 +124,11 @@ export class ItdRestClient {
   /** Подписка и способы оплаты. */
   get subscription(): SubscriptionResource {
     return this.#resources.subscription;
+  }
+
+  /** Публичные документы ИТД и история их редакций. */
+  get legal(): LegalResource {
+    return this.#resources.legal;
   }
 
   /** Сведения о платформе: версии приложений, изменения, анонсы, баннер события. */

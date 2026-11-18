@@ -193,6 +193,15 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 | `GET /api/v1/portal` | `itd.platform.portal()` | необязательно | ответ: данные портала | 2026-10-11, `200` |
 | `GET /api/status` | `itd.platform.status()` | нет | отдельный status host; ответ: состояние сервисов | 2026-10-11, `200` |
 
+## Документы
+
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+|---|---|---|---|---|
+| `GET /api/legal-documents` | `itd.legal.list()` | нет | query: `scope`, ответ: `documents[]` | 2026-11-17, `200` |
+| `GET /api/legal-documents/{scope}/{slug}` | `itd.legal.current()` | нет | действующая редакция в `document` | 2026-11-17, `200` |
+| `GET /api/legal-documents/{scope}/{slug}/versions` | `itd.legal.versions()` | нет | история в `versions[]` | 2026-11-17, `200` |
+| `GET /api/legal-documents/{scope}/{slug}/versions/{version}` | `itd.legal.version()` | нет | выбранная редакция в `document` | 2026-11-17, `200` |
+
 ## Телеметрия
 
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |

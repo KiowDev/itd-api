@@ -225,6 +225,13 @@ export type {
   UpdateResultBase,
 } from './models/content.js';
 export { isMyProfile } from './models/guards.js';
+export type {
+  LegalDocument,
+  LegalDocumentBlock,
+  LegalDocumentSummary,
+  LegalDocumentVersion,
+} from './models/legal.js';
+export { LegalDocumentBlockType, LegalDocumentScope } from './models/legal.js';
 export type { Notification, NotificationSettings } from './models/notifications.js';
 export type {
   Announcement,
@@ -299,6 +306,7 @@ export type { AccountLifecycleResource } from './resources/account/lifecycle.js'
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export type { FilesResource, UploadedFile, UploadOptions } from './resources/files.js';
 export type { HashtagPostsParams, HashtagsResource } from './resources/hashtags.js';
+export type { LegalResource } from './resources/legal.js';
 export type {
   NotificationListParams,
   NotificationsResource,

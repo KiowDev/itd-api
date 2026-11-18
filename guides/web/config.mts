@@ -69,6 +69,7 @@ const referenceSidebar = [
     collapsed: true,
     items: [
       { text: 'Платформа', link: '/reference/platform' },
+      { text: 'Документы', link: '/reference/legal' },
       { text: 'Подписка', link: '/reference/subscription' },
       { text: 'Верификация', link: '/reference/verification' },
       { text: 'Жалобы', link: '/reference/reports' },

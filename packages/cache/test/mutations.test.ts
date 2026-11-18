@@ -20,6 +20,10 @@ type UncachedRead =
   | 'events.notifications.poll.updates'
   | 'events.notifications.poll.unread'
   | 'platform.version'
+  | 'legal.list'
+  | 'legal.current'
+  | 'legal.versions'
+  | 'legal.version'
   | 'shop.orders.list'
   | 'shop.orders.get';
 

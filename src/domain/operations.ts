@@ -222,6 +222,10 @@ export const OPERATIONS = freezeOperations({
   },
 
   'platform.version': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'legal.list': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'legal.current': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'legal.versions': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'legal.version': { method: 'GET', retrySafety: RetrySafety.Safe },
   'platform.changelog': { method: 'GET', retrySafety: RetrySafety.Safe },
   'platform.announcements': { method: 'GET', retrySafety: RetrySafety.Safe },
   'platform.portal': { method: 'GET', retrySafety: RetrySafety.Safe },
