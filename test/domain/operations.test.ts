@@ -111,12 +111,10 @@ describe('карта серверных счётчиков частоты', () =
     expect(BUCKET_LIMITS[operationBucket('auth.qrStart')]).toBe(40);
   });
 
-  it('разделяет измеренные счётчики доставки магазина', () => {
-    expect(operationBucket('shop.products.list')).toBe('shop');
-    expect(operationBucket('shop.delivery.countries')).toBe('shop');
-    expect(BUCKET_LIMITS[operationBucket('shop.delivery.cities')]).toBe(60);
-    expect(BUCKET_LIMITS[operationBucket('shop.delivery.points')]).toBe(30);
-    expect(BUCKET_LIMITS[operationBucket('shop.delivery.calculate')]).toBe(45);
+  it('использует общий счётчик для каталога и доставки и отдельные для операций с заказами', () => {
+    expect(BUCKET_LIMITS.shop).toBe(150);
+    expect(operationBucket('shop.orders.list')).toBe('default');
+    expect(operationBucket('shop.orders.get')).toBe('default');
     expect(BUCKET_LIMITS[operationBucket('shop.orders.create')]).toBe(12);
     expect(BUCKET_LIMITS[operationBucket('shop.orders.pay')]).toBe(13);
     expect(BUCKET_LIMITS[operationBucket('shop.orders.verifyAccessCode')]).toBe(13);

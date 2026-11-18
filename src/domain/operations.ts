@@ -239,17 +239,17 @@ export const OPERATIONS = freezeOperations({
   'shop.delivery.cities': {
     method: 'GET',
     retrySafety: RetrySafety.Safe,
-    bucket: 'shop.delivery.cities',
+    bucket: 'shop',
   },
   'shop.delivery.points': {
     method: 'GET',
     retrySafety: RetrySafety.Safe,
-    bucket: 'shop.delivery.points',
+    bucket: 'shop',
   },
   'shop.delivery.calculate': {
     method: 'POST',
     retrySafety: RetrySafety.Safe,
-    bucket: 'shop.delivery.calculate',
+    bucket: 'shop',
   },
   'shop.orders.create': {
     method: 'POST',

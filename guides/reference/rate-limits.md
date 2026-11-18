@@ -143,9 +143,7 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 | Бакет | Операции | В минуту |
 | --- | --- | ---: |
 | `default` | всё, для чего нет отдельного правила: `auth.check`, `posts.get`, `posts.update`, `posts.remove`, `posts.restore`, `posts.pin`, `posts.unpin`, `posts.vote`, `posts.byUser`, `posts.likedByUser`, `comments.replies`, `comments.reply`, `comments.update`, `comments.remove`, `comments.restore`, `account.deactivate`, `account.restore`, `users.createProfile`, `users.updatePrivacy`, `users.setPin`, `users.removePin`, `users.followStatus`, `users.block`, `users.unblock`, `notifications.markRead`, `notifications.markReadBatch`, `notifications.markAllRead`, `notifications.updateSettings`, `subscription.*`, `platform.version`, `platform.changelog`, `platform.announcements`, `platform.portal`, `telemetry.dwell`, `telemetry.interaction`, `shop.orders.list`, `shop.orders.get`, а также любой незнакомый путь | 150 |
-| `shop.delivery.cities` | `shop.delivery.cities` | 60 |
-| `shop.delivery.calculate` | `shop.delivery.calculate` | 45 |
-| `shop.delivery.points` | `shop.delivery.points` | 30 |
+| `shop` | `shop.products.list`, `shop.products.get`, `shop.delivery.countries`, `shop.delivery.cities`, `shop.delivery.points`, `shop.delivery.calculate` | 150 |
 | `shop.orders.create` | `shop.orders.create` | 12 |
 | `shop.orders.pay` | `shop.orders.pay` | 13 |
 | `shop.orders.requestAccessCode` | `shop.orders.requestAccessCode` | 4 |
