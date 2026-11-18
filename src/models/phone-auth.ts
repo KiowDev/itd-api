@@ -14,6 +14,8 @@ export interface PhoneRegion {
   callingCode: string;
   /** Пример национальной части номера. */
   example: string;
+  /** Способы подтверждения, доступные в регионе. */
+  methods: PhoneVerificationMethod[];
 }
 
 /** Серверный список регионов, доступных для телефонного входа. */
@@ -101,6 +103,12 @@ export interface PhoneFlowInput {
 export interface PhoneFlowStart extends PhoneDelivery {
   /** Значение для следующих вызовов проверки. Передаётся вместе с тем же номером. */
   flowToken: string;
+}
+
+/** Параметры доставки и срок действия восстановленной проверки номера. */
+export interface PhoneFlowResume extends PhoneDelivery {
+  /** Оставшееся время проверки в секундах. */
+  expiresIn: number;
 }
 
 /**

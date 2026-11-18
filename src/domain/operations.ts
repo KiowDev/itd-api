@@ -74,6 +74,7 @@ export const OPERATIONS = freezeOperations({
   'auth.phone.config': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'auth' },
   'auth.phone.consent': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'auth' },
   'auth.phone.start': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
+  'auth.phone.resume': { method: 'POST', retrySafety: RetrySafety.Safe, bucket: 'auth' },
   'auth.phone.verify': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
   'auth.phone.password': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
   'auth.phone.resetPassword': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },

@@ -11,15 +11,9 @@ export function requestAccount<T>(
   body: unknown,
   options: RequestOptions,
 ): Promise<T> {
-  const reverse = path.startsWith('/phone/reverse/');
   return http.execute(operation, {
     ...options,
     path: `/api/v1/auth${path}`,
     body,
-    headers: {
-      ...options.headers,
-      ...(operation.method === 'POST' ? { 'X-ITD-Phone-Reverse': '1' } : {}),
-      ...(reverse ? { 'X-ITD-Reverse-Attempts': '1' } : {}),
-    },
   });
 }

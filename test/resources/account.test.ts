@@ -3,6 +3,7 @@ import { ItdClient } from '../../src/client.js';
 import { ItdConfigError, ItdStateError } from '../../src/core/errors.js';
 import { redactBody } from '../../src/core/redact.js';
 import { ContactProofMethod } from '../../src/models/account-access.js';
+import { PhoneVerificationMethod } from '../../src/models/phone-auth.js';
 import { createRestClient } from '../../src/rest.js';
 import { CaptchaType } from '../../src/types/enums.js';
 import { createMockFetch, json } from '../helpers/mock-fetch.js';
@@ -70,6 +71,10 @@ describe('способы входа текущего аккаунта', () => {
       Array(4).fill('Bearer current-token'),
     );
     expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual(input);
+    for (const { headers } of mock.calls) {
+      expect(headers.get('X-ITD-Phone-Reverse')).toBeNull();
+      expect(headers.get('X-ITD-Flow-Expiry')).toBeNull();
+    }
     const confirmation = JSON.parse(mock.calls[3]?.body ?? '{}');
     expect(confirmation).toEqual({ changeToken: 'change', code: '654321' });
     expect(redactBody(confirmation)).toEqual({ changeToken: '[скрыто]', code: '[скрыто]' });
@@ -77,10 +82,15 @@ describe('способы входа текущего аккаунта', () => {
   });
 
   it('не принимает ответ входа за подтверждение смены и не сохраняет его сессию', async () => {
-    const { account, api } = setup([json({ mode: 'signin', accessToken: 'unexpected-token' })]);
+    const { account, api, mock } = setup([
+      json({ mode: 'signin', accessToken: 'unexpected-token' }),
+    ]);
     await expect(
       account.phone.verifyChange({ phone: '+79991234567', flowToken: 'flow', otp: '1234' }),
     ).rejects.toThrow(ItdConfigError);
+    expect(mock.calls[0]?.headers.get('X-ITD-Phone-Reverse')).toBe('1');
+    expect(mock.calls[0]?.headers.get('X-ITD-Flow-Expiry')).toBe('1');
+    expect(mock.calls[0]?.headers.get('X-ITD-Reverse-Attempts')).toBeNull();
     expect((await api.getSession())?.accessToken).toBe('current-token');
   });
 
@@ -122,8 +132,10 @@ describe('способы входа текущего аккаунта', () => {
     const flow = await account.phone.attach({
       phone,
       captcha: { type: CaptchaType.Itd, token: 'proof' },
+      method: PhoneVerificationMethod.Reverse,
     });
     expect(flow).toMatchObject({ flowToken: 'flow', channel: 'missed_call', reverseOnly: true });
+    expect(mock.calls[0]?.headers.get('X-ITD-Phone-Method')).toBe('reverse');
     expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
       phone,
       captcha: { provider: CaptchaType.Itd, token: 'proof' },
@@ -134,6 +146,22 @@ describe('способы входа текущего аккаунта', () => {
     expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer current-token');
     expect(mock.calls[1]?.headers.get('X-ITD-Phone-Reverse')).toBe('1');
     expect(mock.calls[1]?.headers.get('X-ITD-Reverse-Attempts')).toBe('1');
+    expect(mock.calls[1]?.headers.get('X-ITD-Flow-Expiry')).toBe('1');
+  });
+
+  it('запрашивает исходящий звонок при начале смены номера', async () => {
+    const phone = '+79991234567';
+    const { account, mock } = setup([json({ flowToken: 'flow', reverseOnly: true })]);
+    await account.phone.startChange(
+      { phone, method: PhoneVerificationMethod.Reverse },
+      { headers: { 'X-Test': 'test' } },
+    );
+    const [call] = mock.calls;
+    expect(call?.url).toBe('https://itd.test/api/v1/auth/phone/change');
+    expect(call?.headers.get('X-ITD-Phone-Method')).toBe('reverse');
+    expect(call?.headers.get('X-ITD-Flow-Expiry')).toBe('1');
+    expect(call?.headers.get('X-Test')).toBe('test');
+    expect(JSON.parse(call?.body ?? '{}')).toEqual({ phone });
   });
 
   it('извлекает отложенную заявку и отменяет её по закодированному ID', async () => {

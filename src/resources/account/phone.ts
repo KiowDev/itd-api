@@ -1,13 +1,16 @@
 import { ItdStateError } from '../../core/errors.js';
 import type { HttpClient } from '../../core/execution/http.js';
+import type { OperationContract } from '../../core/operation.js';
 import type { RequestOptions } from '../../core/options.js';
+import type { BuiltInOperationId } from '../../domain/operations.js';
 import type { ContactActionResult, ContactChange } from '../../models/account-access.js';
-import type {
-  PhoneDelivery,
-  PhoneFlowInput,
-  PhoneFlowStart,
-  PhoneReverseOptions,
-  PhoneReverseStatus,
+import {
+  type PhoneDelivery,
+  type PhoneFlowInput,
+  type PhoneFlowStart,
+  type PhoneReverseOptions,
+  type PhoneReverseStatus,
+  PhoneVerificationMethod,
 } from '../../models/phone-auth.js';
 import {
   ACCOUNT_PHONE_ATTACH,
@@ -28,6 +31,17 @@ import type { CaptchaToken } from '../../operations/auth.js';
 import type { AuthManager } from '../../session/auth.js';
 import { BaseResource } from '../base.js';
 import { requestAccount } from './request.js';
+
+/** Номер, капча и способ подтверждения для привязки или смены. */
+export interface AccountPhoneStartInput {
+  /** Номер в международном формате с `+`. */
+  phone: string;
+  /** Готовый токен; без него используется источник капчи клиента. */
+  captcha?: CaptchaToken | undefined;
+  /** По умолчанию Direct: код входящего звонка или сообщения. */
+  method?: PhoneVerificationMethod | undefined;
+}
+
 /** Привязка и смена номера текущего аккаунта. */
 export class AccountPhoneResource extends BaseResource {
   readonly #auth: AuthManager;
@@ -42,6 +56,7 @@ export class AccountPhoneResource extends BaseResource {
    *
    * Передайте номер в международном формате с `+`. Если токен капчи не передан
    * в вызов, SDK использует настроенный источник капчи.
+   * Для исходящего звонка передайте `method: PhoneVerificationMethod.Reverse`.
    *
    * @returns параметры доставки и `flowToken` для {@link verifyAttach}
    *
@@ -51,22 +66,19 @@ export class AccountPhoneResource extends BaseResource {
    * await itd.account.phone.verifyAttach({ phone, flowToken, otp: await getOtp() });
    * ```
    */
-  attach(
-    input: { phone: string; captcha?: CaptchaToken },
-    options: RequestOptions = {},
-  ): Promise<PhoneFlowStart> {
+  attach(input: AccountPhoneStartInput, options: RequestOptions = {}): Promise<PhoneFlowStart> {
     return this.#start(ACCOUNT_PHONE_ATTACH, '/phone/attach', input, options);
   }
 
   /**
    * Запрашивает подтверждение нового номера для смены.
    *
-   * Формат номера и источник капчи такие же, как у {@link attach}.
+   * Формат номера, источник капчи и выбор способа подтверждения такие же, как у {@link attach}.
    *
    * @returns параметры доставки и `flowToken` для {@link verifyChange}
    */
   startChange(
-    input: { phone: string; captcha?: CaptchaToken },
+    input: AccountPhoneStartInput,
     options: RequestOptions = {},
   ): Promise<PhoneFlowStart> {
     return this.#start(ACCOUNT_PHONE_START_CHANGE, '/phone/change', input, options);
@@ -81,7 +93,7 @@ export class AccountPhoneResource extends BaseResource {
     input: PhoneFlowInput & { otp: string },
     options: RequestOptions = {},
   ): Promise<ContactActionResult> {
-    return requestAccount(this.http, ACCOUNT_VERIFY_ATTACH, '/verify-otp', input, options);
+    return this.#request(ACCOUNT_VERIFY_ATTACH, '/verify-otp', input, options);
   }
 
   /**
@@ -93,7 +105,7 @@ export class AccountPhoneResource extends BaseResource {
     input: PhoneFlowInput & { otp: string },
     options: RequestOptions = {},
   ): Promise<ContactChange> {
-    return requestAccount(this.http, ACCOUNT_VERIFY_CHANGE, '/verify-otp', input, options);
+    return this.#request(ACCOUNT_VERIFY_CHANGE, '/verify-otp', input, options);
   }
 
   /**
@@ -102,7 +114,7 @@ export class AccountPhoneResource extends BaseResource {
    * @returns актуальные канал, длину кода и паузу до повтора в секундах
    */
   resendOtp(input: PhoneFlowInput, options: RequestOptions = {}): Promise<PhoneDelivery> {
-    return requestAccount(this.http, ACCOUNT_PHONE_RESEND_OTP, '/resend-otp', input, options);
+    return this.#request(ACCOUNT_PHONE_RESEND_OTP, '/resend-otp', input, options);
   }
 
   /** Синхронизирует привязанный номер с профилем. */
@@ -115,13 +127,7 @@ export class AccountPhoneResource extends BaseResource {
     input: PhoneFlowInput,
     options: RequestOptions = {},
   ): Promise<PhoneReverseOptions> {
-    return requestAccount(
-      this.http,
-      ACCOUNT_PHONE_REVERSE_OPTIONS,
-      '/phone/reverse/options',
-      input,
-      options,
-    );
+    return this.#request(ACCOUNT_PHONE_REVERSE_OPTIONS, '/phone/reverse/options', input, options);
   }
 
   /**
@@ -130,13 +136,7 @@ export class AccountPhoneResource extends BaseResource {
    * @returns состояние попытки, номер для звонка и срок действия в секундах
    */
   reverseStart(input: PhoneFlowInput, options: RequestOptions = {}): Promise<PhoneReverseStatus> {
-    return requestAccount(
-      this.http,
-      ACCOUNT_PHONE_REVERSE_START,
-      '/phone/reverse/start',
-      input,
-      options,
-    );
+    return this.#request(ACCOUNT_PHONE_REVERSE_START, '/phone/reverse/start', input, options);
   }
 
   /**
@@ -146,13 +146,7 @@ export class AccountPhoneResource extends BaseResource {
    * или {@link reverseChangeComplete} при смене номера.
    */
   reverseStatus(input: PhoneFlowInput, options: RequestOptions = {}): Promise<PhoneReverseStatus> {
-    return requestAccount(
-      this.http,
-      ACCOUNT_PHONE_REVERSE_STATUS,
-      '/phone/reverse/status',
-      input,
-      options,
-    );
+    return this.#request(ACCOUNT_PHONE_REVERSE_STATUS, '/phone/reverse/status', input, options);
   }
 
   /** Завершает привязку номера после исходящего звонка. */
@@ -160,8 +154,7 @@ export class AccountPhoneResource extends BaseResource {
     input: PhoneFlowInput,
     options: RequestOptions = {},
   ): Promise<ContactActionResult> {
-    return requestAccount(
-      this.http,
+    return this.#request(
       ACCOUNT_PHONE_REVERSE_ATTACH_COMPLETE,
       '/phone/reverse/complete',
       input,
@@ -174,8 +167,7 @@ export class AccountPhoneResource extends BaseResource {
     input: PhoneFlowInput,
     options: RequestOptions = {},
   ): Promise<ContactChange> {
-    return requestAccount(
-      this.http,
+    return this.#request(
       ACCOUNT_PHONE_REVERSE_CHANGE_COMPLETE,
       '/phone/reverse/complete',
       input,
@@ -187,7 +179,7 @@ export class AccountPhoneResource extends BaseResource {
   async #start(
     operation: typeof ACCOUNT_PHONE_ATTACH | typeof ACCOUNT_PHONE_START_CHANGE,
     path: string,
-    { phone, captcha }: { phone: string; captcha?: CaptchaToken },
+    { phone, captcha, method }: AccountPhoneStartInput,
     options: RequestOptions,
   ): Promise<PhoneFlowStart> {
     const revision = this.#auth.revision();
@@ -197,12 +189,37 @@ export class AccountPhoneResource extends BaseResource {
         'Сессия сменилась во время получения капчи. Начните проверку номера заново.',
       );
     }
-    return requestAccount(
-      this.http,
+    return this.#request(
       operation,
       path,
       { phone, captcha: proof ? { provider: proof.type, token: proof.token } : undefined },
-      options,
+      {
+        ...options,
+        headers: {
+          ...options.headers,
+          ...(method === PhoneVerificationMethod.Reverse
+            ? { 'X-ITD-Phone-Method': PhoneVerificationMethod.Reverse }
+            : {}),
+        },
+      },
     );
+  }
+
+  /** Объявляет поддержку исходящего звонка и срока действия проверки номера. */
+  #request<T>(
+    operation: OperationContract<T, BuiltInOperationId>,
+    path: string,
+    body: unknown,
+    options: RequestOptions,
+  ): Promise<T> {
+    return requestAccount(this.http, operation, path, body, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'X-ITD-Phone-Reverse': '1',
+        'X-ITD-Flow-Expiry': '1',
+        ...(path.startsWith('/phone/reverse/') ? { 'X-ITD-Reverse-Attempts': '1' } : {}),
+      },
+    });
   }
 }

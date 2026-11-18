@@ -316,6 +316,22 @@ describe('createApiError', () => {
     expect(error.requestId).toBe('req-42');
   });
 
+  it.each([
+    ['18', 18],
+    ['0', 0],
+    ['-1', undefined],
+    ['1.5', undefined],
+    ['99999999999999999', undefined],
+  ])('читает срок проверки %s независимо от паузы до повтора', (header, expected) => {
+    const error = createApiError({
+      ...ctx,
+      headers: new Headers({ 'X-ITD-Flow-Expires-In': header, 'Retry-After': '30' }),
+      body: {},
+    });
+    expect(error.flowExpiresIn).toBe(expected);
+    expect(error.retryAfter).toBe(30_000);
+  });
+
   it('считает HTTP-дату Retry-After относительно переданного времени', () => {
     const headers = new Headers({ 'retry-after': 'Thu, 01 Jan 1970 00:00:05 GMT' });
     const error = createApiError({ ...ctx, status: 429, headers, body: {}, now: 0 });

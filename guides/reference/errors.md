@@ -60,6 +60,7 @@ class ItdApiError extends ItdError {
   raw: unknown;                          // тело ответа как пришло
   response: Response | undefined;
   retryAfter: number | undefined;        // мс; Retry-After или retryIn/retryAfter тела
+  flowExpiresIn: number | undefined;     // с; оставшееся время проверки номера
   rateLimit: number | undefined;         // x-ratelimit-limit
   rateLimitRemaining: number | undefined;// x-ratelimit-remaining
   apiKind: ItdApiErrorKind;              // разновидность для сравнения

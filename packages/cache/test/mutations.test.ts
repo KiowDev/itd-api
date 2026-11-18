@@ -61,6 +61,7 @@ describe('каталог мутаций', () => {
     'auth.refresh',
     'auth.qrStart',
     'auth.qrClaim',
+    'auth.phone.resume',
     'shop.consents.record',
   ] as const)('%s не затрагивает читающие операции', (operationId) => {
     expect(cacheMutation(operationId)?.invalidates).toEqual([]);

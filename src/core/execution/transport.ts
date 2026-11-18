@@ -497,6 +497,7 @@ export class Transport {
       headers,
       signal: attempt.abort.signal,
       ...(body !== undefined ? { body } : {}),
+      ...(attempt.request.redirect ? { redirect: attempt.request.redirect } : {}),
       ...(this.#config.sendCredentials ? { credentials: 'include' as const } : {}),
     };
     if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) {

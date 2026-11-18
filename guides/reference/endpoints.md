@@ -17,9 +17,10 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 | `GET /api/v1/auth/captcha/provider` | `itd.auth.captchaProvider()` | нет | активный провайдер и поле `token` либо `turnstileToken` | 2026-11-17, `200` |
 | `GET /api/v1/auth/captcha/page` | `itd.auth.captchaPage()` | нет | активный провайдер, поле и адрес страницы виджета | 2026-11-17, `200` |
 | `POST /api/v1/auth/sign-up` | `itd.auth.signUp()` (устарел) | нет | регистрация по email отключена: `EMAIL_SIGNUP_DISABLED` | 2026-11-17, `403` |
-| `GET /api/v1/auth/phone/config` | `itd.auth.phone.config()` | нет | `regions`, `defaultRegion` | 2026-11-17, `200` |
+| `GET /api/v1/auth/phone/config` | `itd.auth.phone.config()` | нет | доступные регионы и способы подтверждения | 2026-11-18, `200` |
 | `GET /api/v1/auth/consent?flow=phone_entry` | `itd.auth.phone.consent()` | нет | контекст согласия и документы | 2026-11-17, `200` |
 | `POST /api/v1/auth/phone/start` | `itd.auth.phone.start()` | нет | `phone`, `captcha: {provider, token}`, `legal` → доставка и `flowToken` | 2026-11-17, `200` |
+| `POST /api/v1/auth/phone/resume` | `itd.auth.phone.resume()` | нет | `phone`, `flowToken` → параметры доставки и `expiresIn` | — |
 | `POST /api/v1/auth/verify-otp` (телефон) | `itd.auth.phone.verify()` | нет | `phone`, `flowToken`, `otp` → access token либо шаг пароля | 2026-11-17, `200` |
 | `POST /api/v1/auth/resend-otp` (телефон) | `itd.auth.phone.resend()` | нет | `phone`, `flowToken` → параметры доставки | — |
 | `POST /api/v1/auth/phone/password` | `itd.auth.phone.password()` | нет | `phone`, `flowToken`, `password` → `accessToken` | 2026-11-17, `200` |

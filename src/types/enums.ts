@@ -377,8 +377,12 @@ export const ItdErrorCode = Object.freeze({
   /** Собственная captcha ИТД не подтвердила целостность проверки. */
   INTEGRITY_CHECK_FAILED: 'INTEGRITY_CHECK_FAILED',
   OTP_INVALID: 'OTP_INVALID',
+  OTP_EXPIRED: 'OTP_EXPIRED',
+  NO_PENDING_OTP: 'NO_PENDING_OTP',
   /** `flowToken` неизвестен или просрочен — поток подтверждения нужно начинать заново. */
   INVALID_FLOW_TOKEN: 'INVALID_FLOW_TOKEN',
+  /** Для номера уже запущена проверка. */
+  PHONE_VERIFICATION_PENDING: 'PHONE_VERIFICATION_PENDING',
   ACCOUNT_DEACTIVATED: 'ACCOUNT_DEACTIVATED',
   ACCOUNT_EMAIL_DOMAIN_NOT_ALLOWED: 'ACCOUNT_EMAIL_DOMAIN_NOT_ALLOWED',
   EMAIL_SIGNUP_DISABLED: 'EMAIL_SIGNUP_DISABLED',

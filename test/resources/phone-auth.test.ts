@@ -53,7 +53,14 @@ function makeClient(handler: MockHandler | Response[], options: ItdClientOptions
 describe('телефонный вход', () => {
   it('читает конфигурацию и согласие без Bearer и не меняет сессию', async () => {
     const config = {
-      regions: [{ region: 'TM', callingCode: '993', example: '66123456' }],
+      regions: [
+        {
+          region: 'TM',
+          callingCode: '993',
+          example: '66123456',
+          methods: [PhoneVerificationMethod.Reverse],
+        },
+      ],
       defaultRegion: 'RU',
     };
     const legal = consent();
@@ -87,6 +94,7 @@ describe('телефонный вход', () => {
     });
     expect(mock.calls[0]?.headers.get('X-ITD-Phone-Method')).toBe(PhoneVerificationMethod.Reverse);
     expect(mock.calls[0]?.headers.get('X-ITD-Phone-Reverse')).toBe('1');
+    expect(mock.calls[0]?.headers.get('X-ITD-Flow-Expiry')).toBe('1');
     expect(mock.calls[0]?.headers.get('X-Test')).toBe('test');
     expect(result).toEqual({
       flowToken: flow.flowToken,
@@ -95,6 +103,30 @@ describe('телефонный вход', () => {
       retryIn: 60,
       nextChannel: null,
     });
+    expect((await api.getSession())?.accessToken).toBe('old-token');
+  });
+
+  it('возобновляет проверку без Bearer, капчи и смены сессии', async () => {
+    const mock = createMockFetch([json({ ...delivery, expiresIn: 120 })]);
+    const fetch = vi.fn(mock.fetch);
+    const getToken = vi.fn();
+    const { api } = makeClient([], { fetch, captcha: { getToken } });
+
+    await expect(api.auth.phone.resume(flow)).resolves.toEqual({
+      channel: PhoneDeliveryChannel.MissedCall,
+      codeLength: 4,
+      retryIn: 60,
+      nextChannel: null,
+      expiresIn: 120,
+    });
+    const [call] = mock.calls;
+    expect(call?.url).toBe('https://itd.test/api/v1/auth/phone/resume');
+    expect(call?.method).toBe('POST');
+    expect(call?.headers.get('authorization')).toBeNull();
+    expect(call?.headers.get('X-ITD-Phone-Resume')).toBe('1');
+    expect(JSON.parse(call?.body ?? '{}')).toEqual(flow);
+    expect(fetch.mock.calls[0]?.[1]?.redirect).toBe('error');
+    expect(getToken).not.toHaveBeenCalled();
     expect((await api.getSession())?.accessToken).toBe('old-token');
   });
 
@@ -109,6 +141,9 @@ describe('телефонный вход', () => {
     );
     await api.auth.phone.start({ phone: flow.phone, consent: consent() });
     expect(getToken).toHaveBeenCalledWith(CaptchaType.Itd, { logger: undefined });
+    expect(mock.calls[1]?.headers.get('X-ITD-Phone-Reverse')).toBe('1');
+    expect(mock.calls[1]?.headers.get('X-ITD-Flow-Expiry')).toBe('1');
+    expect(mock.calls[1]?.headers.get('X-ITD-Phone-Method')).toBeNull();
     expect(JSON.parse(mock.calls[1]?.body ?? '{}').captcha).toEqual({
       provider: CaptchaType.Itd,
       token: 'proof',

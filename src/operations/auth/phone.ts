@@ -6,6 +6,7 @@ import {
   AuthVerificationMode,
   type PhoneConfig,
   type PhoneConsent,
+  type PhoneFlowResume,
   type PhoneFlowStart,
   type PhoneLoginResult,
   PhoneLoginStep,
@@ -52,6 +53,10 @@ export const AUTH_PHONE_CONSENT = passthroughOperation<PhoneConsent>('auth.phone
 export const AUTH_PHONE_START = defineBuiltInOperation<PhoneFlowStart>(
   'auth.phone.start',
   readPhoneStart,
+);
+export const AUTH_PHONE_RESUME = defineBuiltInOperation<PhoneFlowResume>(
+  'auth.phone.resume',
+  (body) => ({ ...readPhoneDelivery(body), expiresIn: (body as PhoneFlowResume).expiresIn }),
 );
 export const AUTH_PHONE_VERIFY = defineBuiltInOperation('auth.phone.verify', readLoginResult);
 export const AUTH_PHONE_PASSWORD = defineBuiltInOperation('auth.phone.password', readAccessToken);

@@ -145,6 +145,7 @@ const CACHE_MUTATIONS = Object.freeze([
   { operationId: 'auth.logout', invalidates: CacheInvalidation.All },
   { operationId: 'auth.resetPassword', invalidates: CacheInvalidation.All },
   { operationId: 'auth.phone.start', invalidates: NOTHING },
+  { operationId: 'auth.phone.resume', invalidates: NOTHING },
   { operationId: 'auth.phone.resend', invalidates: NOTHING },
   { operationId: 'auth.phone.reverseStart', invalidates: NOTHING },
   { operationId: 'auth.phone.verify', invalidates: CacheInvalidation.All },

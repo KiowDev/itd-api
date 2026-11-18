@@ -182,6 +182,8 @@ export type RequestBodyFactory = (
 export interface PipelineRequest extends OperationRequestOptions {
   /** Изолированный cookie jar конкретного auth-flow. @internal */
   cookieJar?: CookieJar | undefined;
+  /** Запрещает перенаправление запроса с секретом подтверждения. @internal */
+  redirect?: 'error' | undefined;
   /** Повторяемое тело. Используется внутренними ресурсами вместо `body`. @internal */
   bodyFactory?: RequestBodyFactory | undefined;
   /**

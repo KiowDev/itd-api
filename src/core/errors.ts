@@ -106,6 +106,8 @@ export interface ItdApiErrorInit {
   response?: Response | undefined;
   /** Пауза из Retry-After или тела ошибки, в миллисекундах. */
   retryAfter?: number | undefined;
+  /** Оставшееся время проверки номера в секундах (`X-ITD-Flow-Expires-In`). */
+  flowExpiresIn?: number | undefined;
   /** Сколько запросов разрешено в окне (`x-ratelimit-limit`). */
   rateLimit?: number | undefined;
   /** Сколько запросов осталось в окне (`x-ratelimit-remaining`). */
@@ -159,6 +161,8 @@ export class ItdApiError extends ItdError {
   readonly response: Response | undefined;
   /** Пауза из Retry-After либо retryIn/retryAfter тела ошибки, в миллисекундах. */
   readonly retryAfter: number | undefined;
+  /** Оставшееся время проверки номера в секундах. `0` означает, что она истекла. */
+  readonly flowExpiresIn: number | undefined;
   /**
    * Сколько запросов разрешено в окне — заголовок `x-ratelimit-limit`.
    *
@@ -186,6 +190,7 @@ export class ItdApiError extends ItdError {
     this.raw = init.raw;
     this.response = init.response;
     this.retryAfter = init.retryAfter;
+    this.flowExpiresIn = init.flowExpiresIn;
     this.rateLimit = init.rateLimit;
     this.rateLimitRemaining = init.rateLimitRemaining;
   }

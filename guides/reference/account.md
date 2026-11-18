@@ -23,7 +23,9 @@ const { email, phone, hasPassword } = await itd.account.getInfo();
   и `flowToken`.
 
 `phone.sync()` синхронизирует привязанный номер с профилем. Для подтверждения исходящим
-звонком используйте `phone.reverseOptions()`, `phone.reverseStart()` и `phone.reverseStatus()`.
+звонком передайте `method: PhoneVerificationMethod.Reverse` в `phone.attach()` или
+`phone.startChange()`. Используйте `phone.reverseOptions()` для проверки доступности звонка,
+`phone.reverseStart()` для получения номера и `phone.reverseStatus()` для проверки состояния.
 После звонка вызовите `phone.reverseAttachComplete()` для привязки или
 `phone.reverseChangeComplete()` для смены номера.
 

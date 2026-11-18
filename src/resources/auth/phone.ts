@@ -9,6 +9,7 @@ import {
   type PhoneConsent,
   type PhoneDelivery,
   type PhoneFlowInput,
+  type PhoneFlowResume,
   type PhoneFlowStart,
   type PhoneLoginResult,
   type PhoneReverseOptions,
@@ -21,6 +22,7 @@ import {
   AUTH_PHONE_PASSWORD,
   AUTH_PHONE_RESEND,
   AUTH_PHONE_RESET_PASSWORD,
+  AUTH_PHONE_RESUME,
   AUTH_PHONE_REVERSE_COMPLETE,
   AUTH_PHONE_REVERSE_OPTIONS,
   AUTH_PHONE_REVERSE_START,
@@ -53,7 +55,7 @@ export class PhoneAuthResource extends BaseResource {
     this.#auth = deps.auth;
   }
 
-  /** Разрешённые регионы и примеры номеров. */
+  /** Разрешённые регионы, примеры номеров и доступные способы подтверждения. */
   config(options: RequestOptions = {}): Promise<PhoneConfig> {
     return this.#request(AUTH_PHONE_CONFIG, '/phone/config', undefined, options);
   }
@@ -103,6 +105,27 @@ export class PhoneAuthResource extends BaseResource {
         },
       },
     );
+  }
+
+  /**
+   * Возобновляет незавершённую проверку номера.
+   *
+   * Передайте номер и `flowToken` из {@link start}. Для следующих шагов используйте тот же
+   * токен и параметры доставки из ответа.
+   */
+  resume(
+    { phone, flowToken }: PhoneFlowInput,
+    options: RequestOptions = {},
+  ): Promise<PhoneFlowResume> {
+    return this.http.execute(AUTH_PHONE_RESUME, {
+      ...options,
+      path: '/api/v1/auth/phone/resume',
+      body: { phone, flowToken },
+      redirect: 'error',
+      skipAuth: true,
+      skipAuthRefresh: true,
+      headers: { ...options.headers, 'X-ITD-Phone-Resume': '1' },
+    });
   }
 
   /**
@@ -211,7 +234,7 @@ export class PhoneAuthResource extends BaseResource {
 
   /**
    * Выполняет телефонный запрос без Bearer/refresh через общий pipeline.
-   * X-ITD-Phone-Reverse объявляет поддержку обратного звонка и требуется для reverse-операций.
+   * X-ITD-Phone-Reverse объявляет поддержку исходящего звонка, в том числе при запросе кода.
    */
   #request<T>(
     operation: OperationContract<T, BuiltInOperationId>,
@@ -229,7 +252,9 @@ export class PhoneAuthResource extends BaseResource {
       skipAuthRefresh: true,
       headers: {
         ...options.headers,
-        ...(operation.method === 'POST' ? { 'X-ITD-Phone-Reverse': '1' } : {}),
+        ...(operation.method === 'POST'
+          ? { 'X-ITD-Phone-Reverse': '1', 'X-ITD-Flow-Expiry': '1' }
+          : {}),
         ...(path.startsWith('/phone/reverse/') ? { 'X-ITD-Reverse-Attempts': '1' } : {}),
       },
     });

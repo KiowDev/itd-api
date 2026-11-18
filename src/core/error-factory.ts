@@ -289,6 +289,8 @@ export interface ErrorContext {
 export function createApiError(context: ErrorContext): ItdApiError {
   const parsed = parseErrorBody(context.body, context.status, context.statusText);
   const rateLimit = readRateLimit(context.headers);
+  const flowExpiry = context.headers?.get('X-ITD-Flow-Expires-In');
+  const flowExpiresIn = flowExpiry && /^\d+$/.test(flowExpiry) ? Number(flowExpiry) : NaN;
   const retryDelays: number[] = [];
   const headerDelay = parseRetryAfter(context.headers?.get('retry-after'), context.now);
   if (headerDelay !== undefined) retryDelays.push(headerDelay);
@@ -314,6 +316,7 @@ export function createApiError(context: ErrorContext): ItdApiError {
     raw: safeRawBody(context.body),
     response: context.response,
     retryAfter: retryDelays.length ? Math.max(...retryDelays) : undefined,
+    flowExpiresIn: Number.isSafeInteger(flowExpiresIn) ? flowExpiresIn : undefined,
   };
 
   if (parsed.code === 'PHONE_VERIFICATION_REQUIRED') {

@@ -325,6 +325,7 @@ export type {
   PhoneConsent,
   PhoneDelivery,
   PhoneFlowInput,
+  PhoneFlowResume,
   PhoneFlowStart,
   PhoneLoginResult,
   PhoneRegion,
@@ -417,7 +418,7 @@ export type {
 export type { AccountEmailResource } from './resources/account/email.js';
 export type { AccountLifecycleResource } from './resources/account/lifecycle.js';
 export type { AccountPasswordResource } from './resources/account/password.js';
-export type { AccountPhoneResource } from './resources/account/phone.js';
+export type { AccountPhoneResource, AccountPhoneStartInput } from './resources/account/phone.js';
 export type { AccountResource } from './resources/account.js';
 export type { PhoneAuthResource, PhoneLoginInput } from './resources/auth/phone.js';
 export type {
