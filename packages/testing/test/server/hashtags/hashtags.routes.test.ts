@@ -12,7 +12,7 @@ describe('createMockServer: хэштеги', () => {
     const first = await alice.posts.create((post) =>
       post.markup((m) => m.text('привет ').hashtag('итд')),
     );
-    await bob.posts.create((post) =>
+    const second = await bob.posts.create((post) =>
       post.markup((m) => m.hashtag('ИТДграм').text(' и ').hashtag('итд')),
     );
 
@@ -21,7 +21,10 @@ describe('createMockServer: хэштеги', () => {
       { id: 'hashtag-итд', name: 'итд', postsCount: 2 },
       { id: 'hashtag-итдграм', name: 'итдграм', postsCount: 1 },
     ]);
-    expect((await alice.hashtags.posts('ИТДГРАМ')).items).toHaveLength(1);
+    const page = await alice.hashtags.posts('ИТДГРАМ');
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).not.toHaveProperty('wallRecipientId');
+    await expect(alice.posts.get(second.id)).resolves.toHaveProperty('wallRecipientId', null);
     server.assertNoUnsupportedRequests();
   });
 

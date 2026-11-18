@@ -42,6 +42,8 @@ export interface ServiceStatus {
   last_checked: IsoDate;
   /** Доступность за 90 суток в процентах. */
   uptime_90d: number;
+  /** Считает ли сервер данные последней проверки актуальными. */
+  data_fresh?: boolean;
   /**
    * История по суткам. Ключ — сколько суток назад, `'0'` — сегодня.
    *
@@ -57,5 +59,17 @@ export interface PlatformStatus {
   overall_status: ServiceState;
   /** Когда данные последний раз пересчитаны. */
   updated_at: IsoDate;
+  /** Когда сформирован ответ. */
+  generated_at?: IsoDate;
+  /** Через сколько миллисекунд сервер считает данные устаревшими. */
+  stale_after_ms?: number;
+  /** Доступность платформы за 90 суток в процентах. */
+  uptime_90d?: number;
+  /** Первая дата периода, `YYYY-MM-DD`. */
+  window_start?: string;
+  /** Последняя дата периода, `YYYY-MM-DD`. */
+  window_end?: string;
+  /** Число суток с данными за период. */
+  sample_days?: number;
   services: ServiceStatus[];
 }

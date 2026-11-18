@@ -70,6 +70,10 @@ const days = auth ? statusDays(auth) : [];
 days[0]?.uptime;   // доступность за сегодня
 ```
 
+`generated_at` указывает время формирования ответа, `stale_after_ms` — порог устаревания
+данных, а `data_fresh` — актуальность данных отдельного сервиса.
+`window_start` и `window_end` задают границы периода, `sample_days` — число суток с данными.
+
 ## Типы версий
 
 ```ts

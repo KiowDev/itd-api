@@ -18,6 +18,11 @@ export class HashtagPresenter {
     slice: CursorSlice<PostRecord>,
     viewer: UserRecord,
   ): HashtagPostsPage {
-    return { hashtag: hashtag ?? null, ...this.#posts.page(slice, viewer) };
+    const page = this.#posts.page(slice, viewer);
+    return {
+      hashtag: hashtag ?? null,
+      ...page,
+      posts: page.posts.map(({ wallRecipientId: _wallRecipientId, ...post }) => post),
+    };
   }
 }

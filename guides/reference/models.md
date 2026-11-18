@@ -87,7 +87,7 @@ interface MyProfile extends UserBase {
   followersCount: number; followingCount: number; postsCount: number;
   createdAt: IsoDate;
   isPrivate: boolean;
-  isPhoneVerified: boolean;
+  isPhoneVerified?: boolean;
   subscription: SubscriptionState;       // { isActive, expiresAt, autoRenewal }
 }
 ```
@@ -107,7 +107,7 @@ interface SubscriptionState {
 ```ts
 interface AuthUser extends UserBase {
   avatar: string; clanAvatar?: string; bio: string; verified: boolean;
-  isPhoneVerified: boolean;
+  isPhoneVerified?: boolean;
   roles: string[];
 }
 
@@ -234,7 +234,7 @@ interface PostBase extends PostCounters {
 
 ```ts
 interface Post extends PostBase {
-  wallRecipientId: UserId | null;        // чья стена, если пост не у себя
+  wallRecipientId?: UserId | null;       // ID владельца чужой стены
   wallRecipient?: Author | null;         // владелец стены
   isLiked: boolean; isReposted: boolean; isViewed?: boolean; isOwner: boolean;
   originalPost?: OriginalPost | null;    // если это репост
@@ -528,6 +528,12 @@ interface AnnouncementButton {
 interface PlatformStatus {
   overall_status: ServiceState;          // худшее среди сервисов
   updated_at: IsoDate;
+  generated_at?: IsoDate;
+  stale_after_ms?: number;
+  uptime_90d?: number;
+  window_start?: string;                 // YYYY-MM-DD
+  window_end?: string;                   // YYYY-MM-DD
+  sample_days?: number;
   services: ServiceStatus[];
 }
 ```
@@ -543,6 +549,7 @@ interface ServiceStatus {
   latency_ms: number;
   last_checked: IsoDate;                 // приведён к ISO
   uptime_90d: number;                    // проценты
+  data_fresh?: boolean;                  // актуальны ли данные последней проверки
   days: Record<string, StatusDay | undefined>;  // разреженный; ровный массив — statusDays()
 }
 ```

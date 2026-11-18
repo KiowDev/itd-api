@@ -9,6 +9,12 @@ import { createMockFetch, json } from '../helpers/mock-fetch.js';
 const STATUS_RESPONSE = {
   overall_status: 'operational',
   updated_at: '2026-07-23T23:15:08.370Z',
+  generated_at: '2026-07-23T23:15:15.000Z',
+  stale_after_ms: 180_000,
+  uptime_90d: 98.06,
+  window_start: '2026-04-25',
+  window_end: '2026-07-23',
+  sample_days: 4,
   services: [
     {
       id: 'auth',
@@ -18,6 +24,7 @@ const STATUS_RESPONSE = {
       latency_ms: 165,
       last_checked: '2026-07-23 23:14:25',
       uptime_90d: 97.92,
+      data_fresh: true,
       days: {
         '0': { type: 'operational', date_key: '2026-07-23', uptime: 100, lines: [] },
         '1': { type: 'operational', date_key: '2026-07-22', uptime: 100, lines: [] },
@@ -38,6 +45,7 @@ const STATUS_RESPONSE = {
       latency_ms: 163,
       last_checked: '2026-07-23 23:14:25',
       uptime_90d: 98.19,
+      data_fresh: false,
       days: {},
     },
   ],
@@ -113,8 +121,12 @@ describe('itd.platform.status()', () => {
 
     const status = await itd.platform.status();
 
-    expect(status.overall_status).toBe('operational');
-    expect(status.updated_at).toBe('2026-07-23T23:15:08.370Z');
+    const { services, ...metadata } = STATUS_RESPONSE;
+    const { services: receivedServices, ...receivedMetadata } = status;
+    expect(receivedMetadata).toEqual(metadata);
+    expect(receivedServices.map(({ data_fresh }) => data_fresh)).toEqual(
+      services.map(({ data_fresh }) => data_fresh),
+    );
     expect(status.services[0]?.days['3']?.lines).toEqual([
       { t: 'down', text: 'недоступен 1 мин (02:00–02:01)' },
     ]);

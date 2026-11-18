@@ -52,7 +52,6 @@ export function userFixture(input: UserFixtureInput = {}): MyProfile {
     postsCount: 0,
     createdAt: FIXTURE_TIME,
     isPrivate: false,
-    isPhoneVerified: true,
     subscription: { isActive: false, expiresAt: null, autoRenewal: false },
     ...input,
   };

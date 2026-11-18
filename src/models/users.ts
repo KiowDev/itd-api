@@ -121,14 +121,14 @@ export interface SubscriptionState {
 /**
  * Свой профиль — ответ `GET /api/users/me`.
  *
- * Отличается от чужого наличием {@link subscription} и {@link isPhoneVerified}
- * и отсутствием полей связи (`isFollowing`, `online`).
+ * Содержит сведения о своей подписке. Поля связи с другим пользователем,
+ * такие как `isFollowing`, в этот профиль не входят.
  */
 export interface MyProfile extends ProfileBase {
   /** Закрыт ли профиль. */
   isPrivate: boolean;
-  /** Подтверждён ли телефон. Без него часть действий недоступна. */
-  isPhoneVerified: boolean;
+  /** Подтверждён ли номер телефона. */
+  isPhoneVerified?: boolean;
   /** Своя премиум-подписка. */
   subscription: SubscriptionState;
 }
@@ -141,7 +141,8 @@ export interface AuthUser extends UserBase {
   clanAvatar?: string;
   bio: string;
   verified: boolean;
-  isPhoneVerified: boolean;
+  /** Подтверждён ли номер телефона. */
+  isPhoneVerified?: boolean;
   /** Роли текущего пользователя, например `user`. */
   roles: string[];
 }

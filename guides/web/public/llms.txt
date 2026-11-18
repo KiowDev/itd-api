@@ -26,6 +26,8 @@ The linked documentation is written in Russian. Start with the guides and the cu
 - [Reference Overview](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/README.md): map of client resources and shared conventions for `RequestOptions`, dates, and pagination.
 - [Client](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/client.md): `ItdClient`, resources, methods, events, and constructor options.
 - [Authentication](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/auth.md): `itd.auth`, sign-in, registration, passwords, and session management.
+- [Account](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/account.md): `itd.account`, phone and email, cloud password, deactivation, and restoration.
+- [Legal Documents](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/legal.md): `itd.legal`, current documents and version history.
 - [Users](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/users.md): `itd.users`, profiles, follows, blocking, privacy, and badges.
 - [Posts](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/posts.md): `itd.posts`, feeds, publishing, reactions, reposts, polls, and post comments.
 - [Comments](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/comments.md): `itd.comments`, replies, and comment actions.

@@ -278,7 +278,7 @@ interface AuthState {
 interface AuthUser {
   id: UserId; username: string; displayName: string;
   avatar: string; bio: string; verified: boolean;
-  isPhoneVerified: boolean; roles: string[];
+  isPhoneVerified?: boolean; roles: string[];
 }
 
 interface Credentials {

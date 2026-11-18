@@ -142,14 +142,14 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 
 | Бакет | Операции | В минуту |
 | --- | --- | ---: |
-| `default` | всё, для чего нет отдельного правила: `auth.check`, `posts.get`, `posts.update`, `posts.remove`, `posts.restore`, `posts.pin`, `posts.unpin`, `posts.vote`, `posts.byUser`, `posts.likedByUser`, `comments.replies`, `comments.reply`, `comments.update`, `comments.remove`, `comments.restore`, `account.deactivate`, `account.restore`, `users.createProfile`, `users.updatePrivacy`, `users.setPin`, `users.removePin`, `users.followStatus`, `users.block`, `users.unblock`, `notifications.markRead`, `notifications.markReadBatch`, `notifications.markAllRead`, `notifications.updateSettings`, `subscription.*`, `platform.version`, `platform.changelog`, `platform.announcements`, `platform.portal`, `telemetry.dwell`, `telemetry.interaction`, `shop.orders.list`, `shop.orders.get`, а также любой незнакомый путь | 150 |
+| `default` | всё, для чего нет отдельного правила: `auth.check`, `posts.get`, `posts.update`, `posts.remove`, `posts.restore`, `posts.pin`, `posts.unpin`, `posts.vote`, `posts.byUser`, `posts.likedByUser`, `comments.replies`, `comments.reply`, `comments.update`, `comments.remove`, `comments.restore`, `account.deactivate`, `account.restore`, `users.createProfile`, `users.updatePrivacy`, `users.setPin`, `users.removePin`, `users.followStatus`, `users.block`, `users.unblock`, `notifications.markRead`, `notifications.markReadBatch`, `notifications.markAllRead`, `notifications.updateSettings`, `subscription.*`, `legal.*`, `platform.version`, `platform.changelog`, `platform.announcements`, `platform.portal`, `telemetry.dwell`, `telemetry.interaction`, `shop.orders.list`, `shop.orders.get`, а также любой незнакомый путь | 150 |
 | `shop` | `shop.products.list`, `shop.products.get`, `shop.delivery.countries`, `shop.delivery.cities`, `shop.delivery.points`, `shop.delivery.calculate` | 150 |
 | `shop.orders.create` | `shop.orders.create` | 12 |
 | `shop.orders.pay` | `shop.orders.pay` | 13 |
 | `shop.orders.requestAccessCode` | `shop.orders.requestAccessCode` | 4 |
 | `shop.orders.verifyAccessCode` | `shop.orders.verifyAccessCode` | 13 |
 | `shop.consents.record` | `shop.consents.record` | 15 |
-| `auth` | `auth.captchaProvider`, `auth.captchaPage`, `auth.signUp`, `auth.signIn`, `auth.verifyOtp`, `auth.resendOtp`, `auth.logout`, `auth.forgotPassword`, `auth.resetPassword`, `account.password.change`, `auth.sessions`, `auth.revokeSession`, `auth.revokeOtherSessions` | 35 |
+| `auth` | `auth.captchaProvider`, `auth.captchaPage`, `auth.signUp`, `auth.signIn`, `auth.verifyOtp`, `auth.resendOtp`, `auth.logout`, `auth.forgotPassword`, `auth.resetPassword`, `auth.phone.*`, `account.*` (кроме `account.deactivate` и `account.restore`), `auth.sessions`, `auth.revokeSession`, `auth.revokeOtherSessions` | 35 |
 | `auth.refresh` | `auth.refresh` | 25 |
 | `auth.qr` | `auth.qrStart`, `auth.qrScan`, `auth.qrApprove`, `auth.qrReject` | 40 |
 | `auth.qrClaim` | `auth.qrClaim` | 300 |

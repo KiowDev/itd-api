@@ -89,9 +89,9 @@ export interface OriginalPost extends PostBase {
 
 /** Пост ленты, стены или профиля. */
 export interface Post extends PostBase {
-  /** Чья это стена, если пост опубликован не у себя. */
-  wallRecipientId: UserId | null;
-  /** Владелец стены. Приходит не во всех ответах. */
+  /** ID владельца чужой стены. `null` — пост опубликован не на чужой стене. */
+  wallRecipientId?: UserId | null;
+  /** Профиль владельца стены. */
   wallRecipient?: Author | null;
   /** Поставили ли вы реакцию. */
   isLiked: boolean;

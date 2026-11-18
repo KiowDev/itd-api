@@ -80,7 +80,9 @@ export class UserPresenter {
       clanAvatar: clanOf(user),
       bio: user.profile.bio,
       verified: user.profile.verified,
-      isPhoneVerified: user.profile.isPhoneVerified,
+      ...(user.profile.isPhoneVerified !== undefined
+        ? { isPhoneVerified: user.profile.isPhoneVerified }
+        : {}),
       roles: [UserRole.User],
     };
   }
