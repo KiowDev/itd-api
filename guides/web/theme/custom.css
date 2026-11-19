@@ -133,6 +133,27 @@ body {
   padding-left: 0;
 }
 
+/* На коротком участке перед мобильным меню поиск оставляет место ссылкам навигации. */
+@media (min-width: 768px) and (max-width: 899px) {
+  .Layout .VPNavBar .VPNavBarSearch {
+    padding-left: 8px;
+  }
+
+  .Layout .VPNavBar .DocSearch-Button {
+    width: 44px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .Layout .VPNavBar :is(.DocSearch-Button-Placeholder, .DocSearch-Button-Keys) {
+    display: none;
+  }
+
+  .Layout .VPNavBarMenuLink {
+    padding-inline: 10px;
+  }
+}
+
 /*
  * Кнопки: блик пробегает по поверхности при наведении.
  * `overflow: hidden` держит его внутри скруглённой формы.
@@ -510,7 +531,8 @@ body {
 }
 
 .vp-doc :not(pre) > code {
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: break-spaces;
 }
 
 .VPSidebarItem.is-link > .item > .link {
