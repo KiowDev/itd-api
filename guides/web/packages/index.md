@@ -14,6 +14,7 @@ description: "Выберите дополнения к itd-api: капча, пр
 | [`@itd-api/proxy`](./proxy.md) | прокси-транспорт для HTTP и WebSocket | Node.js, Bun, Deno |
 | [`@itd-api/cache`](./cache.md) | TTL/LRU-кэш и дедупликация запросов | все поддерживаемые среды |
 | [`@itd-api/hydrate`](./hydrate.md) | методы действий на моделях API | все поддерживаемые среды |
+| [`@itd-api/chat-bot`](./chat-bot.md) | создание ботов для чатов ИТД | среды с WebSocket |
 | [`@itd-api/crypto`](./crypto.md) | скрытые сообщения и шифрование полей | все поддерживаемые среды |
 | [`@itd-api/testing`](./testing.md) | моки операций и HTTP, сервер API в памяти, заготовки данных | все поддерживаемые среды |
 

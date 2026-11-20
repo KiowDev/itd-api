@@ -615,19 +615,21 @@ describe('event channel', () => {
     engine.on('error', () => {});
 
     await engine.connect();
-    await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('поток событий переподключён'));
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith('соединение для получения событий восстановлено'),
+    );
 
     expect(logger.info.mock.calls.map(([message]) => message)).toEqual([
-      'поток событий подключён',
-      'поток событий переподключён',
+      'соединение для получения событий установлено',
+      'соединение для получения событий восстановлено',
     ]);
     expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
-      'поток событий оборван (Соединение с потоком событий закрыто); ' +
-        'переподключение 1 из 3 через 0 мс',
+      'получение событий прервано (Соединение закрыто). ' +
+        'Попытка переподключения 1 из 3 через 0 мс',
     );
 
     engine.disconnect();
-    expect(logger.info).toHaveBeenLastCalledWith('поток событий остановлен');
+    expect(logger.info).toHaveBeenLastCalledWith('получение событий остановлено');
 
     // Повторный disconnect() уже остановленного потока не даёт новой записи.
     engine.disconnect();

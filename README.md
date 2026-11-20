@@ -107,6 +107,7 @@ import { ItdClient } from 'itd-api';
 | `@itd-api/proxy` | прокси-транспорт для HTTP и WebSocket | Node.js 18+, Bun, Deno | [npm](https://www.npmjs.com/package/@itd-api/proxy) | [документация](https://kiowdev.github.io/itd-api/packages/proxy) |
 | `@itd-api/cache` | TTL/LRU-кэш и дедупликация запросов | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/cache) | [документация](https://kiowdev.github.io/itd-api/packages/cache) |
 | `@itd-api/hydrate` | методы действий на моделях API | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/hydrate) | [документация](https://kiowdev.github.io/itd-api/packages/hydrate) |
+| `@itd-api/chat-bot` | создание ботов для чатов ИТД | среды с WebSocket | [npm](https://www.npmjs.com/package/@itd-api/chat-bot) | [документация](https://kiowdev.github.io/itd-api/packages/chat-bot) |
 | `@itd-api/crypto` | скрытые сообщения в постах, комментариях и профилях | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/crypto) | [документация](https://kiowdev.github.io/itd-api/packages/crypto) |
 | `@itd-api/testing` | сценарные ответы и сервер API в памяти | среды основного клиента | [npm](https://www.npmjs.com/package/@itd-api/testing) | [документация](https://kiowdev.github.io/itd-api/packages/testing) |
 

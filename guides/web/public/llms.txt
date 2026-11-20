@@ -63,6 +63,7 @@ The linked documentation is written in Russian. Start with the guides and the cu
 - [@itd-api/proxy](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/proxy.md): HTTP and WebSocket traffic through HTTP, HTTPS, and SOCKS5 proxies.
 - [@itd-api/cache](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/cache.md): TTL/LRU caching, request deduplication, and invalidation.
 - [@itd-api/hydrate](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/hydrate.md): action methods attached directly to API models.
+- [@itd-api/chat-bot](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/chat-bot.md): build bots that reply to messages, send files, and remember data for each chat.
 - [@itd-api/crypto](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/crypto.md): hidden messages and content encryption through a plugin.
 - [@itd-api/testing](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/web/packages/testing.md): operation mocks, scripted responses, an in-memory API server, and controlled time.
 
@@ -72,7 +73,7 @@ The linked documentation is written in Russian. Start with the guides and the cu
 - [itd-api](https://kiowdev.github.io/itd-api/api/generated/core/): public classes, functions, interfaces, and types from the main package and the `itd-api/rest` and `itd-api/events` entry points.
 - [itd-api/node](https://kiowdev.github.io/itd-api/api/generated/node/): Node-specific file storage and file sources.
 - [itd-api/web](https://kiowdev.github.io/itd-api/api/generated/web/): browser session storage adapters.
-- [Additional Package APIs](https://kiowdev.github.io/itd-api/api/): generated signatures for `@itd-api/captcha`, `proxy`, `cache`, `hydrate`, `crypto`, and `testing`.
+- [Additional Package APIs](https://kiowdev.github.io/itd-api/api/): generated signatures for `@itd-api/captcha`, `proxy`, `cache`, `hydrate`, `chat-bot`, `crypto`, and `testing`.
 
 ## Optional
 

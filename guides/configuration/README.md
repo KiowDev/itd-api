@@ -287,7 +287,8 @@ new ItdClient({
 });
 ```
 
-Тот же логгер получают плагины через `PluginApi.logger` и источник капчи из `@itd-api/captcha`.
+Тот же логгер получают плагины через `PluginApi.logger`, источник капчи из `@itd-api/captcha`
+и [чат-бот](/packages/chat-bot).
 
 ## Хуки
 

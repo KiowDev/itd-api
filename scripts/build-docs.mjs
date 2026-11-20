@@ -79,6 +79,21 @@ const builds = [
     out: 'guides/web/api/generated/cache',
   },
   {
+    name: '@itd-api/chat-bot',
+    entryPoint: 'packages/chat-bot/src/index.ts',
+    tsconfig: 'packages/chat-bot/tsconfig.json',
+    out: 'guides/web/api/generated/chat-bot',
+    intentionallyNotExported: [
+      'ContextWithUpdate',
+      'Edit',
+      'IncomingType',
+      'KnownUpdateType',
+      'Message',
+      'MessageText',
+      'Read',
+    ],
+  },
+  {
     name: '@itd-api/crypto',
     entryPoint: 'packages/crypto/src/index.ts',
     tsconfig: 'packages/crypto/tsconfig.json',

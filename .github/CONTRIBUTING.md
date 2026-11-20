@@ -25,20 +25,24 @@ cd itd-api
 npm install
 ```
 
-Проект использует workspaces из `packages/*` (`cache`, `captcha`, `crypto`, `hydrate`,
-`proxy`, `testing`) — они устанавливаются вместе с основным пакетом.
+Проект использует workspaces из `packages/*` (`cache`, `captcha`, `chat-bot`, `crypto`,
+`hydrate`, `proxy`, `testing`). Они устанавливаются вместе с основным пакетом.
 
 ## Рабочий цикл
 
-Перед тем как отправлять изменения, прогоните тот же набор проверок, что и CI:
+Перед отправкой изменений выполните локальные проверки из CI.
 
 ```bash
-npm run typecheck   # проверка типов, tsc --noEmit
-npm run lint        # Biome
-npm test            # тесты Vitest
-npm run test:all    # вместе с пакетами workspace
-npm run build       # сборка tsdown
-npm run check:pack  # publint + attw, корректность упаковки
+npm run typecheck
+npm run typecheck --workspaces --if-present
+npm run lint
+npm run check:layers
+npm run test:all
+npm run build
+npm run build --workspaces --if-present
+npm run check:pack
+npm run check:pack --workspaces --if-present
+npm run docs:check
 ```
 
 Автоисправление стиля:

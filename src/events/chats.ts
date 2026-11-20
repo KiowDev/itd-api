@@ -35,7 +35,7 @@ export interface ChatEventsOptions extends ReconnectOptions {
   webSocketImpl?: WebSocketLike | undefined;
 }
 
-/** Поток изменений мессенджера. Доступен как `itd.chats.events` в полном клиенте. */
+/** Канал событий чатов. Доступен как `itd.chats.events` в полном клиенте. */
 export class ChatEvents {
   readonly #channel: EventChannel<ChatUpdate, ChatEventContext, EngineEventMap, 'stream'>;
   readonly #updates: (since: number, signal: AbortSignal) => Promise<ChatUpdatesPage>;
@@ -155,7 +155,7 @@ export class ChatEvents {
     }
   }
 
-  /** При разрыве последовательности восстанавливает поток с последней позиции. */
+  /** При пропуске событий запускает восстановление с последней позиции в журнале. */
   #deliverLive(update: ChatUpdate): void {
     const sequence = update.eventSeq;
     if (isSequence(sequence) && this.#position !== undefined && sequence > this.#position) {

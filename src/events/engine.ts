@@ -357,7 +357,7 @@ export class EventChannel<
     this.#dispatcher.clearPending();
 
     this.#setStatus(EventChannelStatus.Disconnected);
-    if (wasActive) this.#deps.logger?.info('поток событий остановлен');
+    if (wasActive) this.#deps.logger?.info('получение событий остановлено');
   }
 
   /** Отбрасывает очередь при разрыве последовательности и запускает новую синхронизацию. @internal */
@@ -410,9 +410,9 @@ export class EventChannel<
     this.#abortSession(new ItdAbortError('Очередь событий переполнена'));
     this.#setStatus(EventChannelStatus.Error);
 
-    const error = new Error('Обработчики не успевают за потоком: очередь обновлений переполнена');
+    const error = new Error('Очередь обновлений переполнена');
     this.#deps.logger?.warn(
-      'очередь обновлений потока переполнена; соединение восстановится, когда обработчики её разберут',
+      'очередь обновлений переполнена. Соединение восстановится после обработки очереди',
     );
     void this.#dispatcher.drain().then(() => {
       if (this.#isCurrentGeneration(generation) && !this.#session) {
@@ -461,7 +461,7 @@ export class EventChannel<
       await task;
     } catch (error) {
       if (this.#deps.initializationRequired) throw error;
-      this.#deps.logger?.warn(`не удалось синхронизировать поток событий (${reason})`, error);
+      this.#deps.logger?.warn(`не удалось синхронизировать события (${reason})`, error);
     }
   }
 
@@ -482,7 +482,9 @@ export class EventChannel<
             session.resolveOpened();
             this.#setStatus(EventChannelStatus.Connected);
             this.#deps.logger?.info(
-              reconnected ? 'поток событий переподключён' : 'поток событий подключён',
+              reconnected
+                ? 'соединение для получения событий восстановлено'
+                : 'соединение для получения событий установлено',
             );
           },
           onEvent: (event) => {
@@ -498,7 +500,7 @@ export class EventChannel<
         () => {
           // Штатное закрытие потока — тоже повод переподключиться.
           if (this.#isCurrentSession(session)) {
-            this.#handleFailure(new Error('Соединение с потоком событий закрыто'));
+            this.#handleFailure(new Error('Соединение закрыто'));
           }
         },
         (error: unknown) => {
@@ -543,8 +545,8 @@ export class EventChannel<
 
     const message =
       event === 'middlewareError'
-        ? 'Ошибка в промежуточном обработчике потока'
-        : 'Ошибка в обработчике обновления потока';
+        ? 'Ошибка в промежуточном обработчике событий'
+        : 'Ошибка при обработке обновления';
     (this.#deps.logger ?? fallbackLogger).error(message, error);
   }
 
@@ -589,8 +591,8 @@ export class EventChannel<
     this.#attempt += 1;
 
     this.#deps.logger?.warn(
-      `поток событий оборван (${describe(error)}); ` +
-        `переподключение ${this.#attempt} из ${this.#maxAttempts} через ${delay} мс`,
+      `получение событий прервано (${describe(error)}). ` +
+        `Попытка переподключения ${this.#attempt} из ${this.#maxAttempts} через ${delay} мс`,
     );
     this.#emitEngine('error', { error, willReconnect: true });
     this.#emitEngine('reconnect', { attempt: this.#attempt, delay });
@@ -631,8 +633,8 @@ export class EventChannel<
     this.#detachEnvironment = undefined;
 
     this.#deps.logger?.warn(
-      `поток событий остановлен без переподключения (${describe(error)}); ` +
-        'для возобновления вызовите connect()',
+      `получение событий остановлено (${describe(error)}). ` +
+        'Для возобновления вызовите connect()',
     );
     EVENT_CHANNEL_GIVEUP_HOOKS.get(this)?.();
     this.#emitEngine('error', { error, willReconnect: false });

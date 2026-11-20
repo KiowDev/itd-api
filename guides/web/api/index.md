@@ -30,6 +30,7 @@ description: "Справочник API из TSDoc: классы, интерфе�
 | [`@itd-api/proxy`](./generated/proxy/) | прокси-транспорт для HTTP и WebSocket |
 | [`@itd-api/cache`](./generated/cache/) | кэширование и дедупликация запросов |
 | [`@itd-api/hydrate`](./generated/hydrate/) | методы действий на моделях API |
+| [`@itd-api/chat-bot`](./generated/chat-bot/) | создание ботов для чатов ИТД |
 | [`@itd-api/crypto`](./generated/crypto/) | скрытые сообщения и шифрование |
 | [`@itd-api/testing`](./generated/testing/) | средства тестирования без сетевых запросов |
 

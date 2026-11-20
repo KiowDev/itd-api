@@ -282,7 +282,7 @@ export class ChatsResource extends BaseResource {
     );
   }
 
-  /** Загружает часть истории вокруг указанного сообщения. */
+  /** Загружает часть истории вокруг сообщения. По умолчанию запрашивает до 40 сообщений. */
   messagesAround(
     chatId: string,
     messageId: string,
@@ -328,7 +328,7 @@ export class ChatsResource extends BaseResource {
     return uploadChatFile(this.http, this.#host, file, uploadOptions, options);
   }
 
-  /** Получает свежие ссылки для файлов из указанного чата. */
+  /** Получает временные ссылки на файлы чата. Срок действия каждой ссылки указан в `expiresIn`. */
   fileLinks(
     chatId: string,
     fileIds: readonly string[],
@@ -394,7 +394,10 @@ export class ChatsResource extends BaseResource {
     });
   }
 
-  /** Возвращает события после указанного номера `eventSeq` или `nextEventSeq`. */
+  /**
+   * Загружает изменения после `eventSeq` из списка чатов или `nextEventSeq` предыдущей страницы.
+   * Передайте возвращённый `nextEventSeq` в следующий вызов. При `resetRequired` перечитайте список чатов.
+   */
   updates(since: number, limit?: number, options: RequestOptions = {}): Promise<ChatUpdatesPage> {
     return this.http.execute(UPDATES, {
       path: `${MESSENGER_PATH}/updates`,
@@ -403,7 +406,7 @@ export class ChatsResource extends BaseResource {
     });
   }
 
-  /** Открывает личный чат с указанным пользователем. */
+  /** Возвращает ID личного чата по ID собеседника. `created` показывает, создан ли новый чат. */
   createDirect(userId: string, options: RequestOptions = {}): Promise<ChatDirectResult> {
     return this.http.execute(CREATE_DIRECT, {
       path: `${CHATS_PATH}/dm`,
@@ -439,7 +442,7 @@ export class ChatsResource extends BaseResource {
     });
   }
 
-  /** Отправляет сообщение по ID пользователя и возвращает ID диалога. */
+  /** Отправляет сообщение по ID собеседника. Если диалога ещё нет, сервер создаёт его. */
   sendMessageToUser(
     userId: string,
     input: Omit<SendChatMessageInput, 'replyToId'>,
@@ -617,7 +620,7 @@ export class ChatsResource extends BaseResource {
   /**
    * Заменяет реакции текущего пользователя. Пустой список снимает его реакции.
    *
-   * Передайте `reactionVersion` из {@link reactions}. При конфликте перечитайте
+   * В `expectedVersion` передайте `reactionVersion` из {@link reactions}. При конфликте перечитайте
    * состояние перед повторной записью.
    */
   setReactions(

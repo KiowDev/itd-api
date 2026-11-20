@@ -115,6 +115,10 @@ console.log(`@${me.username}: ${me.followersCount}`);</code></pre>
         <code>@itd-api/hydrate</code>
         <p>Методы действий прямо на моделях API: пост, комментарий, профиль.</p>
       </a>
+      <a class="package-card" href="./packages/chat-bot">
+        <code>@itd-api/chat-bot</code>
+        <p>Создавайте ботов, которые отвечают на сообщения в чатах ИТД.</p>
+      </a>
       <a class="package-card" href="./packages/crypto">
         <code>@itd-api/crypto</code>
         <p>Скрытые сообщения и шифрование содержимого через плагин.</p>

@@ -319,5 +319,6 @@ ITD_TOKEN=<токен> node guides/events/examples/notifications.mjs
 
 - [Справочник событий](../reference/events.md)
 - [Уведомления](../reference/notifications.md)
+- [Чат-боты](/packages/chat-bot)
 - [Авторизация и обновление сессии](../authentication/)
 - [Несколько аккаунтов](../multi-accounts/)

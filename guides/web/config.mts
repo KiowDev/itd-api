@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress';
 import cacheSidebar from './api/generated/cache/typedoc-sidebar.json';
 import captchaSidebar from './api/generated/captcha/typedoc-sidebar.json';
+import chatBotSidebar from './api/generated/chat-bot/typedoc-sidebar.json';
 import coreSidebar from './api/generated/core/typedoc-sidebar.json';
 import cryptoSidebar from './api/generated/crypto/typedoc-sidebar.json';
 import hydrateSidebar from './api/generated/hydrate/typedoc-sidebar.json';
@@ -129,6 +130,7 @@ const packagesSidebar = [
       { text: '@itd-api/proxy', link: '/packages/proxy' },
       { text: '@itd-api/cache', link: '/packages/cache' },
       { text: '@itd-api/hydrate', link: '/packages/hydrate' },
+      { text: '@itd-api/chat-bot', link: '/packages/chat-bot' },
       { text: '@itd-api/crypto', link: '/packages/crypto' },
       { text: '@itd-api/testing', link: '/packages/testing' },
     ],
@@ -160,6 +162,7 @@ const apiEntriesSidebar = [
       { text: '@itd-api/proxy', link: '/api/generated/proxy/' },
       { text: '@itd-api/cache', link: '/api/generated/cache/' },
       { text: '@itd-api/hydrate', link: '/api/generated/hydrate/' },
+      { text: '@itd-api/chat-bot', link: '/api/generated/chat-bot/' },
       { text: '@itd-api/crypto', link: '/api/generated/crypto/' },
       { text: '@itd-api/testing', link: '/api/generated/testing/' },
     ],
@@ -293,6 +296,11 @@ export default defineConfig({
         '@itd-api/cache',
         '/api/generated/cache/',
         cacheSidebar,
+      ),
+      '/api/generated/chat-bot/': apiSidebar(
+        '@itd-api/chat-bot',
+        '/api/generated/chat-bot/',
+        chatBotSidebar,
       ),
       '/api/generated/crypto/': apiSidebar(
         '@itd-api/crypto',
