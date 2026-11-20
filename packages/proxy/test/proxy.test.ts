@@ -153,15 +153,23 @@ describe('proxyWebSocket', () => {
     expect(() => proxyWebSocket('ftp://nope')).toThrow(ProxyError);
   });
 
-  it('реально устанавливает WebSocket-соединение через HTTP-прокси', async () => {
+  it.each([
+    { path: '/events', protocols: [] },
+    {
+      path: '/api/v1/messenger/ws?capabilities=chat_settings_v2',
+      protocols: ['itd.messenger.v1', 'bearer.test-token'],
+    },
+  ])('устанавливает WebSocket через HTTP-прокси для $path', async ({ path, protocols }) => {
     const proxied: string[] = [];
     const reachedTarget: string[] = [];
     const seenHeaders: Array<string | undefined> = [];
+    const offeredProtocols: Array<string | undefined> = [];
 
     const target = createServer();
     target.on('upgrade', (request, socket) => {
       reachedTarget.push(request.url ?? '');
       seenHeaders.push(request.headers['x-test'] as string | undefined);
+      offeredProtocols.push(request.headers['sec-websocket-protocol']);
 
       const key = request.headers['sec-websocket-key'];
       if (typeof key !== 'string') {
@@ -172,8 +180,9 @@ describe('proxyWebSocket', () => {
       const accept = createHash('sha1')
         .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
         .digest('base64');
+      const protocol = protocols[0] ? `Sec-WebSocket-Protocol: ${protocols[0]}\r\n` : '';
       socket.write(
-        `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+        `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n${protocol}\r\n`,
       );
       socket.once('data', () => {
         // Немаскированный серверный кадр close с кодом 1000.
@@ -213,7 +222,7 @@ describe('proxyWebSocket', () => {
     const WebSocketViaProxy = proxyWebSocket(`http://127.0.0.1:${proxyPort}`);
 
     try {
-      const socket = new WebSocketViaProxy(`ws://127.0.0.1:${targetPort}/events`, [], {
+      const socket = new WebSocketViaProxy(`ws://127.0.0.1:${targetPort}${path}`, protocols, {
         headers: { 'X-Test': 'events' },
       });
       await new Promise<void>((resolve, reject) => {
@@ -228,8 +237,9 @@ describe('proxyWebSocket', () => {
       await closed;
 
       expect(proxied).toEqual([`127.0.0.1:${targetPort}`]);
-      expect(reachedTarget).toEqual(['/events']);
+      expect(reachedTarget).toEqual([path]);
       expect(seenHeaders).toEqual(['events']);
+      expect(offeredProtocols).toEqual([protocols.length ? protocols.join(', ') : undefined]);
     } finally {
       await WebSocketViaProxy.close();
       await close(proxy);

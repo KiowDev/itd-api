@@ -32,6 +32,8 @@ export type {
 } from './fixtures/fixtures.types.js';
 export {
   authorFixture,
+  chatMessageFixture,
+  chatSummaryFixture,
   commentFixture,
   notificationFixture,
   originalPostFixture,

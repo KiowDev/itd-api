@@ -1,4 +1,5 @@
 import type { Page, Paginator } from 'itd-api';
+import type { ModelKind } from '../models/model.constants.js';
 import type {
   FieldsShape,
   ListShape,
@@ -25,8 +26,8 @@ export type ResourceResults<T> = {
     : ResourceResults<T[K]>;
 };
 
-/** Обработчик гидратированного результата, которому нужны аргументы вызова. */
-export type ResultBinding = (result: object, args: readonly unknown[]) => void;
+/** Привязка модели из результата к аргументам вызова. */
+export type ResultBinding = (model: object, args: readonly unknown[], kind: ModelKind) => void;
 
 /** Обработчики результатов методов объекта ресурсов; вложенные ресурсы описываются так же. */
 export type ResourceBindings<T> = {

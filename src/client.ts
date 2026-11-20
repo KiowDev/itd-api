@@ -1,3 +1,4 @@
+import { type ChatsApi, ClientChats } from './chats-api.js';
 import { installAsyncDisposeFallback } from './core/async-dispose.js';
 import type { Listener, Unsubscribe } from './core/emitter.js';
 import { ItdConfigError, ItdStateError } from './core/errors.js';
@@ -126,7 +127,7 @@ export class ItdClient {
   #disposePromise: Promise<void> | undefined;
 
   /** Ресурсы конвейера запросов; создаются при первом обращении. */
-  readonly #resources: RestResources<NotificationsApi>;
+  readonly #resources: RestResources<NotificationsApi, ChatsApi>;
   /** Сессионный ресурс живёт у фасада: он управляет входом и продлением. */
   #auth: AuthResource | undefined;
   #account: AccountResource | undefined;
@@ -169,6 +170,11 @@ export class ItdClient {
   /** Уведомления: список, счётчик, отметки о прочтении, настройки. */
   get notifications(): NotificationsApi {
     return this.#resources.notifications;
+  }
+
+  /** Чаты и сообщения текущего пользователя. */
+  get chats(): ChatsApi {
+    return this.#resources.chats;
   }
 
   /** Хэштеги и посты по ним. */
@@ -237,10 +243,15 @@ export class ItdClient {
       assertActive: (action) => assertClientActive(this, action),
     });
     const status = this.#features.install(createStatusFeature());
+    const chatEventsOptions = { ...options.events?.chats };
     this.#resources = createResources({
       http: this.#runtime.http,
-      files: this.#features.files,
+      host: this.#features,
       status,
+      createChats: () =>
+        new ClientChats(this.#runtime, this.#features, chatEventsOptions, () =>
+          assertClientActive(this, 'подключить канал событий чатов'),
+        ),
       createNotifications: (http) =>
         createNotificationsApi(http, (notifications) => {
           let events!: NotificationEvents;

@@ -156,6 +156,48 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 | `PUT /api/notifications/settings` | `itd.notifications.updateSettings()` | Bearer | изменяемые настройки уведомлений | 2026-10-11, `200` |
 | `GET /api/notifications/stream` | `itd.notifications.events` | Bearer | SSE-поток уведомлений | 2026-10-11, `200` |
 
+## Чаты
+
+Для маршрутов ниже используется префикс `/api/v1/messenger`.
+
+| Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
+|---|---|---|---|---|
+| `GET /chats` | `itd.chats.list()`, `itd.chats.iterate()` | Bearer | `before`, `limit`, `manual_unread` → список и курсор чатов | 2026-11-20, `200` |
+| `GET /chats/{chatId}` | `itd.chats.get()` | Bearer | `manual_unread` → сводка чата | 2026-11-20, `200` |
+| `GET /chats/unread` | `itd.chats.unread()` | Bearer | `manual_unread` → счётчики непрочитанного и `event_seq` | 2026-11-20, `200` |
+| `GET /chats/{chatId}/messages` | `itd.chats.messages()`, `itd.chats.iterateMessages()` | Bearer | `before`, `limit` → сообщения и отметки о прочтении | 2026-11-20, `200` |
+| `GET /chats/{chatId}/messages/around/{id}` | `itd.chats.messagesAround()` | Bearer | `limit` → история вокруг сообщения | 2026-11-20, `200` |
+| `GET /chats/{chatId}/media` | `itd.chats.media()` | Bearer | `category`, `before`, `limit` → вложения и курсор | 2026-11-20, `200` |
+| `POST /media/upload/init` | `itd.chats.uploadFile()` | Bearer | MIME-тип, размер и число частей → ID загрузки | 2026-11-20, `200` |
+| `PUT /media/upload/{uploadId}/part/{index}` | `itd.chats.uploadFile()` | Bearer | байты части файла | 2026-11-20, `204` |
+| `POST /media/upload/{uploadId}/finalize` | `itd.chats.uploadFile()` | Bearer | имя и метаданные → ID файла | 2026-11-20, `200` |
+| `POST /chats/{chatId}/file-links` | `itd.chats.fileLinks()` | Bearer | `file_ids` → временные ссылки | 2026-11-20, `200` |
+| `GET /presence/{userId}` | `itd.chats.presence()` | Bearer | статус пользователя | 2026-11-20, `200` |
+| `POST /presence` | `itd.chats.presenceMany()` | Bearer | `user_ids` → статусы по ID пользователей | 2026-11-20, `200` |
+| `GET /reactions/available` | `itd.chats.reactionCatalog()` | Bearer | каталог реакций | 2026-11-20, `200` |
+| `GET /chats/{chatId}/messages/{id}/reactions` | `itd.chats.reactions()` | Bearer | реакции на сообщение и версия | 2026-11-20, `200` |
+| `POST /chats/{chatId}/heard` | `itd.chats.heardMessages()` | Bearer | `message_ids` → отметки прослушивания | 2026-11-20, `200` |
+| `GET /updates` | `itd.chats.updates()` | Bearer | `since`, `limit`, `capabilities`, `manual_unread` → события и `next_event_seq` | 2026-11-20, `200` |
+| `WS /ws` | `itd.chats.events.connect()` | субпротокол Bearer | `capabilities=chat_settings_v2` → события мессенджера | 2026-11-20, `101` |
+| `POST /chats/dm` | `itd.chats.createDirect()` | Bearer | `target_user_id` → ID диалога | 2026-11-20, `200` |
+| `POST /users/{userId}/messages` | `itd.chats.sendMessageToUser()` | Bearer | текст сообщения и вложения → ID диалога и сообщения | 2026-11-20, `201` |
+| `POST /chats/{chatId}/messages` | `itd.chats.sendMessage()` | Bearer | текст, вложения, форматирование и ответ на сообщение | 2026-11-20, `201` |
+| `PATCH /chats/{chatId}/messages/{id}` | `itd.chats.editMessage()` | Bearer | текст, вложения и форматирование | 2026-11-20, `200` |
+| `POST /chats/{chatId}/messages/forward` | `itd.chats.forwardMessages()` | Bearer | `source_chat_id`, `message_ids` → результат пересылки | — |
+| `POST /chats/{chatId}/messages/delete-for-me` | `itd.chats.deleteMessagesForMe()` | Bearer | `message_ids` → результат удаления у себя | — |
+| `POST /chats/{chatId}/messages/delete-for-all` | `itd.chats.deleteMessagesForAll()` | Bearer | `message_ids` → результат удаления у всех | 2026-11-20, `200` |
+| `PATCH /chats/{chatId}/pin` | `itd.chats.setPinned()` | Bearer | `is_pinned` → закрепление чата | 2026-11-20, `204` |
+| `PATCH /chats/{chatId}/mute` | `itd.chats.setMuted()` | Bearer | `is_muted` → состояние уведомлений чата | 2026-11-20, `204` |
+| `PATCH /chats/{chatId}/unread` | `itd.chats.setUnread()` | Bearer | `unread` → ручная отметка непрочитанного | 2026-11-20, `204` |
+| `POST /chats/{chatId}/read` | `itd.chats.markRead()` | Bearer | `last_read_message` → отметка прочтения | 2026-11-20, `200` |
+| `POST /chats/{chatId}/accept` | `itd.chats.acceptRequest()` | Bearer | принимает запрос на переписку | — |
+| `POST /chats/{chatId}/messages/{id}/heard` | `itd.chats.markHeard()` | Bearer | отмечает сообщение прослушанным | — |
+| `POST /chats/{chatId}/action` | `itd.chats.sendAction()` | Bearer | `type`, `progress` → индикатор действия | 2026-11-20, `204` |
+| `POST /chats/{chatId}/clear-history` | `itd.chats.clearHistory()` | Bearer | очищает историю у себя | — |
+| `POST /chats/{chatId}/clear-history-all` | `itd.chats.clearHistory(chatId, true)` | Bearer | очищает историю у всех | — |
+| `POST /chats/{chatId}/delete` | `itd.chats.delete()` | Bearer | `for_everyone` → удаление чата | — |
+| `PUT /chats/{chatId}/messages/{id}/reactions` | `itd.chats.setReactions()` | Bearer | `reactions`, `expected_version`, `operation_id` → новое состояние реакций | 2026-11-20, `200` |
+
 ## Файлы
 
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |

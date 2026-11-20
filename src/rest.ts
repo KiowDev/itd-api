@@ -205,6 +205,42 @@ export type {
   UploadedBannerDrawing,
 } from './models/banner-drawing.js';
 export { BannerDrawingTool } from './models/banner-drawing.js';
+export {
+  ChatActionType,
+  type ChatAttachment,
+  type ChatChange,
+  type ChatDeletedMessages,
+  type ChatDirectResult,
+  type ChatEditedMessage,
+  type ChatFileLink,
+  type ChatFirstMessage,
+  type ChatForwardedMessages,
+  type ChatHistoryPage,
+  type ChatListPage,
+  ChatMediaCategory,
+  type ChatMediaItem,
+  type ChatMediaPage,
+  type ChatMessage,
+  type ChatMessageReactions,
+  type ChatPresence,
+  type ChatPreview,
+  type ChatReaction,
+  type ChatReactionCatalog,
+  type ChatReactionCount,
+  ChatReactionType,
+  type ChatReadCursor,
+  type ChatReadResult,
+  type ChatReply,
+  type ChatSentMessage,
+  type ChatSummary,
+  type ChatTextEntity,
+  type ChatUnreadState,
+  type ChatUpdate,
+  type ChatUpdatesPage,
+  ChatUpdateType,
+  type ChatUploadedFile,
+  type ChatUploadOptions,
+} from './models/chats.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
   Attachment,
@@ -303,6 +339,14 @@ export { formatNotificationText } from './notifications/text.js';
 export { canonicalNotificationType, isKnownNotificationType } from './notifications/type-map.js';
 export { resolveNotificationUrl } from './notifications/url.js';
 export type { AccountLifecycleResource } from './resources/account/lifecycle.js';
+export {
+  type ChatListParams,
+  type ChatMessageContent,
+  ChatsResource,
+  type ForwardChatMessagesInput,
+  type SendChatMessageInput,
+  type SetChatReactionsInput,
+} from './resources/chats.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export type { FilesResource, UploadedFile, UploadOptions } from './resources/files.js';
 export type { HashtagPostsParams, HashtagsResource } from './resources/hashtags.js';

@@ -11,6 +11,7 @@ import type { RateLimitBucketState } from '../core/scheduling/rate-limit.js';
 import type { ServiceDefinition } from '../core/services.js';
 import { ITD_CATALOG } from '../domain/catalog.js';
 import { AccountLifecycleResource } from '../resources/account/lifecycle.js';
+import { ChatsResource } from '../resources/chats.js';
 import type { CommentsResource } from '../resources/comments.js';
 import type { FilesResource } from '../resources/files.js';
 import type { HashtagsResource } from '../resources/hashtags.js';
@@ -96,6 +97,11 @@ export class ItdRestClient {
     return this.#resources.notifications;
   }
 
+  /** Чаты и сообщения текущего пользователя. */
+  get chats(): ChatsResource {
+    return this.#resources.chats;
+  }
+
   /** Хэштеги и посты по ним. */
   get hashtags(): HashtagsResource {
     return this.#resources.hashtags;
@@ -157,9 +163,10 @@ export class ItdRestClient {
     const status = this.#features.install(createStatusFeature());
     this.#resources = createResources({
       http: this.#runtime.http,
-      files: this.#features.files,
+      host: this.#features,
       status,
       createNotifications: (http) => new NotificationsResource(http),
+      createChats: () => new ChatsResource(this.#runtime.http, this.#features),
     });
   }
 

@@ -2,14 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { redactUrl } from '../../src/core/redact.js';
 import { MAX_PENDING_FRAMES } from '../../src/events/transports/websocket.js';
 import {
+  EventChannelStatus,
   type EventTransportContext,
   type EventTransportFrame,
+  ItdClient,
   ItdConfigError,
   UnauthorizedStreamError,
   type WebSocketImplementationOptions,
   type WebSocketLike,
   WebSocketTransport,
 } from '../../src/index.js';
+import { createMockFetch, json } from '../helpers/mock-fetch.js';
 
 type SocketListener = (event: unknown) => void;
 
@@ -143,6 +146,195 @@ afterEach(() => {
 });
 
 describe('WebSocketTransport: выбор реализации и авторизация', () => {
+  it('открывает канал чатов через субпротоколы и отвечает на ping', async () => {
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      auth: 'test-token',
+      events: { chats: { webSocketImpl: FakeWebSocket } },
+    });
+    try {
+      const events = itd.chats.events;
+      const listener = vi.fn();
+      events.on('update', listener);
+      const connected = events.connect();
+      await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+      const socket = FakeWebSocket.instances[0];
+      expect(socket?.url).toBe('wss://itd.test/api/v1/messenger/ws?capabilities=chat_settings_v2');
+      expect(socket?.protocols).toEqual(['itd.messenger.v1', 'bearer.test-token']);
+      expect(socket?.options?.headers?.authorization).toBeUndefined();
+      socket?.open();
+      await connected;
+      expect(events.status).toBe(EventChannelStatus.Connected);
+      const update = { type: 'messages_deleted', chat_id: 'c1', message_ids: ['m1'], event_seq: 2 };
+      socket?.message('ping');
+      socket?.message(JSON.stringify(update));
+      await vi.waitFor(() =>
+        expect(listener).toHaveBeenCalledWith({
+          type: 'messages_deleted',
+          chatId: 'c1',
+          messageIds: ['m1'],
+          eventSeq: 2,
+        }),
+      );
+      expect(socket?.sent).toEqual(['pong']);
+    } finally {
+      await itd.close();
+    }
+    expect(itd.chats.events.status).toBe(EventChannelStatus.Disconnected);
+    expect(FakeWebSocket.instances[0]?.closeCalls).toHaveLength(1);
+  });
+
+  it('догружает журнал перед кадрами сокета и восстанавливает пропуск в живом потоке', async () => {
+    const restored = { type: 'messages_read', event_seq: 11 };
+    const batch = {
+      type: 'own_messages',
+      event_seq: 13,
+      event_seq_count: 2,
+      messages: [{ message_id: 'm1', sender_id: 'u1', created_at: '2026-11-20 00:00:00' }],
+    };
+    const missed = { type: 'message_edited', event_seq: 14 };
+    const afterGap = { type: 'messages_deleted', event_seq: 15 };
+    const firstUpdates = [
+      { type: 'messages_read', eventSeq: 11 },
+      {
+        type: 'own_messages',
+        eventSeq: 13,
+        eventSeqCount: 2,
+        messages: [{ messageId: 'm1', senderId: 'u1', createdAt: '2026-11-20T00:00:00Z' }],
+      },
+    ];
+    const summaries = [{ chat_id: 'c1', chat_type: 0, unread_count: 0 }];
+    const mock = createMockFetch([
+      json({ events: [restored], next_event_seq: 11, reset_required: false, chats: summaries }),
+      json({ events: [], next_event_seq: 11, reset_required: false }),
+      json({ events: [missed, afterGap], next_event_seq: 15, reset_required: false }),
+      json({ events: [], next_event_seq: 15, reset_required: false }),
+    ]);
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      auth: 'test-token',
+      fetch: mock.fetch,
+      events: { chats: { webSocketImpl: FakeWebSocket, backoff: [0], jitter: 0, maxAttempts: 1 } },
+    });
+    try {
+      const events = itd.chats.events;
+      const seen = vi.fn();
+      const seenSummaries = vi.fn();
+      events.on('update', seen);
+      events.on('chatSummaries', seenSummaries);
+      const connected = events.connect(10);
+      await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+      const first = FakeWebSocket.instances[0];
+      first?.open();
+      first?.message(JSON.stringify(restored));
+      first?.message(JSON.stringify(batch));
+      await connected;
+      await vi.waitFor(() => expect(seen.mock.calls.flat()).toEqual(firstUpdates));
+      expect(seenSummaries).toHaveBeenCalledExactlyOnceWith([
+        { chatId: 'c1', chatType: 0, unreadCount: 0 },
+      ]);
+
+      first?.message(JSON.stringify(afterGap));
+      await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+      expect(seen.mock.calls.flat()).toEqual(firstUpdates);
+      const second = FakeWebSocket.instances[1];
+      second?.open();
+      second?.message(JSON.stringify(afterGap));
+      await vi.waitFor(() =>
+        expect(seen.mock.calls.flat()).toEqual([
+          ...firstUpdates,
+          { type: 'message_edited', eventSeq: 14 },
+          { type: 'messages_deleted', eventSeq: 15 },
+        ]),
+      );
+      expect(mock.calls.map(({ url }) => new URL(url).searchParams.get('since'))).toEqual([
+        '10',
+        '11',
+        '13',
+        '15',
+      ]);
+      second?.message(JSON.stringify({ type: 'messages_deleted', event_seq: 17 }));
+      await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(3));
+    } finally {
+      await itd.close();
+    }
+  });
+
+  it.each(['в буфере', 'после догрузки'])('исчерпывает попытки при пропуске %s', async (timing) => {
+    const page = { events: [], next_event_seq: 10, reset_required: false };
+    const mock = createMockFetch([json(page), json(page)]);
+    const itd = new ItdClient({
+      auth: 'test-token',
+      fetch: mock.fetch,
+      events: { chats: { webSocketImpl: FakeWebSocket, backoff: [0], jitter: 0, maxAttempts: 1 } },
+    });
+    try {
+      const events = itd.chats.events;
+      const giveup = vi.fn();
+      const seen = vi.fn();
+      events.on('giveup', giveup);
+      events.on('update', seen);
+      const connected = events.connect(10);
+      for (let index = 0; index < 2; index += 1) {
+        await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(index + 1));
+        const socket = FakeWebSocket.instances[index];
+        socket?.open();
+        if (timing === 'после догрузки') {
+          socket?.message(JSON.stringify({ type: 'presence', user_id: 'u1', online: true }));
+          await vi.waitFor(() => expect(seen).toHaveBeenCalledTimes(index + 1));
+        } else {
+          socket?.message(JSON.stringify({ type: 'messages_read', event_seq: 10 }));
+        }
+        socket?.message(JSON.stringify({ type: 'messages_deleted', event_seq: 12 }));
+      }
+      await connected;
+      await vi.waitFor(() => expect(giveup).toHaveBeenCalledOnce());
+      expect(FakeWebSocket.instances).toHaveLength(2);
+    } finally {
+      await itd.close();
+    }
+  });
+
+  it('останавливает поток, когда сервер просит заново загрузить снимок чатов', async () => {
+    const mock = createMockFetch([json({ events: [], next_event_seq: 100, reset_required: true })]);
+    const itd = new ItdClient({
+      auth: 'test-token',
+      fetch: mock.fetch,
+      events: { chats: { webSocketImpl: FakeWebSocket } },
+    });
+    try {
+      const events = itd.chats.events;
+      const reset = vi.fn();
+      const update = vi.fn();
+      events.on('resetRequired', reset);
+      events.on('update', update);
+      const connected = events.connect(1);
+      await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+      FakeWebSocket.instances[0]?.open();
+      FakeWebSocket.instances[0]?.message(JSON.stringify({ type: 'own_messages', event_seq: 101 }));
+      await connected;
+      expect(reset).toHaveBeenCalledOnce();
+      expect(events.status).toBe(EventChannelStatus.Disconnected);
+      expect(update).not.toHaveBeenCalled();
+    } finally {
+      await itd.close();
+    }
+  });
+
+  it.each([4001, 4003])('распознаёт отказ токена мессенджера с кодом %s', async (code) => {
+    const connection = makeContext();
+    const transport = new WebSocketTransport({
+      auth: { subprotocol: 'itd.messenger.v1' },
+      unauthorizedCloseCodes: [4001, 4003],
+      webSocketImpl: FakeWebSocket,
+    });
+    const task = transport.connect(connection.context);
+    const failure = expect(task).rejects.toBeInstanceOf(UnauthorizedStreamError);
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    FakeWebSocket.instances[0]?.serverClose(code, false);
+    await failure;
+  });
+
   it('лениво использует глобальный WebSocket и передаёт токен в query', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket);
     const connection = makeContext();

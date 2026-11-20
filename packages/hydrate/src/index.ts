@@ -14,6 +14,11 @@ export type {
   HydratedAttachment,
   HydratedAttachmentActions,
 } from './models/attachment/attachment.types.js';
+export type { HydratedChat, HydratedChatActions } from './models/chat/chat.types.js';
+export type {
+  HydratedChatMessage,
+  HydratedChatMessageActions,
+} from './models/chat-message/chat-message.types.js';
 export type { HydratedComment, HydratedCommentActions } from './models/comment/comment.types.js';
 export type { HydratedHashtag, HydratedHashtagActions } from './models/hashtag/hashtag.types.js';
 export type {

@@ -22,12 +22,7 @@ function hydrateResult(
   args: readonly unknown[],
   context: HydrationContext,
 ): unknown {
-  const hydrated = hydrateValue(result, shape, context);
-  if (!bind) return hydrated;
-  return Promise.resolve(hydrated).then((value) => {
-    if (isObject(value)) bind(value, args);
-    return value;
-  });
+  return hydrateValue(result, shape, context, bind && ((model, kind) => bind(model, args, kind)));
 }
 
 /**

@@ -44,6 +44,11 @@ export const CACHE_OPERATIONS = freezeOperations([
   { id: 'notifications.count', category: 'notifications' },
   { id: 'notifications.getSettings', category: 'notifications' },
 
+  { id: 'chats.list', category: 'chats' },
+  { id: 'chats.get', category: 'chats' },
+  { id: 'chats.unread', category: 'chats' },
+  { id: 'chats.reactions', category: 'chats' },
+
   { id: 'hashtags.trending', category: 'hashtags' },
   { id: 'hashtags.posts', category: 'hashtags' },
 

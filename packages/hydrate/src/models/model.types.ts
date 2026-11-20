@@ -1,6 +1,8 @@
 import type { AnyRecord } from '../runtime/records.types.js';
 import type { HydratedFields } from '../shapes/shape.types.js';
 import type { HydratedAttachmentActions } from './attachment/attachment.types.js';
+import type { HydratedChatActions } from './chat/chat.types.js';
+import type { HydratedChatMessageActions } from './chat-message/chat-message.types.js';
 import type { HydratedCommentActions } from './comment/comment.types.js';
 import type { HydratedHashtagActions } from './hashtag/hashtag.types.js';
 import { type MODEL_SCHEMAS, ModelKind } from './model.constants.js';
@@ -26,6 +28,8 @@ export interface ModelActions {
   [ModelKind.User]: HydratedUserActions;
   [ModelKind.Attachment]: HydratedAttachmentActions;
   [ModelKind.Notification]: HydratedNotificationActions;
+  [ModelKind.Chat]: HydratedChatActions;
+  [ModelKind.ChatMessage]: HydratedChatMessageActions;
   [ModelKind.ShopDeliveryCity]: HydratedShopDeliveryCityActions;
   [ModelKind.QrLoginTarget]: HydratedQrLoginTargetActions;
   [ModelKind.Hashtag]: HydratedHashtagActions;

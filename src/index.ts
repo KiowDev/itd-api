@@ -38,6 +38,7 @@ export {
   post,
 } from './builders/post.js';
 export { type ReportBuilder, type ReportInput, report } from './builders/report.js';
+export type { ChatsApi } from './chats-api.js';
 export { createClient, ItdClient } from './client.js';
 // Форма вложения сама объявляет, откуда брать содержимое, поэтому настраивать клиент
 // не нужно. Загрузка по адресу работает на всех платформах и живёт здесь; чтение с диска
@@ -212,6 +213,11 @@ export type {
   UpdatePostInput,
 } from './domain/params.js';
 export { toDate, utcStampToIso } from './domain/time.js';
+export {
+  type ChatEventMap,
+  ChatEvents,
+  type ChatEventsOptions,
+} from './events/chats.js';
 export type { ReconnectOptions } from './events/reconnect.js';
 export {
   type WebSocketImplementationOptions,
@@ -291,6 +297,42 @@ export type {
   UploadedBannerDrawing,
 } from './models/banner-drawing.js';
 export { BannerDrawingTool } from './models/banner-drawing.js';
+export {
+  ChatActionType,
+  type ChatAttachment,
+  type ChatChange,
+  type ChatDeletedMessages,
+  type ChatDirectResult,
+  type ChatEditedMessage,
+  type ChatFileLink,
+  type ChatFirstMessage,
+  type ChatForwardedMessages,
+  type ChatHistoryPage,
+  type ChatListPage,
+  ChatMediaCategory,
+  type ChatMediaItem,
+  type ChatMediaPage,
+  type ChatMessage,
+  type ChatMessageReactions,
+  type ChatPresence,
+  type ChatPreview,
+  type ChatReaction,
+  type ChatReactionCatalog,
+  type ChatReactionCount,
+  ChatReactionType,
+  type ChatReadCursor,
+  type ChatReadResult,
+  type ChatReply,
+  type ChatSentMessage,
+  type ChatSummary,
+  type ChatTextEntity,
+  type ChatUnreadState,
+  type ChatUpdate,
+  type ChatUpdatesPage,
+  ChatUpdateType,
+  type ChatUploadedFile,
+  type ChatUploadOptions,
+} from './models/chats.js';
 export type { IsoDate, Span, UserId, UserRef } from './models/common.js';
 export type {
   Attachment,
@@ -446,6 +488,14 @@ export {
   QrLoginStreamStatus,
   SignInStatus,
 } from './resources/auth.js';
+export {
+  type ChatListParams,
+  type ChatMessageContent,
+  ChatsResource,
+  type ForwardChatMessagesInput,
+  type SendChatMessageInput,
+  type SetChatReactionsInput,
+} from './resources/chats.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';
 export type {
   FilesResource,

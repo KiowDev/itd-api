@@ -184,6 +184,7 @@ clientB.use(shared);
 | Posts | `posts.list`, `posts.get`, `posts.byUser`, `posts.likedByUser`, `posts.comments`, `posts.stats` |
 | Comments | `comments.replies` |
 | Notifications | `notifications.list`, `notifications.count`, `notifications.getSettings` |
+| Chats | `chats.list`, `chats.get`, `chats.unread`, `chats.reactions` |
 | Hashtags | `hashtags.trending`, `hashtags.posts` |
 | Search | `search.all` |
 | Subscription | `subscription.status`, `subscription.methods` |

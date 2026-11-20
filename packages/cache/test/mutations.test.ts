@@ -19,6 +19,12 @@ type UncachedRead =
   | 'account.changes.pending'
   | 'events.notifications.poll.updates'
   | 'events.notifications.poll.unread'
+  | 'chats.messages'
+  | 'chats.messagesAround'
+  | 'chats.media'
+  | 'chats.presence'
+  | 'chats.reactionCatalog'
+  | 'chats.updates'
   | 'platform.version'
   | 'legal.list'
   | 'legal.current'
@@ -42,6 +48,14 @@ describe('каталог мутаций', () => {
     ['users.follow', 'users.followStatus'],
     ['users.updatePrivacy', 'users.getPrivacy'],
     ['notifications.markAllRead', 'notifications.count'],
+    ['chats.createDirect', 'chats.list'],
+    ['chats.sendMessage', 'chats.list'],
+    ['chats.sendMessageToUser', 'chats.unread'],
+    ['chats.editMessage', 'chats.get'],
+    ['chats.forwardMessages', 'chats.list'],
+    ['chats.deleteMessagesForAll', 'chats.reactions'],
+    ['chats.setUnread', 'chats.unread'],
+    ['chats.setReactions', 'chats.reactions'],
     ['subscription.removeMethod', 'subscription.methods'],
     ['shop.orders.create', 'shop.products.get'],
     ['account.phone.sync', 'users.me'],

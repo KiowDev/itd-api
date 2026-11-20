@@ -10,6 +10,7 @@ import type {
 import type { MockEventTransport } from '../events/mock-event.transport.js';
 import type { RecordedRequest } from '../http/request.types.js';
 import type { MockHandler } from '../http/router.types.js';
+import type { ChatService } from './chats/chats.service.js';
 import type { CommentPresenter } from './comments/comments.presenter.js';
 import type { CommentService } from './comments/comments.service.js';
 import type { HashtagPresenter } from './hashtags/hashtags.presenter.js';
@@ -200,6 +201,7 @@ export interface MockServices {
   readonly posts: PostService;
   readonly comments: CommentService;
   readonly notifications: NotificationService;
+  readonly chats: ChatService;
   readonly hashtags: HashtagService;
   readonly search: SearchService;
   readonly shop: ShopService;

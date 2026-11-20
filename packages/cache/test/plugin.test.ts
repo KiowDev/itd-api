@@ -152,9 +152,9 @@ describe('TTL/LRU-кэш', () => {
     const { itd, calls } = makeClient((_url, init, call) =>
       json(init.method === 'POST' ? { sent: true } : { id: `chat-${call}` }),
     );
-    itd.use(cache({ ttl: 60_000, operations: ['chats.get'] }));
+    itd.use(cache({ ttl: 60_000, operations: ['chat-fixture.get'] }));
     const chats = itd.install({
-      name: 'chats',
+      name: 'chat-fixture',
       operations: {
         get: {
           method: 'GET',
@@ -165,7 +165,7 @@ describe('TTL/LRU-кэш', () => {
           method: 'POST',
           retrySafety: RetrySafety.Unsafe,
           annotations: {
-            cache: { kind: CachePolicyKind.Mutation, invalidates: ['chats.get'] },
+            cache: { kind: CachePolicyKind.Mutation, invalidates: ['chat-fixture.get'] },
           },
         },
       },
@@ -446,6 +446,44 @@ describe('дедупликация', () => {
 });
 
 describe('управление и инвалидация', () => {
+  it('после отправки сообщения обновляет список чатов и счётчики у обоих участников', async () => {
+    let sent = false;
+    const respond: FetchHandler = (url, init) => {
+      if (init.method === 'POST') {
+        sent = true;
+        return json({ message_id: 'm1' }, 201);
+      }
+      if (new URL(url).pathname.endsWith('/unread')) return json({ total: Number(sent) });
+      if (url.includes('/messenger/chats')) {
+        return json({ chats: [{ chat_id: 'c1', last_message: sent ? { id: 'm1' } : null }] });
+      }
+      return json({ id: 'p1' });
+    };
+    const sender = makeClient(respond, makeJwt({ sub: 'sender' }));
+    const recipient = makeClient(respond, makeJwt({ sub: 'recipient' }));
+    const cached = cache({ ttl: 60_000, operations: ['chats.list', 'chats.unread', 'posts.get'] });
+    sender.itd.use(cached);
+    recipient.itd.use(cached);
+
+    try {
+      await sender.itd.chats.list({ limit: 10 });
+      await recipient.itd.chats.list();
+      expect((await recipient.itd.chats.unread()).total).toBe(0);
+      await recipient.itd.posts.get('p1');
+      expect((await recipient.itd.chats.list()).chats[0]?.lastMessage).toBeNull();
+      expect(recipient.calls).toHaveLength(3);
+
+      await sender.itd.chats.sendMessage('c1', { text: 'Привет!' });
+      expect((await sender.itd.chats.list({ limit: 10 })).chats[0]?.lastMessage?.id).toBe('m1');
+      expect((await recipient.itd.chats.list()).chats[0]?.lastMessage?.id).toBe('m1');
+      expect((await recipient.itd.chats.unread()).total).toBe(1);
+      await recipient.itd.posts.get('p1');
+      expect(recipient.calls).toHaveLength(5);
+    } finally {
+      await Promise.all([sender.itd.close(), recipient.itd.close()]);
+    }
+  });
+
   it('поддерживает reload и no-store', async () => {
     const { itd, calls } = makeClient((url, _init, call) => postFromUrl(url, call));
     itd.use(cache({ ttl: 60_000, operations: ['posts.get'] }));

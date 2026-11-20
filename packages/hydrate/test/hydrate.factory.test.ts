@@ -2,9 +2,12 @@ import { cache } from '@itd-api/cache';
 import { crypt, encodeInvisible } from '@itd-api/crypto';
 import {
   apiResponse,
+  chatMessageFixture,
+  chatSummaryFixture,
   commentFixture,
   createMockFetch,
   createMockServer,
+  jsonResponse,
   originalPostFixture,
   postFixture,
 } from '@itd-api/testing';
@@ -49,6 +52,49 @@ function hydratedServerClient() {
 }
 
 describe('hydrateClient', () => {
+  it('привязывает действия сводки чата к его идентификатору', async () => {
+    const summary = chatSummaryFixture({ chatId: 'chat-a' });
+    const message = chatMessageFixture({ messageId: 'message-a' });
+    const mock = createMockFetch();
+    const path = '/api/v1/messenger/chats';
+    mock.get(path, jsonResponse({ chats: [summary], next_before: null }), { repeat: true });
+    mock.get(`${path}/chat-a`, jsonResponse(summary));
+    mock.get(`${path}/chat-a/messages`, jsonResponse({ messages: [message] }), { repeat: true });
+    mock.get(`${path}/chat-b/messages/around/message-a`, jsonResponse({ messages: [message] }));
+    mock.post(
+      `${path}/chat-a/messages`,
+      jsonResponse({ message_id: 'message-b' }, { status: 201 }),
+      { repeat: true },
+    );
+    mock.post(`${path}/chat-a/read`, jsonResponse({ remaining_unread: 0 }), { repeat: true });
+    mock.patch(`${path}/chat-b/messages/message-a`, jsonResponse({ message_id: 'message-a' }));
+    const raw = new ItdClient({ auth: 'test-token', fetch: mock.fetch, retry: false });
+    const itd = hydrateClient(raw);
+    try {
+      const { chats } = await itd.chats.list();
+      const history = await chats[0]?.getMessages();
+      expect(history).toEqual({ messages: [message] });
+      const around = await itd.chats.messagesAround('chat-b', 'message-a');
+      await around.messages[0]?.edit({ text: 'Изменено' });
+      await history?.messages[0]?.reply({ text: 'Ответ' });
+      const [latest] = await itd.chats.iterateMessages('chat-a').collect();
+      await latest?.markRead();
+      expect(await (await itd.chats.get('chat-a')).markRead('message-a')).toEqual({
+        remainingUnread: 0,
+      });
+      const [iterated] = await itd.chats.iterate().collect();
+      expect(await iterated?.sendMessage({ text: 'Привет!' })).toEqual({ messageId: 'message-b' });
+      expect(itd.chats.events).toBe(raw.chats.events);
+      expect(mock.requests).toContainEqual(
+        expect.objectContaining({
+          path: `${path}/chat-a/messages`,
+          body: expect.objectContaining({ text: 'Ответ', reply_to_id: 'message-a' }),
+        }),
+      );
+    } finally {
+      await itd.close();
+    }
+  });
   it('возвращает один фасад и сохраняет цепочки методов клиента', () => {
     const raw = new ItdClient({ auth: 'test-token', retry: false, rateLimit: false });
     const first = hydrateClient(raw);

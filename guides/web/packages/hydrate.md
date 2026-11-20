@@ -107,6 +107,20 @@ const page = await hashtag?.getPosts({ limit: 20 });
 Аргументы действий совпадают с аргументами ресурсов. Например, `reply()` принимает строку,
 функцию настройки построителя комментария и параметры подключённых плагинов.
 
+### Чат
+
+Сводки из `chats.get()`, `chats.list()` и `chats.iterate()` получают методы, привязанные к чату.
+
+```ts
+const chat = await itd.chats.get(chatId);
+const { messages } = await chat.getMessages({ limit: 10 });
+const [latest] = messages;
+await latest?.reply({ text: 'Привет!' });
+```
+
+Сообщения из `messages()`, `messagesAround()` и `iterateMessages()` получают действия
+`reply()`, `edit()`, `markRead()`, `getReactions()`, `deleteForMe()` и `deleteForAll()`.
+
 ### Город доставки
 
 `points()` загружает пункты выдачи по `ShopDeliveryCity.code`:

@@ -232,6 +232,7 @@ export class EventChannel<
   #wanted = false;
   #status: EventChannelStatus = EventChannelStatus.Disconnected;
   #attempt = 0;
+  #recovering = false;
   #generation = 0;
   #starting: Promise<void> | undefined;
   #cancelTimer: (() => void) | undefined;
@@ -263,6 +264,11 @@ export class EventChannel<
   /** Текущее состояние соединения. */
   get status(): EventChannelStatus {
     return this.#status;
+  }
+
+  /** Канал запущен или восстанавливает соединение. @internal */
+  get active(): boolean {
+    return this.#wanted;
   }
 
   /** Имя используемого транспорта. */
@@ -347,10 +353,26 @@ export class EventChannel<
 
     this.#abortSession(new ItdAbortError('Событийное соединение остановлено'));
     this.#attempt = 0;
+    this.#recovering = false;
     this.#dispatcher.clearPending();
 
     this.#setStatus(EventChannelStatus.Disconnected);
     if (wasActive) this.#deps.logger?.info('поток событий остановлен');
+  }
+
+  /** Отбрасывает очередь при разрыве последовательности и запускает новую синхронизацию. @internal */
+  recover(error: Error): void {
+    if (!this.#session) return;
+    this.#recovering = true;
+    this.#dispatcher.clearPending();
+    this.#handleFailure(error);
+  }
+
+  /** Сбрасывает счётчик восстановления, когда канал продвинулся после пропуска. @internal */
+  confirmRecovery(): void {
+    if (!this.#recovering) return;
+    this.#recovering = false;
+    this.#attempt = 0;
   }
 
   /**
@@ -456,7 +478,7 @@ export class EventChannel<
           onOpen: () => {
             if (!this.#isCurrentSession(session)) return;
             const reconnected = this.#attempt > 0;
-            this.#attempt = 0;
+            if (session.ready && !this.#recovering) this.#attempt = 0;
             session.resolveOpened();
             this.#setStatus(EventChannelStatus.Connected);
             this.#deps.logger?.info(
@@ -581,7 +603,8 @@ export class EventChannel<
 
   /** Догон через REST идёт до сокета: он же обновляет протухший токен. */
   async #reconnect(): Promise<void> {
-    if (!this.#wanted || this.#starting) return;
+    // Отменённая попытка может ещё завершать догрузку журнала.
+    if (!this.#wanted || this.#session) return;
     const starting = this.#startAttempt('reconnect');
     this.#starting = starting;
     try {
@@ -601,6 +624,7 @@ export class EventChannel<
     this.#generation += 1;
     this.#starting = undefined;
     this.#attempt = 0;
+    this.#recovering = false;
     this.#abortSession(error);
 
     this.#detachEnvironment?.();
@@ -637,7 +661,7 @@ export class EventChannel<
       if (this.#session || this.#cancelTimer || this.#starting) return;
       if (this.#status === EventChannelStatus.Disconnected) return;
 
-      this.#attempt = 0;
+      if (!this.#recovering) this.#attempt = 0;
       void this.#reconnect();
     };
 
@@ -774,6 +798,12 @@ export class EventChannel<
     for (const event of buffered) {
       if (!this.#isCurrentSession(session)) break;
       this.#dispatchFrame(event);
+    }
+    if (this.#deps.openBeforeInitialize && this.#attempt > 0) {
+      // Пропуск в буфере может запустить повторную синхронизацию.
+      void this.#dispatcher.drain().then(() => {
+        if (this.#isCurrentSession(session) && !this.#recovering) this.#attempt = 0;
+      });
     }
   }
 

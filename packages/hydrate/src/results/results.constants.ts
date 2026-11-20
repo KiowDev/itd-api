@@ -1,4 +1,5 @@
 import type { ItdClient } from 'itd-api';
+import { rememberMessageChat } from '../models/chat-message/chat-message.actions.js';
 import { ModelKind } from '../models/model.constants.js';
 import { rememberQrSecrets } from '../models/qr-login/qr-login.actions.js';
 import { fields, list, model, page, paginator } from '../shapes/shape.factory.js';
@@ -8,6 +9,9 @@ const post = model(ModelKind.Post);
 const comment = model(ModelKind.Comment);
 const user = model(ModelKind.User);
 const notification = model(ModelKind.Notification);
+const chat = model(ModelKind.Chat);
+const chatMessage = model(ModelKind.ChatMessage);
+const chatHistory = fields({ messages: list(chatMessage) });
 const hashtag = model(ModelKind.Hashtag);
 
 /** Формы результатов методов ресурсов, которые возвращают модели. */
@@ -55,6 +59,14 @@ export const RESOURCE_RESULTS = {
     list: page(notification),
     iterate: paginator(notification),
   },
+  chats: {
+    get: chat,
+    list: fields({ chats: list(chat) }),
+    iterate: paginator(chat),
+    messages: chatHistory,
+    messagesAround: chatHistory,
+    iterateMessages: paginator(chatMessage),
+  },
   hashtags: {
     trending: list(hashtag),
     posts: page(post),
@@ -74,5 +86,10 @@ export const RESOURCE_RESULTS = {
 export const RESOURCE_BINDINGS = {
   auth: {
     scanQrLogin: rememberQrSecrets,
+  },
+  chats: {
+    messages: rememberMessageChat,
+    messagesAround: rememberMessageChat,
+    iterateMessages: rememberMessageChat,
   },
 } satisfies ResourceBindings<ItdClient>;

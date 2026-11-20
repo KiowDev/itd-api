@@ -27,6 +27,7 @@ createClient(options?: ItdClientOptions): ItdClient   // то же самое, �
 | `itd.comments` | [Комментарии](./comments.md) |
 | `itd.files` | [Файлы](./files.md) |
 | `itd.notifications` | [Уведомления](./notifications.md) |
+| `itd.chats` | [Чаты](./chats.md) |
 | `itd.hashtags`, `itd.search` | [Поиск и обнаружение](./discovery.md) |
 | `itd.reports` | [Жалобы](./reports.md) |
 | `itd.verification` | [Верификация](./verification.md) |

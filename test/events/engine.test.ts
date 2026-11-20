@@ -38,6 +38,7 @@ class TestTransport implements EventTransport {
   readonly contexts: EventTransportContext[] = [];
   connects = 0;
   #context: EventTransportContext | undefined;
+  #finish: (() => void) | undefined;
   readonly #autoOpen: boolean;
 
   constructor(autoOpen = true) {
@@ -50,6 +51,7 @@ class TestTransport implements EventTransport {
     this.#context = context;
     if (this.#autoOpen) context.onOpen();
     return new Promise<void>((resolve) => {
+      this.#finish = resolve;
       context.signal.addEventListener('abort', () => resolve(), { once: true });
     });
   }
@@ -64,6 +66,10 @@ class TestTransport implements EventTransport {
 
   open(connection = this.contexts.length - 1): void {
     this.contexts[connection]?.onOpen();
+  }
+
+  close(): void {
+    this.#finish?.();
   }
 }
 
@@ -386,6 +392,37 @@ describe('event channel', () => {
       { value: 2, origin: 'stream' },
     ]);
     engine.disconnect();
+  });
+
+  it('переподключается, пока отменённая синхронизация ещё завершается', async () => {
+    const transport = new TestTransport();
+    let releaseInitial: (() => void) | undefined;
+    const engine = makeEngine(
+      transport,
+      {
+        openBeforeInitialize: true,
+        initialize: (reason) =>
+          reason === 'initial'
+            ? new Promise<void>((resolve) => {
+                releaseInitial = resolve;
+              })
+            : Promise.resolve(),
+      },
+      { backoff: [0], jitter: 0 },
+    );
+    const connecting = engine.connect();
+    try {
+      await vi.waitFor(() => expect(releaseInitial).toBeDefined());
+      transport.close();
+      await vi.waitFor(() => expect(transport.connects).toBe(2));
+      expect(transport.contexts[0]?.signal.aborted).toBe(true);
+      expect(engine.status).toBe('connected');
+    } finally {
+      releaseInitial?.();
+      engine.disconnect();
+      await connecting;
+      await engine.drain();
+    }
   });
 
   it('ограничивает кадры, ожидающие открытия ready-gate', async () => {

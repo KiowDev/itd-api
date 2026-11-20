@@ -1,5 +1,7 @@
 import {
   type Author,
+  type ChatMessage,
+  type ChatSummary,
   type Comment,
   LastSeenUnit,
   LikesVisibility,
@@ -169,6 +171,28 @@ export function notificationFixture(input: NotificationFixtureInput = {}): Notif
     updatedAt: FIXTURE_TIME,
     raw: {},
     ...fields,
+  };
+}
+
+/** Сводка личного чата. */
+export function chatSummaryFixture(input: Partial<ChatSummary> = {}): ChatSummary {
+  return {
+    chatId: 'chat-1',
+    chatType: 0,
+    unreadCount: 0,
+    lastMessage: null,
+    ...input,
+  };
+}
+
+/** Сообщение чата с устойчивой датой. */
+export function chatMessageFixture(input: Partial<ChatMessage> = {}): ChatMessage {
+  return {
+    messageId: 'message-1',
+    senderId: FIXTURE_USER_ID,
+    createdAt: FIXTURE_TIME,
+    text: 'Тестовое сообщение',
+    ...input,
   };
 }
 

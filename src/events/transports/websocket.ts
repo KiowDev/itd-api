@@ -1,7 +1,7 @@
 import { type ItdClock, systemClock } from '../../core/clock.js';
 import { ItdConfigError } from '../../core/errors.js';
 import { maskSecret, redactUrl } from '../../core/redact.js';
-import { buildQuery, joinUrl } from '../../core/url.js';
+import { buildQuery, joinUrl, type QueryParams } from '../../core/url.js';
 import {
   type EventTransport,
   type EventTransportContext,
@@ -39,10 +39,17 @@ export type WebSocketOpenFailureClassifier = (
 export interface WebSocketTransportOptions {
   /** Путь апгрейда. По умолчанию `/api/ws`. */
   path?: string | undefined;
+  /** Параметры запроса при подключении. */
+  query?: QueryParams | undefined;
   /** Реализация WebSocket для сред без глобальной либо для передачи заголовков апгрейда. */
   webSocketImpl?: WebSocketLike | undefined;
-  /** Способ передачи токена. `auto` выбирает заголовок при инъекции и query иначе. */
-  auth?: 'query' | 'header' | 'auto' | undefined;
+  /**
+   * Способ передачи токена. `auto` выбирает заголовок при инъекции и query иначе.
+   * `subprotocol` добавляет согласуемый протокол и `bearer.<token>`.
+   */
+  auth?: 'query' | 'header' | 'auto' | { subprotocol: string } | undefined;
+  /** Коды закрытия, которыми сервер отклоняет авторизацию. */
+  unauthorizedCloseCodes?: readonly number[] | undefined;
   /** Молчание открытого соединения до переподключения, мс. По умолчанию 90 000. */
   idleTimeout?: number | undefined;
   /** Период текстового `ping`, мс. По умолчанию 30 000. */
@@ -80,7 +87,7 @@ interface WebSocketConnection {
 const CONNECTING = 0;
 const OPEN = 1;
 const NORMAL_CLOSURE = 1000;
-const UNAUTHORIZED_CLOSE_CODES = new Set([1008, 4401]);
+const UNAUTHORIZED_CLOSE_CODES = [1008, 4401] as const;
 
 function validateDuration(value: number | undefined, name: string): void {
   if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
@@ -161,8 +168,10 @@ export class WebSocketTransport implements EventTransport {
   readonly name = 'ws';
 
   readonly #path: string;
+  readonly #query: QueryParams;
   readonly #webSocketImpl: WebSocketLike | undefined;
-  readonly #auth: 'query' | 'header' | 'auto';
+  readonly #auth: NonNullable<WebSocketTransportOptions['auth']>;
+  readonly #unauthorizedCloseCodes: ReadonlySet<number>;
   readonly #idleTimeout: number;
   readonly #keepAlive: number;
   readonly #handshakeTimeout: number;
@@ -191,8 +200,16 @@ export class WebSocketTransport implements EventTransport {
     }
 
     const auth = options.auth ?? 'auto';
-    if (auth !== 'auto' && auth !== 'query' && auth !== 'header') {
-      throw new ItdConfigError(`Неизвестный способ авторизации WebSocket: ${String(auth)}`);
+    if (
+      auth !== 'auto' &&
+      auth !== 'query' &&
+      auth !== 'header' &&
+      (typeof auth !== 'object' ||
+        !auth ||
+        typeof auth.subprotocol !== 'string' ||
+        !auth.subprotocol)
+    ) {
+      throw new ItdConfigError('Неизвестный способ авторизации WebSocket');
     }
     if (auth === 'header' && !options.webSocketImpl) {
       throw new ItdConfigError(
@@ -205,8 +222,12 @@ export class WebSocketTransport implements EventTransport {
     validateDuration(options.handshakeTimeout, 'handshakeTimeout');
 
     this.#path = path;
+    this.#query = { ...options.query };
     this.#webSocketImpl = options.webSocketImpl;
-    this.#auth = auth;
+    this.#auth = typeof auth === 'object' ? { ...auth } : auth;
+    this.#unauthorizedCloseCodes = new Set(
+      options.unauthorizedCloseCodes ?? UNAUTHORIZED_CLOSE_CODES,
+    );
     this.#idleTimeout = options.idleTimeout ?? 90_000;
     this.#keepAlive = options.keepAlive ?? 30_000;
     this.#handshakeTimeout = options.handshakeTimeout ?? 20_000;
@@ -225,7 +246,10 @@ export class WebSocketTransport implements EventTransport {
     const implementation = this.#webSocketImpl ?? this.#globalImplementation();
     const auth = this.#auth === 'auto' ? (injected ? 'header' : 'query') : this.#auth;
     const { requestUrl, socketUrl } = this.#urls(context.baseUrl);
-    const url = auth === 'query' && token ? `${socketUrl}${buildQuery({ token })}` : socketUrl;
+    const query = auth === 'query' && token ? { ...this.#query, token } : this.#query;
+    const url = `${socketUrl}${buildQuery(query)}`;
+    const protocols = typeof auth === 'object' ? [auth.subprotocol] : [];
+    if (typeof auth === 'object' && token) protocols.push(`bearer.${token}`);
 
     let headers: Record<string, string> | undefined;
     if (injected) {
@@ -238,11 +262,13 @@ export class WebSocketTransport implements EventTransport {
     let value: unknown;
     try {
       value = injected
-        ? new implementation(url, [], {
+        ? new implementation(url, protocols, {
             ...(headers ? { headers } : {}),
             ...(this.#handshakeTimeout > 0 ? { handshakeTimeout: this.#handshakeTimeout } : {}),
           })
-        : new implementation(url);
+        : protocols.length
+          ? new implementation(url, protocols)
+          : new implementation(url);
     } catch (error) {
       const detail = safeDetail(error, url, token);
       throw new Error(
@@ -431,6 +457,10 @@ export class WebSocketTransport implements EventTransport {
             }
             const { raw } = decoded;
             if (settled || discardMessages || raw === 'pong') return;
+            if (raw === 'ping') {
+              if (socket.readyState === OPEN) socket.send('pong');
+              return;
+            }
 
             let data: unknown;
             try {
@@ -459,7 +489,7 @@ export class WebSocketTransport implements EventTransport {
         const { code, reason, wasClean } = readCloseEvent(event);
         let outcome: unknown;
 
-        if (context.authorize && UNAUTHORIZED_CLOSE_CODES.has(code)) {
+        if (context.authorize && this.#unauthorizedCloseCodes.has(code)) {
           outcome = new UnauthorizedStreamError();
         } else if (socketError !== undefined) {
           const detail = safeDetail(socketError, url, token);

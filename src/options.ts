@@ -1,4 +1,5 @@
 import type { RuntimeOptions } from './core/options.js';
+import type { ChatEventsOptions } from './events/chats.js';
 import type { NotificationEventsOptions } from './events/stream.js';
 import type { SessionOptions } from './session/options.js';
 
@@ -25,6 +26,8 @@ export interface ItdClientOptions extends RuntimeOptions, SessionOptions {
     | {
         /** Настройки канала уведомлений на всё время жизни клиента. */
         notifications?: NotificationEventsOptions | undefined;
+        /** Настройки канала чатов на всё время жизни клиента. */
+        chats?: ChatEventsOptions | undefined;
       }
     | undefined;
 }

@@ -59,6 +59,7 @@ const referenceSidebar = [
       { text: 'Посты', link: '/reference/posts' },
       { text: 'Комментарии', link: '/reference/comments' },
       { text: 'Уведомления', link: '/reference/notifications' },
+      { text: 'Чаты', link: '/reference/chats' },
       { text: 'Файлы', link: '/reference/files' },
       { text: 'Поиск и обнаружение', link: '/reference/discovery' },
       { text: 'События', link: '/reference/events' },

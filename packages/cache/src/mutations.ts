@@ -107,6 +107,13 @@ const NOTIFICATIONS = [
   'notifications.count',
 ] as const satisfies readonly CacheOperationId[];
 
+const CHAT_LIST = ['chats.list', 'chats.get'] as const satisfies readonly CacheOperationId[];
+const CHAT_UNREAD = [...CHAT_LIST, 'chats.unread'] as const satisfies readonly CacheOperationId[];
+const CHAT_REMOVAL = [
+  ...CHAT_UNREAD,
+  'chats.reactions',
+] as const satisfies readonly CacheOperationId[];
+
 const SUBSCRIPTION = [
   'subscription.status',
   'subscription.methods',
@@ -256,6 +263,52 @@ const CACHE_MUTATIONS = Object.freeze([
     invalidates: ['notifications.getSettings'],
     scope: CachePolicyScope.Account,
   },
+
+  // Чаты.
+  { operationId: 'chats.fileLinks', invalidates: NOTHING },
+  { operationId: 'chats.upload.init', invalidates: NOTHING },
+  { operationId: 'chats.upload.part', invalidates: NOTHING },
+  { operationId: 'chats.upload.finalize', invalidates: NOTHING },
+  { operationId: 'chats.presenceMany', invalidates: NOTHING },
+  { operationId: 'chats.heardMessages', invalidates: NOTHING },
+  { operationId: 'chats.createDirect', invalidates: CHAT_LIST },
+  { operationId: 'chats.sendMessage', invalidates: CHAT_UNREAD },
+  { operationId: 'chats.sendMessageToUser', invalidates: CHAT_UNREAD },
+  { operationId: 'chats.editMessage', invalidates: CHAT_LIST },
+  { operationId: 'chats.forwardMessages', invalidates: CHAT_UNREAD },
+  {
+    operationId: 'chats.deleteMessagesForMe',
+    invalidates: CHAT_REMOVAL,
+    scope: CachePolicyScope.Account,
+  },
+  { operationId: 'chats.deleteMessagesForAll', invalidates: CHAT_REMOVAL },
+  {
+    operationId: 'chats.setPinned',
+    invalidates: CHAT_LIST,
+    scope: CachePolicyScope.Account,
+  },
+  {
+    operationId: 'chats.setMuted',
+    invalidates: CHAT_LIST,
+    scope: CachePolicyScope.Account,
+  },
+  {
+    operationId: 'chats.setUnread',
+    invalidates: CHAT_UNREAD,
+    scope: CachePolicyScope.Account,
+  },
+  { operationId: 'chats.markRead', invalidates: CHAT_UNREAD },
+  { operationId: 'chats.acceptRequest', invalidates: CHAT_LIST },
+  { operationId: 'chats.markHeard', invalidates: NOTHING },
+  { operationId: 'chats.sendAction', invalidates: NOTHING },
+  {
+    operationId: 'chats.clearHistory',
+    invalidates: CHAT_REMOVAL,
+    scope: CachePolicyScope.Account,
+  },
+  { operationId: 'chats.clearHistoryForAll', invalidates: CHAT_REMOVAL },
+  { operationId: 'chats.delete', invalidates: CHAT_REMOVAL },
+  { operationId: 'chats.setReactions', invalidates: ['chats.reactions'] },
 
   // Файлы и настройки аккаунта.
   { operationId: 'files.upload', invalidates: NOTHING },

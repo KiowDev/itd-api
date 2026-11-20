@@ -6,6 +6,7 @@ import { apiErrorResponse } from '../http/responses.utils.js';
 import type { MockHandler } from '../http/router.types.js';
 import { compileRoute, defineRoute, matchRoute } from '../http/router.utils.js';
 import { ItdTestingError } from '../testing.errors.js';
+import { registerChatRoutes } from './chats/chats.routes.js';
 import { registerCommentRoutes } from './comments/comments.routes.js';
 import { registerHashtagRoutes } from './hashtags/hashtags.routes.js';
 import { registerNotificationRoutes } from './notifications/notifications.routes.js';
@@ -63,6 +64,7 @@ export function createMockServer(options: CreateMockServerOptions = {}): MockSer
   registerPostRoutes(context);
   registerCommentRoutes(context);
   registerNotificationRoutes(context);
+  registerChatRoutes(context);
   registerHashtagRoutes(context);
   registerSearchRoutes(context);
   registerShopRoutes(context);

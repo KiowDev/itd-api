@@ -133,10 +133,13 @@ export class HttpClient {
     }) as Promise<T>;
   }
 
-  async #run(request: PipelineRequest, options: RunOptions = {}): Promise<unknown> {
-    if (!options.allowDisposed) this.#assertActive?.();
+  /** Создаёт общий срок запроса или составной операции с учётом настроек клиента. @internal */
+  createDeadlineScope(
+    request: Pick<PipelineRequest, 'method' | 'path' | 'signal' | 'deadline'>,
+    lifetimeSignal?: AbortSignal,
+  ): RequestAbortScope {
     const deadline = request.deadline ?? this.#deadline;
-    const scope = createRequestAbortScope(request.signal, undefined, this.#clock, {
+    return createRequestAbortScope(request.signal, lifetimeSignal, this.#clock, {
       after: deadline,
       error: () =>
         new ItdTimeoutError({
@@ -146,6 +149,11 @@ export class HttpClient {
           budget: TimeoutBudget.Deadline,
         }),
     });
+  }
+
+  async #run(request: PipelineRequest, options: RunOptions = {}): Promise<unknown> {
+    if (!options.allowDisposed) this.#assertActive?.();
+    const scope = this.createDeadlineScope(request);
     if (this.#lifetimeSignal?.aborted) scope.abort(this.#lifetimeSignal.reason);
     else this.#activeScopes.add(scope);
     const startedAt = this.#clock.now();

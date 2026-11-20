@@ -1,7 +1,8 @@
 import type { FileInput } from '../core/attachments/contracts.js';
-import type { InternalFileResolver } from '../core/attachments/resolver.js';
 import type { HttpClient } from '../core/execution/http.js';
+import type { ClientFeatureHost } from '../core/feature-host.js';
 import type { RequestOptions } from '../core/options.js';
+import type { ChatsResource } from '../resources/chats.js';
 import { CommentsResource } from '../resources/comments.js';
 import { FilesResource, type UploadOptions } from '../resources/files.js';
 import { HashtagsResource } from '../resources/hashtags.js';
@@ -23,15 +24,17 @@ import { UsersResource } from '../resources/users.js';
 import { VerificationResource } from '../resources/verification.js';
 
 /** Что нужно ресурсам, чтобы ходить в API. */
-export interface ResourceDeps<N extends NotificationsResource> {
+export interface ResourceDeps<N extends NotificationsResource, C extends ChatsResource> {
   /** Точка входа в конвейер запросов. */
   http: HttpClient;
-  /** Общий механизм подготовки файловых источников клиента. */
-  files: InternalFileResolver;
+  /** Подготовка файловых источников и отмена загрузок при закрытии клиента. */
+  host: Pick<ClientFeatureHost, 'files' | 'manage'>;
   /** Встроенный status feature, которому делегирует `platform.status()`. */
   status: StatusResource;
   /** Выбирает базовый REST-ресурс либо API уведомлений полного клиента. */
   createNotifications(http: HttpClient): N;
+  /** Выбирает базовый REST-ресурс либо API чатов с каналом событий. */
+  createChats(): C;
 }
 
 /**
@@ -39,12 +42,16 @@ export interface ResourceDeps<N extends NotificationsResource> {
  *
  * `auth` сюда не входит: он управляет сессией и потому принадлежит полному клиенту.
  */
-export interface RestResources<N extends NotificationsResource = NotificationsResource> {
+export interface RestResources<
+  N extends NotificationsResource = NotificationsResource,
+  C extends ChatsResource = ChatsResource,
+> {
   readonly users: UsersResource;
   readonly posts: PostsResource;
   readonly comments: CommentsResource;
   readonly files: FilesResource;
   readonly notifications: N;
+  readonly chats: C;
   readonly hashtags: HashtagsResource;
   readonly legal: LegalResource;
   readonly search: SearchResource;
@@ -67,20 +74,21 @@ export interface RestResources<N extends NotificationsResource = NotificationsRe
 /**
  * Собирает набор ресурсов, создавая каждый при первом обращении.
  *
- * Ленивость существенна: клиенту редко нужны все двенадцать разом, а закрытие не должно
+ * Ленивость существенна: клиенту редко нужны все ресурсы разом, а закрытие не должно
  * поднимать накопитель телеметрии только ради того, чтобы его тут же закрыть.
  *
  * Набор общий для полного клиента и минимального REST-клиента — иначе список ресурсов
  * и их зависимости разъезжались бы по двум фасадам.
  */
-export function createResources<N extends NotificationsResource>(
-  deps: ResourceDeps<N>,
-): RestResources<N> {
+export function createResources<N extends NotificationsResource, C extends ChatsResource>(
+  deps: ResourceDeps<N, C>,
+): RestResources<N, C> {
   let users: UsersResource | undefined;
   let posts: PostsResource | undefined;
   let comments: CommentsResource | undefined;
   let files: FilesResource | undefined;
   let notifications: N | undefined;
+  let chats: C | undefined;
   let hashtags: HashtagsResource | undefined;
   let legal: LegalResource | undefined;
   let search: SearchResource | undefined;
@@ -91,7 +99,7 @@ export function createResources<N extends NotificationsResource>(
   let telemetry: TelemetryResource | undefined;
   let shop: ShopResource | undefined;
 
-  const bag: RestResources<N> = {
+  const bag: RestResources<N, C> = {
     get users() {
       users ??= new UsersResource(deps.http, { uploadFile });
       return users;
@@ -105,12 +113,16 @@ export function createResources<N extends NotificationsResource>(
       return comments;
     },
     get files() {
-      files ??= new FilesResource(deps.http, { files: deps.files });
+      files ??= new FilesResource(deps.http, { files: deps.host.files });
       return files;
     },
     get notifications() {
       notifications ??= deps.createNotifications(deps.http);
       return notifications;
+    },
+    get chats() {
+      chats ??= deps.createChats();
+      return chats;
     },
     get hashtags() {
       hashtags ??= new HashtagsResource(deps.http);

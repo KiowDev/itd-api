@@ -1,4 +1,5 @@
 import type { ItdClock } from 'itd-api';
+import { ChatService } from './chats/chats.service.js';
 import { CommentPresenter } from './comments/comments.presenter.js';
 import { CommentService } from './comments/comments.service.js';
 import { HashtagPresenter } from './hashtags/hashtags.presenter.js';
@@ -34,6 +35,7 @@ export class MockServerRuntime {
   constructor(clock: ItdClock) {
     const store = new MockStore(clock);
     const notifications = new NotificationService(store);
+    const chats = new ChatService(() => store.now());
     const users = new UserService(store, notifications);
     const posts = new PostService(store, users, notifications);
     const comments = new CommentService(store, users, posts, notifications);
@@ -44,7 +46,7 @@ export class MockServerRuntime {
     const notificationPresenter = new NotificationPresenter(users, userPresenter);
 
     this.store = store;
-    this.services = { users, posts, comments, notifications, hashtags, search, shop };
+    this.services = { users, posts, comments, notifications, chats, hashtags, search, shop };
     const postPresenter = new PostPresenter(users, posts, comments, userPresenter);
     this.presenters = {
       users: userPresenter,
@@ -61,6 +63,7 @@ export class MockServerRuntime {
   /** Валидирует seed полностью и заменяет данные только после успешной сборки. */
   load(seed: MockServerSeed | undefined): void {
     this.store.load(buildStoreContents(seed, () => this.store.now()));
+    this.services.chats.reset();
     this.delivery.detachAll();
   }
 

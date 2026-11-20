@@ -1,5 +1,7 @@
 import type { ModelAction } from '../actions/action.types.js';
 import { ATTACHMENT_ACTIONS } from './attachment/attachment.actions.js';
+import { CHAT_ACTIONS } from './chat/chat.actions.js';
+import { CHAT_MESSAGE_ACTIONS } from './chat-message/chat-message.actions.js';
 import { COMMENT_ACTIONS } from './comment/comment.actions.js';
 import { HASHTAG_ACTIONS } from './hashtag/hashtag.actions.js';
 import { ModelKind } from './model.constants.js';
@@ -16,6 +18,8 @@ export const MODEL_ACTIONS = Object.freeze({
   [ModelKind.User]: USER_ACTIONS,
   [ModelKind.Attachment]: ATTACHMENT_ACTIONS,
   [ModelKind.Notification]: NOTIFICATION_ACTIONS,
+  [ModelKind.Chat]: CHAT_ACTIONS,
+  [ModelKind.ChatMessage]: CHAT_MESSAGE_ACTIONS,
   [ModelKind.ShopDeliveryCity]: SHOP_DELIVERY_CITY_ACTIONS,
   [ModelKind.QrLoginTarget]: QR_LOGIN_TARGET_ACTIONS,
   [ModelKind.Hashtag]: HASHTAG_ACTIONS,

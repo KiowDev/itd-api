@@ -32,6 +32,7 @@ The linked documentation is written in Russian. Start with the guides and the cu
 - [Posts](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/posts.md): `itd.posts`, feeds, publishing, reactions, reposts, polls, and post comments.
 - [Comments](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/comments.md): `itd.comments`, replies, and comment actions.
 - [Notifications](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/notifications.md): `itd.notifications`, listing, unread counts, read markers, and settings.
+- [Chats](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/chats.md): `itd.chats`, direct messages, history, reactions, and read markers.
 - [Files](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/files.md): `itd.files`, media upload and deletion.
 - [Search and Discovery](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/discovery.md): `itd.search`, `itd.hashtags`, trends, recommendations, clans, and the portal.
 - [Notification Events](https://raw.githubusercontent.com/KiowDev/itd-api/main/guides/reference/events.md): `itd.notifications.events`, event streams, composers, routers, and transports.
