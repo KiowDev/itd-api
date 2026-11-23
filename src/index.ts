@@ -214,6 +214,7 @@ export type {
 } from './domain/params.js';
 export { toDate, utcStampToIso } from './domain/time.js';
 export {
+  type ChatEventContext,
   type ChatEventMap,
   ChatEvents,
   type ChatEventsOptions,

@@ -1,4 +1,5 @@
 import {
+  ChatUpdateType,
   type EventContext,
   ItdClient,
   type NotificationUpdate,
@@ -7,8 +8,9 @@ import {
   RetrySafety,
   runEventMiddleware,
   type Span,
+  type WebSocketLike,
 } from 'itd-api';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FRAME_START } from '../src/frames/frame.constants.js';
 import {
   BUILT_IN_CIPHERS,
@@ -32,6 +34,7 @@ interface Call {
 
 function makeClient(
   respond: (call: Call, index: number) => unknown = (call) => ({ id: '1', ...call.body }),
+  webSocketImpl?: WebSocketLike,
 ) {
   const calls: Call[] = [];
 
@@ -54,6 +57,7 @@ function makeClient(
     auth: 'test-token',
     retry: false,
     rateLimit: false,
+    events: { chats: { webSocketImpl } },
     mode: 'server',
   });
   return { itd, calls };
@@ -192,7 +196,7 @@ describe('шифрование запроса', () => {
     ]);
   });
 
-  it('использует metadata custom-операции при отправке и чтении', async () => {
+  it.each(['message', 'text'])('использует metadata custom-операции для %s', async (field) => {
     const { itd } = makeClient();
     itd.use(crypt());
     const chats = itd.install({
@@ -204,7 +208,12 @@ describe('шифрование запроса', () => {
           annotations: {
             crypto: {
               requestFields: [
-                { name: 'message', maxLength: 1000, preservesInvisibleAlphabet: true },
+                {
+                  name: field,
+                  spansField: 'spans',
+                  maxLength: 1000,
+                  preservesInvisibleAlphabet: true,
+                },
               ],
             },
           },
@@ -215,22 +224,28 @@ describe('шифрование запроса', () => {
           send: (message: string) =>
             context.request('send', {
               path: '/api/chats/1/messages',
-              body: { message },
+              body: {
+                [field]: message,
+                spans: [{ type: 'bold', offset: 0, length: message.length }],
+              },
               ...cryptoOptions({ encrypt: 'invisible' }),
             }),
         },
       }),
     });
 
-    const result = (await chats.send('секрет')) as {
-      message: string;
-      decoded?: { message?: { text: string; spans: unknown[] } };
-    };
-    expect(result.message).toBe(encodeInvisible('секрет'));
-    expect(result.decoded?.message?.text).toBe('секрет');
-    expect(result.decoded?.message?.spans).toEqual([
-      { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 0, length: 6 },
-    ]);
+    expect(await chats.send('секрет')).toMatchObject({
+      [field]: encodeInvisible('секрет'),
+      decoded: {
+        [field]: {
+          text: 'секрет',
+          spans: [
+            { type: 'bold', offset: 0, length: 6 },
+            { type: 'crypto', cipher: 'invisible', cipherId: 0, offset: 0, length: 6 },
+          ],
+        },
+      },
+    });
   });
 
   it('оставляет whole-field bare, но использует frames для внутренних visual-границ', async () => {
@@ -491,7 +506,157 @@ describe('расшифровка', () => {
   });
 });
 
+describe('чаты', () => {
+  it('шифрует сообщения и сохраняет форматирование и вложенный пост', async () => {
+    const { itd, calls } = makeClient((call) =>
+      call.method === 'GET'
+        ? {
+            messages: [
+              {
+                message_id: 'm1',
+                sender_id: 'u1',
+                created_at: '2026-11-20T00:00:00Z',
+                text: calls[0]?.body.text,
+                entities: calls[0]?.body.entities,
+                reply_to: { message_id: 'm0', sender_id: 'u1', text: encodeInvisible('ответ') },
+              },
+            ],
+          }
+        : { message_id: 'm1', chat_id: 'c1' },
+    );
+    try {
+      itd.use(crypt());
+      await itd.chats.sendMessage('c1', {
+        text: 'до секрет',
+        entities: [
+          { type: 'post', postId: 'p1' },
+          { type: 'code', offset: 3, length: 6 },
+          { type: 'crypto', cipher: CipherName.Invisible, offset: 3, length: 6 },
+        ],
+      });
+      await itd.chats.sendMessageToUser(
+        'u1',
+        { text: 'секрет' },
+        cryptoOptions({ encrypt: CipherName.Invisible }),
+      );
+      await itd.chats.editMessage(
+        'c1',
+        'm1',
+        { text: 'секрет' },
+        cryptoOptions({ spans: [{ cipher: CipherName.Invisible, offset: 0, length: 6 }] }),
+      );
+
+      expect(calls[0]?.body.text).not.toContain('секрет');
+      expect(calls[0]?.body.entities).toEqual([
+        { type: 'post', post_id: 'p1' },
+        { type: 'code', offset: 3, length: String(calls[0]?.body.text).length - 3 },
+      ]);
+      expect(calls[1]?.body.text).toBe(encodeInvisible('секрет'));
+      expect(calls[2]?.body.text).toBe(encodeInvisible('секрет'));
+
+      const { messages } = await itd.chats.messages('c1');
+      expect(messages[0]?.text).toBe(calls[0]?.body.text);
+      expect(messages[0]?.decoded?.text?.text).toBe('до секрет');
+      expect(messages[0]?.decoded?.text?.spans).toContainEqual({
+        type: 'code',
+        offset: 3,
+        length: 6,
+      });
+      expect(messages[0]?.replyTo?.decoded?.text?.text).toBe('ответ');
+    } finally {
+      await itd.close();
+    }
+  });
+
+  it('отклоняет crypto без координат и пересечение с текстовой ссылкой до отправки', async () => {
+    const { itd, calls } = makeClient();
+    try {
+      itd.use(crypt());
+      await expect(
+        itd.chats.sendMessage('c1', {
+          text: 'секрет',
+          entities: [{ type: 'crypto', cipher: CipherName.Invisible }],
+        }),
+      ).rejects.toThrow(/offset и length/);
+      await expect(
+        itd.chats.sendMessage(
+          'c1',
+          {
+            text: 'секрет',
+            entities: [{ type: 'text_link', offset: 0, length: 6, url: 'https://example.com' }],
+          },
+          cryptoOptions({ encrypt: CipherName.Invisible }),
+        ),
+      ).rejects.toThrow(/text_link/);
+      await expect(
+        itd.request({
+          method: 'POST',
+          path: '/api/v1/messenger/chats/c1/messages',
+          body: {
+            text: 'секрет',
+            entities: [{ type: 'crypto', cipher: CipherName.Invisible, offset: 0, length: 6 }],
+          },
+        }),
+      ).rejects.toThrow(/не принимает текстовые поля/);
+      expect(calls).toHaveLength(0);
+    } finally {
+      await itd.close();
+    }
+  });
+});
+
 describe('события', () => {
+  it('передаёт слушателю чата расшифрованное сообщение из WebSocket', async () => {
+    let socket: TestSocket | undefined;
+    class TestSocket extends EventTarget {
+      readyState = 0;
+      constructor() {
+        super();
+        socket = this;
+      }
+      send() {}
+      close() {
+        this.readyState = 3;
+      }
+    }
+    const { itd } = makeClient(undefined, TestSocket);
+    try {
+      const events = itd.chats.events;
+      events.use(crypt());
+      const listener = vi.fn();
+      events.on('update', listener);
+      const connecting = events.connect();
+      await vi.waitFor(() => expect(socket).toBeDefined());
+      if (!socket) throw new Error('WebSocket не создан');
+      socket.readyState = 1;
+      socket.dispatchEvent(new Event('open'));
+      await connecting;
+
+      const text = encodeInvisible('событие');
+      socket.dispatchEvent(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            type: ChatUpdateType.NewMessage,
+            chat_id: 'c1',
+            message: { message_id: 'm1', sender_id: 'u1', text },
+          }),
+        }),
+      );
+      await vi.waitFor(() =>
+        expect(listener).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.objectContaining({
+              text,
+              decoded: { text: expect.objectContaining({ text: 'событие' }) },
+            }),
+          }),
+        ),
+      );
+    } finally {
+      await itd.close();
+    }
+  });
+
   it('передаёт дальше расшифрованную копию нормализованного update', async () => {
     const preview = encodeBeeCrypt('событие');
     const update: NotificationUpdate = {

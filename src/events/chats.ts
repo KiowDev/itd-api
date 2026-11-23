@@ -7,11 +7,13 @@ import { normalizeChatUpdate } from '../domain/content.js';
 import type { ChatSummary, ChatUpdate, ChatUpdatesPage } from '../models/chats.js';
 import type { EventChannelStatus } from '../types/enums.js';
 import { EventChannel, type EventChannelEvents } from './engine.js';
+import type { EventMiddleware, EventMiddlewareObject } from './middleware.js';
 import type { ReconnectOptions } from './reconnect.js';
 import { type WebSocketLike, WebSocketTransport } from './transports/websocket.js';
 import type { EventContext } from './updates.js';
 
-type ChatEventContext = EventContext<ChatUpdate, ChatEvents, 'stream'>;
+/** Контекст обновления, полученного по WebSocket. */
+export type ChatEventContext = EventContext<ChatUpdate, ChatEvents, 'stream'>;
 
 /** События канала чатов. */
 export interface ChatEventMap
@@ -102,6 +104,13 @@ export class ChatEvents {
    */
   on<K extends keyof ChatEventMap>(event: K, listener: Listener<ChatEventMap[K]>): Unsubscribe {
     return this.#channel.on(event, listener);
+  }
+
+  /** Добавляет обработчик обновлений WebSocket и возвращает функцию его удаления. */
+  use(
+    middleware: EventMiddleware<ChatEventContext> | EventMiddlewareObject<ChatEventContext>,
+  ): Unsubscribe {
+    return this.#channel.use(middleware);
   }
 
   /**

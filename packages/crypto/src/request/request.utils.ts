@@ -12,10 +12,11 @@ const VISUAL_SPANS = new Set([
   'underline',
   'strike',
   'spoiler',
+  'code',
   'monospace',
   'quote',
 ]);
-const SEMANTIC_SPANS = new Set(['link', 'mention', 'hashtag']);
+const SEMANTIC_SPANS = new Set(['link', 'text_link', 'mention', 'hashtag']);
 const MAX_UNBOUNDED_HEADER = 1_000_000;
 
 interface ResolvedRange {
@@ -105,8 +106,12 @@ export function prepareRequest(
     const transformed = transformField(text, resolved, serverSpans, field, operation);
 
     prepared[field.name] = transformed.text;
-    if (field.spansField && Array.isArray(body[field.spansField])) {
-      prepared[field.spansField] = transformed.spans;
+    const spansField = field.spansField;
+    if (spansField && Array.isArray(body[spansField])) {
+      prepared[spansField] =
+        spansField === 'entities'
+          ? preserveUnpositionedEntities(body[spansField], transformed.spans)
+          : transformed.spans;
     }
   }
 
@@ -158,8 +163,15 @@ function collectRanges(
   }
 
   for (const field of fields) {
-    for (const span of readSpans(body, field.spansField)) {
+    const spans = field.spansField ? body[field.spansField] : undefined;
+    if (!Array.isArray(spans)) continue;
+    for (const span of spans) {
       if (!isCryptoSpan(span)) continue;
+      if (!isSpanLike(span)) {
+        throw new CryptError(
+          `Операция ${operation}, поле ${field.name}: у crypto-разметки должны быть offset и length`,
+        );
+      }
       if (span.cipher === undefined) {
         throw new CryptError(`Операция ${operation}, поле ${field.name}: crypto span без cipher`);
       }
@@ -397,6 +409,15 @@ function readSpans(body: Record<string, unknown>, field: string | undefined): Sp
   return body[field].filter(isSpanLike).map((span) => ({ ...span }));
 }
 
+/** Сохраняет вложенные сущности чата, для которых не заданы координаты в тексте. */
+function preserveUnpositionedEntities(entities: readonly unknown[], spans: readonly Span[]) {
+  let index = 0;
+  return entities.flatMap((entity) => {
+    if (!isSpanLike(entity)) return [entity];
+    return entity.type !== 'crypto' && entity.length > 0 ? [spans[index++]] : [];
+  });
+}
+
 function containsCryptoSpans(
   body: Record<string, unknown> | null,
   fields: readonly TextFieldDefinition[] | undefined,
@@ -404,10 +425,9 @@ function containsCryptoSpans(
   if (!body) return false;
   const spanFields = fields?.flatMap((field) => (field.spansField ? [field.spansField] : [])) ?? [
     'spans',
+    'entities',
   ];
-  return spanFields.some(
-    (field) => Array.isArray(body[field]) && body[field].some((span) => isCryptoSpan(span)),
-  );
+  return spanFields.some((field) => Array.isArray(body[field]) && body[field].some(isCryptoSpan));
 }
 
 function isSpanLike(value: unknown): value is Span & { cipher?: CipherRef | undefined } {
@@ -420,8 +440,9 @@ function isSpanLike(value: unknown): value is Span & { cipher?: CipherRef | unde
   );
 }
 
-function isCryptoSpan(value: unknown): value is Span & { cipher?: CipherRef | undefined } {
-  return isSpanLike(value) && value.type === 'crypto';
+/** Распознаёт запрос на шифрование до проверки его координат. */
+function isCryptoSpan(value: unknown): value is { type: 'crypto' } {
+  return asRecord(value)?.type === 'crypto';
 }
 
 function append(map: Map<string, CryptoRange[]>, field: string, range: CryptoRange): void {

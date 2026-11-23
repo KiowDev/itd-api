@@ -88,6 +88,14 @@ declare module 'itd-api' {
     cipher?: CipherRef | undefined;
   }
 
+  interface ChatTextEntity {
+    /** Имя или ID шифра для участка с типом `crypto`. */
+    cipher?: CipherRef | undefined;
+  }
+
+  interface ChatMessage extends CryptoDecodedObject<'text'> {}
+  interface ChatPreview extends CryptoDecodedObject<'text'> {}
+  interface ChatReply extends CryptoDecodedObject<'text'> {}
   interface PostBase extends CryptoDecodedObject<'content'> {}
   interface Comment extends CryptoDecodedObject<'content'> {}
   interface UpdateResultBase extends CryptoDecodedObject<'content'> {}

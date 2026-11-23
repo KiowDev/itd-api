@@ -7,6 +7,12 @@ const CONTENT: TextFieldDefinition = Object.freeze({
   maxLength: 1000,
   preservesInvisibleAlphabet: true,
 });
+const CHAT_TEXT: TextFieldDefinition = Object.freeze({
+  name: 'text',
+  spansField: 'entities',
+  maxLength: 4096,
+  preservesInvisibleAlphabet: true,
+});
 const DISPLAY_NAME: TextFieldDefinition = Object.freeze({
   name: 'displayName',
   maxLength: 1000,
@@ -26,6 +32,9 @@ export const OPERATION_FIELDS = Object.freeze({
   'posts.comment': [CONTENT],
   'comments.reply': [CONTENT],
   'comments.update': [CONTENT],
+  'chats.sendMessage': [CHAT_TEXT],
+  'chats.sendMessageToUser': [CHAT_TEXT],
+  'chats.editMessage': [CHAT_TEXT],
   'users.updateMe': [DISPLAY_NAME, BIO],
   'users.createProfile': [DISPLAY_NAME],
 } as const satisfies Partial<Record<BuiltInOperationId, readonly TextFieldDefinition[]>>);
@@ -48,11 +57,11 @@ export const TEXT_FIELDS = Object.freeze(
 /**
  * Имена полей ответа, в которых плагин ищет зашифрованные участки.
  *
- * Поле `content` связано с массивом `spans`; `bio`, `displayName` и `preview` отдельной
- * серверной разметки не имеют.
+ * Поле `content` связано с `spans`, а `text` сообщения — с `entities`.
  */
 export const SCANNED_FIELDS: readonly string[] = Object.freeze([
   'content',
+  'text',
   'bio',
   'displayName',
   'preview',
@@ -61,6 +70,7 @@ export const SCANNED_FIELDS: readonly string[] = Object.freeze([
 /** Описания полей ответа по имени. @internal */
 export const RESPONSE_FIELDS: Readonly<Record<string, TextFieldDefinition>> = Object.freeze({
   content: CONTENT,
+  text: CHAT_TEXT,
   bio: BIO,
   displayName: DISPLAY_NAME,
   preview: Object.freeze({ name: 'preview', preservesInvisibleAlphabet: true }),

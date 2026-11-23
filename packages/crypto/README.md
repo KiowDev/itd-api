@@ -174,15 +174,33 @@ await itd.users.updateMe(
 |---|---|---|
 | `posts.create`, `posts.update`, `posts.repost` | `content` | `spans` |
 | `posts.comment`, `comments.reply`, `comments.update` | `content` | `spans`, если вернул сервер |
+| `chats.sendMessage`, `chats.sendMessageToUser`, `chats.editMessage` | `text` | `entities` |
 | `users.createProfile` | `displayName` | нет |
 | `users.updateMe` | `displayName`, `bio` | нет |
 
-При чтении проверяются `content`, `displayName`, `bio` и `preview` во всём дереве ответа:
+При чтении проверяются `content`, `text`, `displayName`, `bio` и `preview` во всём дереве ответа:
 в постах, комментариях, профилях, авторах, пользователях и уведомлениях.
 
-Невидимые маркеры подтверждены только для `content` и `preview`. Поэтому `invisible` и
+Невидимые маркеры поддерживаются в `content`, `text` сообщений и `preview`. Поэтому `invisible` и
 другие алгоритмы с `requiresInvisibleAlphabet: true` нельзя применять к `displayName` и
 `bio`. Для них используйте шифр целого поля, например `beecrypt`.
+
+## Сообщения чата
+
+В сообщении задайте зашифрованный участок в `entities`:
+
+```ts
+await itd.chats.sendMessage(chatId, {
+  text: 'привет секрет',
+  entities: [{ type: 'crypto', cipher: 'invisible', offset: 7, length: 6 }],
+});
+
+const { messages } = await itd.chats.messages(chatId);
+console.log(messages[0]?.decoded?.text?.text);
+```
+
+Для событий WebSocket подключите тот же `crypto` через `itd.chats.events.use(crypto)`.
+В обработчике `update` расшифрованный текст доступен в `update.message?.decoded?.text?.text`.
 
 ## Взаимодействие с обычной разметкой
 

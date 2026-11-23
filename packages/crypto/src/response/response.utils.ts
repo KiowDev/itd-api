@@ -149,15 +149,13 @@ function decodeRecord(
 function responseFields(
   additional: readonly TextFieldDefinition[] | undefined,
 ): TextFieldDefinition[] {
-  const fields = SCANNED_FIELDS.flatMap((name) => {
+  const fields = new Map<string, TextFieldDefinition>();
+  for (const name of SCANNED_FIELDS) {
     const definition = responseFieldDefinition(name);
-    return definition ? [definition] : [];
-  });
-  const names = new Set(fields.map((field) => field.name));
-  for (const field of additional ?? []) {
-    if (!names.has(field.name)) fields.push(field);
+    if (definition) fields.set(name, definition);
   }
-  return fields;
+  for (const field of additional ?? []) fields.set(field.name, field);
+  return [...fields.values()];
 }
 
 function decodeField(
