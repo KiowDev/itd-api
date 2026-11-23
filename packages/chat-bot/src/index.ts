@@ -1,4 +1,5 @@
 export { ChatBot, ChatBotError, type ChatBotErrorHandler, type ChatBotOptions } from './bot.js';
+export type { ChatCheckpointOptions } from './checkpoint.js';
 export type { ChatCommandContext, ChatHearsContext, HearsTrigger } from './commands.js';
 export { type ChatBotClient, ChatContext, type ChatReplyOptions } from './context.js';
 export {

@@ -82,10 +82,13 @@ export class ChatEvents {
           return normalizeChatUpdate(data);
         },
         createContext: (update, raw, origin) => ({ update, raw, origin, stream: this }),
-        deliver: (update) => this.#deliverLive(update),
+        deliver: (update) => this.#channel.emit('update', update),
       },
       options,
     );
+    this.#channel.use(async ({ update }, next) => {
+      if (this.#acceptLiveUpdate(update)) await next();
+    });
   }
 
   /** Текущее состояние соединения. */
@@ -116,11 +119,11 @@ export class ChatEvents {
   /**
    * Подключается к WebSocket и догружает пропущенные события.
    *
-   * @param since номер последнего события (`eventSeq` из списка чатов или журнала)
+   * @param since номер последнего события. Возьмите `eventSeq` из списка чатов или события.
    */
   async connect(since?: number): Promise<void> {
     if (since !== undefined && !isSequence(since)) {
-      throw new ItdConfigError('Позиция журнала чатов должна быть целым неотрицательным числом');
+      throw new ItdConfigError('Номер события должен быть целым неотрицательным числом');
     }
     if (!this.#channel.active && since !== undefined) this.#position = since;
     return this.#channel.connect();
@@ -137,7 +140,7 @@ export class ChatEvents {
     return this.#channel.drain();
   }
 
-  /** Читает журнал до конца, пока движок буферизует события открытого сокета. */
+  /** Загружает пропущенные события, пока новые события WebSocket ждут обработки. */
   async #sync(signal: AbortSignal): Promise<void> {
     while (this.#position !== undefined && !signal.aborted) {
       const since = this.#position;
@@ -150,11 +153,11 @@ export class ChatEvents {
       }
       const next = page.nextEventSeq;
       if (!isSequence(next) || next < since) {
-        throw new Error('Некорректная позиция в журнале чатов');
+        throw new Error('Сервер вернул некорректный номер следующего события');
       }
       for (const update of page.events) {
         if (signal.aborted) return;
-        this.#publish(update);
+        if (this.#advance(update)) this.#channel.emit('update', update);
       }
       if (signal.aborted) return;
       this.#position = Math.max(this.#position ?? since, next);
@@ -164,28 +167,28 @@ export class ChatEvents {
     }
   }
 
-  /** При пропуске событий запускает восстановление с последней позиции в журнале. */
-  #deliverLive(update: ChatUpdate): void {
+  /** Учитывает кадр до пользовательских обработчиков и запускает догрузку при пропуске. */
+  #acceptLiveUpdate(update: ChatUpdate): boolean {
     const sequence = update.eventSeq;
     if (isSequence(sequence) && this.#position !== undefined && sequence > this.#position) {
       const count = isSequence(update.eventSeqCount) ? Math.max(1, update.eventSeqCount) : 1;
       if (sequence - this.#position !== count) {
         this.#channel.recover(new Error('Пропущены события чата'));
-        return;
+        return false;
       }
     }
-    this.#publish(update);
+    return this.#advance(update);
   }
 
   /** Пропускает повторные события из REST и буфера WebSocket. */
-  #publish(update: ChatUpdate): void {
+  #advance(update: ChatUpdate): boolean {
     const sequence = update.eventSeq;
     if (isSequence(sequence)) {
-      if (this.#position !== undefined && sequence <= this.#position) return;
+      if (this.#position !== undefined && sequence <= this.#position) return false;
       this.#position = sequence;
       this.#channel.confirmRecovery();
     }
-    this.#channel.emit('update', update);
+    return true;
   }
 }
 

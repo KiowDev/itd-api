@@ -1,5 +1,8 @@
+import type { BuilderInput } from '../builders/base.js';
+import { type MessageBuilder, type MessageInput, resolveMessage } from '../builders/message.js';
 import type { FileInput } from '../core/attachments/contracts.js';
 import type { HttpClient } from '../core/execution/http.js';
+import { requestAbortError } from '../core/execution/lifecycle.js';
 import { voidResult } from '../core/operation.js';
 import type { PaginationOptions, RequestOptions } from '../core/options.js';
 import { encodePathSegment } from '../core/url.js';
@@ -24,6 +27,7 @@ import {
   writeChatReaction,
 } from '../domain/content.js';
 import { defineBuiltInOperation } from '../domain/operations.js';
+import type { ChatMessageContent, SendChatMessageInput } from '../domain/params.js';
 import type {
   ChatActionType,
   ChatChange,
@@ -45,7 +49,6 @@ import type {
   ChatReadResult,
   ChatSentMessage,
   ChatSummary,
-  ChatTextEntity,
   ChatUnreadState,
   ChatUpdatesPage,
   ChatUploadedFile,
@@ -122,20 +125,6 @@ export interface ChatListParams {
   limit?: number;
 }
 
-/** Текст, форматирование и ID файлов, уже загруженных в мессенджер. */
-export interface ChatMessageContent {
-  text: string;
-  attachmentIds?: readonly string[];
-  entities?: readonly ChatTextEntity[];
-}
-
-/** Параметры отправки сообщения. */
-export interface SendChatMessageInput extends ChatMessageContent {
-  replyToId?: string | null;
-  /** UUIDv7, по которому сервер распознаёт повторную отправку. */
-  clientMessageId?: string;
-}
-
 /** Реакции текущего пользователя, которые заменят его прежний выбор. */
 export interface SetChatReactionsInput {
   reactions: readonly ChatReaction[];
@@ -161,7 +150,7 @@ function messageSegment(messageId: string): string {
   return encodePathSegment(messageId, 'идентификатор сообщения');
 }
 
-/** Чаты, сообщения, вложения и журнал изменений. Доступен как `itd.chats`. */
+/** Чаты, сообщения, вложения и события. Доступен как `itd.chats`. */
 export class ChatsResource extends BaseResource {
   readonly #host: ChatUploadHost;
 
@@ -416,66 +405,104 @@ export class ChatsResource extends BaseResource {
   }
 
   /**
-   * Отправляет сообщение в существующий чат.
+   * Отправляет сообщение в существующий чат. Файлы из `files` загружаются до отправки.
    *
    * @example
    * ```ts
-   * const sent = await itd.chats.sendMessage(chatId, { text: 'Привет!' });
+   * const sent = await itd.chats.sendMessage(chatId, (m) => m.text('Привет!').attach(file));
    * console.log(sent.messageId);
    * ```
    */
   sendMessage(
     chatId: string,
-    input: SendChatMessageInput,
+    input: MessageInput,
     options: RequestOptions = {},
   ): Promise<ChatSentMessage> {
-    return this.http.execute(SEND_MESSAGE, {
-      path: `${chatPath(chatId)}/messages`,
-      body: {
-        text: input.text,
-        reply_to_id: input.replyToId ?? null,
-        attachments: input.attachmentIds?.length ? input.attachmentIds : undefined,
-        entities: input.entities?.length ? input.entities.map(writeChatEntity) : undefined,
-        client_message_id: input.clientMessageId,
-      },
-      ...options,
-    });
+    const data = resolveMessage(input);
+    const path = `${chatPath(chatId)}/messages`;
+    return this.#withAttachments(data, { method: 'POST', path }, options, (attachments, request) =>
+      this.http.execute(SEND_MESSAGE, {
+        path,
+        body: {
+          text: data.text,
+          reply_to_id: data.replyToId ?? null,
+          attachments: attachments?.length ? attachments : undefined,
+          entities: data.entities?.length ? data.entities.map(writeChatEntity) : undefined,
+          client_message_id: data.clientMessageId,
+        },
+        ...request,
+      }),
+    );
   }
 
   /** Отправляет сообщение по ID собеседника. Если диалога ещё нет, сервер создаёт его. */
   sendMessageToUser(
     userId: string,
-    input: Omit<SendChatMessageInput, 'replyToId'>,
+    input: BuilderInput<Omit<SendChatMessageInput, 'replyToId'>, MessageBuilder>,
     options: RequestOptions = {},
   ): Promise<ChatFirstMessage> {
-    return this.http.execute(SEND_MESSAGE_TO_USER, {
-      path: `${MESSENGER_PATH}/users/${encodePathSegment(userId, 'идентификатор пользователя')}/messages`,
-      body: {
-        text: input.text,
-        attachments: input.attachmentIds?.length ? input.attachmentIds : undefined,
-        entities: input.entities?.length ? input.entities.map(writeChatEntity) : undefined,
-        client_message_id: input.clientMessageId,
-      },
-      ...options,
-    });
+    const data = resolveMessage(input);
+    const path = `${MESSENGER_PATH}/users/${encodePathSegment(userId, 'идентификатор пользователя')}/messages`;
+    return this.#withAttachments(data, { method: 'POST', path }, options, (attachments, request) =>
+      this.http.execute(SEND_MESSAGE_TO_USER, {
+        path,
+        body: {
+          text: data.text,
+          attachments: attachments?.length ? attachments : undefined,
+          entities: data.entities?.length ? data.entities.map(writeChatEntity) : undefined,
+          client_message_id: data.clientMessageId,
+        },
+        ...request,
+      }),
+    );
   }
 
-  /** Меняет содержимое сообщения. Пустой массив `entities` сбрасывает форматирование. */
+  /** Меняет содержимое сообщения. Пустые `entities` и `attachmentIds` удаляют разметку с карточками и файлы соответственно. */
   editMessage(
     chatId: string,
     messageId: string,
-    input: ChatMessageContent,
+    input: BuilderInput<ChatMessageContent, MessageBuilder>,
     options: RequestOptions = {},
   ): Promise<ChatEditedMessage> {
-    return this.http.execute(EDIT_MESSAGE, {
-      path: `${chatPath(chatId)}/messages/${messageSegment(messageId)}`,
-      body: {
-        text: input.text,
-        attachments: input.attachmentIds?.length ? input.attachmentIds : undefined,
-        entities: input.entities?.map(writeChatEntity),
-      },
-      ...options,
-    });
+    const data = resolveMessage(input);
+    const path = `${chatPath(chatId)}/messages/${messageSegment(messageId)}`;
+    return this.#withAttachments(data, { method: 'PATCH', path }, options, (attachments, request) =>
+      this.http.execute(EDIT_MESSAGE, {
+        path,
+        body: {
+          text: data.text,
+          attachments,
+          entities: data.entities?.map(writeChatEntity),
+        },
+        ...request,
+      }),
+    );
+  }
+
+  /** Загружает файлы перед запросом с общим сроком выполнения. */
+  async #withAttachments<T>(
+    { attachmentIds, files }: ChatMessageContent,
+    operation: { method: 'POST' | 'PATCH'; path: string },
+    options: RequestOptions,
+    send: (ids: readonly string[] | undefined, request: RequestOptions) => Promise<T>,
+  ): Promise<T> {
+    if (!files?.length) return send(attachmentIds, options);
+
+    const scope = this.http.createDeadlineScope({ ...options, ...operation });
+    const request = { ...options, deadline: 0, signal: scope.signal };
+    const ids = [...(attachmentIds ?? [])];
+    try {
+      for (const file of files) {
+        const { fileId } = await this.uploadFile(file, undefined, request);
+        ids.push(fileId);
+      }
+      scope.signal.throwIfAborted();
+      return await send(ids, request);
+    } catch (error) {
+      throw requestAbortError(scope, operation, error);
+    } finally {
+      scope.cleanup();
+    }
   }
 
   /** Пересылает сообщения из другого чата. Результат содержит успешные и отклонённые элементы. */

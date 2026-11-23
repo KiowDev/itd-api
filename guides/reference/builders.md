@@ -2,7 +2,7 @@
 description: "Билдеры постов, комментариев, опросов, жалоб и разметки в itd-api: подготовка данных и проверка до отправки запроса."
 ---
 
-# Билдеры — `post()`, `comment()`, `poll()`, `report()`, `markup()`, `messageMarkup()`
+# Билдеры — `post()`, `comment()`, `message()`, `poll()`, `report()`, `markup()`, `messageMarkup()`
 
 Билдеры собирают данные для публикующих методов и проверяют их **до** обращения к сети
 (бросают [`ItdConfigError`](./errors.md)). Все билдеры **неизменяемые**: каждый метод
@@ -130,6 +130,24 @@ await itd.chats.sendMessage(chatId, message);
 Также доступны `.italic()`, `.underline()`, `.strike()`, `.spoiler()`, `.text()`,
 `.newline()` и `.span()`. Вложенный фрагмент можно собрать через функцию, например
 `.bold((m) => m.text('Пример ').code('itd.chats'))`.
+
+## Сообщение — `message()` {#message-builder}
+
+`message()` собирает текст, разметку, карточки постов и вложения для `itd.chats`.
+
+```ts
+import { message } from 'itd-api';
+
+await itd.chats.sendMessage(
+  chatId,
+  message().markup((m) => m.bold('Посмотрите этот пост')).post(postId).attach(file),
+);
+```
+
+`.post(postId)` добавляет карточку. Для отправки без подписи достаточно `message().post(postId)`.
+`.attach(file)` загружает файл перед отправкой, а `.attachId(fileId)` прикладывает уже загруженный файл.
+При редактировании `.clearAttachments()` удаляет все файлы из сообщения.
+`.text()` заменяет текст и форматирование, сохраняя карточки и файлы, добавленные в билдер.
 
 ## Автоопределение сущностей
 

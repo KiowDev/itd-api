@@ -234,8 +234,16 @@ function normalizeReadCursor(body: unknown): ChatReadCursor | null | undefined {
 
 /** Читает страницу истории. Ключи карты прочтения — ID участников. */
 export function normalizeChatHistory(body: unknown): ChatHistoryPage {
-  const { messages, read_cursors, my_last_read, has_older, has_newer, event_seq, ...rest } =
-    body as WireRecord;
+  const {
+    messages,
+    read_cursors,
+    my_last_read,
+    has_older,
+    has_newer,
+    event_seq,
+    target_message_id,
+    ...rest
+  } = body as WireRecord;
   return withFields(rest, {
     messages: mapItems(messages, normalizeMessage),
     readCursors:
@@ -251,6 +259,7 @@ export function normalizeChatHistory(body: unknown): ChatHistoryPage {
     hasOlder: has_older,
     hasNewer: has_newer,
     eventSeq: event_seq,
+    targetMessageId: target_message_id,
   });
 }
 
@@ -340,8 +349,21 @@ export function normalizeChatForwarded(body: unknown): ChatForwardedMessages {
     { ...changeFields(rest) },
     {
       ok: mapItems(ok, (item) => {
-        const { source_message_id, message_id, ...fields } = item as WireRecord;
-        return withFields(fields, { sourceMessageId: source_message_id, messageId: message_id });
+        const {
+          source_message_id,
+          message_id,
+          created_at,
+          forwarded_from_sender_id,
+          forwarded_from_name,
+          ...fields
+        } = item as WireRecord;
+        return withFields(fields, {
+          sourceMessageId: source_message_id,
+          messageId: message_id,
+          ...isoField('createdAt', created_at),
+          forwardedFromSenderId: forwarded_from_sender_id,
+          forwardedFromName: forwarded_from_name,
+        });
       }),
     },
   );
@@ -401,7 +423,7 @@ export function normalizeChatUpdate(body: unknown): ChatUpdate {
   );
 }
 
-/** Читает страницу журнала, включая сводки изменившихся чатов. */
+/** Читает страницу событий и сводки изменившихся чатов. */
 export function normalizeChatUpdates(body: unknown): ChatUpdatesPage {
   const { events, next_event_seq, reset_required, chats, ...rest } = body as WireRecord;
   return withFields(rest, {

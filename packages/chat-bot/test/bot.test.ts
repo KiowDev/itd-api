@@ -61,6 +61,119 @@ function message(text: string, id = 'm1') {
 }
 
 describe('ChatBot', () => {
+  it('сохраняет позицию после завершения обработчиков и читает её при новом запуске', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const since = new URL(String(input)).searchParams.get('since');
+      return Response.json({ events: [], next_event_seq: Number(since) });
+    });
+    const { itd, nextSocket } = setup(fetch);
+    const storage = new MemoryKeyValueStore<number>();
+    const checkpoint = { storage, key: 'bot' };
+    const bot = new ChatBot(itd, { checkpoint, concurrency: 2 });
+    const gate = withGate();
+    const completed = vi.fn();
+    bot.use(async ({ update }) => {
+      if (update.eventSeq === 11) await gate.promise;
+      completed(update.eventSeq);
+    });
+
+    try {
+      const starting = bot.start();
+      const socket = await nextSocket();
+      socket.open();
+      await starting;
+      socket.update({ type: ChatUpdateType.NewMessage, chat_id: 'c1', event_seq: 11 });
+      socket.update({ type: ChatUpdateType.NewMessage, chat_id: 'c2', event_seq: 12 });
+      await vi.waitFor(() => expect(completed.mock.calls).toEqual([[12]]));
+      expect(storage.get('bot')).toBeUndefined();
+
+      gate.resolve();
+      await vi.waitFor(() => expect(storage.get('bot')).toBe(12));
+      bot.stop();
+      await bot.drain();
+
+      const restarted = new ChatBot(itd, { checkpoint });
+      const restarting = restarted.start();
+      (await nextSocket(1)).open();
+      await restarting;
+      expect(new URL(String(fetch.mock.calls[0]?.[0])).searchParams.get('since')).toBe('12');
+    } finally {
+      gate.resolve();
+      await itd.close();
+    }
+  });
+
+  it('не сохраняет позицию после события, обработчик которого завершился ошибкой', async () => {
+    const { itd, nextSocket } = setup();
+    const storage = new MemoryKeyValueStore<number>();
+    const bot = new ChatBot(itd, { checkpoint: { storage, key: 'bot' } });
+    const handled = vi.fn();
+    bot.catch(() => {});
+    bot.use(({ update }) => {
+      if (update.eventSeq === 2) throw new Error('Ошибка обработки');
+      handled(update.eventSeq);
+    });
+
+    try {
+      const starting = bot.start();
+      const socket = await nextSocket();
+      socket.open();
+      await starting;
+      for (const eventSeq of [1, 2, 3]) {
+        socket.update({ type: ChatUpdateType.NewMessage, chat_id: 'c1', event_seq: eventSeq });
+      }
+      await vi.waitFor(() => expect(handled.mock.calls).toEqual([[1], [3]]));
+      await bot.drain();
+      expect(storage.get('bot')).toBe(1);
+    } finally {
+      await itd.close();
+    }
+  });
+
+  it('сохраняет позицию после всего пакета и ждёт запись при остановке', async () => {
+    const { itd, nextSocket } = setup();
+    const handling = withGate();
+    const saving = withGate();
+    const handled = vi.fn();
+    const set = vi.fn(() => saving.promise);
+    const storage = { get: () => undefined, set, delete: () => {} };
+    const bot = new ChatBot(itd, { checkpoint: { storage, key: 'bot' } });
+    bot.use(async (ctx) => {
+      handled(ctx.message?.messageId);
+      if (ctx.message?.messageId === 'm2') await handling.promise;
+    });
+
+    try {
+      const starting = bot.start();
+      const socket = await nextSocket();
+      socket.open();
+      await starting;
+      socket.update({
+        type: ChatUpdateType.NewMessages,
+        chat_id: 'c1',
+        event_seq: 12,
+        messages: [message('первое'), message('второе', 'm2')],
+      });
+      await vi.waitFor(() => expect(handled.mock.calls).toEqual([['m1'], ['m2']]));
+      expect(set).not.toHaveBeenCalled();
+      handling.resolve();
+      await vi.waitFor(() => expect(set).toHaveBeenCalledExactlyOnceWith('bot', 12));
+
+      bot.stop();
+      const drained = vi.fn();
+      const stopping = bot.drain().then(drained);
+      await Promise.resolve();
+      expect(drained).not.toHaveBeenCalled();
+      saving.resolve();
+      await stopping;
+      expect(drained).toHaveBeenCalledOnce();
+    } finally {
+      handling.resolve();
+      saving.resolve();
+      await itd.close();
+    }
+  });
+
   it('пишет необработанные ошибки и ошибки bot.catch в логгер клиента', async () => {
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const { itd, nextSocket } = setup(undefined, logger);
@@ -478,7 +591,7 @@ describe('ChatBot', () => {
   it.each([
     { options: undefined, limit: 256 },
     { options: { maxPendingUpdates: 300 }, limit: 300 },
-  ])('догружает журнал после переполнения (лимит $limit)', async ({ options, limit }) => {
+  ])('догружает события при переполнении (лимит $limit)', async ({ options, limit }) => {
     const accepted = limit + 1;
     const last = 2 * accepted + 1;
     const positions: number[] = [];
@@ -589,7 +702,7 @@ describe('ChatBot', () => {
     },
   );
 
-  it('при переполнении без позиции в журнале завершает принятую работу и сообщает об ошибке', async () => {
+  it('при переполнении без номера события завершает принятую работу и сообщает об ошибке', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({
         events: [1, 2, undefined].map((seq) => ({

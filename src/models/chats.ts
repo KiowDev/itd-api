@@ -100,7 +100,7 @@ export interface ChatUploadOptions {
   onProgress?: (uploaded: number, total: number) => void;
 }
 
-/** Форматирование или ссылка в сообщении. Смещение и длина заданы в единицах UTF-16. */
+/** Разметка текста или карточка в сообщении. Смещение и длина заданы в единицах UTF-16. */
 export interface ChatTextEntity {
   type: string;
   offset?: number;
@@ -171,6 +171,8 @@ export interface ChatHistoryPage {
   hasOlder?: boolean;
   hasNewer?: boolean;
   eventSeq?: number | null;
+  /** ID сообщения, вокруг которого загружена история. */
+  targetMessageId?: string;
 }
 
 /** Категория вложений для выборки из истории чата. */
@@ -215,7 +217,7 @@ export interface ChatMessageReactions {
   reactionVersion: string;
 }
 
-/** Позиция изменения в журнале мессенджера. */
+/** Номер события и число изменений, которые оно объединяет. */
 export interface ChatChange {
   eventSeq?: number;
   eventSeqCount?: number;
@@ -257,7 +259,19 @@ export interface ChatDeletedMessages extends ChatChange {
 
 /** Результат пересылки. Частичный успех отражён в отдельных списках. */
 export interface ChatForwardedMessages extends ChatChange {
-  ok: { sourceMessageId: string }[];
+  /** Сообщения, которые удалось переслать. */
+  ok: {
+    /** ID сообщения в исходном чате. */
+    sourceMessageId: string;
+    /** ID созданного сообщения в целевом чате. */
+    messageId?: string;
+    /** Время пересылки. */
+    createdAt?: IsoDate;
+    /** ID автора исходного сообщения. */
+    forwardedFromSenderId?: string | null;
+    /** Имя автора исходного сообщения, если сервер вернул его отдельно. */
+    forwardedFromName?: string | null;
+  }[];
   failed: unknown[];
 }
 
@@ -293,7 +307,7 @@ export const ChatUpdateType = Object.freeze({
 } as const);
 export type ChatUpdateType = Loose<(typeof ChatUpdateType)[keyof typeof ChatUpdateType]>;
 
-/** Событие журнала или канала чатов. Состав данных зависит от его типа. */
+/** Событие чата. Состав данных зависит от типа события. */
 export interface ChatUpdate {
   type: ChatUpdateType;
   eventSeq?: number | null;

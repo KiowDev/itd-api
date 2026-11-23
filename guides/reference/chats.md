@@ -59,21 +59,19 @@ for await (const message of itd.chats.iterateMessages(chatId, { limit: 20 })) {
 
 ## Отправка, правка и удаление
 
-```ts
-createDirect(userId: string): Promise<ChatDirectResult>
-sendMessageToUser(userId: string, input: Omit<SendChatMessageInput, 'replyToId'>): Promise<ChatFirstMessage>
-sendMessage(chatId: string, input: SendChatMessageInput): Promise<ChatSentMessage>
-editMessage(chatId: string, messageId: string, input: ChatMessageContent): Promise<ChatEditedMessage>
-```
-
 `createDirect()` возвращает ID существующего личного диалога или создаёт его.
 `sendMessageToUser()` сразу отправляет сообщение по ID собеседника и возвращает ID чата и сообщения.
+Если ID чата уже известен, используйте `sendMessage()`. Чтобы изменить отправленное сообщение, вызовите `editMessage()`.
 Для ответа на конкретное сообщение укажите `replyToId` при вызове `sendMessage()`.
 Если передаёте собственный `clientMessageId`, используйте UUIDv7.
-Для форматирования текста используйте [`messageMarkup()`](./builders.md#message-markup).
+
+При отправке и редактировании можно передать объект, билдер [`message()`](./builders.md#message-builder)
+или функцию сборки.
 
 ```ts
-await itd.chats.editMessage(chatId, messageId, { text: 'Привет! Как дела?' });
+import { message } from 'itd-api';
+
+await itd.chats.sendMessage(chatId, message('Держи файл').attach(file));
 ```
 
 `forwardMessages()` принимает целевой чат, `sourceChatId` и `messageIds`.
@@ -105,6 +103,8 @@ await itd.chats.editMessage(chatId, messageId, { text: 'Привет! Как д�
 `reactionCatalog()` возвращает доступные реакции, а `reactions()` — реакции
 на сообщение и их текущую версию. `setReactions()` заменяет ваш набор целиком.
 Пустой массив снимает ваши реакции. Если версия устарела, сначала перечитайте состояние.
+С `@itd-api/cache` передайте `{ extensions: { cache: 'reload' } }` в `reactions()`,
+чтобы получить свежую версию с сервера.
 
 ```ts
 import { ChatReactionType } from 'itd-api';
@@ -148,6 +148,9 @@ const events = itd.chats.events;
 events.on('update', (event) => console.log(event.type, event.chatId));
 await events.connect(eventSeq ?? undefined);
 ```
+
+`events.use()` подключает обработчик кадров WebSocket, например для расшифровки текста.
+Пропущенные события загружаются через REST с учётом подключённых плагинов.
 
 Если сервер при догрузке вернёт обновлённые сводки чатов, клиент передаст их через
 `chatSummaries`. При событии `resetRequired` загрузите список и нужную историю заново,

@@ -2,7 +2,7 @@ import { ItdConfigError } from '../core/errors.js';
 import type { ChatTextEntity } from '../models/chats.js';
 import type { Span } from '../models/common.js';
 import { SpanType } from '../types/enums.js';
-import { BUILDER, type BuilderInput, type ItdBuilder, isBuilder } from './base.js';
+import { BUILDER, type BuilderInput, type ItdBuilder, resolveInput } from './base.js';
 import { type MarkupBuilder, type MarkupSpan, markup } from './markup.js';
 
 /** Текст сообщения с рассчитанными координатами разметки. */
@@ -13,16 +13,16 @@ export interface MessageMarkup {
   entities: (ChatTextEntity & Pick<Span, 'offset' | 'length'>)[];
 }
 
+/** Готовая разметка сообщения, билдер или функция сборки. */
+export type MessageMarkupInput = BuilderInput<MessageMarkup, MessageMarkupBuilder>;
+
 /** Простой текст, готовый фрагмент или вложенный билдер. */
-export type MessageMarkupContent = string | BuilderInput<MessageMarkup, MessageMarkupBuilder>;
+export type MessageMarkupContent = string | MessageMarkupInput;
 
 /** Приводит фрагмент сообщения к формату общего билдера разметки. */
 function markupContent(value: MessageMarkupContent) {
   if (typeof value === 'string') return value;
-  const fragment = typeof value === 'function' ? value(messageMarkup()) : value;
-  const { text: content, entities: spans } = isBuilder<MessageMarkup>(fragment)
-    ? fragment.build()
-    : fragment;
+  const { text: content, entities: spans } = resolveMessageMarkup(value);
   return { content, spans };
 }
 
@@ -118,4 +118,9 @@ export class MessageMarkupBuilder implements ItdBuilder<MessageMarkup> {
  */
 export function messageMarkup(text = ''): MessageMarkupBuilder {
   return new MessageMarkupBuilder(markup(text));
+}
+
+/** Собирает разметку сообщения из любой формы ввода. @internal */
+export function resolveMessageMarkup(input: MessageMarkupInput): MessageMarkup {
+  return resolveInput<MessageMarkup, MessageMarkupBuilder>(input, messageMarkup, (value) => value);
 }

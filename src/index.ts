@@ -29,10 +29,12 @@ export {
   markup,
   type TextMarkup,
 } from './builders/markup.js';
+export { type MessageBuilder, type MessageInput, message } from './builders/message.js';
 export {
   type MessageMarkup,
   type MessageMarkupBuilder,
   type MessageMarkupContent,
+  type MessageMarkupInput,
   messageMarkup,
 } from './builders/message-markup.js';
 export { type PollBuilder, type PollInput, poll } from './builders/poll.js';
@@ -212,10 +214,12 @@ export {
   operationRetrySafety,
 } from './domain/operations.js';
 export type {
+  ChatMessageContent,
   CreateCommentInput,
   CreatePollInput,
   CreatePostData,
   CreateReportInput,
+  SendChatMessageInput,
   UpdatePostInput,
 } from './domain/params.js';
 export { toDate, utcStampToIso } from './domain/time.js';
@@ -518,10 +522,8 @@ export {
 } from './resources/auth.js';
 export {
   type ChatListParams,
-  type ChatMessageContent,
   ChatsResource,
   type ForwardChatMessagesInput,
-  type SendChatMessageInput,
   type SetChatReactionsInput,
 } from './resources/chats.js';
 export type { CommentsResource, RepliesParams } from './resources/comments.js';

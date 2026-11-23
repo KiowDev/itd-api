@@ -274,6 +274,37 @@ describe('WebSocketTransport: выбор реализации и авториз�
     }
   });
 
+  it('учитывает кадры, отфильтрованные middleware чатов', async () => {
+    const mock = createMockFetch([json({ events: [], next_event_seq: 10, reset_required: false })]);
+    const itd = new ItdClient({
+      auth: 'test-token',
+      fetch: mock.fetch,
+      events: { chats: { webSocketImpl: FakeWebSocket, backoff: [0] } },
+    });
+    try {
+      const events = itd.chats.events;
+      events.use(async ({ update }, next) => {
+        if (update.type !== 'messages_read') await next();
+      });
+      const seen = vi.fn();
+      events.on('update', seen);
+      const connected = events.connect(10);
+      await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+      const socket = FakeWebSocket.instances[0];
+      socket?.open();
+      await connected;
+      socket?.message(JSON.stringify({ type: 'messages_read', event_seq: 11 }));
+      socket?.message(JSON.stringify({ type: 'messages_deleted', event_seq: 12 }));
+      await vi.waitFor(() =>
+        expect(seen).toHaveBeenCalledExactlyOnceWith({ type: 'messages_deleted', eventSeq: 12 }),
+      );
+      expect(mock.callCount).toBe(1);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    } finally {
+      await itd.close();
+    }
+  });
+
   it.each(['в буфере', 'после догрузки'])('исчерпывает попытки при пропуске %s', async (timing) => {
     const page = { events: [], next_event_seq: 10, reset_required: false };
     const mock = createMockFetch([json(page), json(page)]);

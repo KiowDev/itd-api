@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { ChatActionType, ChatMediaCategory, ChatReactionType, ItdClient } from '../../src/index.js';
-import { createRestClient, fromStream } from '../../src/rest.js';
+import { message as buildMessage, createRestClient, fromStream } from '../../src/rest.js';
 import { createMockFetch, json, noContent } from '../helpers/mock-fetch.js';
 
 const clientOptions = {
@@ -59,7 +59,7 @@ describe('chats', () => {
       json(chat),
       json(unread),
       json(history),
-      json({ messages: [message], has_newer: false }),
+      json({ messages: [message], has_newer: false, target_message_id: 'm1' }),
       json({ items: [] }),
       json({ presence: { u1: true, u2: false } }),
       json(updates),
@@ -77,6 +77,7 @@ describe('chats', () => {
       expect(await client.chats.messagesAround('first', 'm/1')).toEqual({
         messages: [sdkMessage],
         hasNewer: false,
+        targetMessageId: 'm1',
       });
       await client.chats.media('first', ChatMediaCategory.Media);
       expect(await client.chats.presenceMany(['u1', 'u2'])).toEqual({ u1: true, u2: false });
@@ -165,7 +166,18 @@ describe('chats', () => {
       json({ message_id: 'm1' }),
       json({ chat_id: 'first', message_id: 'm2' }),
       json({ message_id: 'm1', event_seq: 3, edited_at: '2026-11-20 02:00:00+02' }),
-      json({ ok: [{ source_message_id: 'm2' }], failed: [] }),
+      json({
+        ok: [
+          {
+            source_message_id: 'm2',
+            message_id: 'm3',
+            created_at: '2026-11-20 02:00:00+02',
+            forwarded_from_sender_id: 'u1',
+            forwarded_from_name: null,
+          },
+        ],
+        failed: [],
+      }),
       json({ ok: ['m1'] }),
       json({ ok: ['m2'] }),
       json({ event_seq: 8 }),
@@ -195,7 +207,18 @@ describe('chats', () => {
           messageIds: ['m2'],
           clientMessageIds: { m2: 'forward-id' },
         }),
-      ).toEqual({ ok: [{ sourceMessageId: 'm2' }], failed: [] });
+      ).toEqual({
+        ok: [
+          {
+            sourceMessageId: 'm2',
+            messageId: 'm3',
+            createdAt: '2026-11-20T00:00:00.000Z',
+            forwardedFromSenderId: 'u1',
+            forwardedFromName: null,
+          },
+        ],
+        failed: [],
+      });
       await chats.deleteMessagesForMe('first', ['m1']);
       await chats.deleteMessagesForAll('first', ['m2']);
       await chats.clearHistory('first');
@@ -256,6 +279,24 @@ describe('chats', () => {
     }
   });
 
+  it('shares a feed post as a message entity without text', async () => {
+    const mock = createMockFetch([json({ message_id: 'm1' })]);
+    const itd = createRestClient({ ...clientOptions, fetch: mock.fetch });
+    try {
+      await itd.chats.sendMessage('first', {
+        text: '',
+        entities: [{ type: 'post', postId: 'p1' }],
+      });
+      expect(JSON.parse(mock.calls[0]?.body ?? '{}')).toEqual({
+        text: '',
+        reply_to_id: null,
+        entities: [{ type: 'post', post_id: 'p1' }],
+      });
+    } finally {
+      await itd.close();
+    }
+  });
+
   it('does not replay a send with a client message ID after an ambiguous failure', async () => {
     const mock = createMockFetch(() => json({ error: 'unavailable' }, { status: 503 }));
     const client = createRestClient({
@@ -270,6 +311,60 @@ describe('chats', () => {
       expect(mock.callCount).toBe(1);
     } finally {
       await client.close();
+    }
+  });
+
+  it('uploads builder attachments before sending markup and a feed post', async () => {
+    const mock = createMockFetch([
+      json({ uploadId: 'upload' }),
+      noContent(),
+      json({ fileId: 'uploaded' }),
+      json({ message_id: 'm1' }),
+      json({ message_id: 'm1' }),
+    ]);
+    const itd = createRestClient({ ...clientOptions, fetch: mock.fetch });
+    const draft = buildMessage().post('p1').attachId('existing');
+    try {
+      await itd.chats.sendMessage(
+        'first',
+        draft
+          .markup((m) => m.bold('hello'))
+          .attach(new Uint8Array([1]))
+          .replyTo('m0'),
+      );
+      expect(mock.calls.map(({ url }) => url.replace(fromMessenger(''), ''))).toEqual([
+        '/media/upload/init',
+        '/media/upload/upload/part/0',
+        '/media/upload/upload/finalize',
+        '/chats/first/messages',
+      ]);
+      expect(JSON.parse(mock.calls[3]?.body ?? '{}')).toEqual({
+        text: 'hello',
+        reply_to_id: 'm0',
+        attachments: ['existing', 'uploaded'],
+        entities: [
+          { type: 'bold', offset: 0, length: 5 },
+          { type: 'post', post_id: 'p1' },
+        ],
+      });
+      await itd.chats.editMessage('first', 'm1', (m) =>
+        m
+          .markup((f) => f.bold('old'))
+          .text('new')
+          .clearAttachments(),
+      );
+      expect(JSON.parse(mock.calls[4]?.body ?? '{}')).toEqual({
+        text: 'new',
+        attachments: [],
+        entities: [],
+      });
+      expect(draft.build()).toEqual({
+        text: '',
+        attachmentIds: ['existing'],
+        entities: [{ type: 'post', postId: 'p1' }],
+      });
+    } finally {
+      await itd.close();
     }
   });
 

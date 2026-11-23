@@ -1,4 +1,5 @@
 import type { FileInput } from '../core/attachments/contracts.js';
+import type { ChatTextEntity } from '../models/chats.js';
 import type { Span, UserId } from '../models/common.js';
 import type { ReportReason, ReportTargetType } from '../types/enums.js';
 
@@ -75,4 +76,24 @@ export interface CreateReportInput {
   reason: ReportReason;
   /** Пояснение в свободной форме. */
   description?: string;
+}
+
+/** Содержимое сообщения для отправки или редактирования. */
+export interface ChatMessageContent {
+  /** Текст сообщения. */
+  text: string;
+  /** ID файлов, уже загруженных в мессенджер. */
+  attachmentIds?: readonly string[];
+  /** Файлы для загрузки перед отправкой или редактированием. */
+  files?: readonly FileInput[];
+  /** Разметка текста и карточки постов. */
+  entities?: readonly ChatTextEntity[];
+}
+
+/** Параметры отправки сообщения. */
+export interface SendChatMessageInput extends ChatMessageContent {
+  /** ID сообщения, на которое нужно ответить. */
+  replyToId?: string | null;
+  /** UUIDv7, по которому сервер распознаёт повторную отправку. */
+  clientMessageId?: string;
 }

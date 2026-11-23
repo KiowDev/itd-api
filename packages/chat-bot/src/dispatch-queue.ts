@@ -3,12 +3,13 @@ import type { ChatUpdate } from 'itd-api';
 interface PendingUpdate {
   readonly update: ChatUpdate;
   readonly signal: AbortSignal;
+  readonly complete: ((handled: boolean) => void) | undefined;
 }
 
 export class ChatDispatchQueue {
   readonly #concurrency: number;
   readonly #maxPendingUpdates: number;
-  readonly #dispatch: (update: ChatUpdate, signal: AbortSignal) => Promise<void>;
+  readonly #dispatch: (update: ChatUpdate, signal: AbortSignal) => Promise<boolean>;
   readonly #onError: (error: unknown) => void;
   readonly #pending: PendingUpdate[] = [];
   readonly #activeChats = new Set<ChatUpdate['chatId']>();
@@ -17,7 +18,7 @@ export class ChatDispatchQueue {
   constructor(
     concurrency: number,
     maxPendingUpdates: number,
-    dispatch: (update: ChatUpdate, signal: AbortSignal) => Promise<void>,
+    dispatch: (update: ChatUpdate, signal: AbortSignal) => Promise<boolean>,
     onError: (error: unknown) => void,
   ) {
     this.#concurrency = concurrency;
@@ -26,9 +27,13 @@ export class ChatDispatchQueue {
     this.#onError = onError;
   }
 
-  enqueue(update: ChatUpdate, signal: AbortSignal): boolean {
+  enqueue(
+    update: ChatUpdate,
+    signal: AbortSignal,
+    track?: () => ((handled: boolean) => void) | undefined,
+  ): boolean {
     if (this.#pending.length >= this.#maxPendingUpdates) return false;
-    this.#pending.push({ update, signal });
+    this.#pending.push({ update, signal, complete: track?.() });
     this.#pump();
     return true;
   }
@@ -54,14 +59,16 @@ export class ChatDispatchQueue {
     }
   }
 
-  async #run({ update, signal }: PendingUpdate): Promise<void> {
+  async #run({ update, signal, complete }: PendingUpdate): Promise<void> {
+    let handled = false;
     try {
       // Обработчик может остановить бота. Выходим из стека публикации события SDK.
       await Promise.resolve();
-      if (!signal.aborted) await this.#dispatch(update, signal);
+      if (!signal.aborted) handled = await this.#dispatch(update, signal);
     } catch (error) {
       this.#onError(error);
     } finally {
+      complete?.(handled);
       this.#activeChats.delete(update.chatId);
       this.#pump();
       if (this.#activeChats.size === 0) {

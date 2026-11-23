@@ -605,7 +605,7 @@ export class EventChannel<
 
   /** Догон через REST идёт до сокета: он же обновляет протухший токен. */
   async #reconnect(): Promise<void> {
-    // Отменённая попытка может ещё завершать догрузку журнала.
+    // Отменённая попытка может ещё завершать загрузку пропущенных событий.
     if (!this.#wanted || this.#session) return;
     const starting = this.#startAttempt('reconnect');
     this.#starting = starting;

@@ -15,6 +15,7 @@ import {
   type Logger,
   type Unsubscribe,
 } from 'itd-api';
+import { ChatCheckpoint, type ChatCheckpointOptions } from './checkpoint.js';
 import {
   type ChatCommandContext,
   type ChatHearsContext,
@@ -58,6 +59,8 @@ export type ChatBotOptions<
   concurrency?: number;
   /** Максимум обновлений, ожидающих обработки. По умолчанию 256. */
   maxPendingUpdates?: number;
+  /** Где хранить номер последнего обработанного события между запусками. */
+  checkpoint?: ChatCheckpointOptions;
 } & (ChatContext<Client> extends C
   ? { createContext?: (...args: ConstructorParameters<typeof ChatContext<Client>>) => C }
   : { createContext: (...args: ConstructorParameters<typeof ChatContext<Client>>) => C });
@@ -112,6 +115,7 @@ export class ChatBot<
   readonly itd: Client;
   readonly #composer = new EventComposer<C>();
   readonly #queue: ChatDispatchQueue;
+  readonly #checkpoint: ChatCheckpoint | undefined;
   readonly #createContext: NonNullable<ChatBotOptions<Client, C>['createContext']>;
   #logger: Logger = console;
   #errorHandler: ChatBotErrorHandler<C> | undefined;
@@ -136,6 +140,11 @@ export class ChatBot<
       throw new ItdConfigError('ChatBot.maxPendingUpdates должен быть положительным целым числом');
     }
     this.itd = itd;
+    if (options?.checkpoint !== undefined) {
+      this.#checkpoint = new ChatCheckpoint(options.checkpoint, (error) =>
+        this.#logger.error('Не удалось сохранить номер последнего обработанного события', error),
+      );
+    }
     // Без фабрики сигнатура конструктора допускает базовый ChatContext.
     this.#createContext = options?.createContext ?? ((...args) => new ChatContext(...args) as C);
     this.#queue = new ChatDispatchQueue(
@@ -211,17 +220,17 @@ export class ChatBot<
   /**
    * Подписывается на события и подключает канал. Повторный вызов использует ту же подписку.
    *
-   * @param since номер последнего обработанного события или `eventSeq` из списка чатов
+   * @param since номер последнего события для нового подключения. Имеет приоритет над сохранённым номером.
    */
   start(since?: number): Promise<void> {
     if (this.#run?.connecting) return this.#run.connecting;
     if (since !== undefined && !isSequence(since)) {
       return Promise.reject(
-        new ItdConfigError('Позиция журнала чатов должна быть целым неотрицательным числом'),
+        new ItdConfigError('Номер события должен быть целым неотрицательным числом'),
       );
     }
-    const run = this.#run ?? this.#subscribe(this.stream, since);
-    return this.#connect(run, since);
+    if (this.#run) return this.#connect(this.#run, since);
+    return this.#connect(this.#subscribe(this.stream, since), since, true);
   }
 
   /** Отключает канал и отменяет запросы текущего запуска. Можно вызвать внутри обработчика. */
@@ -234,6 +243,7 @@ export class ChatBot<
   /** После `stop()` ждёт обработчики и канал. Вызывайте вне цепочки обработчиков. */
   async drain(): Promise<void> {
     await Promise.all([this.#queue.drain(), this.stream.drain()]);
+    await this.#checkpoint?.drain();
   }
 
   /** Регистрирует запуск у клиента, чтобы смена сессии останавливала и восстановление. */
@@ -259,7 +269,10 @@ export class ChatBot<
     const offUpdate = events.on('update', (update) => {
       if (this.#run !== run || run.reconnect) return;
       const { eventSeq } = update;
-      if (this.#queue.enqueue(update, run.controller.signal)) {
+      const checkpoint = this.#checkpoint;
+      const track =
+        checkpoint && isSequence(eventSeq) ? () => checkpoint.track(eventSeq) : undefined;
+      if (this.#queue.enqueue(update, run.controller.signal, track)) {
         // Для принятого обновления без номера нельзя зафиксировать границу повторного чтения.
         run.position = isSequence(eventSeq) ? eventSeq : undefined;
         return;
@@ -311,24 +324,41 @@ export class ChatBot<
     });
   }
 
-  #connect(run: BotRun, since?: number): Promise<void> {
-    const connecting = this.#connectUntilReady(run, since);
+  #connect(run: BotRun, since?: number, initial = false): Promise<void> {
+    const connecting = this.#connectUntilReady(run, since, initial);
     run.connecting = connecting;
     return connecting;
   }
 
-  async #connectUntilReady(run: BotRun, since: number | undefined): Promise<void> {
+  async #connectUntilReady(
+    run: BotRun,
+    since: number | undefined,
+    initial: boolean,
+  ): Promise<void> {
     const { signal } = run.controller;
     let reset = false;
     // Подписчики SDK должны увидеть run.connecting до первого вызова connect().
     await Promise.resolve();
     try {
+      if (initial && this.#checkpoint) {
+        if (since === undefined) {
+          since = await this.#checkpoint.load();
+          if (since !== undefined && !isSequence(since)) {
+            throw new ItdConfigError(
+              'Сохранённый номер события должен быть целым неотрицательным числом',
+            );
+          }
+        } else {
+          await this.#checkpoint.drain();
+        }
+        run.position = since;
+      }
       do {
         signal.throwIfAborted();
         const reconnect = run.reconnect;
         if (reconnect?.kind === 'reset') {
           if (reset) {
-            throw new ItdStateError('Журнал чатов снова запросил сброс после восстановления');
+            throw new ItdStateError('Сервер повторно запросил обновление списка чатов');
           }
           reset = true;
           const { eventSeq } = await this.itd.chats.list(undefined, {
@@ -336,7 +366,7 @@ export class ChatBot<
             extensions: { cache: 'reload' },
           });
           if (!isSequence(eventSeq)) {
-            throw new ItdStateError('Список чатов не содержит позиции журнала для восстановления');
+            throw new ItdStateError('В списке чатов нет номера события для восстановления');
           }
           run.position = since = eventSeq;
         } else if (reconnect) {
@@ -368,19 +398,22 @@ export class ChatBot<
     this.#run = undefined;
     run.unsubscribe();
     this.#queue.clear();
+    this.#checkpoint?.reset();
     const reason = new ItdAbortError('Обработка событий чат-бота остановлена');
     run.controller.abort(reason);
   }
 
   /** Запускает обработчики для каждого сообщения из события по порядку. */
-  async #dispatch(update: ChatUpdate, signal: AbortSignal): Promise<void> {
+  async #dispatch(update: ChatUpdate, signal: AbortSignal): Promise<boolean> {
+    let handled = true;
     for (const message of eventMessages(update)) {
-      if (signal.aborted) return;
+      if (signal.aborted) return false;
       const context = this.#createContext(this.itd, update, message, signal);
       try {
         await this.middleware()(context, async () => {});
       } catch (error) {
-        if (signal.aborted && error instanceof ItdAbortError) return;
+        if (signal.aborted && error instanceof ItdAbortError) return false;
+        handled = false;
         if (!this.#errorHandler) {
           this.#logger.error('Ошибка обработчика чат-бота', new ChatBotError(error, context));
           continue;
@@ -395,5 +428,6 @@ export class ChatBot<
         }
       }
     }
+    return handled && !signal.aborted;
   }
 }
