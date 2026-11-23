@@ -25,7 +25,12 @@ import {
 } from './commands.js';
 import { type ChatBotClient, ChatContext } from './context.js';
 import { ChatDispatchQueue } from './dispatch-queue.js';
-import { type ChatBotFilter, type ChatFilterContext, matchesChatFilter } from './filters.js';
+import {
+  type ChatBotFilter,
+  type ChatFilterContext,
+  incomingChatCreatedContexts,
+  matchesChatFilter,
+} from './filters.js';
 import {
   adaptMiddleware,
   type ChatMiddleware,
@@ -61,6 +66,8 @@ export type ChatBotOptions<
   maxPendingUpdates?: number;
   /** Где хранить номер последнего обработанного события между запусками. */
   checkpoint?: ChatCheckpointOptions;
+  /** Префиксы команд без пробельных символов. По умолчанию `['/']`. */
+  commandPrefixes?: readonly string[];
 } & (ChatContext<Client> extends C
   ? { createContext?: (...args: ConstructorParameters<typeof ChatContext<Client>>) => C }
   : { createContext: (...args: ConstructorParameters<typeof ChatContext<Client>>) => C });
@@ -69,6 +76,7 @@ type BotReconnect = { kind: 'reset' } | { kind: 'resume'; since: number } | { ki
 
 interface BotRun {
   readonly controller: AbortController;
+  userId?: Promise<string | undefined> | undefined;
   position: number | undefined;
   reconnect?: BotReconnect | undefined;
   connecting?: Promise<void> | undefined;
@@ -116,6 +124,7 @@ export class ChatBot<
   readonly #composer = new EventComposer<C>();
   readonly #queue: ChatDispatchQueue;
   readonly #checkpoint: ChatCheckpoint | undefined;
+  readonly #commandPrefixes: readonly string[];
   readonly #createContext: NonNullable<ChatBotOptions<Client, C>['createContext']>;
   #logger: Logger = console;
   #errorHandler: ChatBotErrorHandler<C> | undefined;
@@ -139,6 +148,15 @@ export class ChatBot<
     if (!Number.isSafeInteger(maxPendingUpdates) || maxPendingUpdates < 1) {
       throw new ItdConfigError('ChatBot.maxPendingUpdates должен быть положительным целым числом');
     }
+    const commandPrefixes = options?.commandPrefixes ?? ['/'];
+    if (
+      !Array.isArray(commandPrefixes) ||
+      !commandPrefixes.length ||
+      commandPrefixes.some((prefix) => typeof prefix !== 'string' || !prefix || /\s/.test(prefix))
+    ) {
+      throw new ItdConfigError('Укажите хотя бы один непустой префикс команды без пробелов');
+    }
+    this.#commandPrefixes = [...commandPrefixes].sort((a, b) => b.length - a.length);
     this.itd = itd;
     if (options?.checkpoint !== undefined) {
       this.#checkpoint = new ChatCheckpoint(options.checkpoint, (error) =>
@@ -190,12 +208,12 @@ export class ChatBot<
     );
   }
 
-  /** Распознаёт входящую `/команду` и передаёт её аргументы в `ctx.args`. */
+  /** Распознаёт команду без учёта регистра и передаёт её аргументы в `ctx.args`. */
   command(
     command: string | readonly string[],
     ...middleware: readonly ChatMiddlewareLike<ChatCommandContext<C>>[]
   ): this {
-    return this.filter(commandPredicate<C>(command), ...middleware);
+    return this.filter(commandPredicate<C>(command, this.#commandPrefixes), ...middleware);
   }
 
   /** Обрабатывает точное совпадение текста или совпадение с регулярным выражением. */
@@ -405,11 +423,19 @@ export class ChatBot<
 
   /** Запускает обработчики для каждого сообщения из события по порядку. */
   async #dispatch(update: ChatUpdate, signal: AbortSignal): Promise<boolean> {
+    const run = this.#run;
+    let userId: Promise<string | undefined> | undefined;
     let handled = true;
     for (const message of eventMessages(update)) {
       if (signal.aborted) return false;
       const context = this.#createContext(this.itd, update, message, signal);
       try {
+        if (run && update.type === ChatUpdateType.ChatCreated && message?.senderId) {
+          userId ??= this.#getUserId(run);
+          const ownId = await userId;
+          if (signal.aborted) return false;
+          if (ownId && message.senderId !== ownId) incomingChatCreatedContexts.add(context);
+        }
         await this.middleware()(context, async () => {});
       } catch (error) {
         if (signal.aborted && error instanceof ItdAbortError) return false;
@@ -429,5 +455,19 @@ export class ChatBot<
       }
     }
     return handled && !signal.aborted;
+  }
+
+  /** Получает ID аккаунта один раз за запуск. После ошибки разрешает повторное чтение. */
+  #getUserId(run: BotRun): Promise<string | undefined> {
+    run.userId ??= (async () => {
+      const id = await this.itd.getUserId?.();
+      const { signal } = run.controller;
+      signal.throwIfAborted();
+      return id ?? (await this.itd.users?.me({ signal }))?.id;
+    })().catch((error: unknown) => {
+      run.userId = undefined;
+      throw error;
+    });
+    return run.userId;
   }
 }

@@ -16,7 +16,10 @@ type KnownUpdateType = (typeof ChatUpdateType)[keyof typeof ChatUpdateType];
 export type ChatBotFilter = KnownUpdateType | (typeof ChatBotFilter)[keyof typeof ChatBotFilter];
 export type ChatBotFilterQuery = ChatBotFilter | readonly ChatBotFilter[];
 
-type IncomingType = typeof ChatUpdateType.NewMessage | typeof ChatUpdateType.NewMessages;
+type IncomingType =
+  | typeof ChatUpdateType.NewMessage
+  | typeof ChatUpdateType.NewMessages
+  | typeof ChatUpdateType.ChatCreated;
 type ContextWithUpdate<C, T extends KnownUpdateType> = C & { update: ChatUpdate & { type: T } };
 
 /** Контекст входящего сообщения. */
@@ -41,6 +44,9 @@ export type ChatFilterContext<
           ? ContextWithUpdate<C, F>
           : never;
 
+/** Контексты входящих сообщений из `chat_created`. @internal */
+export const incomingChatCreatedContexts = new WeakSet<ChatContext>();
+
 /** Проверяет, что контекст относится к входящему сообщению. @internal */
 export function isIncomingMessage<C extends ChatContext>(
   context: C,
@@ -48,7 +54,9 @@ export function isIncomingMessage<C extends ChatContext>(
   const { type } = context.update;
   return (
     context.message !== undefined &&
-    (type === ChatUpdateType.NewMessage || type === ChatUpdateType.NewMessages)
+    (type === ChatUpdateType.NewMessage ||
+      type === ChatUpdateType.NewMessages ||
+      (type === ChatUpdateType.ChatCreated && incomingChatCreatedContexts.has(context)))
   );
 }
 

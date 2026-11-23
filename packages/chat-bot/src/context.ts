@@ -10,12 +10,17 @@ import {
   type ChatUpdate,
   type FileInput,
   type ItdClient,
+  type MessageInput,
   type RequestOptions,
   type SendChatMessageInput,
 } from 'itd-api';
 
 /** Клиент с ресурсом и каналом событий чатов. */
 export interface ChatBotClient extends Pick<ItdClient, 'install'> {
+  /** Позволяет отличить сообщения бота от сообщений собеседника. */
+  readonly getUserId?: ItdClient['getUserId'];
+  /** Загружает текущий профиль, когда ID нельзя прочитать из токена. */
+  readonly users?: Pick<ItdClient['users'], 'me'>;
   readonly chats: Pick<
     ChatsApi,
     'events' | 'list' | 'sendMessage' | 'editMessage' | 'markRead' | 'sendAction' | 'uploadFile'
@@ -39,7 +44,7 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
   readonly raw = undefined;
   /** @internal */
   readonly origin = undefined;
-  /** Имя команды без `/`. */
+  /** Имя команды без префикса, в нижнем регистре. */
   command: string | undefined;
   /** Текст после имени команды. */
   args: string | undefined;
@@ -79,8 +84,8 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return this.message?.text;
   }
 
-  /** Отправляет сообщение в текущий чат. */
-  send(input: SendChatMessageInput, options?: RequestOptions): Promise<ChatSentMessage> {
+  /** Отправляет сообщение в текущий чат. Принимает объект, билдер или функцию сборки. */
+  send(input: MessageInput, options?: RequestOptions): Promise<ChatSentMessage> {
     return this.chats.sendMessage(this.#requireChat(), input, this.#requestOptions(options));
   }
 
@@ -102,21 +107,13 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return this.send({ ...input, text, replyToId: this.#requireMessage() }, options);
   }
 
-  /** Загружает файлы и отправляет сообщение в текущий чат после завершения всех загрузок. */
+  /** Загружает файлы и отправляет сообщение в текущий чат. `deadline` охватывает всю отправку. */
   async sendWithAttachments(
     input: SendChatMessageInput,
     files: readonly FileInput[],
     options?: RequestOptions,
   ): Promise<ChatSentMessage> {
-    const chatId = this.#requireChat();
-    const request = this.#requestOptions(options);
-    const attachmentIds = [...(input.attachmentIds ?? [])];
-    for (const file of files) {
-      const { fileId } = await this.chats.uploadFile(file, undefined, request);
-      attachmentIds.push(fileId);
-    }
-    request?.signal?.throwIfAborted();
-    return this.chats.sendMessage(chatId, { ...input, attachmentIds }, request);
+    return this.send({ ...input, files: [...files, ...(input.files ?? [])] }, options);
   }
 
   /** Редактирует текущее сообщение. */

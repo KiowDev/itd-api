@@ -19,22 +19,33 @@ export type ChatHearsContext<C extends ChatContext = ChatContext> = ChatMessageC
   match: string | RegExpMatchArray;
 };
 
+/** Приводит имя команды к единому регистру и форме Unicode. */
+function normalizeCommand(name: string): string {
+  return name.normalize('NFC').toLowerCase();
+}
+
 /** Распознаёт команду во входящем сообщении. @internal */
 export function commandPredicate<C extends ChatContext>(
   commands: string | readonly string[],
+  prefixes: readonly string[],
 ): (context: C) => context is ChatCommandContext<C> {
   const names = typeof commands === 'string' ? [commands] : commands;
-  if (!names.length || names.some((name) => !/^[A-Za-z0-9_]+$/.test(name))) {
-    throw new ItdConfigError('Укажите имена команд из латинских букв, цифр и подчёркиваний');
+  if (!names.length || names.some((name) => !/^[\p{L}\p{N}_][\p{L}\p{M}\p{N}_]*$/u.test(name))) {
+    throw new ItdConfigError('Укажите имена команд из букв, цифр и подчёркиваний');
   }
-  const known = new Set(names);
+  const known = new Set(names.map(normalizeCommand));
   return (context): context is ChatCommandContext<C> => {
-    if (!isIncomingMessage(context) || typeof context.text !== 'string') return false;
-    const match = /^\/([A-Za-z0-9_]+)(?:\s+([\s\S]*))?$/.exec(context.text);
-    const name = match?.[1];
-    if (name === undefined || !known.has(name)) return false;
+    if (!isIncomingMessage(context)) return false;
+    const { text } = context;
+    if (typeof text !== 'string') return false;
+    const prefix = prefixes.find((value) => text.startsWith(value));
+    if (prefix === undefined) return false;
+    const match = /^(\S+)(?:\s+([\s\S]*))?$/.exec(text.slice(prefix.length));
+    if (!match?.[1]) return false;
+    const name = normalizeCommand(match[1]);
+    if (!known.has(name)) return false;
     context.command = name;
-    context.args = match?.[2]?.trimStart() ?? '';
+    context.args = match[2] ?? '';
     context.match = context.args;
     return true;
   };

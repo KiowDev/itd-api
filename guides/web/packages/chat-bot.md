@@ -79,7 +79,7 @@ await bot.start();
 
 ## На что бот может реагировать
 
-- `bot.command('echo', ...)` срабатывает на `/echo`. Текст после команды доступен в `ctx.args`.
+- `bot.command('помощь', ...)` срабатывает на `/помощь` и `/Помощь`. Текст после команды доступен в `ctx.args`, её имя в нижнем регистре — в `ctx.command`.
 - `bot.hears('помощь', ...)` срабатывает, когда сообщение целиком совпадает с фразой. Можно передать регулярное выражение и прочитать совпадение в `ctx.match`.
 - `bot.on(ChatBotFilter.MessageAttachment, ...)` срабатывает, когда собеседник присылает вложение.
 
@@ -93,16 +93,32 @@ bot.on(ChatUpdateType.MessageReactions, (ctx) => {
 });
 ```
 
-Текущее сообщение доступно в `ctx.message`. Добавляйте общие действия через `bot.use()` и вызывайте `await next()`, чтобы продолжить обработку. `bot.filter()` запускает обработчик по вашему условию.
+По умолчанию команды начинаются с `/`. Чтобы принимать также `!помощь`, создайте бота
+через `new ChatBot(itd, { commandPrefixes: ['/', '!'] })`. Если подходят несколько префиксов, используется самый длинный.
+
+Текущее сообщение доступно в `ctx.message`. Добавляйте общие действия через `bot.use()` и вызывайте `await next()`, чтобы продолжить обработку.
+`bot.filter()` запускает обработчик по вашему условию.
+
+```ts
+import { ChatActionType, ChatUpdateType } from 'itd-api';
+
+bot.filter(
+  (ctx) => ctx.update.type === ChatUpdateType.Typing && ctx.update.action === ChatActionType.RecordVideo,
+  (ctx) => console.log('Собеседник записывает видео', ctx.chatId),
+);
+```
 
 ## Как ответить сообщением или файлом
 
 `ctx.reply()` отправляет сообщение в тот же чат. `ctx.replyTo()` добавляет цитату исходного сообщения.
-`ctx.sendWithAttachments()` загружает файлы и отправляет их вместе с текстом.
+`ctx.send()` принимает [`message()`](/reference/builders#message-builder) с разметкой, файлами и карточками постов.
+Если файлы уже собраны в отдельный список, передайте его в `ctx.sendWithAttachments()`.
 `ctx.sendAction()` показывает собеседнику, что бот печатает.
 
 ```ts
-await ctx.sendWithAttachments({ text: 'Готово' }, [file]);
+import { message } from 'itd-api';
+
+await ctx.send(message('Готово').attach(file));
 ```
 
 ## Как получить профиль автора
@@ -148,3 +164,4 @@ bot.command('count', (ctx) => {
 Чтобы очистить данные текущего чата, присвойте `ctx.session = undefined`.
 
 [Все методы и типы пакета](/api/generated/chat-bot/).
+[Полный пример бота](https://github.com/KiowDev/itd-api/blob/main/guides/web/packages/examples/chat-bot.mjs).

@@ -1,4 +1,5 @@
 import {
+  message as buildMessage,
   ChatActionType,
   ChatUpdateType,
   ItdClient,
@@ -227,6 +228,96 @@ describe('ChatBot', () => {
     }
   });
 
+  it('распознаёт кириллицу, регистр и буквальные префиксы команд', async () => {
+    const { itd, nextSocket } = setup();
+    const bot = new ChatBot(itd, { commandPrefixes: ['!', '!!', '.'] });
+    const received = vi.fn();
+    bot.command(['помощь', 'подъём'], (ctx) => received(ctx.command, ctx.args));
+
+    try {
+      const starting = bot.start();
+      const socket = await nextSocket();
+      socket.open();
+      await starting;
+      socket.update({
+        type: ChatUpdateType.NewMessages,
+        chat_id: 'c1',
+        messages: [
+          message('/помощь', 'm1'),
+          message('xпомощь', 'm2'),
+          message('.ПоМОЩЬ\t  АрГ\nТеКст', 'm3'),
+          message(`!!${'ПОДЪЁМ'.normalize('NFD')} ДоМоЙ`, 'm4'),
+          message('!помощь', 'm5'),
+        ],
+      });
+      await vi.waitFor(() =>
+        expect(received.mock.calls).toEqual([
+          ['помощь', 'АрГ\nТеКст'],
+          ['подъём', 'ДоМоЙ'],
+          ['помощь', ''],
+        ]),
+      );
+    } finally {
+      bot.stop();
+      await bot.drain();
+      await itd.close();
+    }
+  });
+
+  it.each([
+    ['self', 0],
+    [undefined, 1],
+  ] as const)(
+    'отличает сообщения собеседника в chat_created при ID из токена %s',
+    async (tokenUserId, profileRequests) => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+        expect(new URL(String(url)).pathname).toBe('/api/users/me');
+        return Response.json({ id: 'self' });
+      });
+      const { itd, nextSocket } = setup(fetch);
+      const getUserId = vi.spyOn(itd, 'getUserId').mockResolvedValue(tokenUserId);
+      const bot = new ChatBot(itd);
+      const command = vi.fn();
+      const heard = vi.fn();
+      const incoming = vi.fn();
+      bot.command('помощь', (ctx) => command(ctx.args));
+      bot.hears('статус', (ctx) => heard(ctx.text));
+      bot.on(ChatBotFilter.Message, (ctx) => incoming(ctx.message.messageId));
+
+      try {
+        const started = bot.start();
+        const socket = await nextSocket();
+        socket.open();
+        await started;
+        socket.update({
+          type: ChatUpdateType.ChatCreated,
+          chat_id: 'c1',
+          messages: [
+            { ...message('/помощь своё', 'm1'), sender_id: 'self' },
+            message('/Помощь входящее', 'm2'),
+            message('статус', 'm3'),
+          ],
+        });
+        socket.update({
+          type: ChatUpdateType.ChatCreated,
+          chat_id: 'c2',
+          messages: [message('текст', 'm4')],
+        });
+        await vi.waitFor(() => {
+          expect(command.mock.calls).toEqual([['входящее']]);
+          expect(heard.mock.calls).toEqual([['статус']]);
+          expect(incoming.mock.calls).toEqual([['m4']]);
+        });
+        expect(getUserId).toHaveBeenCalledOnce();
+        expect(fetch).toHaveBeenCalledTimes(profileRequests);
+      } finally {
+        bot.stop();
+        await bot.drain();
+        await itd.close();
+      }
+    },
+  );
+
   it('обрабатывает одиночные и пакетные сообщения, пропуская команды от самого бота', async () => {
     const sent: unknown[] = [];
     const fetch = vi.fn<typeof globalThis.fetch>(async (url, request) => {
@@ -258,7 +349,7 @@ describe('ChatBot', () => {
       socket.update({
         type: ChatUpdateType.NewMessage,
         chat_id: 'c1',
-        message: message('/echo привет'),
+        message: message('/Echo привет'),
       });
       socket.update({
         type: ChatUpdateType.NewMessages,
@@ -821,6 +912,23 @@ describe('ChatBot', () => {
     }
   });
 
+  it('отправляет карточку и вложение из билдера сообщения', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ message_id: 'sent' }));
+    const { itd } = setup(fetch);
+    const ctx = new ChatContext(itd, { type: ChatUpdateType.NewMessage, chatId: 'c1' });
+    try {
+      await ctx.send(buildMessage().post('p1').attachId('f1'));
+      expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+        text: '',
+        reply_to_id: null,
+        attachments: ['f1'],
+        entities: [{ type: 'post', post_id: 'p1' }],
+      });
+    } finally {
+      await itd.close();
+    }
+  });
+
   it('загружает файлы до отправки текста и добавляет их к уже готовым вложениям', async () => {
     let uploaded = 0;
     const fetch = vi.fn<typeof globalThis.fetch>(async (input, request) => {
@@ -848,6 +956,44 @@ describe('ChatBot', () => {
       expect(fetch).toHaveBeenCalledTimes(7);
     } finally {
       await itd.close();
+    }
+  });
+
+  it('учитывает один deadline на загрузку файлов и отправку сообщения', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith('/init')) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return Response.json({ uploadId: 'upload' });
+      }
+      if (path.endsWith('/part/0')) return new Response(null, { status: 204 });
+      if (path.endsWith('/finalize')) return Response.json({ fileId: 'file' });
+      throw new Error('Сообщение отправлено после истечения срока');
+    });
+    const { itd } = setup(fetch);
+    const ctx = new ChatContext(itd, { type: ChatUpdateType.NewMessage, chatId: 'c1' });
+    try {
+      const first = new Uint8Array([1]);
+      const second = new Uint8Array([2]);
+      const result = ctx.sendWithAttachments({ text: '', files: [first] }, [second], {
+        deadline: 30,
+      });
+      const failure = expect(result).rejects.toMatchObject({
+        name: 'ItdTimeoutError',
+        budget: 'deadline',
+        timeout: 30,
+      });
+      await vi.advanceTimersByTimeAsync(30);
+      await failure;
+      expect(
+        fetch.mock.calls.map(([url]) => new URL(String(url)).pathname.split('/').at(-1)),
+      ).toEqual(['init', '0', 'finalize', 'init']);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(fetch).toHaveBeenCalledTimes(4);
+    } finally {
+      await itd.close();
+      vi.useRealTimers();
     }
   });
 
