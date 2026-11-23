@@ -13,12 +13,13 @@ import {
   type MessageInput,
   type RequestOptions,
   type SendChatMessageInput,
+  type UserId,
 } from 'itd-api';
 
 /** Клиент с ресурсом и каналом событий чатов. */
 export interface ChatBotClient extends Pick<ItdClient, 'install'> {
   /** Позволяет отличить сообщения бота от сообщений собеседника. */
-  readonly getUserId?: ItdClient['getUserId'];
+  readonly getUserId?: () => Promise<UserId | undefined>;
   /** Загружает текущий профиль, когда ID нельзя прочитать из токена. */
   readonly users?: Pick<ItdClient['users'], 'me'>;
   readonly chats: Pick<
