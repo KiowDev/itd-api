@@ -1,23 +1,24 @@
-import type {
-  ChatEditedMessage,
-  ChatEvents,
-  ChatMessage,
-  ChatMessageContent,
-  ChatReadResult,
-  ChatSentMessage,
-  ChatsApi,
-  ChatUpdate,
-  FileInput,
-  ItdClient,
-  RequestOptions,
-  SendChatMessageInput,
+import {
+  ChatActionType,
+  type ChatEditedMessage,
+  type ChatEvents,
+  type ChatMessage,
+  type ChatMessageContent,
+  type ChatReadResult,
+  type ChatSentMessage,
+  type ChatsApi,
+  type ChatUpdate,
+  type FileInput,
+  type ItdClient,
+  type RequestOptions,
+  type SendChatMessageInput,
 } from 'itd-api';
 
 /** Клиент с ресурсом и каналом событий чатов. */
 export interface ChatBotClient extends Pick<ItdClient, 'install'> {
   readonly chats: Pick<
     ChatsApi,
-    'events' | 'list' | 'sendMessage' | 'editMessage' | 'markRead' | 'uploadFile'
+    'events' | 'list' | 'sendMessage' | 'editMessage' | 'markRead' | 'sendAction' | 'uploadFile'
   >;
 }
 
@@ -133,6 +134,20 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return this.chats.markRead(
       this.#requireChat(),
       this.#requireMessage(),
+      this.#requestOptions(options),
+    );
+  }
+
+  /** Показывает действие бота в текущем чате. По умолчанию показывает «печатает…». */
+  sendAction(
+    type: ChatActionType = ChatActionType.Typing,
+    progress?: number,
+    options?: RequestOptions,
+  ): Promise<void> {
+    return this.chats.sendAction(
+      this.#requireChat(),
+      type,
+      progress,
       this.#requestOptions(options),
     );
   }

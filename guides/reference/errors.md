@@ -70,6 +70,9 @@ class ItdApiError extends ItdError {
 }
 ```
 
+`ItdRateLimitError.scope` содержит значение заголовка `X-RateLimit-Scope`. Для известных
+значений используйте `RateLimitErrorScope`. Другие значения доступны как строки.
+
 `ItdPhoneVerificationError` дополнительно даёт `verificationUrl` — ссылку на Telegram-бота
 подтверждения.
 

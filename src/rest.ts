@@ -117,6 +117,7 @@ export {
   isItdServerError,
   isItdStateError,
   isItdValidationError,
+  RateLimitErrorScope,
   TimeoutBudget,
 } from './core/errors.js';
 export type {

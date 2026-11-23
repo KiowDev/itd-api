@@ -99,6 +99,7 @@ bot.on(ChatUpdateType.MessageReactions, (ctx) => {
 
 `ctx.reply()` отправляет сообщение в тот же чат. `ctx.replyTo()` добавляет цитату исходного сообщения.
 `ctx.sendWithAttachments()` загружает файлы и отправляет их вместе с текстом.
+`ctx.sendAction()` показывает собеседнику, что бот печатает.
 
 ```ts
 await ctx.sendWithAttachments({ text: 'Готово' }, [file]);

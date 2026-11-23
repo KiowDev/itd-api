@@ -324,5 +324,11 @@ export function createApiError(context: ErrorContext): ItdApiError {
   }
 
   const Ctor = CODE_TO_CLASS[parsed.code] ?? classByStatus(context.status);
+  if (Ctor === ItdRateLimitError) {
+    return new ItdRateLimitError({
+      ...init,
+      scope: context.headers?.get('X-RateLimit-Scope') ?? undefined,
+    });
+  }
   return new Ctor(init);
 }

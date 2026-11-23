@@ -25,6 +25,7 @@ import {
   isItdFileError,
   isItdStateError,
   isItdValidationError,
+  RateLimitErrorScope,
 } from '../../src/core/errors.js';
 import { ItdErrorCode } from '../../src/types/enums.js';
 
@@ -308,10 +309,20 @@ describe('createApiError', () => {
     expect(error.raw).toBe(body);
   });
 
-  it('достаёт Retry-After и requestId из заголовков', () => {
-    const headers = new Headers({ 'retry-after': '30', 'x-request-id': 'req-42' });
+  it.each([
+    [RateLimitErrorScope.NewRecipientsHour, 'new_recipients_hour'],
+    ['future_scope', 'future_scope'],
+    [undefined, undefined],
+  ])('читает область лимита %s, паузу и ID запроса из заголовков', (scope, expected) => {
+    const headers = new Headers({
+      'retry-after': '30',
+      'x-request-id': 'req-42',
+    });
+    if (scope !== undefined) headers.set('x-ratelimit-scope', scope);
     const error = createApiError({ ...ctx, status: 429, headers, body: {} });
 
+    expect(error).toBeInstanceOf(ItdRateLimitError);
+    expect(error).toHaveProperty('scope', expected);
     expect(error.retryAfter).toBe(30_000);
     expect(error.requestId).toBe('req-42');
   });

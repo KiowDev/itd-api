@@ -1,4 +1,10 @@
-import { ChatUpdateType, ItdClient, type Logger, MemoryKeyValueStore } from 'itd-api';
+import {
+  ChatActionType,
+  ChatUpdateType,
+  ItdClient,
+  type Logger,
+  MemoryKeyValueStore,
+} from 'itd-api';
 import { describe, expect, it, vi } from 'vitest';
 import { hydrateClient } from '../../hydrate/src/index.js';
 import {
@@ -780,6 +786,37 @@ describe('ChatBot', () => {
     } finally {
       bot.stop();
       await bot.drain();
+      await itd.close();
+    }
+  });
+
+  it('отправляет действие в чат события и учитывает отмену', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(null, { status: 204 }));
+    const { itd } = setup(fetch);
+    const controller = new AbortController();
+    const ctx = new ChatContext(
+      itd,
+      { type: ChatUpdateType.NewMessage, chatId: 'c1' },
+      undefined,
+      controller.signal,
+    );
+
+    try {
+      await ctx.sendAction();
+      await ctx.sendAction(ChatActionType.UploadPhoto, 0.5);
+      expect(
+        fetch.mock.calls.map(([url, request]) => [
+          new URL(String(url)).pathname,
+          JSON.parse(String(request?.body)),
+        ]),
+      ).toEqual([
+        ['/api/v1/messenger/chats/c1/action', { type: ChatActionType.Typing }],
+        ['/api/v1/messenger/chats/c1/action', { type: ChatActionType.UploadPhoto, progress: 0.5 }],
+      ]);
+      controller.abort();
+      expect(() => ctx.sendAction()).toThrow(expect.objectContaining({ name: 'AbortError' }));
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {
       await itd.close();
     }
   });

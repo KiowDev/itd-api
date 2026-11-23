@@ -1,4 +1,4 @@
-import type { ItdErrorCode } from '../types/enums.js';
+import type { ItdErrorCode, Loose } from '../types/enums.js';
 
 /** Бренд, по которому ошибки библиотеки распознаются надёжнее, чем через `instanceof`. */
 const ITD_ERROR = Symbol.for('itd.error');
@@ -258,6 +258,21 @@ export class ItdConflictError extends ItdApiError {
   }
 }
 
+/** Известные значения заголовка `X-RateLimit-Scope`. */
+export const RateLimitErrorScope = Object.freeze({
+  /** Часовой лимит новых собеседников. */
+  NewRecipientsHour: 'new_recipients_hour',
+  /** Суточный лимит новых собеседников. */
+  NewRecipientsDay: 'new_recipients_day',
+  /** Общий лимит запросов с IP-адреса. */
+  IpFlood: 'ip_flood',
+  /** Общий лимит запросов. */
+  GlobalFlood: 'global_flood',
+} as const);
+export type RateLimitErrorScope = Loose<
+  (typeof RateLimitErrorScope)[keyof typeof RateLimitErrorScope]
+>;
+
 /**
  * `429` — превышен лимит запросов.
  *
@@ -265,9 +280,13 @@ export class ItdConflictError extends ItdApiError {
  * (в миллисекундах). При включённых ретраях библиотека выдерживает её автоматически.
  */
 export class ItdRateLimitError extends ItdApiError {
-  constructor(init: ItdApiErrorInit) {
+  /** Область действия лимита из заголовка `X-RateLimit-Scope`. */
+  readonly scope: RateLimitErrorScope | undefined;
+
+  constructor(init: ItdApiErrorInit & { scope?: RateLimitErrorScope | undefined }) {
     super(init, ItdApiErrorKind.RateLimit);
     this.name = 'ItdRateLimitError';
+    this.scope = init.scope;
   }
 }
 
