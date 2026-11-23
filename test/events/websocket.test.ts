@@ -9,11 +9,13 @@ import {
   type EventTransportFrame,
   ItdClient,
   ItdConfigError,
+  MemoryTokenStorage,
   UnauthorizedStreamError,
   type WebSocketImplementationOptions,
   type WebSocketLike,
   WebSocketTransport,
 } from '../../src/index.js';
+import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json } from '../helpers/mock-fetch.js';
 
 type SocketListener = (event: unknown) => void;
@@ -148,6 +150,40 @@ afterEach(() => {
 });
 
 describe('WebSocketTransport: выбор реализации и авторизация', () => {
+  it.each([true, false])(
+    'готовит токен чатов перед открытием сокета при autoRefresh=%s',
+    async (autoRefresh) => {
+      const now = Math.floor(Date.now() / 1000);
+      const expired = makeJwt({ sub: 'user', exp: now - 60 });
+      const fresh = makeJwt({ sub: 'user', exp: now + 900 });
+      const mock = createMockFetch([json({ accessToken: fresh })]);
+      const itd = new ItdClient({
+        baseUrl: 'https://itd.test',
+        storage: new MemoryTokenStorage({ accessToken: expired, refreshToken: 'refresh' }),
+        autoRefresh,
+        fetch: mock.fetch,
+        events: { chats: { webSocketImpl: FakeWebSocket } },
+      });
+
+      try {
+        const connected = itd.chats.events.connect();
+        await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+        const socket = FakeWebSocket.instances[0];
+        socket?.open();
+        await connected;
+        expect(socket?.protocols).toEqual([
+          'itd.messenger.v1',
+          `bearer.${autoRefresh ? fresh : expired}`,
+        ]);
+        expect(mock.calls.map(({ url }) => new URL(url).pathname)).toEqual(
+          autoRefresh ? ['/api/v1/auth/refresh'] : [],
+        );
+      } finally {
+        await itd.close();
+      }
+    },
+  );
+
   it('открывает канал чатов через субпротоколы и отвечает на ping', async () => {
     const itd = new ItdClient({
       baseUrl: 'https://itd.test',

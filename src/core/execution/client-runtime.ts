@@ -339,10 +339,11 @@ export function createClientRuntime<A extends AuthProvider>(
     connection: (serviceName) => {
       const service = serviceName === undefined ? undefined : services.require(serviceName);
       const baseUrl = service?.baseUrl ?? config.baseUrl;
+      const authorize = service?.auth ?? true;
 
       return Object.freeze({
         baseUrl,
-        authorize: service?.auth ?? true,
+        authorize,
         fetch: config.fetch,
         clock: config.clock,
         logger: config.logger,
@@ -355,7 +356,10 @@ export function createClientRuntime<A extends AuthProvider>(
           }
           return headers;
         },
-        getToken: () => auth.token(),
+        getToken: async () => {
+          if (authorize) await auth.preflight?.(true);
+          return auth.token();
+        },
         refreshAuth: () => auth.recover(),
       });
     },

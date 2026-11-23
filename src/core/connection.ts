@@ -21,7 +21,7 @@ export interface ClientConnection {
 
   /** Заголовки платформы и сервиса без Bearer-токена. */
   baseHeaders(url: string): Promise<Headers>;
-  /** Текущий токен; способ его передачи выбирает транспорт. */
+  /** Готовит авторизацию и возвращает токен для подключения. */
   getToken(): Promise<string | null>;
   /** Пытается восстановить авторизацию после отказа транспорта. */
   refreshAuth(): Promise<boolean>;

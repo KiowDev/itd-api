@@ -15,6 +15,8 @@ import {
   UnauthorizedStreamError,
 } from '../../src/events/transports/transport.js';
 import type { ItdClientOptions } from '../../src/options.js';
+import { MemoryTokenStorage } from '../../src/session/storage.js';
+import { makeJwt } from '../helpers/jwt.js';
 import { abortError, createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 class TestTransport implements EventTransport {
@@ -209,6 +211,40 @@ describe('поток: события', () => {
 });
 
 describe('поток: жизненный цикл', () => {
+  it('обновляет токен перед подключением SSE без синхронизации счётчика', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const expired = makeJwt({ sub: 'user', exp: now - 60 });
+    const fresh = makeJwt({ sub: 'user', exp: now + 900 });
+    const mock = createMockFetch((request) => {
+      if (request.url.endsWith('/auth/refresh')) return json({ accessToken: fresh });
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          request.signal?.addEventListener('abort', () => controller.close(), { once: true });
+        },
+      });
+      return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+    });
+    const itd = new ItdClient({
+      baseUrl: 'https://itd.test',
+      storage: new MemoryTokenStorage({ accessToken: expired, refreshToken: 'refresh' }),
+      fetch: mock.fetch,
+      events: { notifications: { transport: 'sse', syncCount: false } },
+    });
+
+    try {
+      const events = itd.notifications.events;
+      await events.connect();
+      await vi.waitFor(() => expect(events.status).toBe('connected'));
+      expect(mock.calls.map(({ url }) => new URL(url).pathname)).toEqual([
+        '/api/v1/auth/refresh',
+        '/api/notifications/stream',
+      ]);
+      expect(mock.calls[1]?.headers.get('authorization')).toBe(`Bearer ${fresh}`);
+    } finally {
+      await itd.close();
+    }
+  });
+
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
