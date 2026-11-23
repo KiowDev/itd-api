@@ -29,6 +29,12 @@ export {
   markup,
   type TextMarkup,
 } from './builders/markup.js';
+export {
+  type MessageMarkup,
+  type MessageMarkupBuilder,
+  type MessageMarkupContent,
+  messageMarkup,
+} from './builders/message-markup.js';
 export { type PollBuilder, type PollInput, poll } from './builders/poll.js';
 export {
   type CreatePostInput,

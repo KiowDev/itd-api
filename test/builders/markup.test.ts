@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { autoSpans, markup } from '../../src/builders/markup.js';
+import { messageMarkup } from '../../src/builders/message-markup.js';
 import { post } from '../../src/builders/post.js';
 import { ItdConfigError } from '../../src/core/errors.js';
 import { renderSpans, SpanRenderFormat } from '../../src/spans/render.js';
@@ -99,6 +100,27 @@ describe('билдер разметки', () => {
         .markup({ content: 'текст', spans: [{ type: SpanType.Bold, offset: 4, length: 10 }] })
         .build(),
     ).toThrow(ItdConfigError);
+  });
+});
+
+describe('разметка сообщений', () => {
+  it('считает смещения вложенных стилей и использует форматы чата', () => {
+    const builder = messageMarkup('🐈 ');
+    const result = builder
+      .bold((fragment) => fragment.text('см. ').code('id'))
+      .newline()
+      .link('сайт', 'https://example.com')
+      .build();
+
+    expect(result).toEqual({
+      text: '🐈 см. id\nсайт',
+      entities: [
+        { type: 'bold', offset: 3, length: 6 },
+        { type: 'code', offset: 7, length: 2 },
+        { type: 'text_link', url: 'https://example.com', offset: 10, length: 4 },
+      ],
+    });
+    expect(builder.build()).toEqual({ text: '🐈 ', entities: [] });
   });
 });
 

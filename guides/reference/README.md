@@ -45,7 +45,7 @@ description: "Справочник методов itd-api для итд.com: а�
 | [Модели данных](./models.md) | `Post`, `Comment`, `Profile`, `Notification`, `Attachment` и остальные ответы API |
 | [Enum](./enums.md) | `FeedTab`, `SpanType`, `NotificationType`, `ReportReason` и прочие |
 | [Ошибки](./errors.md) | иерархия `ItdError`, коды `ItdErrorCode`, функции-предикаты |
-| [Билдеры](./builders.md) | `post()`, `comment()`, `poll()`, `report()`, `markup()`, `renderSpans()` |
+| [Билдеры](./builders.md) | `post()`, `comment()`, `poll()`, `report()`, `markup()`, `messageMarkup()`, `renderSpans()` |
 | [Пагинация](./pagination.md) | `Page<T>`, `Paginator<T>`, три схемы под одним `for await` |
 | [Сессии и хранилища](./storage.md) | `ItdSession`, одно- и мультиаккаунтные storage, `itd-api/node` |
 | [Методы API](./endpoints.md) | протоколы, авторизация, статус поддержки и дата проверки |

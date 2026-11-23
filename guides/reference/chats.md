@@ -70,6 +70,7 @@ editMessage(chatId: string, messageId: string, input: ChatMessageContent): Promi
 `sendMessageToUser()` сразу отправляет сообщение по ID собеседника и возвращает ID чата и сообщения.
 Для ответа на конкретное сообщение укажите `replyToId` при вызове `sendMessage()`.
 Если передаёте собственный `clientMessageId`, используйте UUIDv7.
+Для форматирования текста используйте [`messageMarkup()`](./builders.md#message-markup).
 
 ```ts
 await itd.chats.editMessage(chatId, messageId, { text: 'Привет! Как дела?' });

@@ -2,7 +2,7 @@
 description: "Билдеры постов, комментариев, опросов, жалоб и разметки в itd-api: подготовка данных и проверка до отправки запроса."
 ---
 
-# Билдеры — `post()`, `comment()`, `poll()`, `report()`, `markup()`
+# Билдеры — `post()`, `comment()`, `poll()`, `report()`, `markup()`, `messageMarkup()`
 
 Билдеры собирают данные для публикующих методов и проверяют их **до** обращения к сети
 (бросают [`ItdConfigError`](./errors.md)). Все билдеры **неизменяемые**: каждый метод
@@ -114,6 +114,22 @@ type MarkupSpan = Omit<Span, 'offset' | 'length'>;
 
 Все методы контента принимают строку **или** вложенный билдер/разметку — так стили вкладываются
 друг в друга.
+
+## Разметка сообщений — `messageMarkup()` {#message-markup}
+
+`messageMarkup()` собирает `{ text, entities }` для отправки и редактирования сообщений.
+В чате `.code()` оформляет код, а `.link()` создаёт ссылку типа `text_link`.
+
+```ts
+import { messageMarkup } from 'itd-api';
+
+const message = messageMarkup().bold('Пример').text(' ').code('itd.chats').build();
+await itd.chats.sendMessage(chatId, message);
+```
+
+Также доступны `.italic()`, `.underline()`, `.strike()`, `.spoiler()`, `.text()`,
+`.newline()` и `.span()`. Вложенный фрагмент можно собрать через функцию, например
+`.bold((m) => m.text('Пример ').code('itd.chats'))`.
 
 ## Автоопределение сущностей
 
