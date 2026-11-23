@@ -53,5 +53,7 @@ export function resolveNotificationUrl(notification: Notification): string {
 
   if (username && FOLLOW_TYPES.has(type)) return `/@${username}`;
 
+  if (type === NotificationType.SubscriptionGift) return clickUrl || '/settings/subscription';
+
   return clickUrl || '/notifications';
 }

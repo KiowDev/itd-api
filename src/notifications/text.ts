@@ -68,6 +68,10 @@ const TEMPLATES: Readonly<
     one: () => 'Ваша заявка на верификацию отклонена',
     many: () => 'Ваша заявка на верификацию отклонена',
   },
+  [NotificationType.SubscriptionGift]: {
+    one: (name) => `${name} подарил(а) вам подписку`,
+    many: (name, others) => `${name} и ещё ${others} подарили вам подписку`,
+  },
 });
 
 /**

@@ -280,7 +280,7 @@ export {
   type UnknownNotificationUpdate,
   type UnreadCountUpdate,
 } from './events.js';
-export type { PaymentMethod, QrLoginTarget, Session, Subscription } from './models/account.js';
+export type { QrLoginTarget, Session } from './models/account.js';
 export type {
   AccountInfo,
   ContactActionResult,
@@ -427,6 +427,25 @@ export type {
   StatusIncidentLine,
 } from './models/status.js';
 export { statusDays } from './models/status-helpers.js';
+export {
+  type InternationalSubscriptionCapability,
+  type InternationalSubscriptionCheckout,
+  InternationalSubscriptionCheckoutMode,
+  type InternationalSubscriptionOffer,
+  type PaymentMethod,
+  PaymentMethodType,
+  type Subscription,
+  SubscriptionCheckoutKind,
+  type SubscriptionCheckoutState,
+  SubscriptionCheckoutStatus,
+  type SubscriptionCheckoutSubject,
+  type SubscriptionGift,
+  type SubscriptionOffer,
+  type SubscriptionPayment,
+  SubscriptionPaymentProvider,
+  type SubscriptionQuote,
+  type SubscriptionRenewalAgreement,
+} from './models/subscription.js';
 export type {
   Actor,
   Author,
@@ -536,7 +555,16 @@ export type {
   ShopProductsResource,
   ShopResource,
 } from './resources/shop.js';
-export type { SubscriptionResource } from './resources/subscription.js';
+export type {
+  SubscriptionBindCardOptions,
+  SubscriptionCheckoutInput,
+  SubscriptionCheckoutReleaseInput,
+  SubscriptionCheckoutTerms,
+  SubscriptionGiftInput,
+  SubscriptionPaymentInput,
+  SubscriptionPayOptions,
+  SubscriptionResource,
+} from './resources/subscription.js';
 export type {
   DwellEntry,
   InteractionEntry,

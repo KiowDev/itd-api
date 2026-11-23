@@ -296,6 +296,8 @@ export const NotificationType = Object.freeze({
   VerificationApproved: 'verification_approved',
   /** Верификация отклонена. Приходит только по REST. */
   VerificationRejected: 'verification_rejected',
+  /** Пользователь получил подписку в подарок. */
+  SubscriptionGift: 'subscription_gift',
 } as const);
 export type NotificationType = Loose<(typeof NotificationType)[keyof typeof NotificationType]>;
 

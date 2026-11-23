@@ -28,6 +28,7 @@ const SECRET_FIELDS = new Set([
   'phone',
   'address',
   'orderaccesstoken',
+  'handoffticket',
 ]);
 
 /** Query-параметры, содержащие секреты. */

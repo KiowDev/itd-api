@@ -48,25 +48,3 @@ export interface QrLoginTarget {
   /** Насколько точно известны координаты. */
   precision?: QrLocationPrecision | null | undefined;
 }
-
-/** Состояние платной подписки и её цена. */
-export interface Subscription {
-  /** Активна ли подписка сейчас. */
-  active: boolean;
-  /** Включено ли автопродление. */
-  recurringEnabled: boolean;
-  /** Цена в рублях. */
-  price: number;
-}
-
-/** Сохранённый способ оплаты. */
-export interface PaymentMethod {
-  id: string;
-  /** Последние четыре цифры карты. */
-  last4?: string;
-  /** Платёжная система: `visa`, `mastercard`, `mir`. */
-  brand?: string;
-  /** Основной ли это способ оплаты. */
-  isDefault?: boolean;
-  expiresAt?: IsoDate | null;
-}

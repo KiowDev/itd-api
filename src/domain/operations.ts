@@ -242,11 +242,22 @@ export const OPERATIONS = freezeOperations({
   'reports.create': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'reports.create' },
 
   'subscription.status': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'subscription.checkoutState': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'subscription.payment': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'subscription.gift': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'subscription.giftGiver': { method: 'GET', retrySafety: RetrySafety.Safe },
+  'subscription.internationalCheckoutCapability': { method: 'GET', retrySafety: RetrySafety.Safe },
   'subscription.pay': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'subscription.payCheckout': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'subscription.createGift': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'subscription.releaseCheckout': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'subscription.internationalCheckout': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'subscription.resumeInternationalCheckout': { method: 'POST', retrySafety: RetrySafety.Unsafe },
+  'subscription.releaseInternationalCheckout': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'subscription.setAutoRenewal': { method: 'POST', retrySafety: RetrySafety.Idempotent },
   'subscription.bindCard': { method: 'POST', retrySafety: RetrySafety.Unsafe },
   'subscription.methods': { method: 'GET', retrySafety: RetrySafety.Safe },
-  'subscription.setDefaultMethod': { method: 'POST', retrySafety: RetrySafety.Idempotent },
+  'subscription.setDefaultMethod': { method: 'PUT', retrySafety: RetrySafety.Idempotent },
   'subscription.removeMethod': { method: 'DELETE', retrySafety: RetrySafety.Unsafe },
 
   'verification.status': {

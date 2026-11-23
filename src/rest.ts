@@ -197,7 +197,7 @@ export type {
   UpdatePostInput,
 } from './domain/params.js';
 export { toDate, utcStampToIso } from './domain/time.js';
-export type { PaymentMethod, Session, Subscription } from './models/account.js';
+export type { Session } from './models/account.js';
 export type {
   BannerDrawing,
   BannerDrawingOperation,
@@ -316,6 +316,25 @@ export type {
   StatusIncidentLine,
 } from './models/status.js';
 export { statusDays } from './models/status-helpers.js';
+export {
+  type InternationalSubscriptionCapability,
+  type InternationalSubscriptionCheckout,
+  InternationalSubscriptionCheckoutMode,
+  type InternationalSubscriptionOffer,
+  type PaymentMethod,
+  PaymentMethodType,
+  type Subscription,
+  SubscriptionCheckoutKind,
+  type SubscriptionCheckoutState,
+  SubscriptionCheckoutStatus,
+  type SubscriptionCheckoutSubject,
+  type SubscriptionGift,
+  type SubscriptionOffer,
+  type SubscriptionPayment,
+  SubscriptionPaymentProvider,
+  type SubscriptionQuote,
+  type SubscriptionRenewalAgreement,
+} from './models/subscription.js';
 export type {
   Actor,
   Author,
@@ -383,7 +402,16 @@ export type {
   ShopProductsResource,
   ShopResource,
 } from './resources/shop.js';
-export type { SubscriptionResource } from './resources/subscription.js';
+export type {
+  SubscriptionBindCardOptions,
+  SubscriptionCheckoutInput,
+  SubscriptionCheckoutReleaseInput,
+  SubscriptionCheckoutTerms,
+  SubscriptionGiftInput,
+  SubscriptionPaymentInput,
+  SubscriptionPayOptions,
+  SubscriptionResource,
+} from './resources/subscription.js';
 export type {
   DwellEntry,
   InteractionEntry,

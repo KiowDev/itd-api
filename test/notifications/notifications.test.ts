@@ -42,6 +42,14 @@ const restNotification = {
   actor: { id: 'u1', displayName: 'Аня', username: 'anya', avatar: '🩵' },
 };
 
+it('распознаёт подарок подписки и ведёт в её настройки', () => {
+  const notification = normalizeNotification({ ...restNotification, type: 'subscription_gift' });
+
+  expect(isKnownNotificationType(notification.type)).toBe(true);
+  expect(formatNotificationText(notification)).toBe('Аня подарил(а) вам подписку');
+  expect(resolveNotificationUrl(notification)).toBe('/settings/subscription');
+});
+
 /** То же событие в форме потока — новые имена и массив участников. */
 const streamEvent = {
   payload: {

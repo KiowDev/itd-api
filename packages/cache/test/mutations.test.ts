@@ -30,6 +30,11 @@ type UncachedRead =
   | 'legal.current'
   | 'legal.versions'
   | 'legal.version'
+  | 'subscription.checkoutState'
+  | 'subscription.payment'
+  | 'subscription.gift'
+  | 'subscription.giftGiver'
+  | 'subscription.internationalCheckoutCapability'
   | 'shop.orders.list'
   | 'shop.orders.get';
 
@@ -59,6 +64,7 @@ describe('каталог мутаций', () => {
     ['chats.setUnread', 'chats.unread'],
     ['chats.setReactions', 'chats.reactions'],
     ['subscription.removeMethod', 'subscription.methods'],
+    ['subscription.payCheckout', 'subscription.status'],
     ['shop.orders.create', 'shop.products.get'],
     ['account.phone.sync', 'users.me'],
     ['account.changes.confirm', 'users.me'],

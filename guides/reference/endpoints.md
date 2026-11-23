@@ -221,12 +221,22 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 
 | Маршрут | Метод библиотеки | Авторизация | Основной контракт | Проверено |
 |---|---|---|---|---|
-| `GET /api/v1/subscription/` | `itd.subscription.status()` | Bearer | ответ: состояние подписки | 2026-11-17, `200` |
-| `POST /api/v1/subscription/pay` | `itd.subscription.pay()` | Bearer | body отсутствует | — |
+| `GET /api/v1/subscription/` | `itd.subscription.status()` | Bearer | состояние подписки | 2026-11-23, `200` |
+| `GET /api/v1/subscription/checkout-state` | `itd.subscription.checkoutState()` | Bearer | сценарий и ключ попытки → состояние оформления | 2026-11-23, `200` |
+| `GET /api/v1/subscription/payments/{id}` | `itd.subscription.payment()` | Bearer | состояние платежа | 2026-11-23, `404` |
+| `GET /api/v1/subscription/gifts/{id}` | `itd.subscription.gift()` | Bearer | состояние подарка | 2026-11-23, `404` |
+| `GET /api/v1/subscription/gift-giver/{userId}` | `itd.subscription.giftGiver()` | Bearer | число подаренных подписок | 2026-11-23, `200` |
+| `GET /api/v1/subscription/international-checkouts/capability` | `itd.subscription.internationalCheckoutCapability()` | Bearer | доступность и предложения международной оплаты | 2026-11-23, `200` |
+| `POST /api/v1/subscription/pay` | `itd.subscription.pay()`, `payCheckout()` | Bearer | способ оплаты или условия выбранного предложения | — |
+| `POST /api/v1/subscription/gifts` | `itd.subscription.createGift()` | Bearer | получатель и условия выбранного предложения | — |
+| `POST /api/v1/subscription/checkout-release` | `itd.subscription.releaseCheckout()` | Bearer | сценарий и ID попытки оплаты | — |
+| `POST /api/v1/subscription/international-checkouts` | `itd.subscription.internationalCheckout()` | Bearer | данные перехода к оплате | — |
+| `POST /api/v1/subscription/international-checkouts/resume` | `itd.subscription.resumeInternationalCheckout()` | Bearer | ID попытки → ссылка на оплату | — |
+| `POST /api/v1/subscription/international-checkouts/release` | `itd.subscription.releaseInternationalCheckout()` | Bearer | сценарий и ID попытки международной оплаты | — |
 | `POST /api/v1/subscription/auto-renewal` | `itd.subscription.setAutoRenewal()` | Bearer | `enabled` | — |
-| `POST /api/v1/subscription/bind-card` | `itd.subscription.bindCard()` | Bearer | body отсутствует | — |
-| `GET /api/v1/subscription/methods` | `itd.subscription.methods()` | Bearer | ответ: способы оплаты | 2026-11-17, `200` |
-| `POST /api/v1/subscription/methods/{methodId}/default` | `itd.subscription.setDefaultMethod()` | Bearer | идентификатор способа оплаты в path | — |
+| `POST /api/v1/subscription/bind-card` | `itd.subscription.bindCard()` | Bearer | `type` → данные привязки карты | — |
+| `GET /api/v1/subscription/methods` | `itd.subscription.methods()` | Bearer | способы оплаты | 2026-11-23, `200` |
+| `PUT /api/v1/subscription/methods/{methodId}/default` | `itd.subscription.setDefaultMethod()` | Bearer | идентификатор способа оплаты в path | — |
 | `DELETE /api/v1/subscription/methods/{methodId}` | `itd.subscription.removeMethod()` | Bearer | идентификатор способа оплаты в path | — |
 
 ## Платформа

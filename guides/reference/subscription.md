@@ -1,45 +1,46 @@
 ---
-description: "Методы itd.subscription: состояние подписки NUKSTA, цена, автопродление и способы оплаты."
+description: "Состояние подписки NUKSTA, оплата, подарки и способы оплаты."
 ---
 
 # Подписка — `itd.subscription`
 
-Состояние платной подписки (премиум NUKSTA), автопродление и способы оплаты. Форма ответа
-у платёжных методов в документации API не описана, поэтому часть возвращает `unknown`.
+Состояние подписки NUKSTA, оформление подписки себе и в подарок, управление способами оплаты.
 
-## Методы
+## Состояние и оформление
 
 ```ts
 status(): Promise<Subscription>
 ```
-Состояние подписки и её цена. См. [`Subscription`](./models.md#subscription).
+Состояние действующей подписки и её цена. См. [`Subscription`](./models.md#subscription).
 
-```ts
-pay(): Promise<unknown>
-```
-Запускает оплату подписки.
+| Метод | Действие |
+| --- | --- |
+| `checkoutState(input)` | Возвращает предложения, состояние попытки и условия автопродления. |
+| `payCheckout(input)` | Создаёт платёж по выбранному предложению. |
+| `createGift(input)` | Запускает оплату подарка без автопродления. |
+| `payment(paymentId)`, `gift(giftId)` | Проверяют состояние по ID платежа или подарка. |
+| `releaseCheckout(input)` | Освобождает попытку, для которой сервер вернул `canReleaseAttempt`. |
+| `giftGiver(userId)` | Возвращает число подаренных пользователем подписок. |
 
-```ts
-setAutoRenewal(enabled: boolean): Promise<unknown>
-```
-Включает / отключает автопродление.
+Используйте один `idempotencyKey` для чтения и оформления той же попытки. Передайте
+`months` и `quoteVersion` из предложения, а его `initialAmountMinor` — в
+`expectedInitialAmountMinor`. Для автопродления укажите `consentVersion` из
+`agreement` после принятия согласия.
 
-```ts
-bindCard(): Promise<unknown>
-```
-Запускает привязку карты.
+## Международная оплата
 
-```ts
-methods(): Promise<PaymentMethod[]>
-```
-Список способов оплаты. Пустой массив, если карт нет. См. [`PaymentMethod`](./models.md#paymentmethod).
+- `internationalCheckoutCapability()` возвращает доступность оплаты и предложения.
+- `internationalCheckout(input)` возвращает ссылку на информационную страницу или данные для отправки формы оплаты.
+- `resumeInternationalCheckout(attemptId)` возвращает ссылку для продолжения попытки.
+- `releaseInternationalCheckout(input)` освобождает попытку.
 
-```ts
-setDefaultMethod(methodId: string): Promise<unknown>
-```
-Делает способ оплаты основным.
+## Оплата и способы оплаты
 
-```ts
-removeMethod(methodId: string): Promise<void>
-```
-Удаляет способ оплаты.
+| Метод | Действие |
+| --- | --- |
+| `pay({ methodId })` | Запускает обычную оплату. Параметр `methodId` необязателен. |
+| `setAutoRenewal(enabled)` | Включает или отключает автопродление. |
+| `bindCard({ type })` | Запускает привязку карты. По умолчанию `PaymentMethodType.BankCard`. |
+| `methods()` | Загружает сохранённые [способы оплаты](./models.md#paymentmethod). |
+| `setDefaultMethod(methodId)` | Делает способ оплаты основным. |
+| `removeMethod(methodId)` | Удаляет способ оплаты. |

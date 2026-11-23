@@ -335,6 +335,16 @@ const CACHE_MUTATIONS = Object.freeze([
     scope: CachePolicyScope.Account,
   },
   {
+    operationId: 'subscription.payCheckout',
+    invalidates: SUBSCRIPTION,
+    scope: CachePolicyScope.Account,
+  },
+  { operationId: 'subscription.createGift', invalidates: NOTHING },
+  { operationId: 'subscription.releaseCheckout', invalidates: NOTHING },
+  { operationId: 'subscription.internationalCheckout', invalidates: NOTHING },
+  { operationId: 'subscription.resumeInternationalCheckout', invalidates: NOTHING },
+  { operationId: 'subscription.releaseInternationalCheckout', invalidates: NOTHING },
+  {
     operationId: 'subscription.setAutoRenewal',
     invalidates: SUBSCRIPTION,
     scope: CachePolicyScope.Account,

@@ -453,12 +453,20 @@ interface Subscription {
 
 ### PaymentMethod
 
+Сохранённый способ оплаты. Для карты последние четыре цифры и платёжная система
+также доступны через `last4` и `brand`.
+
 ```ts
 interface PaymentMethod {
   id: string;
+  type?: PaymentMethodType;              // например, PaymentMethodType.BankCard
+  cardLast4?: string | null;
+  cardBrand?: string | null;
   last4?: string;
-  brand?: string;                        // 'visa' | 'mastercard' | 'mir'
-  isDefault?: boolean;
+  brand?: string;
+  canAutoRenew?: boolean;                // подходит для автопродления
+  isDefault?: boolean;                   // выбран основным
+  createdAt?: IsoDate;
   expiresAt?: IsoDate | null;
 }
 ```

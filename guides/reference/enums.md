@@ -69,6 +69,7 @@ Enum заданы парой «замороженный объект + одно�
 | `FollowRequest` `'follow_request'` | — | заявка на подписку |
 | `FollowAccepted` `'follow_accepted'` | — | заявка принята |
 | `VerificationApproved` / `VerificationRejected` | — | верификация (только REST) |
+| `SubscriptionGift` `'subscription_gift'` | — | получена подписка в подарок |
 
 ## AccessType, WallAccess, LikesVisibility
 
