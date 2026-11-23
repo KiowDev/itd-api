@@ -77,6 +77,13 @@ Enum заданы парой «замороженный объект + одно�
 
 `Nobody` `'nobody'` · `Mutual` `'mutual'` (взаимные) · `Followers` `'followers'` · `Everyone` `'everyone'`.
 
+## MessageAccess
+
+Кто может писать личные сообщения.
+
+`Nobody` · `Mutual` (взаимные подписки) · `Followers` (подписчики) ·
+`Following` (мои подписки) · `Everyone`.
+
 ## EventChannelStatus
 
 Состояние соединения событийного канала.

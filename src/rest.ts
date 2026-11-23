@@ -323,6 +323,8 @@ export type {
   AuthUser,
   FollowResult,
   LastSeen,
+  MessageAllowlistMembership,
+  MessageAllowlistUser,
   MyProfile,
   Pin,
   PinsResult,
@@ -397,6 +399,7 @@ export type {
   ViewTrackerOptions,
 } from './resources/telemetry.js';
 export type {
+  MessageAllowlistParams,
   UpdatePrivacyInput,
   UpdateProfileInput,
   UserListParams,

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { redactUrl } from '../../src/core/redact.js';
 import { MAX_PENDING_FRAMES } from '../../src/events/transports/websocket.js';
 import {
+  ChatActionType,
+  ChatUpdateType,
   EventChannelStatus,
   type EventTransportContext,
   type EventTransportFrame,
@@ -177,6 +179,18 @@ describe('WebSocketTransport: выбор реализации и авториз�
         }),
       );
       expect(socket?.sent).toEqual(['pong']);
+
+      socket?.message(
+        JSON.stringify({ type: 'typing', chat_id: 'c1', user_id: 'u1', action: 'record_video' }),
+      );
+      await vi.waitFor(() =>
+        expect(listener).toHaveBeenCalledWith({
+          type: ChatUpdateType.Typing,
+          chatId: 'c1',
+          userId: 'u1',
+          action: ChatActionType.RecordVideo,
+        }),
+      );
     } finally {
       await itd.close();
     }

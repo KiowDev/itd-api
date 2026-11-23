@@ -124,7 +124,15 @@ iterateBlocked(params?: UserListParams): Paginator<UserSummary>
 getPrivacy(): Promise<PrivacySettings>
 updatePrivacy(input: UpdatePrivacyInput): Promise<PrivacySettings>
 ```
-Читает / обновляет настройки приватности. См. [`PrivacySettings`](./models.md#privacysettings).
+Читает и обновляет [настройки приватности](./models.md#privacysettings).
+
+```ts
+messageAllowlist(params?: MessageAllowlistParams): Promise<Page<MessageAllowlistUser>>
+iterateMessageAllowlist(params?: MessageAllowlistParams): Paginator<MessageAllowlistUser>
+addToMessageAllowlist(userId: UserId): Promise<MessageAllowlistMembership>
+removeFromMessageAllowlist(userId: UserId): Promise<MessageAllowlistMembership>
+```
+Читает и изменяет список пользователей, которым разрешено писать вам личные сообщения.
 
 ## Значки профиля («пины»)
 

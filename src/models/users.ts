@@ -220,6 +220,21 @@ export interface PrivacySettings {
   showLastSeen: boolean;
 }
 
+/** Пользователь, добавленный в список исключений для личных сообщений. */
+export interface MessageAllowlistUser extends Pick<UserBase, 'id' | 'displayName'> {
+  username?: string | null;
+  avatar?: string | null;
+  verified?: boolean;
+  hasNuksta?: boolean;
+  /** Время добавления в список. */
+  addedAt?: IsoDate | null;
+}
+
+/** Принадлежность пользователя к списку исключений для личных сообщений. */
+export interface MessageAllowlistMembership {
+  inMessageAllowlist: boolean;
+}
+
 /**
  * Результат подписки на пользователя.
  *

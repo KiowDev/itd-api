@@ -209,8 +209,7 @@ export type IncidentKind = Loose<(typeof IncidentKind)[keyof typeof IncidentKind
 /**
  * Уровень доступа к разделу профиля.
  *
- * Общий набор значений для полей `wallAccess`, `likesVisibility` и `messageAccess` настроек
- * приватности.
+ * Общие значения настроек приватности профиля.
  * Тип открытый: сервер может прислать значение вне этого перечня.
  */
 export const AccessType = Object.freeze({
@@ -233,6 +232,17 @@ export type WallAccess = AccessType;
 export const LikesVisibility = AccessType;
 export type LikesVisibility = AccessType;
 
+/** Кто может писать пользователю личные сообщения. */
+export const MessageAccess = Object.freeze({
+  Nobody: 'nobody',
+  Mutual: 'mutual',
+  Followers: 'followers',
+  /** Пользователи, на которых вы подписаны. */
+  Following: 'following',
+  Everyone: 'everyone',
+} as const);
+export type MessageAccess = Loose<(typeof MessageAccess)[keyof typeof MessageAccess]>;
+
 /** Почему имя пользователя нельзя занять. Тип открытый: сервер может прислать другую причину. */
 export const UsernameUnavailableReason = Object.freeze({
   /**
@@ -251,10 +261,6 @@ export const LastSeenUnit = Object.freeze({
   Hours: 'hours',
 } as const);
 export type LastSeenUnit = Loose<(typeof LastSeenUnit)[keyof typeof LastSeenUnit]>;
-
-/** Кто может писать пользователю личные сообщения. Псевдоним {@link AccessType}. */
-export const MessageAccess = AccessType;
-export type MessageAccess = AccessType;
 
 /**
  * Канонический тип уведомления (новое поколение имён).

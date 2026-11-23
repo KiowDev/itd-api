@@ -10,6 +10,8 @@ import type { UserId, UserRef } from '../models/common.js';
 import type { Clan } from '../models/platform.js';
 import type {
   FollowResult,
+  MessageAllowlistMembership,
+  MessageAllowlistUser,
   MyProfile,
   PinsResult,
   PrivacySettings,
@@ -65,6 +67,16 @@ const USERS_FOLLOW = passthroughOperation<FollowResult>('users.follow');
 const USERS_FOLLOW_STATUS = passthroughOperation<Record<string, boolean>>('users.followStatus');
 const USERS_GET_PRIVACY = passthroughOperation<PrivacySettings>('users.getPrivacy');
 const USERS_UPDATE_PRIVACY = passthroughOperation<PrivacySettings>('users.updatePrivacy');
+const USERS_MESSAGE_ALLOWLIST = pageOperation<MessageAllowlistUser>(
+  'users.messageAllowlist',
+  (body) => readPagedPage<MessageAllowlistUser>(body, 'users'),
+);
+const USERS_ADD_TO_MESSAGE_ALLOWLIST = passthroughOperation<MessageAllowlistMembership>(
+  'users.addToMessageAllowlist',
+);
+const USERS_REMOVE_FROM_MESSAGE_ALLOWLIST = passthroughOperation<MessageAllowlistMembership>(
+  'users.removeFromMessageAllowlist',
+);
 const USERS_UNFOLLOW = voidOperation('users.unfollow');
 const USERS_BLOCK = voidOperation('users.block');
 const USERS_UNBLOCK = voidOperation('users.unblock');
@@ -97,6 +109,14 @@ export interface UpdateProfileInput {
 
 /** Изменяемые настройки приватности. */
 export type UpdatePrivacyInput = Partial<PrivacySettings>;
+
+/** Параметры списка исключений для личных сообщений. */
+export interface MessageAllowlistParams {
+  /** Номер страницы, начиная с 1. */
+  page?: number;
+  /** Сколько записей вернуть на странице. */
+  limit?: number;
+}
 
 /**
  * Пользователи: профили, подписки, блокировки, приватность.
@@ -143,6 +163,14 @@ export class UsersResource extends BaseResource {
     path: (p) => p.path,
     query: (p) => ({ limit: p.limit }),
     start: (p) => (p.page !== undefined ? { page: p.page } : {}),
+    mode: PaginationMode.Page,
+  });
+
+  readonly #messageAllowlist = this.paginated<MessageAllowlistUser, MessageAllowlistParams>({
+    operation: USERS_MESSAGE_ALLOWLIST,
+    path: () => '/api/users/me/message-allowlist',
+    query: ({ limit }) => ({ limit }),
+    start: ({ page }) => (page !== undefined ? { page } : {}),
     mode: PaginationMode.Page,
   });
 
@@ -406,6 +434,44 @@ export class UsersResource extends BaseResource {
     return this.http.execute(USERS_UPDATE_PRIVACY, {
       path: '/api/users/me/privacy',
       body: input,
+      ...options,
+    });
+  }
+
+  /** Загружает страницу списка пользователей, которым разрешено писать вам личные сообщения. */
+  messageAllowlist(
+    params: MessageAllowlistParams = {},
+    options: RequestOptions = {},
+  ): Promise<Page<MessageAllowlistUser>> {
+    return this.#messageAllowlist.list(params, options);
+  }
+
+  /** Перебирает список исключений для личных сообщений, начиная с указанной страницы. */
+  iterateMessageAllowlist(
+    params: MessageAllowlistParams = {},
+    options: PaginationOptions = {},
+  ): Paginator<MessageAllowlistUser> {
+    return this.#messageAllowlist.iterate(params, options);
+  }
+
+  /** Добавляет пользователя по ID в список исключений для входящих личных сообщений. */
+  addToMessageAllowlist(
+    userId: UserId,
+    options: RequestOptions = {},
+  ): Promise<MessageAllowlistMembership> {
+    return this.http.execute(USERS_ADD_TO_MESSAGE_ALLOWLIST, {
+      path: `/api/users/${encodePathSegment(userId, 'userId')}/message-allowlist`,
+      ...options,
+    });
+  }
+
+  /** Удаляет исключение по ID пользователя. Дальше действуют общие настройки личных сообщений. */
+  removeFromMessageAllowlist(
+    userId: UserId,
+    options: RequestOptions = {},
+  ): Promise<MessageAllowlistMembership> {
+    return this.http.execute(USERS_REMOVE_FROM_MESSAGE_ALLOWLIST, {
+      path: `/api/users/${encodePathSegment(userId, 'userId')}/message-allowlist`,
       ...options,
     });
   }

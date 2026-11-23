@@ -27,6 +27,7 @@ export const CACHE_OPERATIONS = freezeOperations([
   { id: 'users.following', category: 'users' },
   { id: 'users.blocked', category: 'users' },
   { id: 'users.getPrivacy', category: 'users' },
+  { id: 'users.messageAllowlist', category: 'users' },
   { id: 'users.pins', category: 'users' },
   { id: 'users.followStatus', category: 'users' },
   { id: 'users.get', category: 'users' },

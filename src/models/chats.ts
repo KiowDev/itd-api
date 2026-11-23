@@ -283,6 +283,7 @@ export const ChatUpdateType = Object.freeze({
   MessagesDeleted: 'messages_deleted',
   MessagesRead: 'messages_read',
   Presence: 'presence',
+  /** Действие собеседника. Конкретное действие передаётся в `action`. */
   Typing: 'typing',
   ChatCreated: 'chat_created',
   ChatDeleted: 'chat_deleted',
@@ -305,6 +306,10 @@ export interface ChatUpdate {
   messages?: ChatMessage[];
   userId?: string;
   online?: boolean;
+  /** Набор текста, запись голоса или видео либо загрузка файла в событии `typing`. */
+  action?: Loose<ChatActionType>;
+  /** Доля завершённой загрузки от 0 до 1 в событии `typing`. */
+  progress?: number;
   lastReadMessage?: string;
   reactions?: ChatReactionCount[];
   reactionVersion?: string;

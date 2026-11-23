@@ -96,6 +96,9 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 | `GET /api/users/me/blocked` | `itd.users.blocked()`, `iterateBlocked()` | Bearer | query: `page`, `limit` | 2026-11-17, `200` |
 | `GET /api/users/me/privacy` | `itd.users.getPrivacy()` | Bearer | ответ: настройки приватности | 2026-11-17, `200` |
 | `PUT /api/users/me/privacy` | `itd.users.updatePrivacy()` | Bearer | изменяемые настройки приватности | 2026-10-11, `200` |
+| `GET /api/users/me/message-allowlist` | `itd.users.messageAllowlist()`, `iterateMessageAllowlist()` | Bearer | query: `page`, `limit` | — |
+| `POST /api/users/{id}/message-allowlist` | `itd.users.addToMessageAllowlist()` | Bearer | добавляет исключение для личных сообщений | — |
+| `DELETE /api/users/{id}/message-allowlist` | `itd.users.removeFromMessageAllowlist()` | Bearer | удаляет исключение для личных сообщений | — |
 | `GET /api/users/me/pins` | `itd.users.pins()` | Bearer | ответ: `pins[]`, `activePin` | 2026-11-17, `200` |
 | `PUT /api/users/me/pin` | `itd.users.setPin()` | Bearer | `slug` | 2026-10-11, `200` |
 | `DELETE /api/users/me/pin` | `itd.users.removePin()` | Bearer | body отсутствует | 2026-08-13, `200` |

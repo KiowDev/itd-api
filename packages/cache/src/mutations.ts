@@ -239,6 +239,16 @@ const CACHE_MUTATIONS = Object.freeze([
     operationId: 'users.updatePrivacy',
     invalidates: ['users.me', 'users.get', 'users.getPrivacy'],
   },
+  {
+    operationId: 'users.addToMessageAllowlist',
+    invalidates: ['users.messageAllowlist'],
+    scope: CachePolicyScope.Account,
+  },
+  {
+    operationId: 'users.removeFromMessageAllowlist',
+    invalidates: ['users.messageAllowlist'],
+    scope: CachePolicyScope.Account,
+  },
   { operationId: 'users.setPin', invalidates: PINS },
   { operationId: 'users.removePin', invalidates: PINS },
 

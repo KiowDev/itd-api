@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { ChatActionType, ChatMediaCategory, ChatReactionType, ItdClient } from '../../src/index.js';
 import { createRestClient, fromStream } from '../../src/rest.js';
 import { createMockFetch, json, noContent } from '../helpers/mock-fetch.js';
@@ -47,7 +47,13 @@ describe('chats', () => {
       eventSeq: 6,
     };
     const unread = { total: 2, chats_with_unread: 1, event_seq: 6 };
-    const updates = { events: [], next_event_seq: 6, reset_required: false };
+    const updates = {
+      events: [
+        { type: 'typing', chat_id: 'first', user_id: 'u1', action: 'upload_video', progress: 0 },
+      ],
+      next_event_seq: 6,
+      reset_required: false,
+    };
     const mock = createMockFetch([
       json({ chats: [chat], next_before: 'next', event_seq: 6 }),
       json(chat),
@@ -74,8 +80,18 @@ describe('chats', () => {
       });
       await client.chats.media('first', ChatMediaCategory.Media);
       expect(await client.chats.presenceMany(['u1', 'u2'])).toEqual({ u1: true, u2: false });
-      expect(await client.chats.updates(3)).toEqual({
-        events: [],
+      const page = await client.chats.updates(3);
+      expectTypeOf(page.events[0]?.progress).toEqualTypeOf<number | undefined>();
+      expect(page).toEqual({
+        events: [
+          {
+            type: 'typing',
+            chatId: 'first',
+            userId: 'u1',
+            action: ChatActionType.UploadVideo,
+            progress: 0,
+          },
+        ],
         nextEventSeq: 6,
         resetRequired: false,
       });

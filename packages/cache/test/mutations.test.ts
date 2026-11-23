@@ -47,6 +47,8 @@ describe('каталог мутаций', () => {
     ['comments.update', 'posts.comments'],
     ['users.follow', 'users.followStatus'],
     ['users.updatePrivacy', 'users.getPrivacy'],
+    ['users.addToMessageAllowlist', 'users.messageAllowlist'],
+    ['users.removeFromMessageAllowlist', 'users.messageAllowlist'],
     ['notifications.markAllRead', 'notifications.count'],
     ['chats.createDirect', 'chats.list'],
     ['chats.sendMessage', 'chats.list'],
