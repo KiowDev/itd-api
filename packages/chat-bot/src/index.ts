@@ -3,6 +3,7 @@ export { ChatBot } from './bot.js';
 export type { ChatBotErrorHandler, ChatBotOptions } from './bot.types.js';
 export { ChatContext } from './context/context.js';
 export type { ChatBotClient, ChatReplyOptions } from './context/context.types.js';
+export type { ChatTypingControl, ChatTypingOptions } from './context/typing.types.js';
 export type { ChatCommandContext, ChatHearsContext, HearsTrigger } from './middleware/commands.js';
 export { ChatComposer } from './middleware/composer.js';
 export type { ChatRouter } from './middleware/composer.types.js';

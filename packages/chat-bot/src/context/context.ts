@@ -18,6 +18,8 @@ import {
 
 import type { ChatBotClient, ChatReplyOptions } from './context.types.js';
 import { withContextSignal } from './request-signal.js';
+import { runWithTyping } from './typing.js';
+import type { ChatTypingControl, ChatTypingOptions } from './typing.types.js';
 
 /** Контексты входящих сообщений из `chat_created`. @internal */
 export const incomingChatCreatedContexts = new WeakSet<ChatContext>();
@@ -208,6 +210,23 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return withContextSignal(this.signal, options, (request) =>
       this.chats.sendAction(chatId, type, progress, request),
     );
+  }
+
+  /**
+   * Показывает «печатает», пока выполняется задача. Возвращает её результат.
+   * Для событий без чата выполняет задачу без индикатора.
+   *
+   * @param fn задача с управлением статусом через `start()` и `stop()`.
+   * @param options частота обновления и начальная пауза.
+   */
+  withTyping<T>(
+    fn: (typing: ChatTypingControl) => T | Promise<T>,
+    options?: ChatTypingOptions,
+  ): Promise<T> {
+    const send = this.chatId
+      ? (signal: AbortSignal) => this.sendAction(ChatActionType.Typing, undefined, { signal })
+      : undefined;
+    return runWithTyping(fn, send, this.signal, options);
   }
 
   #requireChat(): string {
