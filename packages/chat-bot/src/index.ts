@@ -14,6 +14,8 @@ export type {
   ChatMiddlewareLike,
   ChatMiddlewareObj,
 } from './middleware/middleware.js';
+export { RateLimiter } from './middleware/rate-limiter.js';
+export type { RateLimiterOptions } from './middleware/rate-limiter.types.js';
 export { type SessionFlavor, type SessionOptions, session } from './middleware/session.js';
 export type { ChatCheckpointOptions } from './runtime/checkpoint.js';
 export { ChatBotLifecycleEvent } from './runtime/lifecycle.enum.js';
