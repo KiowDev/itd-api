@@ -289,20 +289,33 @@ export type ChatActionType = (typeof ChatActionType)[keyof typeof ChatActionType
 
 /** Известные типы обновлений мессенджера. */
 export const ChatUpdateType = Object.freeze({
+  /** Одно новое сообщение. */
   NewMessage: 'new_message',
+  /** Пакет новых сообщений. */
   NewMessages: 'new_messages',
+  /** Пакет сообщений, отправленных текущим аккаунтом. */
   OwnMessages: 'own_messages',
+  /** Сообщение отредактировано. */
   MessageEdited: 'message_edited',
+  /** Удалено одно сообщение. */
   MessageDeleted: 'message_deleted',
+  /** Удалено несколько сообщений. Их ID доступны в `messageIds`. */
   MessagesDeleted: 'messages_deleted',
+  /** Участник прочитал сообщения до `lastReadMessage` включительно. */
   MessagesRead: 'messages_read',
+  /** Пользователь появился в сети или вышел из неё. */
   Presence: 'presence',
   /** Действие собеседника. Конкретное действие передаётся в `action`. */
   Typing: 'typing',
+  /** Создан чат. Событие может включать первые сообщения. */
   ChatCreated: 'chat_created',
+  /** Чат удалён. */
   ChatDeleted: 'chat_deleted',
+  /** Изменились настройки чата, например закрепление или отметка «непрочитано». */
   ChatSettings: 'chat_settings',
+  /** История чата очищена. */
   HistoryCleared: 'history_cleared',
+  /** Изменились реакции на сообщение. */
   MessageReactions: 'message_reactions',
 } as const);
 export type ChatUpdateType = Loose<(typeof ChatUpdateType)[keyof typeof ChatUpdateType]>;

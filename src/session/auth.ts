@@ -11,7 +11,7 @@ import { Emitter, reportListenerError } from '../core/emitter.js';
 import { ItdAuthError, ItdConfigError, ItdStateError, isItdApiError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { Logger } from '../core/logger.js';
-import { createDeviceId } from '../core/runtime.js';
+import { createUuidV4 } from '../core/runtime.js';
 import { isObjectLike, isRecord, requireOptionalBoolean } from '../core/validate.js';
 import type { UserId } from '../models/common.js';
 import {
@@ -703,7 +703,7 @@ export class AuthManager implements AuthProvider {
     const revision = this.#authEpoch;
     const session = await this.#loadSession();
     this.#assertActive();
-    const deviceId = this.#config.deviceId ?? session?.deviceId ?? createDeviceId();
+    const deviceId = this.#config.deviceId ?? session?.deviceId ?? createUuidV4();
 
     this.#deviceId = deviceId;
     if (this.#authEpoch !== revision) return deviceId;

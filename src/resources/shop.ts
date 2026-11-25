@@ -1,6 +1,6 @@
 import { isItdApiError } from '../core/errors.js';
 import type { RequestOptions } from '../core/options.js';
-import { createDeviceId } from '../core/runtime.js';
+import { createUuidV4 } from '../core/runtime.js';
 import { encodePathSegment } from '../core/url.js';
 import type {
   CreateShopOrderInput,
@@ -153,7 +153,7 @@ export class ShopOrdersResource extends BaseResource {
     input: CreateShopOrderInput,
     options: CreateShopOrderOptions = {},
   ): Promise<ShopCreatedOrder> {
-    const { idempotencyKey = createDeviceId(), headers, ...request } = options;
+    const { idempotencyKey = createUuidV4(), headers, ...request } = options;
     return this.http.execute(ORDERS_CREATE, {
       path: '/api/v1/shop/orders',
       body: input,

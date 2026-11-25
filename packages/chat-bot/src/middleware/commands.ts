@@ -1,21 +1,32 @@
 import { ItdConfigError } from 'itd-api';
-import type { ChatContext } from './context.js';
-import { type ChatMessageContext, isIncomingMessage } from './filters.js';
+import type { ChatContext } from '../context/context.js';
+import { isIncomingMessage } from './filters.js';
+import type { ChatMessageContext } from './filters.types.js';
+import type { ChatMiddleware } from './middleware.js';
+
+const DEFAULT_COMMAND_PREFIXES = ['/'] as const;
+const commandPrefixesByContext = new WeakMap<ChatContext, readonly string[]>();
 
 /** Точное текстовое совпадение, регулярное выражение или список условий. */
 export type HearsTrigger = string | RegExp | readonly (string | RegExp)[];
 
 /** Контекст обработчика команды. */
 export type ChatCommandContext<C extends ChatContext = ChatContext> = ChatMessageContext<C> & {
+  /** Полный текст входящего сообщения. */
   text: string;
+  /** Имя команды без префикса, в нижнем регистре. */
   command: string;
+  /** Текст после команды или пустая строка. */
   args: string;
-  match: string;
+  /** Аргументы команды или совпадение из вложенного `hears()`. */
+  match: string | RegExpMatchArray;
 };
 
 /** Контекст обработчика текста. */
 export type ChatHearsContext<C extends ChatContext = ChatContext> = ChatMessageContext<C> & {
+  /** Полный текст входящего сообщения. */
   text: string;
+  /** Совпавшая строка или результат вызова `RegExp.exec()`. */
   match: string | RegExpMatchArray;
 };
 
@@ -24,10 +35,32 @@ function normalizeCommand(name: string): string {
   return name.normalize('NFC').toLowerCase();
 }
 
+/** Применяет префиксы бота ко всем командам в цепочке. */
+export function commandPrefixMiddleware<C extends ChatContext>(
+  prefixes: readonly string[] = DEFAULT_COMMAND_PREFIXES,
+): ChatMiddleware<C> {
+  if (
+    !Array.isArray(prefixes) ||
+    !prefixes.length ||
+    prefixes.some((prefix) => typeof prefix !== 'string' || !prefix || /\s/.test(prefix))
+  ) {
+    throw new ItdConfigError('Укажите хотя бы один непустой префикс команды без пробелов');
+  }
+  const ordered = [...prefixes].sort((a, b) => b.length - a.length);
+  return async (context, next) => {
+    if (commandPrefixesByContext.has(context)) return next();
+    commandPrefixesByContext.set(context, ordered);
+    try {
+      await next();
+    } finally {
+      commandPrefixesByContext.delete(context);
+    }
+  };
+}
+
 /** Распознаёт команду во входящем сообщении. @internal */
 export function commandPredicate<C extends ChatContext>(
   commands: string | readonly string[],
-  prefixes: readonly string[],
 ): (context: C) => context is ChatCommandContext<C> {
   const names = typeof commands === 'string' ? [commands] : commands;
   if (!names.length || names.some((name) => !/^[\p{L}\p{N}_][\p{L}\p{M}\p{N}_]*$/u.test(name))) {
@@ -38,6 +71,7 @@ export function commandPredicate<C extends ChatContext>(
     if (!isIncomingMessage(context)) return false;
     const { text } = context;
     if (typeof text !== 'string') return false;
+    const prefixes = commandPrefixesByContext.get(context) ?? DEFAULT_COMMAND_PREFIXES;
     const prefix = prefixes.find((value) => text.startsWith(value));
     if (prefix === undefined) return false;
     const match = /^(\S+)(?:\s+([\s\S]*))?$/.exec(text.slice(prefix.length));

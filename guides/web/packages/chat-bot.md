@@ -36,132 +36,68 @@ bot.command('echo', (ctx) => ctx.replyTo(ctx.args || 'Напишите текс�
 await bot.start();
 ```
 
-Вызовите `bot.stop()`, чтобы остановить бота. Из кода завершения приложения дождитесь
-завершения работы через `await bot.drain()`, затем вызовите `await itd.close()`.
+`bot.isRunning` остаётся `true` при запуске и переподключении. `bot.isReady` показывает,
+открыто ли соединение для получения событий.
 
-`bot.start(eventSeq)` загружает события, которые произошли после указанного номера. Если номер устарел, бот берёт актуальный из списка чатов.
-События, которые бот уже принял, продолжают обрабатываться во время восстановления.
+При завершении приложения вызовите `bot.stop()`, дождитесь обработчиков через
+`await bot.drain()`, затем закройте клиент через `await itd.close()`.
 
-Чтобы бот запоминал последнее обработанное событие между запусками, передайте `checkpoint`:
+## Руководство
 
-```ts
-import { FileKeyValueStore } from 'itd-api/node';
+<nav class="chat-bot-topics" aria-label="Разделы руководства по чат-ботам">
 
-const bot = new ChatBot(itd, {
-  checkpoint: {
-    storage: new FileKeyValueStore<number>('bot-state.json'),
-    key: 'echo-bot:account-id',
-  },
-});
+- [**Конфигурация** <span>Префиксы, очередь, хранилище и свой контекст</span>](./chat-bot/configuration.md)
+- [**Команды и события** <span>Команды, фразы и фильтры сообщений</span>](./chat-bot/handlers.md)
+- [**Действия в чате** <span>Ответы, вложения, пересылка и реакции</span>](./chat-bot/actions.md)
+- [**Модули и маршруты** <span>Ветки обработчиков для разных чатов и задач</span>](./chat-bot/routing.md)
+- [**Данные диалога** <span>Состояние между сообщениями и запусками</span>](./chat-bot/state.md)
+- [**Работа бота** <span>Возобновление, очередь и ошибки</span>](./chat-bot/runtime.md)
+- [**Дополнения** <span>Ограничение частоты команд и событий</span>](./chat-bot/extras.md)
 
-await bot.start();
-```
+</nav>
 
-Подключайте канал через `bot.start()`, чтобы продолжить с сохранённого номера события.
-Чтобы указать другой номер при подключении, вызовите `bot.start(eventSeq)`.
-Бот сохраняет номер, когда это событие и все предыдущие обработаны успешно.
-После ошибки обработчика при следующем запуске бот может получить те же события снова.
+[Справочник методов и типов](/api/generated/chat-bot/) ·
+[Полный пример бота](https://github.com/KiowDev/itd-api/blob/main/guides/web/packages/examples/chat-bot.mjs)
 
-По умолчанию бот обрабатывает обновления последовательно. Чтобы обрабатывать до четырёх чатов
-одновременно, используйте `new ChatBot(itd, { concurrency: 4 })`. Порядок обновлений внутри каждого
-чата сохраняется.
-
-По умолчанию в очереди могут ждать до 256 обновлений. Если боту нужно принимать больше обновлений
-во время коротких всплесков, задайте лимит, например `new ChatBot(itd, { maxPendingUpdates: 1024 })`.
-Когда очередь заполняется, бот временно перестаёт принимать новые события. Как только он обработает
-всё, что уже принял, он подключается заново и получает пропущенные события. Если бот не может
-определить, с какого события продолжить, он завершает принятые задачи и останавливается с ошибкой.
-Во время запуска ошибку возвращает `start()`, после запуска она попадает в лог.
-
-Бот использует `logger` из настроек `ItdClient`. Без настроенного логгера ошибки выводятся в
-консоль. Чтобы обработать ошибку команды или middleware самостоятельно, зарегистрируйте обработчик
-через `bot.catch()`.
-
-## На что бот может реагировать
-
-- `bot.command('помощь', ...)` срабатывает на `/помощь` и `/Помощь`. Текст после команды доступен в `ctx.args`, её имя в нижнем регистре — в `ctx.command`.
-- `bot.hears('помощь', ...)` срабатывает, когда сообщение целиком совпадает с фразой. Можно передать регулярное выражение и прочитать совпадение в `ctx.match`.
-- `bot.on(ChatBotFilter.MessageAttachment, ...)` срабатывает, когда собеседник присылает вложение.
-
-Используйте `ChatBotFilter` для отбора сообщений по их содержимому. Например, `MessageText`
-выбирает сообщения с текстом, а `MessageAttachment` — с вложениями. Используйте `ChatUpdateType`
-для событий чата, например прочтения сообщения или изменения реакций.
-
-```ts
-bot.on(ChatUpdateType.MessageReactions, (ctx) => {
-  console.log(ctx.update.messageId, ctx.update.reactions);
-});
-```
-
-По умолчанию команды начинаются с `/`. Чтобы принимать также `!помощь`, создайте бота
-через `new ChatBot(itd, { commandPrefixes: ['/', '!'] })`. Если подходят несколько префиксов, используется самый длинный.
-
-Текущее сообщение доступно в `ctx.message`. Добавляйте общие действия через `bot.use()` и вызывайте `await next()`, чтобы продолжить обработку.
-`bot.filter()` запускает обработчик по вашему условию.
-
-```ts
-import { ChatActionType, ChatUpdateType } from 'itd-api';
-
-bot.filter(
-  (ctx) => ctx.update.type === ChatUpdateType.Typing && ctx.update.action === ChatActionType.RecordVideo,
-  (ctx) => console.log('Собеседник записывает видео', ctx.chatId),
-);
-```
-
-## Как ответить сообщением или файлом
-
-`ctx.reply()` отправляет сообщение в тот же чат. `ctx.replyTo()` добавляет цитату исходного сообщения.
-`ctx.send()` принимает [`message()`](/reference/builders#message-builder) с разметкой, файлами и карточками постов.
-Если файлы уже собраны в отдельный список, передайте его в `ctx.sendWithAttachments()`.
-`ctx.sendAction()` показывает собеседнику, что бот печатает.
-
-```ts
-import { message } from 'itd-api';
-
-await ctx.send(message('Готово').attach(file));
-```
-
-## Как получить профиль автора
-
-`ctx.itd` — клиент, который вы передали боту. Передайте `ctx.senderId` в `users.get()`,
-чтобы получить профиль автора сообщения.
-
-```ts
-bot.command('profile', async (ctx) => {
-  if (!ctx.senderId) return;
-  const profile = await ctx.itd.users.get(ctx.senderId, { signal: ctx.signal });
-  await ctx.reply(`Ваш профиль: @${profile.username}`);
-});
-```
-
-Для работы с [Hydrate](./hydrate.md) передайте `new ChatBot(hydrateClient(itd))`.
-
-## Как запоминать данные между сообщениями
-
-Например, бот может считать, сколько раз пользователь вызвал `/count` в этом чате.
-Для этого подключите `session()` и храните счётчик в `ctx.session`.
-
-```ts
-import { ChatBot, ChatContext, session } from '@itd-api/chat-bot';
-
-type State = { count: number };
-class Context extends ChatContext<typeof itd> {
-  session: State | undefined;
+<style scoped>
+.chat-bot-topics ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 12px;
+  padding: 0;
+  list-style: none;
 }
 
-const bot = new ChatBot(itd, { createContext: (...args) => new Context(...args) });
+.chat-bot-topics li {
+  margin: 0;
+}
 
-bot.use(session({ initial: () => ({ count: 0 }) }));
-bot.command('count', (ctx) => {
-  const count = (ctx.session?.count ?? 0) + 1;
-  ctx.session = { count };
-  return ctx.reply(`Счётчик: ${count}`);
-});
-```
+.chat-bot-topics li:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 
-У каждого чата свой счётчик. По умолчанию данные хранятся в памяти и сбрасываются при перезапуске.
-Чтобы сохранить их в файл, передайте `FileKeyValueStore` из `itd-api/node` в настройке `storage`.
-Чтобы очистить данные текущего чата, присвойте `ctx.session = undefined`.
+.chat-bot-topics a {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  height: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+}
 
-[Все методы и типы пакета](/api/generated/chat-bot/).
-[Полный пример бота](https://github.com/KiowDev/itd-api/blob/main/guides/web/packages/examples/chat-bot.mjs).
+.chat-bot-topics a:hover,
+.chat-bot-topics a:focus-visible {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.chat-bot-topics span {
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+</style>

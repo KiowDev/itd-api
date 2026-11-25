@@ -355,7 +355,9 @@ describe('WebSocketTransport: выбор реализации и авториз�
       const seen = vi.fn();
       events.on('giveup', giveup);
       events.on('update', seen);
+      expect(events.active).toBe(false);
       const connected = events.connect(10);
+      expect(events.active).toBe(true);
       for (let index = 0; index < 2; index += 1) {
         await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(index + 1));
         const socket = FakeWebSocket.instances[index];
@@ -370,6 +372,7 @@ describe('WebSocketTransport: выбор реализации и авториз�
       }
       await connected;
       await vi.waitFor(() => expect(giveup).toHaveBeenCalledOnce());
+      expect(events.active).toBe(false);
       expect(FakeWebSocket.instances).toHaveLength(2);
     } finally {
       await itd.close();

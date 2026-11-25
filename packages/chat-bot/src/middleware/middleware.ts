@@ -1,5 +1,5 @@
 import type { EventMiddlewareLike, EventNext } from 'itd-api';
-import type { ChatContext } from './context.js';
+import type { ChatContext } from '../context/context.js';
 
 /** Обработчик в цепочке бота. Вызов `next()` передаёт управление дальше. */
 export type ChatMiddleware<C extends ChatContext = ChatContext> = (
@@ -9,6 +9,7 @@ export type ChatMiddleware<C extends ChatContext = ChatContext> = (
 
 /** Объект, из которого компоновщик получает обработчик. */
 export interface ChatMiddlewareObj<C extends ChatContext = ChatContext> {
+  /** Возвращает обработчик, который подключается через `bot.use()`. */
   middleware(): ChatMiddleware<C>;
 }
 
