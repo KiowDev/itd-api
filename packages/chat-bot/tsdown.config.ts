@@ -9,5 +9,5 @@ export default defineConfig({
   treeshake: true,
   target: 'es2022',
   platform: 'neutral',
-  deps: { neverBundle: ['itd-api', 'node:crypto'] },
+  deps: { neverBundle: ['itd-api'] },
 });

@@ -18,8 +18,8 @@ export type ChatCommandContext<C extends ChatContext = ChatContext> = ChatMessag
   command: string;
   /** Текст после команды или пустая строка. */
   args: string;
-  /** Аргументы команды, совпадают с `args`. */
-  match: string;
+  /** Аргументы команды или совпадение из вложенного `hears()`. */
+  match: string | RegExpMatchArray;
 };
 
 /** Контекст обработчика текста. */

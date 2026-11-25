@@ -1,7 +1,7 @@
 import { ItdConfigError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
-import { createDeviceId } from '../core/runtime.js';
+import { createUuidV4 } from '../core/runtime.js';
 import { defineBuiltInOperation } from '../domain/operations.js';
 import { InteractionType, type ViewReason, type ViewSource } from '../types/enums.js';
 import { BaseResource } from './base.js';
@@ -449,7 +449,7 @@ export class TelemetryResource extends BaseResource {
 
   /** Идентификатор сессии телеметрии, общий для всех событий этого ресурса. */
   get sessionId(): string {
-    this.#sessionId ??= createDeviceId();
+    this.#sessionId ??= createUuidV4();
     return this.#sessionId;
   }
 

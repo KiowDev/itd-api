@@ -4,6 +4,7 @@ import {
   type ChatReaction,
   ChatReactionType,
   type ChatsApi,
+  createUuidV4,
   ItdErrorKind,
   ItdTimeoutError,
   isItdConflictError,
@@ -61,8 +62,7 @@ export async function addReaction(
     const reactions = state.reactions
       .filter(({ chosen }) => chosen === true)
       .map((entry) => entry.reaction);
-    const operationId =
-      globalThis.crypto?.randomUUID?.() ?? (await import('node:crypto')).randomUUID();
+    const operationId = createUuidV4();
     try {
       return await chats.setReactions(
         chatId,

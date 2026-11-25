@@ -48,6 +48,22 @@ describe('ChatContext.react()', () => {
     }
   });
 
+  it('отправляет реакцию, когда Web Crypto поддерживает только getRandomValues()', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(state('1'));
+    const { itd } = setup(fetch);
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xab) });
+    try {
+      await new ChatContext(itd, update, newMessage).react('👍');
+      const request = fetch.mock.calls[0]?.[1];
+      expect(JSON.parse(String(request?.body))).toMatchObject({
+        operation_id: 'abababab-abab-4bab-abab-abababababab',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      await itd.close();
+    }
+  });
+
   it('после конфликта перечитывает состояние и сохраняет только свой выбор', async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

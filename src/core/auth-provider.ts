@@ -2,7 +2,7 @@ import type { UserId } from '../models/common.js';
 import type { ResolvedRuntimeConfig } from './config.js';
 import type { CookieJar } from './cookies.js';
 import type { HttpClient } from './execution/http.js';
-import { createDeviceId } from './runtime.js';
+import { createUuidV4 } from './runtime.js';
 
 /** Области аккаунта и конкретной сессии для локального состояния плагинов. */
 export interface AuthIdentity {
@@ -86,7 +86,7 @@ function localDeviceId(): () => Promise<string> {
   let deviceId: string | undefined;
 
   return () => {
-    deviceId ??= createDeviceId();
+    deviceId ??= createUuidV4();
     return Promise.resolve(deviceId);
   };
 }

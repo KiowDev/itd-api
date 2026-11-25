@@ -115,17 +115,14 @@ export function supportsStreamingBody(): boolean {
 }
 
 /**
- * Создаёт идентификатор устройства для заголовка `X-Device-Id` — UUID v4.
- *
- * `crypto.randomUUID` есть в Node 19+, браузерах и Deno, но отсутствует в Node 18 вне
- * защищённого контекста, поэтому предусмотрен запасной путь.
+ * Создаёт UUID v4 для идентификаторов запросов, устройств и сессий.
+ * Если Web Crypto недоступен, использует `Math.random()`.
  */
-export function createDeviceId(): string {
+export function createUuidV4(): string {
   const webCrypto = (globalThis as { crypto?: Crypto }).crypto;
 
   if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID();
 
-  // Форма UUID v4 собирается вручную: серверу важна стабильность значения, а не его энтропия.
   const bytes = new Uint8Array(16);
   if (typeof webCrypto?.getRandomValues === 'function') webCrypto.getRandomValues(bytes);
   else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);

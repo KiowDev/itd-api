@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDeviceId, isBlob, isFile } from '../../src/core/runtime.js';
+import { createUuidV4, isBlob, isFile } from '../../src/core/runtime.js';
 
 /**
  * Временно убирает глобальный конструктор.
@@ -37,22 +37,21 @@ describe('проверки бинарных типов', () => {
   });
 });
 
-describe('идентификатор устройства', () => {
+describe('createUuidV4()', () => {
   it('имеет форму UUID v4 и не повторяется', () => {
-    const first = createDeviceId();
+    const first = createUuidV4();
 
     expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-    expect(createDeviceId()).not.toBe(first);
+    expect(createUuidV4()).not.toBe(first);
   });
 
   it('обходится без crypto.randomUUID', () => {
     const crypto = globalThis.crypto as { randomUUID?: unknown };
     const original = crypto.randomUUID;
-    // В Node 18 вне защищённого контекста этого метода может не быть.
     crypto.randomUUID = undefined;
 
     try {
-      expect(createDeviceId()).toMatch(
+      expect(createUuidV4()).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
       );
     } finally {

@@ -180,7 +180,7 @@ export type {
   PluginApi,
   PluginTeardown,
 } from './core/plugins/contracts.js';
-export { RuntimeMode } from './core/runtime.js';
+export { createUuidV4, RuntimeMode } from './core/runtime.js';
 export { RateLimitPacing } from './core/scheduling/pacing.js';
 export type { RateLimitBucketState } from './core/scheduling/rate-limit.js';
 // Сервисы — домены платформы, отличные от основного. Подробности — в core/services.ts.

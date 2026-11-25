@@ -44,6 +44,31 @@ describe('ChatComposer', () => {
     }
   });
 
+  it('передаёт результат RegExp во вложенное hears() и сохраняет аргументы команды', async () => {
+    const { itd } = setup();
+    const composer = new ChatComposer();
+    const seen: string[] = [];
+    composer.command('echo').hears(/^\/echo (.+)$/u, (ctx) => {
+      expectTypeOf<RegExpMatchArray>().toExtend<typeof ctx.match>();
+      expectTypeOf(ctx.args).toEqualTypeOf<string>();
+      expect(Array.isArray(ctx.match)).toBe(true);
+      seen.push(ctx.args, ctx.match[1] ?? '');
+    });
+    try {
+      await composer.middleware()(
+        new ChatContext(
+          itd,
+          { type: ChatUpdateType.NewMessage },
+          { ...baseMessage, text: '/echo привет' },
+        ),
+        async () => {},
+      );
+      expect(seen).toEqual(['привет', 'привет']);
+    } finally {
+      await itd.close();
+    }
+  });
+
   it('выбирает именованную ветку, её запасной маршрут и условную ветку', async () => {
     const { itd } = setup();
     const composer = new ChatComposer();
