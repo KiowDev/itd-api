@@ -2,13 +2,16 @@ import {
   ChatActionType,
   type ChatEditedMessage,
   type ChatEvents,
+  type ChatForwardedMessages,
   type ChatMessage,
   type ChatMessageContent,
   type ChatReadResult,
   type ChatSentMessage,
+  type ChatSummary,
   type ChatUpdate,
   type FileInput,
   type MessageInput,
+  type PublicProfile,
   type RequestOptions,
   type SendChatMessageInput,
 } from 'itd-api';
@@ -84,6 +87,28 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return this.message?.text;
   }
 
+  /** Загружает профиль автора. Если ID автора или загрузка профиля недоступны, возвращает `undefined`. */
+  getSender(
+    options?: RequestOptions,
+  ): Promise<Awaited<ReturnType<NonNullable<NonNullable<Client['users']>['get']>>> | undefined>;
+  async getSender(options?: RequestOptions): Promise<PublicProfile | undefined> {
+    const { senderId } = this;
+    const users = this.itd.users;
+    const get = users?.get;
+    if (!senderId || !get) return undefined;
+    return withContextSignal(this.signal, options, (request) => get.call(users, senderId, request));
+  }
+
+  /** Загружает сводку текущего чата. Для события без чата возвращает `undefined`. */
+  getChat(
+    options?: RequestOptions,
+  ): Promise<Awaited<ReturnType<Client['chats']['get']>> | undefined>;
+  async getChat(options?: RequestOptions): Promise<ChatSummary | undefined> {
+    const { chatId } = this;
+    if (!chatId) return undefined;
+    return withContextSignal(this.signal, options, (request) => this.chats.get(chatId, request));
+  }
+
   /** Отправляет сообщение в текущий чат. Принимает объект, билдер или функцию сборки. */
   send(input: MessageInput, options?: RequestOptions): Promise<ChatSentMessage> {
     const chatId = this.#requireChat();
@@ -133,6 +158,22 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     );
   }
 
+  /**
+   * Пересылает сообщение из текущего чата.
+   *
+   * @param targetChatId чат, в который нужно переслать сообщение.
+   * @returns результат пересылки со списками `ok` и `failed`.
+   */
+  forwardTo(targetChatId: string, options?: RequestOptions): Promise<ChatForwardedMessages> {
+    const sourceChatId = this.#requireChat();
+    const { messageId } = this;
+    if (!messageId) throw new Error('У события нет идентификатора сообщения');
+    const input = { sourceChatId, messageIds: [messageId] };
+    return withContextSignal(this.signal, options, (request) =>
+      this.chats.forwardMessages(targetChatId, input, request),
+    );
+  }
+
   /** Отмечает чат прочитанным до текущего сообщения включительно. */
   markRead(options?: RequestOptions): Promise<ChatReadResult> {
     const chatId = this.#requireChat();
@@ -140,6 +181,16 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return withContextSignal(this.signal, options, (request) =>
       this.chats.markRead(chatId, messageId, request),
     );
+  }
+
+  /** Принимает запрос на переписку, подтверждённый событием. Возвращает `false`, если запрос не подтверждён. */
+  async acceptRequest(options?: RequestOptions): Promise<boolean> {
+    if (this.update.isRequest !== true) return false;
+    const chatId = this.#requireChat();
+    await withContextSignal(this.signal, options, (request) =>
+      this.chats.acceptRequest(chatId, request),
+    );
+    return true;
   }
 
   /**

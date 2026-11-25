@@ -29,30 +29,6 @@ describe('ChatContext', () => {
     }
   });
 
-  it('выбирает ID текущего сообщения и сохраняет список ID пакетного события', async () => {
-    const { itd } = setup();
-    try {
-      const reaction = { type: ChatUpdateType.MessageReactions, messageId: 'target' };
-      expect(new ChatContext(itd, reaction).messageId).toBe('target');
-      expect(
-        new ChatContext(itd, reaction, {
-          messageId: 'selected',
-          senderId: 'u1',
-          createdAt: '2026-11-20T00:00:00.000Z',
-        }).messageId,
-      ).toBe('selected');
-
-      const batch = new ChatContext(itd, {
-        type: ChatUpdateType.MessagesDeleted,
-        messageIds: ['m1', 'm2'],
-      });
-      expect(batch.messageId).toBeUndefined();
-      expect(batch.update.messageIds).toEqual(['m1', 'm2']);
-    } finally {
-      await itd.close();
-    }
-  });
-
   it('останавливается из команды и сохраняет типы гидратированного клиента', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
       const path = new URL(String(url)).pathname;
@@ -65,10 +41,10 @@ describe('ChatContext', () => {
     const bot = new ChatBot(hydrateClient(itd));
     const done = vi.fn();
     bot.command('stop', async (ctx) => {
-      if (!ctx.senderId || !ctx.chatId) throw new Error('У сообщения нет автора или чата');
-      const author = await ctx.itd.users.get(ctx.senderId, { signal: ctx.signal });
+      const author = await ctx.getSender();
+      const chat = await ctx.getChat();
+      if (!author || !chat) throw new Error('У сообщения нет автора или чата');
       expect(author.follow).toBeTypeOf('function');
-      const chat = await ctx.chats.get(ctx.chatId, { signal: ctx.signal });
       const { messages } = await chat.getMessages({}, { signal: ctx.signal });
       expect(messages[0]?.reply).toBeTypeOf('function');
       await bot.stop();
@@ -92,6 +68,73 @@ describe('ChatContext', () => {
     } finally {
       bot.stop();
       await bot.drain();
+      await itd.close();
+    }
+  });
+
+  it('пропускает чтение профиля и чата, если у события нет соответствующих ID', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const { itd } = setup(fetch);
+    const ctx = new ChatContext(itd, { type: ChatUpdateType.Presence, userId: 'u1' });
+    try {
+      expect(await ctx.getSender()).toBeUndefined();
+      expect(await ctx.getChat()).toBeUndefined();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      await itd.close();
+    }
+  });
+
+  it('пересылает сообщение, указанное событием, и возвращает результат SDK', async () => {
+    const failed = [{ source_message_id: 'm1', code: 'NOT_AVAILABLE' }];
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: [], failed }));
+    const { itd } = setup(fetch);
+    const ctx = new ChatContext(itd, {
+      type: ChatUpdateType.MessageReactions,
+      chatId: 'source',
+      messageId: 'm1',
+    });
+    try {
+      await expect(ctx.forwardTo('target')).resolves.toEqual({ ok: [], failed });
+      const [url, request] = fetch.mock.calls[0] ?? [];
+      expect(new URL(String(url)).pathname).toBe('/api/v1/messenger/chats/target/messages/forward');
+      expect(request?.method).toBe('POST');
+      expect(JSON.parse(String(request?.body))).toEqual({
+        source_chat_id: 'source',
+        message_ids: ['m1'],
+      });
+    } finally {
+      await itd.close();
+    }
+  });
+
+  it('принимает только запрос на переписку, подтверждённый событием', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(null, { status: 204 }));
+    const { itd } = setup(fetch);
+    const update = { type: ChatUpdateType.ChatSettings, chatId: 'c1' };
+    const controller = new AbortController();
+    try {
+      expect(await new ChatContext(itd, update).acceptRequest()).toBe(false);
+      expect(await new ChatContext(itd, { ...update, isRequest: false }).acceptRequest()).toBe(
+        false,
+      );
+      expect(fetch).not.toHaveBeenCalled();
+
+      const ctx = new ChatContext(
+        itd,
+        { ...update, isRequest: true },
+        undefined,
+        controller.signal,
+      );
+      expect(await ctx.acceptRequest()).toBe(true);
+      const [url, request] = fetch.mock.calls[0] ?? [];
+      expect(new URL(String(url)).pathname).toBe('/api/v1/messenger/chats/c1/accept');
+      expect(request?.method).toBe('POST');
+
+      controller.abort(new Error('Обработка отменена'));
+      await expect(ctx.acceptRequest()).rejects.toBe(controller.signal.reason);
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
       await itd.close();
     }
   });

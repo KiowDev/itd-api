@@ -127,20 +127,24 @@ import { message } from 'itd-api';
 await ctx.send(message('Готово').attach(file));
 ```
 
-## Как получить профиль автора
+`await ctx.forwardTo(targetChatId)` пересылает текущее сообщение в другой чат. Проверьте `ok` и
+`failed` в результате пересылки.
 
-`ctx.itd` — клиент, который вы передали боту. Передайте `ctx.senderId` в `users.get()`,
-чтобы получить профиль автора сообщения.
+## Как получить профиль и сведения о чате
 
 ```ts
 bot.command('profile', async (ctx) => {
-  if (!ctx.senderId) return;
-  const profile = await ctx.itd.users.get(ctx.senderId, { signal: ctx.signal });
-  await ctx.reply(`Ваш профиль: @${profile.username}`);
+  const profile = await ctx.getSender();
+  if (profile) await ctx.reply(`Ваш профиль: @${profile.username}`);
 });
 ```
 
+`ctx.getChat()` загружает сведения о текущем чате. Остальные методы клиента доступны через `ctx.itd`.
 Для работы с [Hydrate](./hydrate.md) передайте `new ChatBot(hydrateClient(itd))`.
+
+`ctx.acceptRequest()` принимает запрос на переписку, если событие сообщает `isRequest: true`.
+В остальных случаях метод возвращает `false`. Если статус получен отдельно через `ctx.getChat()`,
+подтверждённый запрос можно принять через `ctx.chats.acceptRequest(chat.chatId)`.
 
 ## Как разделить обработчики по модулям
 
