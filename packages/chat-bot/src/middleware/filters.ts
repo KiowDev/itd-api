@@ -33,10 +33,32 @@ function matchesFilter(context: ChatContext, filter: ChatBotFilter): boolean {
       return isIncomingMessage(context) && typeof context.text === 'string';
     case ChatBotFilter.MessageAttachment:
       return isIncomingMessage(context) && Boolean(context.message.attachments?.length);
+    case ChatBotFilter.MessageImage:
+      return hasMedia(context, 'image/');
+    case ChatBotFilter.MessageVideo:
+      return hasMedia(context, 'video/');
+    case ChatBotFilter.MessageAudio:
+      return hasMedia(context, 'audio/');
+    case ChatBotFilter.MessageVoice:
+      return (
+        isIncomingMessage(context) &&
+        (context.message.attachments?.some(
+          ({ mime, waveform }) => Boolean(waveform) && mime?.toLowerCase().startsWith('audio/'),
+        ) ??
+          false)
+      );
+    case ChatBotFilter.MessagePost:
+      return (
+        isIncomingMessage(context) &&
+        (context.message.entities?.some((entity) => entity.type === 'post') ?? false)
+      );
     case ChatBotFilter.MessageReply:
       return isIncomingMessage(context) && context.message.replyTo != null;
     case ChatBotFilter.MessageForward:
-      return isIncomingMessage(context) && Boolean(context.message.forwardedFromMessageId);
+      return (
+        isIncomingMessage(context) &&
+        Boolean(context.message.forwardedFromMessageId || context.message.forwardedFromChatId)
+      );
     case ChatBotFilter.Edit:
       return context.update.type === ChatUpdateType.MessageEdited;
     case ChatBotFilter.Read:
@@ -44,4 +66,12 @@ function matchesFilter(context: ChatContext, filter: ChatBotFilter): boolean {
     default:
       return context.update.type === filter;
   }
+}
+
+function hasMedia(context: ChatContext, prefix: string): boolean {
+  return (
+    isIncomingMessage(context) &&
+    (context.message.attachments?.some(({ mime }) => mime?.toLowerCase().startsWith(prefix)) ??
+      false)
+  );
 }

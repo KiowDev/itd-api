@@ -5,6 +5,54 @@ import { ChatBot, ChatContext } from '../../src/index.js';
 import { message, setup } from '../helpers/bot.fixtures.js';
 
 describe('ChatContext', () => {
+  it('выбирает ID текущего сообщения и сохраняет список ID пакетного события', async () => {
+    const { itd } = setup();
+    try {
+      const reaction = { type: ChatUpdateType.MessageReactions, messageId: 'target' };
+      expect(new ChatContext(itd, reaction).messageId).toBe('target');
+      expect(
+        new ChatContext(itd, reaction, {
+          messageId: 'selected',
+          senderId: 'u1',
+          createdAt: '2026-11-20T00:00:00.000Z',
+        }).messageId,
+      ).toBe('selected');
+
+      const batch = new ChatContext(itd, {
+        type: ChatUpdateType.MessagesDeleted,
+        messageIds: ['m1', 'm2'],
+      });
+      expect(batch.messageId).toBeUndefined();
+      expect(batch.update.messageIds).toEqual(['m1', 'm2']);
+    } finally {
+      await itd.close();
+    }
+  });
+
+  it('выбирает ID текущего сообщения и сохраняет список ID пакетного события', async () => {
+    const { itd } = setup();
+    try {
+      const reaction = { type: ChatUpdateType.MessageReactions, messageId: 'target' };
+      expect(new ChatContext(itd, reaction).messageId).toBe('target');
+      expect(
+        new ChatContext(itd, reaction, {
+          messageId: 'selected',
+          senderId: 'u1',
+          createdAt: '2026-11-20T00:00:00.000Z',
+        }).messageId,
+      ).toBe('selected');
+
+      const batch = new ChatContext(itd, {
+        type: ChatUpdateType.MessagesDeleted,
+        messageIds: ['m1', 'm2'],
+      });
+      expect(batch.messageId).toBeUndefined();
+      expect(batch.update.messageIds).toEqual(['m1', 'm2']);
+    } finally {
+      await itd.close();
+    }
+  });
+
   it('останавливается из команды и сохраняет типы гидратированного клиента', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
       const path = new URL(String(url)).pathname;

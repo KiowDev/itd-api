@@ -36,135 +36,83 @@ bot.command('echo', (ctx) => ctx.replyTo(ctx.args || 'Напишите текс�
 await bot.start();
 ```
 
-Вызовите `bot.stop()`, чтобы остановить бота. Из кода завершения приложения дождитесь
-завершения работы через `await bot.drain()`, затем вызовите `await itd.close()`.
+`bot.isRunning` остаётся `true` при запуске и переподключении. `bot.isReady` показывает,
+открыто ли соединение для получения событий.
 
-`bot.isRunning` показывает, запущен ли бот. `bot.isReady` показывает, установлено ли соединение для получения событий чатов.
-Зарегистрируйте обработчики до запуска:
-
-```ts
-import { ChatBotLifecycleEvent } from '@itd-api/chat-bot';
-
-bot.on(ChatBotLifecycleEvent.Connect, () => console.log('Бот подключён'));
-bot.on(ChatBotLifecycleEvent.Reconnect, ({ attempt, delay }) =>
-  console.log(`Попытка ${attempt} через ${delay} мс`),
-);
-bot.on(ChatBotLifecycleEvent.Error, (error) => console.error('Ошибка получения событий', error));
-bot.on(ChatBotLifecycleEvent.Stop, () => console.log('Бот остановлен'));
-```
-
-Чтобы бот продолжал обработку после перезапуска, настройте `checkpoint`:
-
-```ts
-import { FileKeyValueStore } from 'itd-api/node';
-
-const bot = new ChatBot(itd, {
-  checkpoint: {
-    storage: new FileKeyValueStore<number>('bot-state.json'),
-    key: 'echo-bot:account-id',
-  },
-});
-
-await bot.start();
-```
-
-С этой настройкой `bot.start()` продолжает с сохранённого номера. Чтобы получить события после
-другого номера, вызовите `bot.start(eventSeq)`. Если вы сами открывали соединение через
-`itd.chats.events.connect()`, закройте его через `itd.chats.events.disconnect()` перед таким запуском.
-
-Бот сохраняет номер после успешной обработки события и всех предыдущих.
-После ошибки обработчика при следующем запуске бот может получить те же события снова.
-
-По умолчанию бот обрабатывает обновления последовательно. Чтобы обрабатывать до четырёх чатов
-одновременно, используйте `new ChatBot(itd, { concurrency: 4 })`. Порядок обновлений внутри каждого
-чата сохраняется.
-
-По умолчанию в очереди могут ждать до 256 обновлений. Если боту нужно принимать больше обновлений
-во время коротких всплесков, задайте лимит, например `new ChatBot(itd, { maxPendingUpdates: 1024 })`.
-При переполнении бот обрабатывает принятые события и пытается догрузить пропущенные.
-Окончательные ошибки подключения и восстановления приходят в `ChatBotLifecycleEvent.Error`.
-
-Бот использует `logger` из настроек `ItdClient`. Без настроенного логгера ошибки выводятся в
-консоль. Чтобы обработать ошибку команды или middleware самостоятельно, зарегистрируйте обработчик
-через `bot.catch()`.
+При завершении приложения вызовите `bot.stop()`, дождитесь обработчиков через
+`await bot.drain()`, затем закройте клиент через `await itd.close()`.
 
 ## На что бот может реагировать
 
 - `bot.command('помощь', ...)` срабатывает на `/помощь` и `/Помощь`. Текст после команды доступен в `ctx.args`, её имя в нижнем регистре — в `ctx.command`.
 - `bot.hears('помощь', ...)` срабатывает, когда сообщение целиком совпадает с фразой. Можно передать регулярное выражение и прочитать совпадение в `ctx.match`.
-- `bot.on(ChatBotFilter.MessageAttachment, ...)` срабатывает, когда собеседник присылает вложение.
 
-Используйте `ChatBotFilter` для отбора сообщений по их содержимому. Например, `MessageText`
-выбирает сообщения с текстом, а `MessageAttachment` — с вложениями. Используйте `ChatUpdateType`
-для событий чата, например прочтения сообщения или изменения реакций.
+По умолчанию команды начинаются с `/`. Чтобы принимать также `!помощь`, передайте
+`commandPrefixes: ['/', '!']` в настройки бота. Если подходят несколько префиксов, используется самый длинный.
+
+| Что нужно обработать | Что передать в `bot.on()` |
+| --- | --- |
+| Состояние самого бота | `ChatBotLifecycleEvent` для подключения, переподключения, остановки или окончательной ошибки получения событий. |
+| Событие в чате | `ChatUpdateType`, например `MessageReactions` или `MessageDeleted`. |
+| Входящее сообщение по содержимому или признаку пересылки | `ChatBotFilter`, например `MessageImage`, `MessageVoice` или `MessageForward`. |
+
+Зарегистрируйте обработчики перед `bot.start()`. Вложенные фильтры позволяют сочетать условия.
 
 ```ts
+import { ChatBotFilter, ChatBotLifecycleEvent } from '@itd-api/chat-bot';
+import { ChatUpdateType } from 'itd-api';
+
+bot.on(ChatBotLifecycleEvent.Connect, () => console.log('Бот подключён'));
+
 bot.on(ChatUpdateType.MessageReactions, (ctx) => {
-  console.log(ctx.update.messageId, ctx.update.reactions);
+  console.log(ctx.messageId, ctx.update.reactions);
+});
+
+bot.on(ChatBotFilter.MessageForward).on(ChatBotFilter.MessageVoice, (ctx) => {
+  console.log('Переслано голосовое:', ctx.messageId);
 });
 ```
 
-По умолчанию команды начинаются с `/`. Чтобы принимать также `!помощь`, создайте бота
-через `new ChatBot(itd, { commandPrefixes: ['/', '!'] })`. Если подходят несколько префиксов, используется самый длинный.
+Текст и вложения доступны в `ctx.message`. В событии реакции `ctx.messageId` указывает на сообщение,
+к которому она относится.
 
-Текущее сообщение доступно в `ctx.message`. Добавляйте общие действия через `bot.use()` и вызывайте `await next()`, чтобы продолжить обработку.
-`bot.filter()` запускает обработчик по вашему условию.
+<details>
+<summary>Все события и фильтры bot.on()</summary>
 
-```ts
-import { ChatActionType, ChatUpdateType } from 'itd-api';
+| Набор | Значение | Когда срабатывает |
+| --- | --- | --- |
+| `ChatBotLifecycleEvent` | `Connect` | Открыто соединение для получения событий. |
+| `ChatBotLifecycleEvent` | `Reconnect` | Запланировано переподключение. Обработчик получает номер попытки `attempt` и задержку `delay` в миллисекундах. |
+| `ChatBotLifecycleEvent` | `Stop` | Бот остановился. |
+| `ChatBotLifecycleEvent` | `Error` | Бот больше не может получать или восстанавливать события. Обработчик получает ошибку. |
+| `ChatUpdateType` | `NewMessage` | Пришло одно новое сообщение. |
+| `ChatUpdateType` | `NewMessages` | Пришёл пакет новых сообщений. |
+| `ChatUpdateType` | `OwnMessages` | Получен пакет сообщений, отправленных текущим аккаунтом. |
+| `ChatUpdateType` | `MessageEdited` | Сообщение отредактировано. |
+| `ChatUpdateType` | `MessageDeleted` | Удалено одно сообщение. |
+| `ChatUpdateType` | `MessagesDeleted` | Удалён пакет сообщений. ID доступны в `ctx.update.messageIds`. |
+| `ChatUpdateType` | `MessagesRead` | Участник прочитал сообщения до `ctx.update.lastReadMessage` включительно. |
+| `ChatUpdateType` | `Presence` | Пользователь появился в сети или вышел из неё. |
+| `ChatUpdateType` | `Typing` | Собеседник печатает, записывает голосовое или видео либо загружает файл. Действие доступно в `ctx.update.action`. |
+| `ChatUpdateType` | `ChatCreated` | Создан чат. В событии могут быть его первые сообщения. |
+| `ChatUpdateType` | `ChatDeleted` | Чат удалён. |
+| `ChatUpdateType` | `ChatSettings` | Изменились настройки чата, например закрепление или отметка «непрочитано». |
+| `ChatUpdateType` | `HistoryCleared` | История чата очищена. |
+| `ChatUpdateType` | `MessageReactions` | Изменились реакции на сообщение. |
+| `ChatBotFilter` | `Message` | Любое входящее сообщение. |
+| `ChatBotFilter` | `MessageText` | Входящее сообщение с текстом. |
+| `ChatBotFilter` | `MessageAttachment` | Входящее сообщение с вложением. |
+| `ChatBotFilter` | `MessageImage` | Входящее сообщение с изображением. |
+| `ChatBotFilter` | `MessageVideo` | Входящее сообщение с видео. |
+| `ChatBotFilter` | `MessageAudio` | Входящее сообщение с аудиовложением. |
+| `ChatBotFilter` | `MessageVoice` | Входящее голосовое сообщение. |
+| `ChatBotFilter` | `MessagePost` | Входящее сообщение с карточкой поста. |
+| `ChatBotFilter` | `MessageReply` | Входящий ответ на сообщение. |
+| `ChatBotFilter` | `MessageForward` | Входящее пересланное сообщение. |
+| `ChatBotFilter` | `Edit` | Редактирование сообщения, как `ChatUpdateType.MessageEdited`. |
+| `ChatBotFilter` | `Read` | Прочтение сообщений, как `ChatUpdateType.MessagesRead`. |
 
-bot.filter(
-  (ctx) => ctx.update.type === ChatUpdateType.Typing && ctx.update.action === ChatActionType.RecordVideo,
-  (ctx) => console.log('Собеседник записывает видео', ctx.chatId),
-);
-```
-
-## Как разделить обработчики по модулям
-
-Соберите обработчики в отдельном `ChatComposer` и подключите его через `bot.use()`:
-
-```ts
-import { ChatComposer } from '@itd-api/chat-bot';
-
-const help = new ChatComposer();
-help.command('помощь', (ctx) => ctx.reply('Напишите, чем вам помочь.'));
-bot.use(help);
-```
-
-`filter()`, `command()`, `hears()` и `on()` для событий чата возвращают ветку.
-Обработчики в ней срабатывают только при совпадении. Для независимых веток вызывайте эти методы
-на одном боте или модуле. Если совпали несколько условий, обработчики идут в порядке регистрации,
-а `await next()` передаёт обработку дальше. Подключённые модули используют префиксы команд бота.
-
-Передайте один роутер нескольким модулям, чтобы каждый зарегистрировал свою ветку:
-
-```ts
-const chats = bot.router((ctx) => ctx.chatId);
-
-function registerSupport(routes: typeof chats) {
-  routes.route('support-chat-id').command('помощь', (ctx) => ctx.reply('Опишите проблему.'));
-}
-
-function registerTeam(routes: typeof chats) {
-  routes.route('team-chat-id').command('статус', (ctx) => ctx.reply('Бот на связи.'));
-}
-
-registerSupport(chats);
-registerTeam(chats);
-```
-
-Для чатов без маршрута можно добавить `chats.otherwise().use(handler)`. Если достаточно одного
-условия, используйте `bot.branch(condition, onMatch, onMismatch)`. Последний обработчик необязателен.
-
-Чтобы обработать ошибки одной ветки, добавьте `errorBoundary()` перед её обработчиками:
-
-```ts
-const safe = bot.errorBoundary(({ error }) => console.error('Ошибка команды', error));
-safe.command('статус', (ctx) => ctx.reply('Бот на связи.'));
-```
-
-`next()` в обработчике ошибки продолжает внешнюю цепочку. При включённом `checkpoint`
-перехваченная ошибка оставляет сохранённый номер на предыдущем успешно обработанном событии.
+</details>
 
 ## Как ответить сообщением или файлом
 
@@ -194,9 +142,68 @@ bot.command('profile', async (ctx) => {
 
 Для работы с [Hydrate](./hydrate.md) передайте `new ChatBot(hydrateClient(itd))`.
 
+## Как разделить обработчики по модулям
+
+Соберите обработчики в отдельном `ChatComposer` и подключите его через `bot.use()`:
+
+```ts
+import { ChatComposer } from '@itd-api/chat-bot';
+
+const help = new ChatComposer();
+help.command('помощь', (ctx) => ctx.reply('Напишите, чем вам помочь.'));
+bot.use(help);
+```
+
+`filter()`, `command()`, `hears()` и `on()` для событий чата возвращают ветку.
+Обработчики в ней срабатывают только при совпадении. Для независимых веток вызывайте эти методы
+на одном боте или модуле. Если совпали несколько условий, обработчики идут в порядке регистрации,
+а `await next()` передаёт обработку дальше. Подключённые модули используют префиксы команд бота.
+
+Для своего условия используйте `filter()`. Например, из событий о действиях собеседника
+можно выбрать только запись видео.
+
+```ts
+import { ChatActionType, ChatUpdateType } from 'itd-api';
+
+bot.on(ChatUpdateType.Typing).filter(
+  (ctx) => ctx.update.action === ChatActionType.RecordVideo,
+  (ctx) => console.log('Собеседник записывает видео', ctx.chatId),
+);
+```
+
+Передайте один роутер нескольким модулям, чтобы каждый зарегистрировал свою ветку:
+
+```ts
+const chats = bot.router((ctx) => ctx.chatId);
+
+function registerSupport(routes: typeof chats) {
+  routes.route('support-chat-id').command('помощь', (ctx) => ctx.reply('Опишите проблему.'));
+}
+
+function registerTeam(routes: typeof chats) {
+  routes.route('team-chat-id').command('статус', (ctx) => ctx.reply('Бот на связи.'));
+}
+
+registerSupport(chats);
+registerTeam(chats);
+```
+
+Для чатов без маршрута можно добавить `chats.otherwise().use(handler)`. Если достаточно одного
+условия, используйте `bot.branch(condition, onMatch, onMismatch)`. Последний обработчик необязателен.
+
+Чтобы обработать ошибки одной ветки, добавьте `errorBoundary()` перед её обработчиками:
+
+```ts
+const safe = bot.errorBoundary(({ error }) => console.error('Ошибка команды', error));
+safe.command('статус', (ctx) => ctx.reply('Бот на связи.'));
+```
+
+`next()` в обработчике ошибки продолжает внешнюю цепочку. При включённом `checkpoint`
+событие с перехваченной ошибкой не считается обработанным.
+
 ## Как запоминать данные между сообщениями
 
-Например, бот может считать, сколько раз пользователь вызвал `/count` в этом чате.
+Например, бот может считать, сколько раз вызвали `/count` в каждом чате.
 Для этого подключите `session()` и храните счётчик в `ctx.session`.
 
 ```ts
@@ -220,6 +227,40 @@ bot.command('count', (ctx) => {
 У каждого чата свой счётчик. По умолчанию данные хранятся в памяти и сбрасываются при перезапуске.
 Чтобы сохранить их в файл, передайте `FileKeyValueStore` из `itd-api/node` в настройке `storage`.
 Чтобы очистить данные текущего чата, присвойте `ctx.session = undefined`.
+
+## Как возобновить обработку после перезапуска
+
+Передайте `checkpoint` при создании бота, чтобы `bot.start()` продолжал с сохранённого номера события.
+Для каждого аккаунта используйте свой ключ.
+
+```ts
+import { FileKeyValueStore } from 'itd-api/node';
+
+const bot = new ChatBot(itd, {
+  checkpoint: {
+    storage: new FileKeyValueStore<number>('bot-state.json'),
+    key: 'echo-bot:account-id',
+  },
+});
+```
+
+Бот сохраняет номер после успешной обработки события и всех предыдущих. После ошибки
+обработчика при следующем запуске бот может снова получить часть событий.
+
+Чтобы начать с конкретного номера, передайте его в `bot.start(eventSeq)`. Если подключались
+к событиям напрямую через `itd.chats.events.connect()`, сначала вызовите
+`itd.chats.events.disconnect()`.
+
+## Как настроить обработку событий
+
+По умолчанию бот обрабатывает события последовательно. Настройка `concurrency: 4` позволяет
+обрабатывать до четырёх чатов одновременно. Внутри каждого чата порядок сохраняется.
+
+`maxPendingUpdates` задаёт размер очереди, по умолчанию 256 событий. При переполнении бот
+заканчивает принятую работу и пытается догрузить пропущенные события.
+
+Для ошибок команд и middleware используйте `bot.catch((error, ctx) => ...)`.
+По умолчанию эти ошибки выводятся в логгер клиента или в консоль.
 
 [Все методы и типы пакета](/api/generated/chat-bot/).
 [Полный пример бота](https://github.com/KiowDev/itd-api/blob/main/guides/web/packages/examples/chat-bot.mjs).

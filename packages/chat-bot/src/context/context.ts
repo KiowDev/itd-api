@@ -66,6 +66,14 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return this.update.chatId;
   }
 
+  /**
+   * ID текущего сообщения или сообщения, к которому относится событие.
+   * Для пакетного события без текущего сообщения используйте `update.messageIds`.
+   */
+  get messageId(): string | undefined {
+    return this.message?.messageId ?? this.update.messageId;
+  }
+
   /** Идентификатор автора сообщения. Подходит для `itd.users.get()`. */
   get senderId(): string | undefined {
     return this.message?.senderId;

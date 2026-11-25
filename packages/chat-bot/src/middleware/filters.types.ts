@@ -12,7 +12,7 @@ type ContextWithUpdate<C, T extends KnownUpdateType> = C & { update: ChatUpdate 
 export type ChatMessageContext<C extends ChatContext = ChatContext> = ContextWithUpdate<
   C,
   IncomingType
-> & { message: ChatMessage };
+> & { message: ChatMessage; readonly messageId: string };
 
 /** Контекст, соответствующий указанному фильтру. */
 export type ChatFilterContext<
