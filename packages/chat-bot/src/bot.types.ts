@@ -20,7 +20,7 @@ export type ChatBotOptions<
   maxPendingUpdates?: number;
   /** Где хранить номер последнего обработанного события между запусками. */
   checkpoint?: ChatCheckpointOptions;
-  /** Префиксы команд без пробельных символов. По умолчанию `['/']`. */
+  /** Префиксы команд бота и его модулей. По умолчанию `['/']`. */
   commandPrefixes?: readonly string[];
 } & (ChatContext<Client> extends C
   ? { createContext?: (...args: ConstructorParameters<typeof ChatContext<Client>>) => C }

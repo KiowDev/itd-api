@@ -4,6 +4,8 @@ export type { ChatBotErrorHandler, ChatBotOptions } from './bot.types.js';
 export { ChatContext } from './context/context.js';
 export type { ChatBotClient, ChatReplyOptions } from './context/context.types.js';
 export type { ChatCommandContext, ChatHearsContext, HearsTrigger } from './middleware/commands.js';
+export { ChatComposer } from './middleware/composer.js';
+export type { ChatRouter } from './middleware/composer.types.js';
 export { ChatBotFilter } from './middleware/filters.enum.js';
 export type { ChatFilterContext, ChatMessageContext } from './middleware/filters.types.js';
 export type {

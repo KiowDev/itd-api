@@ -119,6 +119,53 @@ bot.filter(
 );
 ```
 
+## Как разделить обработчики по модулям
+
+Соберите обработчики в отдельном `ChatComposer` и подключите его через `bot.use()`:
+
+```ts
+import { ChatComposer } from '@itd-api/chat-bot';
+
+const help = new ChatComposer();
+help.command('помощь', (ctx) => ctx.reply('Напишите, чем вам помочь.'));
+bot.use(help);
+```
+
+`filter()`, `command()`, `hears()` и `on()` для событий чата возвращают ветку.
+Обработчики в ней срабатывают только при совпадении. Для независимых веток вызывайте эти методы
+на одном боте или модуле. Если совпали несколько условий, обработчики идут в порядке регистрации,
+а `await next()` передаёт обработку дальше. Подключённые модули используют префиксы команд бота.
+
+Передайте один роутер нескольким модулям, чтобы каждый зарегистрировал свою ветку:
+
+```ts
+const chats = bot.router((ctx) => ctx.chatId);
+
+function registerSupport(routes: typeof chats) {
+  routes.route('support-chat-id').command('помощь', (ctx) => ctx.reply('Опишите проблему.'));
+}
+
+function registerTeam(routes: typeof chats) {
+  routes.route('team-chat-id').command('статус', (ctx) => ctx.reply('Бот на связи.'));
+}
+
+registerSupport(chats);
+registerTeam(chats);
+```
+
+Для чатов без маршрута можно добавить `chats.otherwise().use(handler)`. Если достаточно одного
+условия, используйте `bot.branch(condition, onMatch, onMismatch)`. Последний обработчик необязателен.
+
+Чтобы обработать ошибки одной ветки, добавьте `errorBoundary()` перед её обработчиками:
+
+```ts
+const safe = bot.errorBoundary(({ error }) => console.error('Ошибка команды', error));
+safe.command('статус', (ctx) => ctx.reply('Бот на связи.'));
+```
+
+`next()` в обработчике ошибки продолжает внешнюю цепочку. При включённом `checkpoint`
+перехваченная ошибка оставляет сохранённый номер на предыдущем успешно обработанном событии.
+
 ## Как ответить сообщением или файлом
 
 `ctx.reply()` отправляет сообщение в тот же чат. `ctx.replyTo()` добавляет цитату исходного сообщения.

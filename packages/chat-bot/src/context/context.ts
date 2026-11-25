@@ -19,6 +19,9 @@ import { withContextSignal } from './request-signal.js';
 /** Контексты входящих сообщений из `chat_created`. @internal */
 export const incomingChatCreatedContexts = new WeakSet<ChatContext>();
 
+/** Контексты, в которых локальный обработчик перехватил ошибку. @internal */
+export const failedChatContexts = new WeakSet<ChatContext>();
+
 /** Контекст события. Для пакета сообщений создаётся отдельный контекст на каждое сообщение. */
 export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
   /** Клиент, которому принадлежит бот. */

@@ -7,7 +7,11 @@ import {
 } from 'itd-api';
 import { ChatBotError } from '../bot.errors.js';
 import type { ChatBotErrorHandler } from '../bot.types.js';
-import { type ChatContext, incomingChatCreatedContexts } from '../context/context.js';
+import {
+  type ChatContext,
+  failedChatContexts,
+  incomingChatCreatedContexts,
+} from '../context/context.js';
 import type { ChatBotClient } from '../context/context.types.js';
 import type { ChatMiddleware } from '../middleware/middleware.js';
 
@@ -75,6 +79,8 @@ export class ChatUpdateDispatcher<Client extends ChatBotClient, C extends ChatCo
             new ChatBotError(handlerError, context),
           );
         }
+      } finally {
+        if (failedChatContexts.delete(context)) handled = false;
       }
     }
     return handled && !signal.aborted;

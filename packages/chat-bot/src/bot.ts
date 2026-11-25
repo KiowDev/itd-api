@@ -1,30 +1,12 @@
-import {
-  type ChatEvents,
-  EventComposer,
-  type EventFilter,
-  type EventTypeGuard,
-  type ItdClient,
-  ItdConfigError,
-} from 'itd-api';
+import { type ChatEvents, type ItdClient, ItdConfigError } from 'itd-api';
 import type { ChatBotErrorHandler, ChatBotOptions } from './bot.types.js';
 import { ChatContext } from './context/context.js';
 import type { ChatBotClient } from './context/context.types.js';
-import {
-  type ChatCommandContext,
-  type ChatHearsContext,
-  commandPredicate,
-  type HearsTrigger,
-  hearsPredicate,
-} from './middleware/commands.js';
+import { commandPrefixMiddleware } from './middleware/commands.js';
+import { ChatComposer } from './middleware/composer.js';
 import type { ChatBotFilter } from './middleware/filters.enum.js';
-import { matchesChatFilter } from './middleware/filters.js';
 import type { ChatFilterContext } from './middleware/filters.types.js';
-import {
-  adaptMiddleware,
-  type ChatMiddleware,
-  type ChatMiddlewareLike,
-  type ChatMiddlewareObj,
-} from './middleware/middleware.js';
+import type { ChatMiddlewareLike } from './middleware/middleware.js';
 import { ChatUpdateDispatcher } from './runtime/dispatch.js';
 import type { ChatBotLifecycleEvent } from './runtime/lifecycle.enum.js';
 import { isLifecycleEvent, type LifecycleHandler } from './runtime/lifecycle.js';
@@ -44,14 +26,11 @@ import { ChatBotRuntime } from './runtime/runtime.js';
 export class ChatBot<
   Client extends ChatBotClient = ItdClient,
   C extends ChatContext<Client> = ChatContext<Client>,
-> implements ChatMiddlewareObj<C>
-{
+> extends ChatComposer<C> {
   /** Клиент бота. Доступен в обработчиках как `ctx.itd`. */
   readonly itd: Client;
-  readonly #composer = new EventComposer<C>();
   readonly #runtime: ChatBotRuntime;
   readonly #dispatcher: ChatUpdateDispatcher<Client, C>;
-  readonly #commandPrefixes: readonly string[];
 
   /**
    * Создаёт бота поверх клиента с каналом чатов.
@@ -76,15 +55,8 @@ export class ChatBot<
     if (!Number.isSafeInteger(maxPendingUpdates) || maxPendingUpdates < 1) {
       throw new ItdConfigError('ChatBot.maxPendingUpdates должен быть положительным целым числом');
     }
-    const commandPrefixes = options?.commandPrefixes ?? ['/'];
-    if (
-      !Array.isArray(commandPrefixes) ||
-      !commandPrefixes.length ||
-      commandPrefixes.some((prefix) => typeof prefix !== 'string' || !prefix || /\s/.test(prefix))
-    ) {
-      throw new ItdConfigError('Укажите хотя бы один непустой префикс команды без пробелов');
-    }
-    this.#commandPrefixes = [...commandPrefixes].sort((a, b) => b.length - a.length);
+    super();
+    super.use(commandPrefixMiddleware(options?.commandPrefixes));
     this.itd = itd;
     // Без фабрики сигнатура конструктора допускает базовый ChatContext.
     const createContext =
@@ -116,90 +88,37 @@ export class ChatBot<
     return this.#runtime.isReady;
   }
 
-  /** Добавляет обработчики в порядке регистрации. Вызовите `await next()`, чтобы продолжить цепочку. */
-  use(...middleware: readonly ChatMiddlewareLike<C>[]): this {
-    this.#composer.use(...middleware.map(adaptMiddleware));
-    return this;
-  }
-
-  /** Добавляет обработчики для контекстов, прошедших проверку типа. */
-  filter<N extends C>(
-    predicate: EventTypeGuard<N, C>,
-    ...middleware: readonly ChatMiddlewareLike<N>[]
-  ): this;
-  /** Добавляет обработчики для событий, прошедших синхронное или асинхронное условие. */
-  filter(predicate: EventFilter<C>, ...middleware: readonly ChatMiddlewareLike<C>[]): this;
-  filter(predicate: EventFilter<C>, ...middleware: readonly ChatMiddlewareLike<C>[]): this {
-    this.#composer.filter(predicate, ...middleware.map(adaptMiddleware));
-    return this;
-  }
-
   /** Добавляет обработчики жизненного цикла. Они выполняются вне очереди сообщений. */
-  on<E extends ChatBotLifecycleEvent>(
+  override on<E extends ChatBotLifecycleEvent>(
     event: E,
     ...handlers: readonly ((payload: ChatBotLifecycleEvents[E]) => unknown)[]
   ): this;
   /**
-   * Добавляет обработчики для события чата или фильтра по сообщению.
-   * Массив срабатывает при совпадении хотя бы с одним фильтром.
+   * Создаёт ветку для события чата или фильтра по сообщению.
+   * Ветка срабатывает при совпадении хотя бы с одним фильтром.
    */
-  on<F extends ChatBotFilter>(
+  override on<F extends ChatBotFilter>(
     query: F | readonly F[],
     ...middleware: readonly ChatMiddlewareLike<ChatFilterContext<C, F>>[]
-  ): this;
-  on(
+  ): ChatComposer<ChatFilterContext<C, F>>;
+  override on(
     query: ChatBotFilter | readonly ChatBotFilter[] | ChatBotLifecycleEvent,
     ...handlers: readonly (ChatMiddlewareLike<C> | LifecycleHandler)[]
-  ): this {
+  ): this | ChatComposer<ChatFilterContext<C, ChatBotFilter>> {
     if (isLifecycleEvent(query)) {
       this.#runtime.lifecycle.on(query, handlers as readonly LifecycleHandler[]);
       return this;
     }
-    const filters = typeof query === 'string' ? [query] : [...query];
-    if (!filters.length) throw new ItdConfigError('Укажите хотя бы один фильтр для on()');
-    return this.filter(
-      (context) => matchesChatFilter(context, filters),
-      ...(handlers as readonly ChatMiddlewareLike<C>[]),
+    return super.on(
+      query,
+      ...(handlers as readonly ChatMiddlewareLike<ChatFilterContext<C, ChatBotFilter>>[]),
     );
-  }
-
-  /**
-   * Распознаёт входящую команду без учёта регистра и передаёт аргументы в `ctx.args`.
-   *
-   * @param command имя без префикса или список имён для одного обработчика.
-   * @example
-   * ```ts
-   * bot.command('эхо', (ctx) => ctx.reply(ctx.args));
-   * ```
-   */
-  command(
-    command: string | readonly string[],
-    ...middleware: readonly ChatMiddlewareLike<ChatCommandContext<C>>[]
-  ): this {
-    return this.filter(commandPredicate<C>(command, this.#commandPrefixes), ...middleware);
-  }
-
-  /**
-   * Проверяет текст входящего сообщения и передаёт первое совпадение в `ctx.match`.
-   *
-   * @param trigger строка для сравнения со всем текстом, регулярное выражение или список условий.
-   */
-  hears(
-    trigger: HearsTrigger,
-    ...middleware: readonly ChatMiddlewareLike<ChatHearsContext<C>>[]
-  ): this {
-    return this.filter(hearsPredicate<C>(trigger), ...middleware);
   }
 
   /** Устанавливает общий обработчик ошибок команд и middleware. Получает исходную ошибку и её контекст. */
   catch(handler: ChatBotErrorHandler<C>): this {
     this.#dispatcher.errorHandler = handler.bind(this);
     return this;
-  }
-
-  /** Возвращает обработчик цепочки для подключения к другому боту. */
-  middleware(): ChatMiddleware<C> {
-    return this.#composer.middleware();
   }
 
   /**

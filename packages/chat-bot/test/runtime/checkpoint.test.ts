@@ -1,9 +1,59 @@
 import { ChatUpdateType, MemoryKeyValueStore } from 'itd-api';
 import { describe, expect, it, vi } from 'vitest';
-import { ChatBot } from '../../src/index.js';
+import { ChatBot, ChatBotFilter } from '../../src/index.js';
 import { message, setup, withGate } from '../helpers/bot.fixtures.js';
 
 describe('Сохранение номера события ChatBot', () => {
+  it('оставляет перехваченное событие для повтора и передаёт внешнюю ошибку в bot.catch()', async () => {
+    const { itd, nextSocket } = setup();
+    const storage = new MemoryKeyValueStore<number>();
+    const bot = new ChatBot(itd, { checkpoint: { key: 'bot', storage } });
+    const inner = new Error('Ошибка команды');
+    const outer = new Error('Ошибка внешнего обработчика');
+    const local = vi.fn();
+    const global = vi.fn();
+    const tail = vi.fn();
+    bot
+      .on(ChatBotFilter.MessageText)
+      .errorBoundary(({ error, context }, next) => {
+        local(error, context.update.eventSeq);
+        return next();
+      })
+      .command('fail', () => {
+        throw inner;
+      });
+    bot.use((ctx) => {
+      tail(ctx.update.eventSeq);
+      if (ctx.update.eventSeq === 3) throw outer;
+    });
+    bot.catch((error, ctx) => global(error, ctx.update.eventSeq));
+    try {
+      const starting = bot.start();
+      const socket = await nextSocket();
+      socket.open();
+      await starting;
+      for (const [seq, text] of [
+        [1, 'привет'],
+        [2, '/fail'],
+        [3, 'дальше'],
+      ] as const) {
+        socket.update({
+          type: ChatUpdateType.NewMessage,
+          chat_id: 'c1',
+          event_seq: seq,
+          message: message(text, String(seq)),
+        });
+      }
+      await vi.waitFor(() => expect(tail.mock.calls).toEqual([[1], [2], [3]]));
+      await bot.drain();
+      expect(local.mock.calls).toEqual([[inner, 2]]);
+      expect(global.mock.calls).toEqual([[outer, 3]]);
+      expect(await storage.get('bot')).toBe(1);
+    } finally {
+      await itd.close();
+    }
+  });
+
   it.each(['checkpoint', 'stop'] as const)(
     'сохраняет открытый канал и не принимает события во время чтения checkpoint (%s)',
     async (mode) => {
