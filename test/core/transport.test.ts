@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { RateLimitPauseTarget } from '../../src/core/catalog.js';
+import { systemClock } from '../../src/core/clock.js';
 import { resolveRuntimeConfig } from '../../src/core/config.js';
 import { CookieJar } from '../../src/core/cookies.js';
 import {
@@ -47,6 +49,7 @@ function makeTransport(
   const transport = new Transport(config, {
     cookies: deps.cookies ?? undefined,
     getDeviceId: deps.getDeviceId,
+    rateLimitPauseTarget: deps.rateLimitPauseTarget,
     onRateLimit: deps.onRateLimit,
   });
 
@@ -250,6 +253,7 @@ describe('Transport: ошибки', () => {
       cookies: undefined,
       getDeviceId: undefined,
       onRateLimit: undefined,
+      rateLimitPauseTarget: undefined,
     });
 
     await expect(transport.send({ method: 'GET', path: '/api/posts' })).rejects.toThrow(
@@ -278,6 +282,7 @@ describe('Transport: ошибки', () => {
       cookies: undefined,
       getDeviceId: undefined,
       onRateLimit: undefined,
+      rateLimitPauseTarget: undefined,
     });
     const controller = new AbortController();
 
@@ -329,6 +334,7 @@ describe('Transport: ошибки', () => {
       cookies: undefined,
       getDeviceId: undefined,
       onRateLimit: undefined,
+      rateLimitPauseTarget: undefined,
     });
     const controller = new AbortController();
     controller.abort();
@@ -362,6 +368,7 @@ describe('Transport: ошибки', () => {
       cookies: undefined,
       getDeviceId: undefined,
       onRateLimit: undefined,
+      rateLimitPauseTarget: undefined,
     });
     const controller = new AbortController();
 
@@ -435,6 +442,64 @@ describe('Transport: cookie и rate-limit', () => {
       100,
       7,
       expect.objectContaining({ service: 'status' }),
+    );
+  });
+
+  it('передаёт остаток квоты обычного HTTP 429 до чтения тела', async () => {
+    vi.useFakeTimers();
+    try {
+      const body = new TransformStream();
+      const onRateLimit = vi.fn();
+      const { transport } = makeTransport(
+        [
+          new Response(body.readable, {
+            status: 429,
+            headers: { 'X-RateLimit-Limit': '2', 'X-RateLimit-Remaining': '0' },
+          }),
+        ],
+        {},
+        { onRateLimit, rateLimitPauseTarget: ITD_CATALOG.rateLimitPauseTarget },
+      );
+      const result = expect(
+        transport.send({ operationId: 'posts.get', method: 'GET', path: '/api/posts/1' }),
+      ).rejects.toMatchObject({ status: 429 });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const updatesBeforeBody = [...onRateLimit.mock.calls];
+      await body.writable.close();
+      await result;
+
+      expect(updatesBeforeBody).toEqual([
+        [2, 0, expect.objectContaining({ operationId: 'posts.get' })],
+      ]);
+      expect(onRateLimit).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('передаёт паузу из заголовков 429 при ошибке чтения тела', async () => {
+    const onRateLimit = vi.fn();
+    const clock = { ...systemClock, now: () => 1000 };
+    const body = new ReadableStream({
+      start(controller) {
+        controller.error(new Error('body unavailable'));
+      },
+    });
+    const { transport } = makeTransport(
+      [new Response(body, { status: 429, headers: { 'Retry-After': '6' } })],
+      { clock },
+      { onRateLimit, rateLimitPauseTarget: () => RateLimitPauseTarget.Bucket },
+    );
+
+    await expect(transport.send({ method: 'PATCH', path: '/message' })).rejects.toBeInstanceOf(
+      ItdNetworkError,
+    );
+    expect(onRateLimit).toHaveBeenCalledExactlyOnceWith(
+      undefined,
+      undefined,
+      expect.objectContaining({ path: '/message' }),
+      { target: RateLimitPauseTarget.Bucket, waitUntil: 7000 },
     );
   });
 });

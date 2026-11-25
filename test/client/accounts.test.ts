@@ -10,6 +10,7 @@ import type { ClientFeature } from '../../src/core/features.js';
 import { createKeyValueStore } from '../../src/core/key-value-store.js';
 import { RetrySafety } from '../../src/core/operation.js';
 import type { ClientPlugin } from '../../src/core/plugins/contracts.js';
+import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
 import {
   createMultiTokenStorage,
   MemoryMultiTokenStorage,
@@ -1030,6 +1031,47 @@ describe('очередь запросов', () => {
     await Promise.all(requests);
 
     await accounts.close();
+  });
+
+  it('в общем пуле разделяет квоту одного чата между клиентами', async () => {
+    vi.useFakeTimers();
+    try {
+      const { accounts, mock } = makeAccounts(
+        ({ headers }) =>
+          json(
+            { data: { message_id: 'm1' } },
+            {
+              headers: {
+                'X-RateLimit-Remaining':
+                  headers.get('authorization') === 'Bearer token-a' ? '8' : '9',
+              },
+            },
+          ),
+        { rateLimit: { pacing: RateLimitPacing.Smooth, concurrency: 1 } },
+      );
+      await using container = accounts;
+      const first = container.addAccount('a', { auth: 'token-a' });
+      const second = container.addAccount('b', { auth: 'token-b' });
+      const pending = [
+        first.chats.sendMessage('chat', { text: 'a' }),
+        second.chats.sendMessage('chat', { text: 'b' }),
+      ];
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mock.calls.map(({ headers }) => headers.get('authorization'))).toEqual([
+        'Bearer token-a',
+        'Bearer token-b',
+      ]);
+      await Promise.all(pending);
+      expect(first.rateLimitState()).toMatchObject([
+        { bucket: 'chats.send', instance: 'chat:chat', remaining: 8 },
+      ]);
+      expect(second.rateLimitState()).toMatchObject([
+        { bucket: 'chats.send', instance: 'chat:chat', remaining: 9 },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("'account' пропускает запросы разных аккаунтов одновременно", async () => {

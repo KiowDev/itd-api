@@ -1,4 +1,9 @@
-import type { AuthIdentity, AuthProvider, AuthProviderDeps } from '../core/auth-provider.js';
+import {
+  type AuthIdentity,
+  type AuthProvider,
+  type AuthProviderDeps,
+  setQueuedAuthPreparation,
+} from '../core/auth-provider.js';
 import type { ItdClock } from '../core/clock.js';
 import {
   AUTH_FLAG_COOKIE,
@@ -10,6 +15,7 @@ import {
 import { Emitter, reportListenerError } from '../core/emitter.js';
 import { ItdAuthError, ItdConfigError, ItdStateError, isItdApiError } from '../core/errors.js';
 import type { HttpClient } from '../core/execution/http.js';
+import { readTokenMetadata, type TokenMetadata } from '../core/jwt.js';
 import type { Logger } from '../core/logger.js';
 import { createUuidV4 } from '../core/runtime.js';
 import { isObjectLike, isRecord, requireOptionalBoolean } from '../core/validate.js';
@@ -31,7 +37,6 @@ import {
   solveCaptchaToken,
   validateCaptchaToken,
 } from './captcha.js';
-import { readTokenMetadata, type TokenMetadata } from './jwt.js';
 import type { AuthInput, CaptchaSolver, CredentialsAuth, SessionOptions } from './options.js';
 import { copySession, type ItdSession, MemoryTokenStorage, type TokenStorage } from './storage.js';
 
@@ -427,6 +432,20 @@ export class AuthManager implements AuthProvider {
     this.#emitter = new Emitter<AuthEvents>((error) =>
       reportListenerError(config.logger, 'авторизации', error),
     );
+    const auth = config.auth;
+    if (hooks.onAccountChange && typeof auth === 'object' && 'getToken' in auth) {
+      setQueuedAuthPreparation(this, {
+        prepare: async () => {
+          const token = await this.#prepareAccessToken();
+          return () => {
+            const current = this.#session?.accessToken ?? this.#externalToken ?? null;
+            if (token === current) return true;
+            const { userId } = this.#identityForToken(token ?? undefined);
+            return userId !== undefined && userId === this.getCurrentAuthIdentity().userId;
+          };
+        },
+      });
+    }
   }
 
   /** Подписка на события авторизации. */
@@ -646,14 +665,20 @@ export class AuthManager implements AuthProvider {
 
   /** Перед каждой попыткой перечитывает внешний источник токена. */
   async prepare(): Promise<void> {
+    await this.#prepareAccessToken();
+  }
+
+  /** Возвращает токен, прочитанный при подготовке этой попытки. */
+  async #prepareAccessToken(): Promise<string | null> {
     this.#assertActive();
     const session = await this.#loadSession();
-    if (session?.accessToken) return;
+    if (session?.accessToken) return session.accessToken;
 
     const auth = this.#config.auth;
     if (typeof auth === 'object' && auth !== null && 'getToken' in auth) {
-      await this.#readExternalToken(() => auth.getToken());
+      return this.#readExternalToken(() => auth.getToken());
     }
+    return null;
   }
 
   /**

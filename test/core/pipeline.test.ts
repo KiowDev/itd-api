@@ -114,6 +114,7 @@ function makeTransport(
   const transport = new Transport(config, {
     cookies: deps.cookies ?? undefined,
     getDeviceId: deps.getDeviceId,
+    rateLimitPauseTarget: deps.rateLimitPauseTarget,
     onRateLimit: deps.onRateLimit,
   });
 
@@ -310,7 +311,7 @@ describe('слой повторов', () => {
           catalog: ITD_CATALOG,
           retry: config.retry,
           rateLimitDelays,
-          pauseQueue: undefined,
+          onRateLimitRetry: undefined,
           hooks: config.hooks,
           logger: config.logger,
           buildUrl: (request) => transport.buildUrl(request),
@@ -442,7 +443,7 @@ describe('слой повторов', () => {
           catalog,
           retry: undefined,
           rateLimitDelays: undefined,
-          pauseQueue: undefined,
+          onRateLimitRetry: undefined,
           hooks: {},
           logger: undefined,
           buildUrl: () => 'https://itd.test/api/posts',

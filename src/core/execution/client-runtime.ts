@@ -1,15 +1,22 @@
-import type { AuthProvider, AuthProviderDeps } from '../auth-provider.js';
-import type { OperationCatalog } from '../catalog.js';
+import {
+  type AuthProvider,
+  type AuthProviderDeps,
+  queuedAuthPreparation,
+} from '../auth-provider.js';
+import { type OperationCatalog, RateLimitPauseTarget } from '../catalog.js';
 import { assertKnownBucket, type ResolvedRuntimeConfig, resolveRuntimeConfig } from '../config.js';
 import type { ClientConnection } from '../connection.js';
 import { CookieJar } from '../cookies.js';
 import { ItdAbortError } from '../errors.js';
 import type { RuntimeOptions } from '../options.js';
 import { PluginRegistry } from '../plugins/registry.js';
+import { createUuidV4 } from '../runtime.js';
 import { type RateLimitBucketState, RequestQueuePool } from '../scheduling/rate-limit.js';
+import { rateLimitRetryStep } from '../scheduling/retry.js';
 import { ServiceRegistry } from '../services.js';
 import { originOf } from '../url.js';
 import { HttpClient } from './http.js';
+import { createRequestAbortScope, type RequestAbortScope } from './lifecycle.js';
 import {
   composePipeline,
   createAttemptMiddleware,
@@ -26,11 +33,13 @@ import {
 } from './middleware.js';
 import {
   isDisposeCleanupRequest,
+  operationRateLimitOf,
   type PipelineRequest,
   type RequestHandler,
+  type RequestQueueKey,
   requestQueueKey,
 } from './pipeline.js';
-import { Transport } from './transport.js';
+import { Transport, type TransportDeps } from './transport.js';
 
 /** Имена стадий обработки запроса в порядке выполнения. @internal */
 export const ClientRuntimeStage = Object.freeze({
@@ -144,28 +153,26 @@ export function createClientRuntime<A extends AuthProvider>(
     sharedQueues ??
     (config.rateLimit ? new RequestQueuePool(config.rateLimit, config.clock) : undefined);
   const ownsQueues = sharedQueues === undefined;
+  const useBuckets = !!config.rateLimit && config.rateLimit.buckets;
+  // В общем пуле одинаковые ключи экземпляров разных клиентов не делят квоту.
+  let queueOwner: string | undefined;
+  let pendingScopedAttempts: Set<RequestAbortScope> | undefined;
+  const onAccountChange = useBuckets
+    ? () => {
+        if (queueOwner === undefined) return;
+        queueOwner = createUuidV4();
+        if (!pendingScopedAttempts?.size) return;
+        const reason = new ItdAbortError('Владелец авторизации изменился');
+        for (const attempt of pendingScopedAttempts) attempt.abort(reason);
+      }
+    : undefined;
 
   // Transport читает deviceId авторизации, а та отправляет свои запросы через готовый
   // pipeline. Цикл замыкается ленивыми callbacks строго внутри этой фабрики.
   let auth!: A;
+  let queuedAuth: ReturnType<typeof queuedAuthPreparation>;
+  let unsubscribeAccount: (() => void) | undefined;
   let transport!: Transport;
-
-  /**
-   * Бакет, из которого спишется запрос.
-   *
-   * Источники по убыванию приоритета: `rateLimitBucket` запроса, правило `rateLimit.bucket`,
-   * каталог операций.
-   */
-  const bucketFor = (request: PipelineRequest): string => {
-    if (request.rateLimitBucket !== undefined) return request.rateLimitBucket;
-
-    const custom = config.rateLimit?.bucket?.({
-      operationId: request.operationId,
-      method: request.method,
-      path: request.path,
-    });
-    return custom ?? catalog.bucketOf(request.operationId);
-  };
 
   /** Origin направления, мемоизированный по базовому адресу. */
   const origins = new Map<string, string | undefined>();
@@ -179,43 +186,81 @@ export function createClientRuntime<A extends AuthProvider>(
 
   const queueKeyFor = (request: PipelineRequest) =>
     requestQueueKey(request, (target) => {
-      const bucket = bucketFor(target);
+      const quota = useBuckets ? operationRateLimitOf(target) : undefined;
+      if (quota) queueOwner ??= createUuidV4();
+      const override =
+        target.rateLimitBucket ??
+        config.rateLimit?.bucket?.({
+          operationId: target.operationId,
+          method: target.method,
+          path: target.path,
+        });
+      const instance = override === undefined ? quota?.instance || undefined : undefined;
+      const bucket = override ?? catalog.bucketOf(target.operationId, instance);
       return {
         destination: destinationOf(target.baseUrl ?? config.baseUrl),
         bucket,
+        instance,
+        owner: quota ? queueOwner : undefined,
         definition: catalog.bucketDefinitionOf(bucket),
       };
     });
 
-  const queueFor = (request: PipelineRequest) => {
-    if (!queues) return undefined;
+  const queueFor = queues
+    ? (key: RequestQueueKey) =>
+        queues.for(key.destination, key.bucket, key.definition, key.instance, key.owner)
+    : undefined;
+  const rateLimitPauseTarget = queueFor ? catalog.rateLimitPauseTarget?.bind(catalog) : undefined;
 
-    const key = queueKeyFor(request);
-    return queues.for(key.destination, key.bucket, key.definition);
+  /** Проверяет владельца при постановке в очередь и перед отправкой. */
+  const assertQueueOwner = (owner: string | undefined): void => {
+    if (owner !== queueOwner) throw new ItdAbortError('Владелец авторизации изменился');
   };
 
-  /** Передаёт остаток из заголовков ответа бакету запроса; тот решает, тормозить ли себя. */
-  const observeRateLimit = (
-    limit: number | undefined,
-    remaining: number | undefined,
-    request: PipelineRequest,
-  ): void => {
-    const queue = queueFor(request);
-    if (!queue) return;
+  /** Обновляет остаток бакета и применяет серверную паузу к её области действия. */
+  const observeRateLimit: TransportDeps['onRateLimit'] = queueFor
+    ? (limit, remaining, request, rejection) => {
+        if (lifetime.signal.aborted) return;
+        const target = rejection?.target;
+        const until = rejection?.waitUntil;
+        const delay = rejection?.useRetryDelay
+          ? rateLimitRetryStep(request, config.rateLimit?.retryDelays)
+          : until === undefined
+            ? undefined
+            : until - config.clock.now();
+        if (target === RateLimitPauseTarget.None) return;
+        if (target === RateLimitPauseTarget.Origin) {
+          if (delay !== undefined)
+            queues?.pauseDestination(queueKeyFor(request).destination, delay);
+          return;
+        }
 
-    const waited = queue.observe(limit, remaining);
-    if (waited > 0) {
-      config.logger?.debug(
-        `остаток лимита ${remaining} из ${limit ?? '?'}, ` +
-          `бакет ${queue.bucket} ждёт ${waited} мс`,
-      );
-    }
-  };
+        const bucketDelay = target === RateLimitPauseTarget.Bucket ? delay : undefined;
+        if (
+          !request.skipQueue &&
+          limit === undefined &&
+          remaining === undefined &&
+          bucketDelay === undefined
+        ) {
+          return;
+        }
+        const queue = queueFor(queueKeyFor(request));
+        const waited = queue.observe(limit, remaining, bucketDelay === undefined);
+        if (bucketDelay !== undefined && bucketDelay > 0) queue.pause(bucketDelay);
+        if (waited > 0) {
+          config.logger?.debug(
+            `остаток лимита ${remaining} из ${limit ?? '?'}, ` +
+              `бакет ${queue.bucket} ждёт ${waited} мс`,
+          );
+        }
+      }
+    : undefined;
 
   transport = new Transport(config, {
     // Заголовки читаются и при `pacing: 'off'`: на темп они там не влияют, но остаются
     // единственным источником для rateLimitState().
-    onRateLimit: queues ? observeRateLimit : undefined,
+    onRateLimit: observeRateLimit,
+    rateLimitPauseTarget,
     cookies: config.useCookieJar ? jar : undefined,
     getDeviceId: () => auth.deviceId(),
   });
@@ -243,7 +288,19 @@ export function createClientRuntime<A extends AuthProvider>(
         catalog,
         retry: config.retry,
         rateLimitDelays: config.rateLimit?.retryDelays,
-        pauseQueue: queues ? (ms, request) => queueFor(request)?.pause(ms) : undefined,
+        onRateLimitRetry: queueFor
+          ? (ms, request, error) => {
+              const target =
+                error.status === 429
+                  ? rateLimitPauseTarget?.(request.operationId, error.scope)
+                  : undefined;
+              if (target === RateLimitPauseTarget.None) return false;
+              if (target === undefined) {
+                queueFor(queueKeyFor(request)).pause(ms);
+              }
+              return true;
+            }
+          : undefined,
         hooks: config.hooks,
         logger: config.logger,
         buildUrl: (request) => transport.buildUrl(request),
@@ -255,16 +312,46 @@ export function createClientRuntime<A extends AuthProvider>(
     },
     {
       name: ClientRuntimeStage.AuthPreparation,
-      middleware: createAuthPreparationMiddleware(() => auth),
+      middleware: createAuthPreparationMiddleware(
+        () => auth,
+        onAccountChange &&
+          ((request) => {
+            if (!queuedAuth || !operationRateLimitOf(request)) return undefined;
+            unsubscribeAccount ??= queuedAuth.onAccountChange?.(onAccountChange);
+            return queuedAuth.prepare();
+          }),
+      ),
     },
   ];
 
-  if (queues) {
+  if (queueFor) {
     executionStages.push({
       name: ClientRuntimeStage.Queue,
       middleware: createQueueMiddleware((request, task) => {
-        const queue = queueFor(request);
-        return queue ? queue.schedule(task, request.signal) : task();
+        const key = queueKeyFor(request);
+        if (key.owner === undefined) return queueFor(key).schedule(task, request.signal);
+        assertQueueOwner(key.owner);
+        const queue = queueFor(key);
+
+        const scope = createRequestAbortScope(request.signal, undefined, config.clock);
+        pendingScopedAttempts ??= new Set();
+        const pending = pendingScopedAttempts;
+        pending.add(scope);
+        const release = () => {
+          if (pending.delete(scope)) scope.cleanup();
+        };
+
+        return queue
+          .schedule(
+            () => {
+              release();
+              assertQueueOwner(key.owner);
+              return task();
+            },
+            scope.signal,
+            operationRateLimitOf(request)?.cost,
+          )
+          .finally(release);
       }),
     });
   }
@@ -311,6 +398,7 @@ export function createClientRuntime<A extends AuthProvider>(
   );
 
   const http = new HttpClient({
+    useBuckets,
     handler,
     baseUrl: config.baseUrl,
     deadline: config.deadline,
@@ -321,7 +409,13 @@ export function createClientRuntime<A extends AuthProvider>(
   });
   // Auth использует тот же executor: sign-in и refresh объявляют skip-флаги точечно,
   // вместо отдельного pipeline с постепенно расходящимся порядком стадий.
-  auth = internals.auth({ config, http, cookies: jar });
+  auth = internals.auth({
+    config,
+    http,
+    cookies: jar,
+    onAccountChange,
+  });
+  queuedAuth = onAccountChange ? queuedAuthPreparation(auth) : undefined;
   const stageOrder = Object.freeze([
     ...operationStages.map(({ name }) => name),
     ...executionStages.map(({ name }) => name),
@@ -364,7 +458,7 @@ export function createClientRuntime<A extends AuthProvider>(
       });
     },
     platformHeaders: (url) => transport.platformHeaders(url),
-    rateLimitState: () => queues?.states() ?? [],
+    rateLimitState: () => queues?.states(queueOwner) ?? [],
     close: () => {
       if (ownsQueues) queues?.stop();
     },
@@ -374,6 +468,7 @@ export function createClientRuntime<A extends AuthProvider>(
       // В отличие от close(), это освобождение терминальное: состояние счётчиков больше
       // никому не пригодится, и держать карту очередей незачем.
       if (ownsQueues) queues?.clear();
+      unsubscribeAccount?.();
       auth.dispose();
       await plugins.dispose();
     },

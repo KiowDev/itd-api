@@ -17,6 +17,7 @@ import {
   identifyRequest,
   initializeOperationState,
   markRequestErrorReported,
+  type OperationRateLimit,
   type OperationReader,
   type PipelineRequest,
   type PipelineRequestInput,
@@ -28,6 +29,7 @@ import {
 export interface HttpClientDeps {
   /** Готовый обработчик — вся цепочка стадий поверх транспорта. */
   handler: RequestHandler;
+  useBuckets: boolean;
   baseUrl: string;
   /** Общий срок логической операции по умолчанию; `0` — без срока. */
   deadline: number;
@@ -60,6 +62,7 @@ interface RunOptions {
   allowDisposed?: boolean | undefined;
   reader?: OperationReader | undefined;
   disposeCleanup?: boolean | undefined;
+  rateLimit?: OperationRateLimit | undefined;
 }
 
 /**
@@ -71,6 +74,7 @@ interface RunOptions {
  */
 export class HttpClient {
   readonly #handler: RequestHandler;
+  readonly #useBuckets: boolean;
   readonly #baseUrl: string;
   readonly #deadline: number;
   readonly #clock: ItdClock;
@@ -81,6 +85,7 @@ export class HttpClient {
 
   constructor(deps: HttpClientDeps) {
     this.#handler = deps.handler;
+    this.#useBuckets = deps.useBuckets;
     this.#baseUrl = deps.baseUrl;
     this.#deadline = deps.deadline;
     this.#clock = deps.clock;
@@ -111,13 +116,20 @@ export class HttpClient {
     return this.#run(identifyRequest(options)) as Promise<T>;
   }
 
+  /** Формирует ключ экземпляра, когда клиент использует раздельные бакеты. */
+  bucketInstance(group: string, id: string, cost = 1): OperationRateLimit | undefined {
+    return this.#useBuckets ? { instance: `${group}:${id}`, cost } : undefined;
+  }
+
   /** Выполняет контракт операции; `next()` плагина возвращает результат после `read`. */
   execute<T, TId extends OperationId>(
     operation: OperationContract<T, TId>,
     options: HttpOperationOptions,
+    rateLimit?: OperationRateLimit,
   ): Promise<T> {
     return this.#run(operationRequest(operation, options), {
       reader: operation.read,
+      rateLimit,
     }) as Promise<T>;
   }
 
@@ -161,6 +173,7 @@ export class HttpClient {
       lifecycleSignal: scope.signal,
       reader: options.reader,
       disposeCleanup: options.disposeCleanup,
+      rateLimit: options.rateLimit,
     });
 
     try {

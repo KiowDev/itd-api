@@ -4,20 +4,18 @@ description: "Ограничения частоты API итд.com: бакеты
 
 # Ограничения частоты
 
-Маршруты итд.com разбиты на **бакеты** — группы маршрутов с общим счётчиком запросов
-в минуту. Всё, для чего отдельного правила нет, попадает в бакет `default`. Лимиты
-считаются по IP: второй аккаунт с того же адреса тратит ту же квоту.
+Маршруты итд.com разбиты на **бакеты** — группы маршрутов с общим счётчиком запросов.
+Маршруты без отдельного правила попадают в бакет `default`.
 
-Остаток приходит в заголовках каждого ответа — `x-ratelimit-limit`
-и `x-ratelimit-remaining`, — включая ответы с ошибкой: `404` и `422` расходуют квоту так
-же, как успешные запросы. Время сброса окна сервер не сообщает. При исчерпании квоты
-приходит `429`, который библиотека превращает в `ItdRateLimitError`.
+Лимит и остаток могут приходить в заголовках `X-RateLimit-Limit`
+и `X-RateLimit-Remaining`. При исчерпании квоты сервер отвечает `429`,
+который библиотека превращает в `ItdRateLimitError`.
 
 ## Как работает библиотека
 
 На каждый хост заводится единый планировщик со своими очередями бакетов. Перед фактическим
 стартом он одновременно проверяет общие и локальные ограничения, поэтому пауза одного
-бакета не задерживает остальные, а суммарное число одновременных запросов остаётся равным
+бакета не задерживает остальные, а суммарное число одновременных запросов ограничено
 `concurrency`.
 
 Разделены именно паузы, а не пропускная способность: `bucketConcurrency` по умолчанию
@@ -31,18 +29,14 @@ description: "Ограничения частоты API итд.com: бакеты
 | Значение | Поведение |
 | --- | --- |
 | `RateLimitPacing.React` (по умолчанию) | задержек нет, пока остаток больше нуля; при нуле бакет ждёт `60000 / limit` мс |
-| `RateLimitPacing.Smooth` | ровный темп в пределах лимита бакета; задержки идут с первого запроса |
-| `RateLimitPacing.Off` | остаток на темп не влияет, остаётся только пауза после `429` |
+| `RateLimitPacing.Smooth` | рассчитывает интервалы между запросами по лимиту бакета |
+| `RateLimitPacing.Off` | темп по остатку квоты не рассчитывается |
 
-Ни один режим не гарантирует отсутствия `429`. `react` не успевает затормозить запросы,
-уже ушедшие в сеть, когда остаток обнуляется. `smooth` резко снижает вероятность отказа,
-но и он опирается на оценку: границу минутного окна сервер не сообщает, а квота считается
-по IP и делится с другими процессами и клиентами на том же адресе. Отказы подхватывает
-лестница пауз `retryDelays`; после последней ступени выбрасывается `ItdRateLimitError`.
-Заголовок `Retry-After` заменяет очередную ступень, но число повторов не увеличивает; пауза
-дольше самой длинной ступени не соблюдается — повтора нет, `ItdRateLimitError` содержит
-`retryAfter`. Пустой `retryDelays` отключает повторы после `429`. `timeout` на паузы
-лестницы не действует; общий предел задаёт `deadline`.
+Очередь учитывает только запросы своего клиента или общего пула. Когда сервер
+отвечает `429`, библиотека берёт задержку перед повтором из `retryDelays`.
+Задержка сервера заменяет очередную ступень. Если она превышает максимальную
+ступень или повторы исчерпаны, клиент возвращает `ItdRateLimitError`.
+`retryDelays: []` отключает повторы после `429`. Ожидание входит в `deadline` операции.
 
 При `rateLimit: false` лестницы нет: `429` повторяет обычная политика `retry` с учётом
 `Retry-After` в пределах `maxDelay` и `attempts`.
@@ -92,6 +86,9 @@ await itd.request({
 });
 ```
 
+Если задать `rateLimitBucket` или вернуть имя из функции `bucket`, все запросы
+с этим именем попадут в одну очередь на хосте.
+
 ### Одна очередь на хост (`buckets: false`)
 
 `buckets: false` возвращает поведение до разделения на бакеты: одна очередь на хост, её
@@ -107,8 +104,11 @@ await itd.request({
 
 ### Остаток в рантайме
 
-`itd.rateLimitState()` возвращает по записи на каждый бакет, через который уже проходили
-запросы: `destination`, `bucket`, `limit`, `remaining`, `active`, `pending`.
+`itd.rateLimitState()` возвращает сохранённые состояния бакетов:
+`destination`, `bucket`, `limit`, `remaining`, `active`, `pending`.
+Для бакетов с несколькими экземплярами поле `instance` указывает, к какому
+экземпляру относится запись. В общем пуле клиент видит свои экземпляры
+и общие статические бакеты.
 
 ```ts
 const posts = itd.rateLimitState().find((state) => state.bucket === 'posts.create');
@@ -128,8 +128,9 @@ if ((posts?.remaining ?? Number.POSITIVE_INFINITY) < items.length) {
 
 ### Несколько аккаунтов
 
-`ItdAccounts` по умолчанию ставит все аккаунты в одну очередь: квота у них общая. Если
-у каждого аккаунта свой выход в сеть, разделите очереди:
+`ItdAccounts` по умолчанию использует общий пул. Аккаунты делят статические
+бакеты и ограничения направления, а динамические бакеты ведутся
+отдельно. При отдельных сетевых выходах используйте `rateLimitScope: 'account'`.
 
 ```ts
 const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
@@ -137,10 +138,10 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 
 ## Бакеты и лимиты
 
-Лимит общий на весь бакет: запрос к любой его операции уменьшает остаток у остальных.
-Значения действуют до первого ответа бакета, дальше берётся `x-ratelimit-limit`.
+Каждый экземпляр бакета ведёт свою квоту. Начальный лимит меняется, когда
+сервер присылает положительный `X-RateLimit-Limit`.
 
-| Бакет | Операции | В минуту |
+| Бакет | Операции | Токенов в минуту |
 | --- | --- | ---: |
 | `default` | всё, для чего нет отдельного правила: `auth.check`, `posts.get`, `posts.update`, `posts.remove`, `posts.restore`, `posts.pin`, `posts.unpin`, `posts.vote`, `posts.byUser`, `posts.likedByUser`, `comments.replies`, `comments.reply`, `comments.update`, `comments.remove`, `comments.restore`, `account.deactivate`, `account.restore`, `users.createProfile`, `users.updatePrivacy`, `users.setPin`, `users.removePin`, `users.followStatus`, `users.block`, `users.unblock`, `notifications.markRead`, `notifications.markReadBatch`, `notifications.markAllRead`, `notifications.updateSettings`, `subscription.*`, `legal.*`, `platform.version`, `platform.changelog`, `platform.announcements`, `platform.portal`, `telemetry.dwell`, `telemetry.interaction`, `shop.orders.list`, `shop.orders.get`, а также любой незнакомый путь | 150 |
 | `shop` | `shop.products.list`, `shop.products.get`, `shop.delivery.countries`, `shop.delivery.cities`, `shop.delivery.points`, `shop.delivery.calculate` | 150 |
@@ -173,6 +174,11 @@ const accounts = new ItdAccounts({ storage, rateLimitScope: 'account' });
 | `verification.status` | `verification.status` | 6 |
 | `verification.submit` | `verification.submit` | 3 |
 | `reports.create` | `reports.create` | 3 |
+| `chats.send` | `chats.sendMessage`, `chats.forwardMessages`, `chats.sendMessageToUser` | 30 |
+| `chats.reactions` | `chats.setReactions` | 60 |
+| `chats.edit` | `chats.editMessage` | 10 |
+| `chats.deleteForMe` | `chats.deleteMessagesForMe` | 20 |
+| `chats` | Остальные HTTP-операции чатов | 150 |
 
 `POST /api/v1/auth/qr/stream` не присылает заголовки `x-ratelimit-*` и выполняется вне
 очереди обычных JSON-запросов. Частоту повторных подключений к `streamQrLogin()` ограничивает
@@ -190,3 +196,17 @@ operationBucket('posts.create'); // 'posts.create'
 operationBucket('posts.get'); // 'default'
 BUCKET_LIMITS['posts.create']; // 5
 ```
+
+### Особенности чатов
+
+Отправка и пересылка делят квоту чата назначения. Реакции, правки и удаление
+у себя имеют отдельные квоты по ID чата. Для `sendMessageToUser()` ключом служит
+ID собеседника. В режиме `smooth` каждый такой бакет накапливает до одного токена.
+Пересылка расходует по токену за сообщение и откладывает следующий запрос на время
+восстановления квоты.
+
+При включённой очереди область `429` определяет, какие запросы ждут:
+
+- `chat` — задержка из заголовков сразу приостанавливает бакет. Для правки и удаления у себя это правило действует и без заголовка области. Тело ответа может продлить паузу.
+- `ip_flood` и `global_flood` — пауза действует на все очереди того же origin в пуле. Если сервер не указал задержку, при повторе используется ступень `retryDelays`.
+- `new_recipients_hour` и `new_recipients_day` — клиент сразу возвращает `ItdRateLimitError` с соответствующим `scope`.

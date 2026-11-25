@@ -1,6 +1,7 @@
 import type { OperationId } from '../../domain/operations.js';
+import type { RateLimitBucketDefinition } from '../catalog.js';
 import type { CookieJar } from '../cookies.js';
-import type { OperationRequestOptions, RateLimitBucketOverride } from '../options.js';
+import type { OperationRequestOptions } from '../options.js';
 
 /*
  * Служебное состояние одной логической операции лежит в объекте запроса под перечислимым
@@ -33,9 +34,19 @@ interface RequestErrorReportingState {
   abortReported: boolean;
 }
 
+/** Внутренние параметры учёта квоты логической операции. @internal */
+export interface OperationRateLimit {
+  /** Непустой ключ экземпляра встроенного бакета. */
+  readonly instance: string;
+  /** Число токенов на одну HTTP-попытку. По умолчанию 1. */
+  readonly cost?: number | undefined;
+}
+
 interface OperationState {
+  rateLimitRetries?: number;
   attempt?: number;
   queueKey?: RequestQueueKey;
+  rateLimit?: OperationRateLimit | undefined;
   authRecovery?: RequestAuthRecoveryState;
   errorReporting?: RequestErrorReportingState;
   lifecycleSignal?: AbortSignal;
@@ -61,6 +72,7 @@ interface InitialOperationState {
   lifecycleSignal: AbortSignal;
   reader?: OperationReader | undefined;
   disposeCleanup?: boolean | undefined;
+  rateLimit?: OperationRateLimit | undefined;
 }
 
 /**
@@ -80,6 +92,7 @@ export function initializeOperationState<T extends PipelineRequest>(
     lifecycleSignal: initial.lifecycleSignal,
     ...(initial.reader === undefined ? {} : { reader: initial.reader }),
     ...(initial.disposeCleanup ? { disposeCleanup: true as const } : {}),
+    ...(initial.rateLimit === undefined ? {} : { rateLimit: initial.rateLimit }),
   };
   return { ...request, [OPERATION_STATE]: state };
 }
@@ -87,6 +100,22 @@ export function initializeOperationState<T extends PipelineRequest>(
 /** Функция чтения контракта операции, если запрос её несёт. @internal */
 export function operationReaderOf(request: PipelineRequest): OperationReader | undefined {
   return (request as InternalPipelineRequest)[OPERATION_STATE]?.reader;
+}
+
+/** Возвращает параметры квоты, переданные ресурсом. @internal */
+export function operationRateLimitOf(request: PipelineRequest): OperationRateLimit | undefined {
+  return (request as InternalPipelineRequest)[OPERATION_STATE]?.rateLimit;
+}
+
+/** Число повторов операции после отказа по квоте. */
+export function rateLimitRetriesOf(request: PipelineRequest): number {
+  return (request as InternalPipelineRequest)[OPERATION_STATE]?.rateLimitRetries ?? 0;
+}
+
+export function beginRateLimitRetry(request: PipelineRequest): number {
+  const state = operationState(request);
+  state.rateLimitRetries = (state.rateLimitRetries ?? 0) + 1;
+  return state.rateLimitRetries;
 }
 
 /** Переносит служебное состояние логической операции на новый объект запроса. @internal */
@@ -231,8 +260,12 @@ export interface RequestQueueKey {
   /** Origin разрешённого URL. `undefined` — направление неизвестно. */
   destination: string | undefined;
   bucket: string;
+  /** Ключ экземпляра внутри группы. У статического бакета отсутствует. */
+  instance?: string | undefined;
+  /** Владелец авторизации операции с собственной квотой на момент постановки в очередь. */
+  owner?: string | undefined;
   /** Начальные ограничения бакета из каталога на момент постановки в очередь. */
-  definition: Readonly<RateLimitBucketOverride> | undefined;
+  definition: Readonly<RateLimitBucketDefinition> | undefined;
 }
 
 /**

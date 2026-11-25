@@ -9,6 +9,7 @@ import {
   ItdTimeoutError,
   TimeoutBudget,
 } from '../../src/core/errors.js';
+import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
 import type {
   EventTransport,
   EventTransportContext,
@@ -1625,6 +1626,88 @@ describe('общее поведение клиента', () => {
       expect.objectContaining({ bucket: 'feed', limit: 90, remaining: 87 }),
       expect.objectContaining({ bucket: 'default', limit: 150, remaining: 149 }),
     ]);
+  });
+
+  it('сохраняет квоту при смене токена и отменяет ожидание при смене аккаунта', async () => {
+    vi.useFakeTimers();
+    try {
+      const firstToken = makeJwt({ sub: 'a', sid: 'first' });
+      const nextToken = makeJwt({ sub: 'b' });
+      const { itd, mock } = makeClient(() => json({ message_id: 'm' }), {
+        auth: firstToken,
+        rateLimit: { pacing: RateLimitPacing.Smooth },
+      });
+      await using client = itd;
+
+      await client.chats.sendMessage('chat', { text: 'first' });
+      const pending = expect(
+        client.chats.sendMessage('chat', { text: 'queued' }),
+      ).rejects.toBeInstanceOf(ItdAbortError);
+      await vi.advanceTimersByTimeAsync(0);
+      await client.setSession({ accessToken: makeJwt({ sub: 'a', sid: 'second' }) });
+      expect(client.rateLimitState()).toMatchObject([{ instance: 'chat:chat', pending: 1 }]);
+      expect(mock.callCount).toBe(1);
+
+      await client.setSession({ accessToken: nextToken });
+      await pending;
+      expect(client.rateLimitState()).toEqual([]);
+
+      await client.chats.sendMessage('chat', { text: 'new account' });
+      expect(mock.calls.map(({ headers }) => headers.get('authorization'))).toEqual([
+        `Bearer ${firstToken}`,
+        `Bearer ${nextToken}`,
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('не отправляет запрос с токеном другого аккаунта при параллельной подготовке', async () => {
+    const token = makeJwt({ sub: 'b' });
+    const getToken = vi
+      .fn()
+      .mockResolvedValueOnce(makeJwt({ sub: 'a' }))
+      .mockResolvedValueOnce(token);
+    const { itd, mock } = makeClient(() => json({ message_id: 'm' }), {
+      auth: { getToken },
+      rateLimit: {},
+    });
+    await using client = itd;
+    const rejected = expect(
+      client.chats.sendMessage('chat', { text: 'first account' }),
+    ).rejects.toBeInstanceOf(ItdAbortError);
+    await expect(
+      client.chats.sendMessage('chat', { text: 'second account' }),
+    ).resolves.toMatchObject({
+      messageId: 'm',
+    });
+    await rejected;
+    expect(mock.callCount).toBe(1);
+    expect(mock.calls[0]?.headers.get('authorization')).toBe(`Bearer ${token}`);
+  });
+
+  it('учитывает поздний ответ в бакете аккаунта, отправившего запрос', async () => {
+    let resolve!: (response: Response) => void;
+    const promise = new Promise<Response>((finish) => {
+      resolve = finish;
+    });
+    const { itd, mock } = makeClient(
+      (_request, index) =>
+        index === 0
+          ? promise
+          : json({ message_id: 'new' }, { headers: { 'X-RateLimit-Remaining': '9' } }),
+      { auth: makeJwt({ sub: 'a' }), rateLimit: {} },
+    );
+    await using client = itd;
+    const first = client.chats.sendMessage('chat', { text: 'first account' });
+    await vi.waitFor(() => expect(mock.callCount).toBe(1));
+
+    await client.setSession({ accessToken: makeJwt({ sub: 'b' }) });
+    await client.chats.sendMessage('chat', { text: 'new account' });
+    resolve(json({ message_id: 'old' }, { headers: { 'X-RateLimit-Remaining': '2' } }));
+    await first;
+
+    expect(client.rateLimitState()).toMatchObject([{ instance: 'chat:chat', remaining: 9 }]);
   });
 
   it('close сохраняет остаток квоты, dispose очищает', async () => {

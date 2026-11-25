@@ -4,7 +4,7 @@ import {
   readTokenIdentity,
   readTokenMetadata,
   readTokenSubject,
-} from '../../src/session/jwt.js';
+} from '../../src/core/jwt.js';
 import { makeJwt } from '../helpers/jwt.js';
 
 describe('readTokenSubject', () => {

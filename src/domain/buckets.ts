@@ -1,11 +1,18 @@
 import type { RateLimitBucketOverride } from '../core/options.js';
 
+/** Начальные лимиты бакетов с ключом экземпляра. @internal */
+const PARTITIONED_BUCKET_LIMITS = Object.freeze({
+  'chats.send': 30,
+  'chats.reactions': 60,
+  'chats.edit': 10,
+  'chats.deleteForMe': 20,
+} as const);
+
 /**
- * Ёмкость серверных счётчиков частоты, запросов в минуту.
+ * Начальные лимиты бакетов в токенах за минуту.
  *
- * Таблица действует до первого ответа бакета; дальше ёмкость берётся из заголовка
- * `x-ratelimit-limit` и заменяет табличную. `default` — счётчик любого пути без
- * собственного правила на сервере.
+ * Планировщик использует положительное значение `X-RateLimit-Limit`, если сервер
+ * его прислал.
  */
 export const BUCKET_LIMITS = Object.freeze({
   'posts.stats': 180,
@@ -39,17 +46,24 @@ export const BUCKET_LIMITS = Object.freeze({
   'shop.orders.verifyAccessCode': 13,
   'shop.orders.create': 12,
   'shop.orders.requestAccessCode': 4,
+  chats: 150,
+  ...PARTITIONED_BUCKET_LIMITS,
 } as const satisfies Record<string, number>);
 
 /** Имя встроенного бакета. */
 export type RateLimitBucket = keyof typeof BUCKET_LIMITS;
 
-/** Счётчик, из которого списывается путь без собственного правила на сервере. */
+/** Бакет операций без назначенной очереди. */
 export const DEFAULT_RATE_LIMIT_BUCKET: RateLimitBucket = 'default';
 
 /** Известно ли библиотеке имя бакета. */
 export function isKnownBucket(name: string): name is RateLimitBucket {
   return Object.hasOwn(BUCKET_LIMITS, name);
+}
+
+/** Требует ли бакет отдельного экземпляра вместо общей очереди. @internal */
+export function requiresBucketInstance(name: string): boolean {
+  return Object.hasOwn(PARTITIONED_BUCKET_LIMITS, name);
 }
 
 /**

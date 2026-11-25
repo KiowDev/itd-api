@@ -1,5 +1,9 @@
-import type { OperationCatalog } from './catalog.js';
-import { ItdConfigError } from './errors.js';
+import type {
+  OperationCatalog,
+  RateLimitBucketDefinition,
+  RateLimitPauseTarget,
+} from './catalog.js';
+import { ItdConfigError, type RateLimitErrorScope } from './errors.js';
 import type { OperationDefinition } from './operation.js';
 import type { RateLimitBucketOverride } from './options.js';
 
@@ -46,16 +50,23 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
     return this.#operations.get(id) ?? this.#base.definitionOf(id);
   }
 
-  bucketOf(id: string): string {
-    return this.#operations.get(id)?.bucket ?? this.#base.bucketOf(id);
+  bucketOf(id: string, instance?: string): string {
+    return this.#operations.get(id)?.bucket ?? this.#base.bucketOf(id, instance);
   }
 
   isKnownBucket(name: string): boolean {
     return this.#buckets.has(name) || this.#base.isKnownBucket(name);
   }
 
-  bucketDefinitionOf(name: string): Readonly<RateLimitBucketOverride> | undefined {
+  bucketDefinitionOf(name: string): Readonly<RateLimitBucketDefinition> | undefined {
     return this.#buckets.get(name)?.definition ?? this.#base.bucketDefinitionOf(name);
+  }
+
+  rateLimitPauseTarget(
+    id: string,
+    scope: RateLimitErrorScope | undefined,
+  ): RateLimitPauseTarget | undefined {
+    return this.#base.rateLimitPauseTarget?.(id, scope);
   }
 
   /** Регистрирует принадлежащий feature бакет и возвращает откат регистрации. */

@@ -189,11 +189,30 @@ function readPositiveIntHeader(headers: Headers | undefined, name: string): numb
   return value !== undefined && value > 0 ? value : undefined;
 }
 
+/** Читает паузу из заголовков, учитывая округление секунд при HTTP 429. */
+export function readRetryDelay(
+  headers: Headers | undefined,
+  status: number,
+  now?: number,
+): number | undefined {
+  const raw = headers?.get('Retry-After');
+  const coarse = parseRetryAfter(raw, now);
+  if (status !== 429) return coarse;
+
+  const exactHeader = headers?.get('X-RateLimit-Retry-After-Ms');
+  const exact = exactHeader && /^\d+$/.test(exactHeader) ? Number(exactHeader) : NaN;
+  if (!Number.isSafeInteger(exact) || exact <= 0) return coarse;
+  if (
+    coarse === undefined ||
+    (raw && /^\d+$/.test(raw) && coarse === Math.ceil(exact / 1000) * 1000)
+  ) {
+    return exact;
+  }
+  return Math.max(coarse, exact);
+}
+
 /**
- * Читает сведения об ограничении частоты.
- *
- * Сервер сообщает размер окна и остаток, но **не сообщает время сброса** — поэтому
- * точный момент, когда можно повторить, из ответа не вывести.
+ * Читает лимит и остаток квоты из заголовков ответа.
  */
 export function readRateLimit(headers: Headers | undefined): {
   limit: number | undefined;
@@ -292,7 +311,7 @@ export function createApiError(context: ErrorContext): ItdApiError {
   const flowExpiry = context.headers?.get('X-ITD-Flow-Expires-In');
   const flowExpiresIn = flowExpiry && /^\d+$/.test(flowExpiry) ? Number(flowExpiry) : NaN;
   const retryDelays: number[] = [];
-  const headerDelay = parseRetryAfter(context.headers?.get('retry-after'), context.now);
+  const headerDelay = readRetryDelay(context.headers, context.status, context.now);
   if (headerDelay !== undefined) retryDelays.push(headerDelay);
   const body = isRecord(context.body) ? context.body : undefined;
   const errorBody = isRecord(body?.error) ? body.error : body;

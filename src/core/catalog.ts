@@ -1,5 +1,20 @@
+import type { RateLimitErrorScope } from './errors.js';
 import type { OperationMetadata } from './operation.js';
 import type { RateLimitBucketOverride } from './options.js';
+
+/** Ограничения очереди из каталога операций. @internal */
+export interface RateLimitBucketDefinition extends RateLimitBucketOverride {
+  /** Верхняя граница накопленных токенов. */
+  readonly maxTokens?: number;
+}
+
+/** Область применения серверной паузы. @internal */
+export const RateLimitPauseTarget = Object.freeze({
+  Bucket: 'bucket',
+  Origin: 'origin',
+  None: 'none',
+} as const);
+export type RateLimitPauseTarget = (typeof RateLimitPauseTarget)[keyof typeof RateLimitPauseTarget];
 
 /**
  * Всё, что ядро знает о предметной области.
@@ -13,16 +28,20 @@ import type { RateLimitBucketOverride } from './options.js';
 export interface OperationCatalog {
   /** Публичные метаданные операции. `undefined` — операция каталогу неизвестна. */
   definitionOf(id: string): OperationMetadata | undefined;
-  /** Счётчик частоты операции. Для неизвестной возвращает {@link defaultBucket}. */
-  bucketOf(id: string): string;
+  /** Имя бакета операции с учётом наличия ключа экземпляра. */
+  bucketOf(id: string, instance?: string): string;
   /** Известно ли каталогу имя бакета. */
   isKnownBucket(name: string): boolean;
   /**
-   * Начальные ограничения бакета до первого ответа сервера: ёмкость в минуту, предел
-   * одновременности, темп. `undefined` — бакет каталогу неизвестен.
+   * Настройки бакета из каталога. `undefined` — бакет каталогу неизвестен.
    */
-  bucketDefinitionOf(name: string): Readonly<RateLimitBucketOverride> | undefined;
-  /** Ёмкость бакетов до первого ответа сервера, запросов в минуту. */
+  bucketDefinitionOf(name: string): Readonly<RateLimitBucketDefinition> | undefined;
+  /** Возвращает область паузы или оставляет стандартную политику бакета. */
+  rateLimitPauseTarget?(
+    id: string,
+    scope: RateLimitErrorScope | undefined,
+  ): RateLimitPauseTarget | undefined;
+  /** Начальный лимит каждого бакета в токенах за минуту. */
   readonly bucketLimits: Readonly<Record<string, number>>;
   /** Встроенные поправки бакетов, например предел одновременности загрузки файлов. */
   readonly bucketOverrides: Readonly<Record<string, RateLimitBucketOverride>>;

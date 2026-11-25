@@ -60,6 +60,47 @@ describe('каталог операций как точка инъекции', (
     await shutdown(runtime);
   });
 
+  it('учитывает ответы на отправку и пересылку в одном экземпляре бакета', async () => {
+    const { runtime } = makeRuntime(
+      [10, 9, 20].map((remaining) =>
+        json({ data: {} }, { headers: { 'X-RateLimit-Remaining': String(remaining) } }),
+      ),
+      { rateLimit: {} },
+      new ExtensibleOperationCatalog(ITD_CATALOG),
+    );
+    const send = passthroughOperation('chats.sendMessage');
+    const forward = passthroughOperation('chats.forwardMessages');
+
+    await runtime.http.execute(send, { path: '/a/send' }, { instance: 'a' });
+    await runtime.http.execute(forward, { path: '/a/forward' }, { instance: 'a' });
+    await runtime.http.execute(send, { path: '/b/send' }, { instance: 'b' });
+
+    expect(runtime.rateLimitState()).toMatchObject([
+      { bucket: 'chats.send', instance: 'a', remaining: 9 },
+      { bucket: 'chats.send', instance: 'b', remaining: 20 },
+    ]);
+    await shutdown(runtime);
+  });
+
+  it('применяет пользовательский выбор бакета раньше экземпляра из ресурса', async () => {
+    const select = vi.fn(() => 'chats.send');
+    const { runtime } = makeRuntime(() => json({ data: {} }), { rateLimit: { bucket: select } });
+    const send = passthroughOperation('chats.sendMessage');
+
+    await runtime.http.execute(
+      send,
+      { path: '/a/send', rateLimitBucket: 'chats.send' },
+      { instance: 'a' },
+    );
+    await runtime.http.execute(send, { path: '/b/send' }, { instance: 'b' });
+    await runtime.http.execute(send, { path: '/c/send' }, { instance: 'c' });
+
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(runtime.rateLimitState().map(({ bucket }) => bucket)).toEqual(['chats.send']);
+    expect(runtime.rateLimitState()[0]).not.toHaveProperty('instance');
+    await shutdown(runtime);
+  });
+
   it('подменённый bucketOf уводит тот же запрос в другой счётчик', async () => {
     const { runtime } = makeRuntime(
       [json({ data: {} })],

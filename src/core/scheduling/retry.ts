@@ -8,7 +8,7 @@ import {
   ItdTimeoutError,
   TimeoutBudget,
 } from '../errors.js';
-import type { PipelineRequest } from '../execution/pipeline.js';
+import { type PipelineRequest, rateLimitRetriesOf } from '../execution/pipeline.js';
 import { RetrySafety } from '../operation.js';
 import type { RetryDecisionContext } from '../options.js';
 
@@ -33,6 +33,16 @@ const SAFE_RAW_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export function isRequestBodyReplayable(request: PipelineRequest): boolean {
   if (request.bodyFactory !== undefined) return true;
   return !(typeof ReadableStream !== 'undefined' && request.body instanceof ReadableStream);
+}
+
+/** Следующая ступень для очереди и повтора операции после HTTP 429. */
+export function rateLimitRetryStep(
+  request: PipelineRequest,
+  delays: readonly number[] | undefined,
+): number | undefined {
+  return delays?.length && isRequestBodyReplayable(request)
+    ? delays[rateLimitRetriesOf(request)]
+    : undefined;
 }
 
 /** Разрешает retrySafety запроса из явного override, каталога либо raw fallback. */

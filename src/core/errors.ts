@@ -104,7 +104,7 @@ export interface ItdApiErrorInit {
   raw: unknown;
   /** Сам объект ответа. Тело уже прочитано. */
   response?: Response | undefined;
-  /** Пауза из Retry-After или тела ошибки, в миллисекундах. */
+  /** Пауза, указанная сервером, в миллисекундах. */
   retryAfter?: number | undefined;
   /** Оставшееся время проверки номера в секундах (`X-ITD-Flow-Expires-In`). */
   flowExpiresIn?: number | undefined;
@@ -159,7 +159,7 @@ export class ItdApiError extends ItdError {
   readonly raw: unknown;
   /** Объект ответа. Тело уже прочитано и повторно прочитано быть не может. */
   readonly response: Response | undefined;
-  /** Пауза из Retry-After либо retryIn/retryAfter тела ошибки, в миллисекундах. */
+  /** Пауза из заголовков или тела ответа, в миллисекундах. */
   readonly retryAfter: number | undefined;
   /** Оставшееся время проверки номера в секундах. `0` означает, что она истекла. */
   readonly flowExpiresIn: number | undefined;
@@ -260,6 +260,8 @@ export class ItdConflictError extends ItdApiError {
 
 /** Известные значения заголовка `X-RateLimit-Scope`. */
 export const RateLimitErrorScope = Object.freeze({
+  /** Лимит операций в чате. */
+  Chat: 'chat',
   /** Часовой лимит новых собеседников. */
   NewRecipientsHour: 'new_recipients_hour',
   /** Суточный лимит новых собеседников. */
@@ -276,8 +278,7 @@ export type RateLimitErrorScope = Loose<
 /**
  * `429` — превышен лимит запросов.
  *
- * Пауза из `Retry-After` или тела ошибки доступна в {@link ItdApiError.retryAfter}
- * (в миллисекундах). При включённых ретраях библиотека выдерживает её автоматически.
+ * Пауза сервера доступна в {@link ItdApiError.retryAfter} в миллисекундах.
  */
 export class ItdRateLimitError extends ItdApiError {
   /** Область действия лимита из заголовка `X-RateLimit-Scope`. */

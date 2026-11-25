@@ -1,20 +1,29 @@
-import type { OperationCatalog } from '../core/catalog.js';
-import type { RateLimitBucketOverride } from '../core/options.js';
+import {
+  type OperationCatalog,
+  type RateLimitBucketDefinition,
+  RateLimitPauseTarget,
+} from '../core/catalog.js';
+import { RateLimitErrorScope } from '../core/errors.js';
 import {
   BUCKET_LIMITS,
   DEFAULT_BUCKET_OVERRIDES,
   DEFAULT_RATE_LIMIT_BUCKET,
   isKnownBucket,
+  requiresBucketInstance,
 } from './buckets.js';
 import { isBuiltInOperationId, OPERATIONS, operationBucket } from './operations.js';
 
 /** Ограничения встроенных бакетов: ёмкость из таблицы плюс встроенные поправки. */
-const BUCKET_DEFINITIONS: Readonly<Record<string, Readonly<RateLimitBucketOverride>>> =
+const BUCKET_DEFINITIONS: Readonly<Record<string, Readonly<RateLimitBucketDefinition>>> =
   Object.freeze(
     Object.fromEntries(
       Object.entries(BUCKET_LIMITS).map(([name, limit]) => [
         name,
-        Object.freeze({ limit, ...DEFAULT_BUCKET_OVERRIDES[name] }),
+        Object.freeze({
+          limit,
+          ...DEFAULT_BUCKET_OVERRIDES[name],
+          ...(requiresBucketInstance(name) ? { maxTokens: 1 } : {}),
+        }),
       ]),
     ),
   );
@@ -28,10 +37,34 @@ const BUCKET_DEFINITIONS: Readonly<Record<string, Readonly<RateLimitBucketOverri
  */
 export const ITD_CATALOG: OperationCatalog = Object.freeze({
   definitionOf: (id) => (isBuiltInOperationId(id) ? OPERATIONS[id] : undefined),
-  // Неизвестный ID каталог сам сводит к бакету по умолчанию.
-  bucketOf: (id) => operationBucket(id as Parameters<typeof operationBucket>[0]),
+  bucketOf: (id, instance) => {
+    const bucket = operationBucket(id as Parameters<typeof operationBucket>[0]);
+    return !instance && requiresBucketInstance(bucket) ? DEFAULT_RATE_LIMIT_BUCKET : bucket;
+  },
   isKnownBucket,
   bucketDefinitionOf: (name) => BUCKET_DEFINITIONS[name],
+  rateLimitPauseTarget: (id, scope) => {
+    if (!isBuiltInOperationId(id)) return undefined;
+    const bucket = operationBucket(id);
+    if (bucket !== 'chats' && !requiresBucketInstance(bucket)) return undefined;
+
+    if (scope === RateLimitErrorScope.IpFlood || scope === RateLimitErrorScope.GlobalFlood) {
+      return RateLimitPauseTarget.Origin;
+    }
+    if (
+      scope === RateLimitErrorScope.NewRecipientsHour ||
+      scope === RateLimitErrorScope.NewRecipientsDay
+    ) {
+      return RateLimitPauseTarget.None;
+    }
+    if (
+      scope === RateLimitErrorScope.Chat ||
+      (scope === undefined && (bucket === 'chats.edit' || bucket === 'chats.deleteForMe'))
+    ) {
+      return RateLimitPauseTarget.Bucket;
+    }
+    return undefined;
+  },
   bucketLimits: BUCKET_LIMITS,
   bucketOverrides: DEFAULT_BUCKET_OVERRIDES,
   defaultBucket: DEFAULT_RATE_LIMIT_BUCKET,

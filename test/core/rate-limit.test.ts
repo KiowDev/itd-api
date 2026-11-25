@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { systemClock } from '../../src/core/clock.js';
 import { type ResolvedRateLimitOptions, resolveRuntimeConfig } from '../../src/core/config.js';
 import { ItdAbortError, ItdConfigError } from '../../src/core/errors.js';
 import { RateLimitPacing } from '../../src/core/scheduling/pacing.js';
@@ -38,6 +39,123 @@ describe('RequestQueuePool', () => {
     expect(pool.for('https://itd.test', 'feed')).not.toBe(pool.for('https://other.test', 'feed'));
   });
 
+  it('делит состояние экземпляров, применяя настройки группы к каждому', () => {
+    const pool = new RequestQueuePool(
+      poolOptions({ bucketOverrides: { 'chats.send': { limit: 15 } } }),
+    );
+    const host = 'https://itd.test';
+    const name = 'chats.send';
+    const definition = { limit: 30 };
+    const first = pool.for(host, name, definition, 'a');
+    const second = pool.for(host, name, definition, 'b');
+
+    expect(pool.for(host, name, definition, 'a')).toBe(first);
+    expect(pool.for(host, name, definition)).not.toBe(first);
+    expect(pool.for(host, name, definition, '')).toBe(pool.for(host, name, definition));
+    expect(pool.for(host, '["chats.send","a",null]')).not.toBe(first);
+    expect(pool.for('https://other.test', name, definition, 'a')).not.toBe(first);
+    expect(first.observe(undefined, 0)).toBe(4000);
+    expect(second.state().remaining).toBeUndefined();
+    expect(second.observe(undefined, 0)).toBe(4000);
+    pool.clear();
+  });
+
+  it('очищает простаивающие экземпляры только при обращении к динамическому бакету', () => {
+    const now = vi.fn(() => Date.now());
+    const pool = new RequestQueuePool(poolOptions(), { ...systemClock, now });
+    const host = 'https://itd.test';
+    const fixed = pool.for(host, 'feed');
+    const expired = pool.for(host, 'chats.send', undefined, 'a');
+    vi.advanceTimersByTime(240_000);
+    const recent = pool.for(host, 'chats.send', undefined, 'b');
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(60_000);
+    now.mockClear();
+    pool.for('https://other.test', 'feed');
+    expect(pool.for(host, 'feed')).toBe(fixed);
+    expect(now).not.toHaveBeenCalled();
+    expect(pool.states()).toHaveLength(4);
+
+    expect(pool.for(host, 'chats.send', undefined, 'b')).toBe(recent);
+    expect(pool.states()).toHaveLength(3);
+    expect(pool.for(host, 'chats.send', undefined, 'a')).not.toBe(expired);
+  });
+
+  it('не проверяет готовность простаивающих бакетов при запуске запросов', async () => {
+    const pool = new RequestQueuePool(poolOptions());
+    const host = 'https://itd.test';
+    const idle = pool.for(host, 'chats.send', undefined, 'idle');
+    const isReady = vi.spyOn(idle, 'canStart', 'get');
+    const active = pool.for(host, 'chats.send', undefined, 'active');
+
+    await active.schedule(() => Promise.resolve());
+
+    expect(isReady).not.toHaveBeenCalled();
+  });
+
+  it('до конца общей паузы не перебирает ожидающие бакеты', async () => {
+    const pool = new RequestQueuePool(poolOptions());
+    const host = 'https://itd.test';
+    const first = pool.for(host, 'chats.send', undefined, 'first');
+    const canStart = vi.spyOn(first, 'canStart', 'get');
+    const run = vi.fn(async () => {});
+
+    pool.pauseDestination(host, 1000);
+    const pending = [
+      first.schedule(run),
+      pool.for(host, 'chats.send', undefined, 'second').schedule(run),
+    ];
+    await vi.advanceTimersByTimeAsync(999);
+    expect(canStart).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.all(pending);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('сохраняет экземпляры с активной задачей, ожиданием или паузой', async () => {
+    const pool = new RequestQueuePool(poolOptions());
+    const host = 'https://itd.test';
+    const active = pool.for(host, 'chats.send', undefined, 'active');
+    const waiting = pool.for(host, 'chats.send', undefined, 'waiting');
+    const paused = pool.for(host, 'chats.send', undefined, 'paused');
+    occupy(active);
+    paused.pause(360_000);
+    const pending = expect(waiting.schedule(() => Promise.resolve())).rejects.toBeInstanceOf(
+      ItdAbortError,
+    );
+
+    await vi.advanceTimersByTimeAsync(300_000);
+    pool.for(host, 'chats.send', undefined, 'active');
+
+    expect(pool.states()).toHaveLength(3);
+    expect(pool.for(host, 'chats.send', undefined, 'active')).toBe(active);
+    expect(pool.for(host, 'chats.send', undefined, 'waiting')).toBe(waiting);
+    pool.stop();
+    await pending;
+    expect(pool.for(host, 'chats.send', undefined, 'paused')).toBe(paused);
+    expect(paused.readyAt).toBe(Date.now() + 60_000);
+  });
+
+  it('ждёт полного восстановления квоты перед удалением экземпляра', async () => {
+    const pool = new RequestQueuePool(poolOptions({ pacing: RateLimitPacing.Smooth }));
+    const host = 'https://itd.test';
+    const queue = pool.for(host, 'chats.send', { limit: 30 }, 'a');
+    await queue.schedule(() => Promise.resolve(), undefined, 150);
+
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(queue.readyAt).toBe(Date.now());
+    pool.for(host, 'chats.send', undefined, 'other');
+    expect(pool.states().map(({ instance }) => instance)).toEqual(['a', 'other']);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    pool.for(host, 'chats.send', undefined, 'other');
+    expect(pool.states().map(({ instance }) => instance)).toEqual(['other']);
+  });
+
   it('отдаёт очередь бакета только с теми ограничениями, с которыми она создана', () => {
     const pool = new RequestQueuePool(poolOptions());
     const queue = pool.for('https://itd.test', 'feature:probe/read', { rps: 2 });
@@ -64,7 +182,9 @@ describe('RequestQueuePool', () => {
   it('при buckets: false складывает направление в один бакет', () => {
     const pool = new RequestQueuePool(poolOptions({ buckets: false }));
 
-    expect(pool.for('https://itd.test', 'feed')).toBe(pool.for('https://itd.test', 'posts.create'));
+    expect(pool.for('https://itd.test', 'feed')).toBe(
+      pool.for('https://itd.test', 'posts.create', undefined, 'a'),
+    );
   });
 
   it('при buckets: false исчерпание встречается первой ступенью retryDelays', () => {
@@ -407,6 +527,21 @@ describe('RequestQueuePool', () => {
     ]);
   });
 
+  it('применяет общий rps к динамическим экземплярам двух чатов', async () => {
+    const pool = new RequestQueuePool(poolOptions({ concurrency: 2, rps: 4 }));
+    const host = 'https://itd.test';
+    const first = pool.for(host, 'chats.send', undefined, 'a');
+    const second = pool.for(host, 'chats.send', undefined, 'b');
+    const start = vi.fn(async () => {});
+    const pending = [first.schedule(start), second.schedule(start)];
+
+    await vi.advanceTimersByTimeAsync(249);
+    expect(start).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.all(pending);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
   it('направление использует один таймер для ожиданий разных бакетов', async () => {
     const pool = new RequestQueuePool(poolOptions({ concurrency: 6 }));
     const first = pool.for('https://itd.test', 'feed');
@@ -695,6 +830,20 @@ describe('BucketQueue — режимы реакции на заголовки', 
 
     await vi.advanceTimersByTimeAsync(12_000);
     expect(starts).toEqual([0, 12_000, 24_000]);
+  });
+
+  it('smooth: статический бакет по-прежнему накапливает токены во время простоя', async () => {
+    const queue = pool({ pacing: RateLimitPacing.Smooth }).for(
+      'https://itd.test',
+      'posts.create',
+      ITD_CATALOG.bucketDefinitionOf('posts.create'),
+    );
+    await queue.schedule(() => Promise.resolve());
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const starts = scheduleAll(queue, 3);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(starts).toEqual([0, 0, 0]);
   });
 
   it('smooth: нулевая ёмкость не создаёт бесконечный таймер', () => {

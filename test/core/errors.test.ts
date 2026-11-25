@@ -310,6 +310,7 @@ describe('createApiError', () => {
   });
 
   it.each([
+    [RateLimitErrorScope.Chat, 'chat'],
     [RateLimitErrorScope.NewRecipientsHour, 'new_recipients_hour'],
     ['future_scope', 'future_scope'],
     [undefined, undefined],
@@ -325,6 +326,20 @@ describe('createApiError', () => {
     expect(error).toHaveProperty('scope', expected);
     expect(error.retryAfter).toBe(30_000);
     expect(error.requestId).toBe('req-42');
+  });
+
+  it.each([
+    ['1', '723', {}, 723],
+    ['112', '111507', {}, 111_507],
+    ['2', '723', {}, 2000],
+    ['1', '1500', {}, 1500],
+    ['1', '723', { retryIn: 3 }, 3000],
+    ['0', '723', {}, 723],
+    ['1', '0', {}, 1000],
+    ['1', '723ms', {}, 1000],
+  ])('согласует Retry-After %s и точную паузу %s', (coarse, exact, body, expected) => {
+    const headers = new Headers({ 'Retry-After': coarse, 'X-RateLimit-Retry-After-Ms': exact });
+    expect(createApiError({ ...ctx, status: 429, headers, body }).retryAfter).toBe(expected);
   });
 
   it.each([

@@ -2,6 +2,7 @@ import type { UserId } from '../models/common.js';
 import type { ResolvedRuntimeConfig } from './config.js';
 import type { CookieJar } from './cookies.js';
 import type { HttpClient } from './execution/http.js';
+import { readTokenMetadata } from './jwt.js';
 import { createUuidV4 } from './runtime.js';
 
 /** Области аккаунта и конкретной сессии для локального состояния плагинов. */
@@ -132,12 +133,35 @@ export function bearerToken(accessToken: string): AuthProvider {
   };
 }
 
+/** Подготовка токена и контроль его владельца для очереди запросов. @internal */
+interface QueuedAuthPreparation {
+  /** Готовит токен и возвращает проверку его владельца перед постановкой в очередь. */
+  prepare(): Promise<() => boolean>;
+  onAccountChange?(listener: () => void): () => void;
+}
+
+const queuedAuthPreparations = new WeakMap<AuthProvider, QueuedAuthPreparation>();
+
+/** Регистрирует подготовку внешнего токена для запросов с очередью. @internal */
+export function setQueuedAuthPreparation(
+  auth: AuthProvider,
+  preparation: QueuedAuthPreparation,
+): void {
+  queuedAuthPreparations.set(auth, preparation);
+}
+
+/** Возвращает подготовку внешнего токена для запросов с очередью. @internal */
+export function queuedAuthPreparation(auth: AuthProvider): QueuedAuthPreparation | undefined {
+  return queuedAuthPreparations.get(auth);
+}
+
 /**
  * Токен из внешнего источника — хранилища секретов, кэша, соседнего сервиса.
  *
  * Источник спрашивается на стадии подготовки, до входа в очередь: там ожидание безопасно,
  * а слот транспорта ещё не занят. Значение держится до следующей подготовки, потому что
  * подстановка заголовков обязана быть синхронной.
+ * При смене владельца токена ожидающие запросы с квотой чата отменяются.
  *
  * @example
  * ```ts
@@ -147,14 +171,34 @@ export function bearerToken(accessToken: string): AuthProvider {
 export function tokenProvider(
   getToken: () => string | null | Promise<string | null>,
 ): AuthProvider {
-  let cached: string | null = null;
+  let cached: string | null | undefined;
+  let subject: string | undefined;
+  let accountVersion = 0;
+  const accountListeners = new Set<() => void>();
 
-  const read = async () => {
-    cached = await getToken();
-    return cached;
+  let startedRead = 0;
+  let appliedRead = 0;
+
+  const remember = (order: number, token: string | null) => {
+    if (order < appliedRead) return;
+    appliedRead = order;
+    if (accountListeners.size > 0 && token !== cached) {
+      const nextSubject = token ? readTokenMetadata(token).subject : undefined;
+      if (cached !== undefined && (subject === undefined || subject !== nextSubject)) {
+        accountVersion++;
+        for (const listener of accountListeners) listener();
+      }
+      subject = nextSubject;
+    }
+    cached = token;
   };
 
-  return {
+  const read = async () => {
+    const order = ++startedRead;
+    remember(order, await getToken());
+    return cached ?? null;
+  };
+  const provider: AuthProvider = {
     token: read,
     prepare: async () => {
       await read();
@@ -163,7 +207,31 @@ export function tokenProvider(
     recover: () => Promise.resolve(false),
     deviceId: localDeviceId(),
     dispose: () => {
-      cached = null;
+      remember(++startedRead, null);
+      cached = undefined;
     },
   };
+  setQueuedAuthPreparation(provider, {
+    prepare: async () => {
+      const order = ++startedRead;
+      const token = await getToken();
+      remember(order, token);
+      if (
+        token !== cached &&
+        (!subject || !token || readTokenMetadata(token).subject !== subject)
+      ) {
+        return () => false;
+      }
+      const preparedVersion = accountVersion;
+      return () => preparedVersion === accountVersion;
+    },
+    onAccountChange: (listener) => {
+      if (accountListeners.size === 0) {
+        subject = cached ? readTokenMetadata(cached).subject : undefined;
+      }
+      accountListeners.add(listener);
+      return () => accountListeners.delete(listener);
+    },
+  });
+  return provider;
 }

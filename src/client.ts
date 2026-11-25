@@ -236,7 +236,13 @@ export class ItdClient {
       // Полноценную сессию подставляет фасад: ядро о ней не знает, и клиент с готовым
       // токеном не потянет за собой ни хранилище, ни вход по паролю.
       auth: (deps) =>
-        createItdAuth(options, { ...deps, onAccountChange: () => featureHost?.stop() }),
+        createItdAuth(options, {
+          ...deps,
+          onAccountChange: () => {
+            deps.onAccountChange?.();
+            featureHost?.stop();
+          },
+        }),
     });
     this.#features = featureHost = createFeatureHost(this.#runtime, {
       catalog,

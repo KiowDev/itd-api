@@ -1,8 +1,10 @@
+import type { OperationCatalog, RateLimitPauseTarget } from '../catalog.js';
 import type { ItdClock } from '../clock.js';
 import type { CookieJar } from '../cookies.js';
-import { createApiError, readRateLimit } from '../error-factory.js';
+import { createApiError, readRateLimit, readRetryDelay } from '../error-factory.js';
 import {
   ItdAbortError,
+  type ItdApiError,
   ItdConfigError,
   ItdError,
   ItdNetworkError,
@@ -64,15 +66,26 @@ export interface TransportDeps {
    * включая анонимные (`sign-in`).
    */
   getDeviceId: (() => Promise<string>) | undefined;
+  /** Выбирает область серверной паузы при HTTP 429. */
+  rateLimitPauseTarget: OperationCatalog['rateLimitPauseTarget'];
   /**
-   * Сообщает об остатке лимита из заголовков ответа.
-   *
-   * Вызывается после **каждого** ответа, включая ошибочные, — так очередь узнаёт
-   * об исчерпании лимита заранее и успевает притормозить до отказа сервера.
+   * Передаёт лимиты из заголовков и уточняет паузу HTTP 429 по телу ответа.
    */
   onRateLimit:
-    | ((limit: number | undefined, remaining: number | undefined, request: PipelineRequest) => void)
+    | ((
+        limit: number | undefined,
+        remaining: number | undefined,
+        request: PipelineRequest,
+        rejection?: RateLimitRejection,
+      ) => void)
     | undefined;
+}
+
+/** Область и срок серверной паузы при HTTP 429. */
+interface RateLimitRejection {
+  readonly useRetryDelay?: boolean;
+  readonly target: RateLimitPauseTarget;
+  readonly waitUntil: number | undefined;
 }
 
 /** Одна транспортная попытка: всё, что нужно хукам, ошибкам и журналу. */
@@ -262,9 +275,43 @@ export class Transport {
         throw failure;
       }
 
-      if (this.#deps.onRateLimit) {
+      const onRateLimit = this.#deps.onRateLimit;
+      let observeAfterBody: ((error?: ItdApiError) => void) | undefined;
+      if (onRateLimit) {
         const { limit, remaining } = readRateLimit(response.headers);
-        this.#deps.onRateLimit(limit, remaining, request);
+        const target =
+          response.status === 429
+            ? this.#deps.rateLimitPauseTarget?.(
+                request.operationId,
+                response.headers.get('X-RateLimit-Scope') ?? undefined,
+              )
+            : undefined;
+        if (target === undefined) {
+          onRateLimit(limit, remaining, request);
+        } else {
+          const headersAt = this.#config.clock.now();
+          const headerDelay = readRetryDelay(response.headers, response.status, headersAt);
+          if (headerDelay === undefined) {
+            observeAfterBody = (error) =>
+              onRateLimit(limit, remaining, request, {
+                target,
+                waitUntil:
+                  error?.retryAfter === undefined ? undefined : headersAt + error.retryAfter,
+                ...(error && error.retryAfter === undefined ? { useRetryDelay: true } : {}),
+              });
+          } else {
+            onRateLimit(limit, remaining, request, { target, waitUntil: headersAt + headerDelay });
+            observeAfterBody = (error) => {
+              const delay = error?.retryAfter;
+              if (delay !== undefined && delay > headerDelay) {
+                onRateLimit(undefined, undefined, request, {
+                  target,
+                  waitUntil: headersAt + delay,
+                });
+              }
+            };
+          }
+        }
       }
 
       if (this.#config.useCookieJar) {
@@ -304,6 +351,7 @@ export class Transport {
         // Срок попытки снят: разбор ответа и хук onError им не ограничены.
         attempt.abort.disarm();
       } catch (error) {
+        observeAfterBody?.();
         await response.body?.cancel().catch(() => {});
         const failure = this.#toTransportError(attempt, error);
         await this.#report(attempt, headers, failure);
@@ -315,16 +363,8 @@ export class Transport {
 
       const duration = this.#elapsed(attempt);
       if (!response.ok) {
-        const error = createApiError({
-          method: attempt.method,
-          path: request.path,
-          status: response.status,
-          now: this.#config.clock.now(),
-          statusText: response.statusText,
-          headers: response.headers,
-          response,
-          body: payload,
-        });
+        const error = this.#responseError(attempt, response, payload);
+        observeAfterBody?.(error);
         await this.#report(attempt, headers, error);
         this.#config.logger?.warn(
           `← ${response.status} ${attempt.method} ${request.path} (${duration} мс): ${error.message}`,
@@ -349,6 +389,19 @@ export class Transport {
       }
     }
   };
+
+  #responseError(attempt: Attempt, response: Response, body: unknown): ItdApiError {
+    return createApiError({
+      method: attempt.method,
+      path: attempt.request.path,
+      status: response.status,
+      now: this.#config.clock.now(),
+      statusText: response.statusText,
+      headers: response.headers,
+      response,
+      body,
+    });
+  }
 
   /**
    * Итоговый URL со строкой запроса. Нужен и слою повторов — для хука `onRetry`.

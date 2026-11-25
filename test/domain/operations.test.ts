@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RetrySafety } from '../../src/core/operation.js';
 import { BUCKET_LIMITS } from '../../src/domain/buckets.js';
+import { ITD_CATALOG } from '../../src/domain/catalog.js';
 import {
   isBuiltInOperationId,
   OPERATIONS,
@@ -96,6 +97,26 @@ describe('карта серверных счётчиков частоты', () =
     expect(operationBucket('events.notifications.poll.unread')).toBe(
       operationBucket('notifications.count'),
     );
+  });
+
+  it('описывает квоты записей чата без общей очереди для всех диалогов', () => {
+    const cases = [
+      ['chats.sendMessage', 'chats.send', 30],
+      ['chats.sendMessageToUser', 'chats.send', 30],
+      ['chats.forwardMessages', 'chats.send', 30],
+      ['chats.setReactions', 'chats.reactions', 60],
+      ['chats.editMessage', 'chats.edit', 10],
+      ['chats.deleteMessagesForMe', 'chats.deleteForMe', 20],
+    ] as const;
+
+    for (const [operation, bucket, limit] of cases) {
+      expect(operationBucket(operation)).toBe(bucket);
+      expect(ITD_CATALOG.bucketDefinitionOf(bucket)?.limit).toBe(limit);
+      expect(ITD_CATALOG.bucketOf(operation)).toBe('default');
+      expect(ITD_CATALOG.bucketOf(operation, '')).toBe('default');
+    }
+    expect(operationBucket('chats.reactions')).toBe('chats');
+    expect(operationBucket('chats.deleteMessagesForAll')).toBe('chats');
   });
 
   it('разводит измеренные счётчики QR-входа', () => {

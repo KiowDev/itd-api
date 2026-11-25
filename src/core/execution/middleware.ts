@@ -14,14 +14,15 @@ import { dispatchRequestHook, hasRequestHook } from '../plugins/hooks.js';
 import type { PluginRegistry } from '../plugins/registry.js';
 import {
   createRetryScheduler,
-  type RetryPolicy,
   type RetryScheduler,
+  rateLimitRetryStep,
   resolveRetryPolicy,
 } from '../scheduling/retry.js';
 import type { ServiceRegistry } from '../services.js';
 import { normalizeBaseUrl } from '../url.js';
 import { waitForRequest } from './lifecycle.js';
 import {
+  beginRateLimitRetry,
   beginTransportAttempt,
   currentTransportAttempt,
   lifecycleSignalOf,
@@ -180,23 +181,31 @@ export function createAuthPreflightMiddleware(
  */
 export function createAuthPreparationMiddleware(
   getAuth: () => Pick<AuthProvider, 'prepare'>,
+  prepareQueuedAuth?: (request: PipelineRequest) => Promise<() => boolean> | undefined,
 ): RequestMiddleware {
   return (request, next) => {
     if (request.skipAuth) return next(request);
 
     const auth = getAuth();
     const prepare = auth.prepare;
-    if (!prepare) return next(request);
+    const queued = prepareQueuedAuth?.(request);
+    if (!queued && !prepare) return next(request);
 
     return (async () => {
+      let isCurrent: (() => boolean) | undefined;
       try {
-        const pending = prepare.call(auth);
-        await (request.signal ? waitForRequest(pending, request.signal) : pending);
+        if (queued) {
+          isCurrent = await (request.signal ? waitForRequest(queued, request.signal) : queued);
+        } else if (prepare) {
+          const pending = prepare.call(auth);
+          await (request.signal ? waitForRequest(pending, request.signal) : pending);
+        }
       } catch (error) {
         // Recovery пропускает только эту ошибку; retry не считается восстановлением.
         requestAuthRecoveryState(request).preparationErrors.add(error);
         throw error;
       }
+      if (isCurrent?.() === false) throw new ItdAbortError('Владелец авторизации изменился');
       return next(request);
     })();
   };
@@ -277,20 +286,17 @@ export interface RetryMiddlewareDeps {
   /**
    * Паузы перед повторами при ответе `429`.
    *
-   * Живут отдельно от `retry`: сервер не присылает `Retry-After`, и экспоненциальный откат
-   * тут бесполезен — окно измеряется десятками секунд. Не зависят от `retry.attempts`.
-   * Длина лестницы ограничивает число повторов и тогда, когда паузу называет сервер, а её
-   * самая длинная ступень — саму паузу: `Retry-After` дольше не соблюдается, повтора нет.
-   * Пустая лестница — повторов после `429` нет. `undefined` — очереди нет, и `429` уходит
-   * обычной политике `retry` как рядовая ошибка.
+   * Паузы между повторами HTTP 429 при включённой очереди. Пауза сервера
+   * заменяет очередную ступень в пределах максимальной ступени.
+   * Пустой список отключает такие повторы. При `undefined` действует политика `retry`.
    */
   rateLimitDelays: readonly number[] | undefined;
   /**
-   * Придерживает очередь запроса на паузу `429`. `undefined`, если очереди нет.
-   *
-   * Тормозится очередь того счётчика, который ответил отказом.
+   * Готовит повтор после `429`. `false` отменяет повтор.
    */
-  pauseQueue: ((ms: number, request: PipelineRequest) => void) | undefined;
+  onRateLimitRetry:
+    | ((ms: number, request: PipelineRequest, error: ItdRateLimitError) => boolean)
+    | undefined;
   hooks: ClientHooks;
   logger: Logger | undefined;
   buildUrl: (request: PipelineRequest) => string;
@@ -326,20 +332,16 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
   const ladderCeiling = ladder && ladder.length > 0 ? Math.max(...ladder) : 0;
 
   /** Пауза по лестнице `429`; `undefined` — лестница пройдена или пауза сервера слишком велика. */
-  const ladderDelay = (
-    error: ItdRateLimitError,
-    rateLimitAttempt: number,
-    request: PipelineRequest,
-    policy: RetryPolicy,
-  ): number | undefined => {
-    if (!ladder || !policy.bodyReplayable || rateLimitAttempt > ladder.length) return undefined;
+  const ladderDelay = (error: ItdRateLimitError, request: PipelineRequest): number | undefined => {
+    const step = rateLimitRetryStep(request, ladder);
+    if (step === undefined) return undefined;
     if (error.retryAfter !== undefined && error.retryAfter > ladderCeiling) return undefined;
 
     // Паузу, названную сервером, соблюдаем точно; иначе берём очередной шаг лестницы.
-    const wait = error.retryAfter ?? ladder[rateLimitAttempt - 1];
-    if (wait === undefined) return undefined;
+    const wait = error.retryAfter ?? step;
 
-    deps.pauseQueue?.(wait, request);
+    if (deps.onRateLimitRetry?.(wait, request, error) === false) return undefined;
+    const rateLimitAttempt = beginRateLimitRetry(request);
     deps.logger?.info(
       `лимит частоты ${request.method.toUpperCase()} ${request.path}, ` +
         `повтор ${rateLimitAttempt} через ${wait} мс`,
@@ -356,7 +358,6 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
 
     return (async () => {
       let retryAttempt = 0;
-      let rateLimitAttempt = 0;
 
       for (;;) {
         try {
@@ -368,11 +369,10 @@ export function createRetryMiddleware(deps: RetryMiddlewareDeps): RequestMiddlew
           const transportAttempt = currentTransportAttempt(request);
           // Без очереди `429` — рядовая ошибка: её повторяет обычная политика в общий счёт попыток.
           const rateLimited = ladder !== undefined && isItdRateLimitError(error);
-          if (rateLimited) rateLimitAttempt += 1;
-          else retryAttempt += 1;
+          if (!rateLimited) retryAttempt += 1;
 
           const delay = rateLimited
-            ? ladderDelay(error, rateLimitAttempt, request, policy)
+            ? ladderDelay(error, request)
             : backoff?.(error, retryAttempt, policy);
           if (delay === undefined) throw error;
 

@@ -38,7 +38,7 @@ export interface RateLimitBucketOverride {
   concurrency?: number | undefined;
   /** Верхняя граница стартов внутри бакета в секунду. */
   rps?: number | undefined;
-  /** Ёмкость бакета до первого ответа, запросов в минуту. */
+  /** Начальный лимит бакета в токенах за минуту. */
   limit?: number | undefined;
 }
 

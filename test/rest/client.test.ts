@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ItdStateError } from '../../src/core/errors.js';
-import { createRestClient, type RestClientOptions, tokenProvider } from '../../src/rest.js';
+import { ItdAbortError, ItdStateError } from '../../src/core/errors.js';
+import {
+  createRestClient,
+  RateLimitPacing,
+  type RestClientOptions,
+  tokenProvider,
+} from '../../src/rest.js';
+import { makeJwt } from '../helpers/jwt.js';
 import { createMockFetch, json, type MockHandler } from '../helpers/mock-fetch.js';
 
 function makeClient(handler: MockHandler | Response[], options: RestClientOptions = {}) {
@@ -46,6 +52,143 @@ describe('createRestClient — авторизация', () => {
     expect(getToken).toHaveBeenCalledTimes(2);
     expect(mock.calls[1]?.headers.get('authorization')).toBe('Bearer fresh');
     await api.dispose();
+  });
+
+  it.each([true, false])(
+    'обрабатывает смену токена в очереди чата (тот же аккаунт: %s)',
+    async (sameAccount) => {
+      vi.useFakeTimers();
+      try {
+        let token = makeJwt({ sub: 'a', sid: 'first' });
+        const { api, mock } = makeClient(() => json({ message_id: 'm' }), {
+          auth: tokenProvider(() => token),
+          rateLimit: { pacing: RateLimitPacing.Smooth },
+        });
+        await using client = api;
+        await client.chats.sendMessage('target', { text: 'first' });
+        const pending = client.chats.sendMessage('target', { text: 'queued' });
+        const result = sameAccount
+          ? expect(pending).resolves.toMatchObject({ messageId: 'm' })
+          : expect(pending).rejects.toBeInstanceOf(ItdAbortError);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(client.rateLimitState()[0]?.pending).toBe(1);
+
+        token = makeJwt({ sub: sameAccount ? 'a' : 'b', sid: 'next' });
+        await client.chats.sendMessage('other', { text: 'new token' });
+        await vi.advanceTimersByTimeAsync(2000);
+        await result;
+        expect(
+          mock.calls
+            .map(({ body, headers }) => [
+              JSON.parse(body ?? '{}').text,
+              headers.get('authorization'),
+            ])
+            .slice(1),
+        ).toEqual([
+          ['new token', `Bearer ${token}`],
+          ...(sameAccount ? [['queued', `Bearer ${token}`]] : []),
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('отменяет запрос прежнего аккаунта в явно выбранном бакете', async () => {
+    vi.useFakeTimers();
+    try {
+      let token = makeJwt({ sub: 'a' });
+      const { api, mock } = makeClient(() => json({ message_id: 'm' }), {
+        auth: tokenProvider(() => token),
+        rateLimit: { pacing: RateLimitPacing.Smooth },
+      });
+      await using client = api;
+      const send = () =>
+        client.chats.sendMessage('target', { text: 'test' }, { rateLimitBucket: 'chats.send' });
+      await send();
+      const rejected = expect(send()).rejects.toBeInstanceOf(ItdAbortError);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.rateLimitState()[0]?.pending).toBe(1);
+
+      token = makeJwt({ sub: 'b' });
+      await client.users.me();
+      await rejected;
+      expect(client.rateLimitState()[0]?.pending).toBe(0);
+      expect(mock.calls.filter(({ method }) => method === 'POST')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('сохраняет ожидающую отправку при смене аккаунта с buckets: false', async () => {
+    vi.useFakeTimers();
+    try {
+      let token = makeJwt({ sub: 'a' });
+      let finishFirst!: (response: Response) => void;
+      const firstResponse = new Promise<Response>((resolve) => {
+        finishFirst = resolve;
+      });
+      const auth = tokenProvider(() => token);
+      const { api, mock } = makeClient(
+        (_request, index) => (index === 0 ? firstResponse : json({ message_id: 'second' })),
+        { auth, rateLimit: { buckets: false, concurrency: 1 } },
+      );
+      await using client = api;
+      const first = client.chats.sendMessage('target', { text: 'first' });
+      const second = expect(
+        client.chats.sendMessage('target', { text: 'second' }),
+      ).resolves.toMatchObject({ messageId: 'second' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.rateLimitState()).toMatchObject([{ bucket: 'default', pending: 1 }]);
+
+      token = makeJwt({ sub: 'b' });
+      await auth.token();
+      finishFirst(json({ message_id: 'first' }));
+      await first;
+      await second;
+
+      expect(mock.calls[1]?.headers.get('authorization')).toBe(`Bearer ${token}`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('не зачисляет запрос в очередь нового аккаунта при параллельной подготовке токенов', async () => {
+    const first = makeJwt({ sub: 'a' });
+    const second = makeJwt({ sub: 'b' });
+    const getToken = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const { api, mock } = makeClient(() => json({ message_id: 'm' }), {
+      auth: tokenProvider(getToken),
+      rateLimit: {},
+    });
+    await using client = api;
+    const oldAccount = client.chats.sendMessage('target', { text: 'first' });
+    const newAccount = client.chats.sendMessage('target', { text: 'second' });
+
+    const rejected = expect(oldAccount).rejects.toBeInstanceOf(ItdAbortError);
+    await expect(newAccount).resolves.toMatchObject({ messageId: 'm' });
+    await rejected;
+    expect(mock.callCount).toBe(1);
+    expect(mock.calls[0]?.headers.get('authorization')).toBe(`Bearer ${second}`);
+  });
+
+  it('запоздавшее чтение токена не возвращает очередь к прежнему аккаунту', async () => {
+    let finish!: (token: string) => void;
+    const slow = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    const current = makeJwt({ sub: 'b' });
+    const getToken = vi.fn().mockReturnValueOnce(slow).mockResolvedValue(current);
+    const auth = tokenProvider(getToken);
+    const { api, mock } = makeClient(() => json({ message_id: 'm' }), { auth, rateLimit: {} });
+    await using client = api;
+    const pending = client.chats.sendMessage('target', { text: 'first' });
+    await vi.waitFor(() => expect(getToken).toHaveBeenCalledTimes(1));
+    await client.chats.sendMessage('target', { text: 'second' });
+    finish(makeJwt({ sub: 'a' }));
+    await expect(pending).rejects.toBeInstanceOf(ItdAbortError);
+    expect(auth.currentHeaders()).toEqual({ Authorization: `Bearer ${current}` });
+    expect(mock.callCount).toBe(1);
   });
 
   it('401 уходит вызывающему коду: обновлять токен нечем', async () => {
@@ -155,6 +298,25 @@ describe('createRestClient — состав и конвейер', () => {
     expect(mock.callCount).toBe(2);
     expect(api.rateLimitState().map((state) => state.bucket)).toEqual(['default']);
     await api.dispose();
+  });
+
+  it('учитывает заголовки чатов отдельно от default', async () => {
+    const { api } = makeClient(
+      [
+        json({ data: { chats: [] } }, { headers: { 'X-RateLimit-Remaining': '10' } }),
+        json({ data: {} }, { headers: { 'X-RateLimit-Remaining': '20' } }),
+      ],
+      { rateLimit: { bucketOverrides: { chats: { limit: 140 } } } },
+    );
+    await using client = api;
+
+    await client.chats.list();
+    await client.platform.version();
+
+    expect(client.rateLimitState().map(({ bucket, remaining }) => [bucket, remaining])).toEqual([
+      ['chats', 10],
+      ['default', 20],
+    ]);
   });
 });
 

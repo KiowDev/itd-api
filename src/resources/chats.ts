@@ -421,17 +421,21 @@ export class ChatsResource extends BaseResource {
     const data = resolveMessage(input);
     const path = `${chatPath(chatId)}/messages`;
     return this.#withAttachments(data, { method: 'POST', path }, options, (attachments, request) =>
-      this.http.execute(SEND_MESSAGE, {
-        path,
-        body: {
-          text: data.text,
-          reply_to_id: data.replyToId ?? null,
-          attachments: attachments?.length ? attachments : undefined,
-          entities: data.entities?.length ? data.entities.map(writeChatEntity) : undefined,
-          client_message_id: data.clientMessageId,
+      this.http.execute(
+        SEND_MESSAGE,
+        {
+          path,
+          body: {
+            text: data.text,
+            reply_to_id: data.replyToId ?? null,
+            attachments: attachments?.length ? attachments : undefined,
+            entities: data.entities?.length ? data.entities.map(writeChatEntity) : undefined,
+            client_message_id: data.clientMessageId,
+          },
+          ...request,
         },
-        ...request,
-      }),
+        this.http.bucketInstance('chat', chatId),
+      ),
     );
   }
 
@@ -444,16 +448,20 @@ export class ChatsResource extends BaseResource {
     const data = resolveMessage(input);
     const path = `${MESSENGER_PATH}/users/${encodePathSegment(userId, 'идентификатор пользователя')}/messages`;
     return this.#withAttachments(data, { method: 'POST', path }, options, (attachments, request) =>
-      this.http.execute(SEND_MESSAGE_TO_USER, {
-        path,
-        body: {
-          text: data.text,
-          attachments: attachments?.length ? attachments : undefined,
-          entities: data.entities?.length ? data.entities.map(writeChatEntity) : undefined,
-          client_message_id: data.clientMessageId,
+      this.http.execute(
+        SEND_MESSAGE_TO_USER,
+        {
+          path,
+          body: {
+            text: data.text,
+            attachments: attachments?.length ? attachments : undefined,
+            entities: data.entities?.length ? data.entities.map(writeChatEntity) : undefined,
+            client_message_id: data.clientMessageId,
+          },
+          ...request,
         },
-        ...request,
-      }),
+        this.http.bucketInstance('recipient', userId),
+      ),
     );
   }
 
@@ -467,15 +475,19 @@ export class ChatsResource extends BaseResource {
     const data = resolveMessage(input);
     const path = `${chatPath(chatId)}/messages/${messageSegment(messageId)}`;
     return this.#withAttachments(data, { method: 'PATCH', path }, options, (attachments, request) =>
-      this.http.execute(EDIT_MESSAGE, {
-        path,
-        body: {
-          text: data.text,
-          attachments,
-          entities: data.entities?.map(writeChatEntity),
+      this.http.execute(
+        EDIT_MESSAGE,
+        {
+          path,
+          body: {
+            text: data.text,
+            attachments,
+            entities: data.entities?.map(writeChatEntity),
+          },
+          ...request,
         },
-        ...request,
-      }),
+        this.http.bucketInstance('chat', chatId),
+      ),
     );
   }
 
@@ -511,15 +523,19 @@ export class ChatsResource extends BaseResource {
     input: ForwardChatMessagesInput,
     options: RequestOptions = {},
   ): Promise<ChatForwardedMessages> {
-    return this.http.execute(FORWARD_MESSAGES, {
-      path: `${chatPath(chatId)}/messages/forward`,
-      body: {
-        source_chat_id: input.sourceChatId,
-        message_ids: input.messageIds,
-        client_message_ids: input.clientMessageIds,
+    return this.http.execute(
+      FORWARD_MESSAGES,
+      {
+        path: `${chatPath(chatId)}/messages/forward`,
+        body: {
+          source_chat_id: input.sourceChatId,
+          message_ids: input.messageIds,
+          client_message_ids: input.clientMessageIds,
+        },
+        ...options,
       },
-      ...options,
-    });
+      this.http.bucketInstance('chat', chatId, Math.max(1, input.messageIds.length)),
+    );
   }
 
   /** Удаляет сообщения из истории текущего пользователя. */
@@ -528,11 +544,15 @@ export class ChatsResource extends BaseResource {
     messageIds: readonly string[],
     options: RequestOptions = {},
   ): Promise<ChatDeletedMessages> {
-    return this.http.execute(DELETE_MESSAGES_FOR_ME, {
-      path: `${chatPath(chatId)}/messages/delete-for-me`,
-      body: { message_ids: messageIds },
-      ...options,
-    });
+    return this.http.execute(
+      DELETE_MESSAGES_FOR_ME,
+      {
+        path: `${chatPath(chatId)}/messages/delete-for-me`,
+        body: { message_ids: messageIds },
+        ...options,
+      },
+      this.http.bucketInstance('chat', chatId),
+    );
   }
 
   /** Удаляет сообщения из истории всех участников. */
@@ -656,14 +676,18 @@ export class ChatsResource extends BaseResource {
     input: SetChatReactionsInput,
     options: RequestOptions = {},
   ): Promise<ChatMessageReactions> {
-    return this.http.execute(SET_REACTIONS, {
-      path: `${chatPath(chatId)}/messages/${messageSegment(messageId)}/reactions`,
-      body: {
-        reactions: input.reactions.map(writeChatReaction),
-        expected_version: input.expectedVersion,
-        operation_id: input.operationId,
+    return this.http.execute(
+      SET_REACTIONS,
+      {
+        path: `${chatPath(chatId)}/messages/${messageSegment(messageId)}/reactions`,
+        body: {
+          reactions: input.reactions.map(writeChatReaction),
+          expected_version: input.expectedVersion,
+          operation_id: input.operationId,
+        },
+        ...options,
       },
-      ...options,
-    });
+      this.http.bucketInstance('chat', chatId),
+    );
   }
 }
