@@ -12,6 +12,8 @@ import {
   type ChatSummary,
   type ChatUpdate,
   type FileInput,
+  isBuilder,
+  type MessageBuilder,
   type MessageInput,
   type PublicProfile,
   type RequestOptions,
@@ -122,22 +124,45 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     );
   }
 
-  /** Отправляет текст в текущий чат. */
+  /** Отправляет текст в текущий чат. Дополнительные поля можно передать вторым аргументом. */
   reply(
     text: string,
-    input?: ChatReplyOptions,
+    fields?: ChatReplyOptions,
+    options?: RequestOptions,
+  ): Promise<ChatSentMessage>;
+  /** Отправляет готовый объект сообщения, билдер или функцию сборки в текущий чат. */
+  reply(input: MessageInput, options?: RequestOptions): Promise<ChatSentMessage>;
+  reply(
+    input: string | MessageInput,
+    fieldsOrOptions?: ChatReplyOptions | RequestOptions,
     options?: RequestOptions,
   ): Promise<ChatSentMessage> {
-    return this.send({ ...input, text }, options);
+    if (typeof input === 'string') return this.send({ ...fieldsOrOptions, text: input }, options);
+    return this.send(input, fieldsOrOptions as RequestOptions | undefined);
   }
 
   /** Отправляет текстовый ответ на `ctx.message` в текущий чат. */
   replyTo(
     text: string,
-    input?: ChatReplyOptions,
+    fields?: ChatReplyOptions,
+    options?: RequestOptions,
+  ): Promise<ChatSentMessage>;
+  /** Отправляет сообщение в ответ на `ctx.message`. ID исходного сообщения берётся из контекста. */
+  replyTo(input: MessageInput, options?: RequestOptions): Promise<ChatSentMessage>;
+  replyTo(
+    input: string | MessageInput,
+    fieldsOrOptions?: ChatReplyOptions | RequestOptions,
     options?: RequestOptions,
   ): Promise<ChatSentMessage> {
-    return this.send({ ...input, text, replyToId: this.#requireMessage() }, options);
+    const replyToId = this.#requireMessage();
+    if (typeof input === 'string')
+      return this.send({ ...fieldsOrOptions, text: input, replyToId }, options);
+
+    const withReply = (value: SendChatMessageInput | MessageBuilder) =>
+      isBuilder(value) ? value.replyTo(replyToId) : { ...value, replyToId };
+    const message: MessageInput =
+      typeof input === 'function' ? (builder) => withReply(input(builder)) : withReply(input);
+    return this.send(message, fieldsOrOptions as RequestOptions | undefined);
   }
 
   /**

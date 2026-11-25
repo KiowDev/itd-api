@@ -187,6 +187,59 @@ describe('ChatContext', () => {
     }
   });
 
+  it.each(['reply', 'replyTo'] as const)(
+    '%s принимает текст, объект, билдер и функцию сборки',
+    async (method) => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ message_id: 'sent' }),
+      );
+      const { itd } = setup(fetch);
+      const ctx = new ChatContext(
+        itd,
+        { type: ChatUpdateType.NewMessage, chatId: 'c1' },
+        { messageId: 'm1', senderId: 'u1', createdAt: '2026-11-20T00:00:00.000Z' },
+      );
+      const options = { headers: { 'x-reply-test': 'yes' } };
+      const messageInput = { text: 'Объект', attachmentIds: ['f2'], replyToId: 'm2' };
+      const builder = buildMessage('Билдер').attachId('f3').post('p1').replyTo('m2');
+      const build = vi.fn(() => messageInput);
+      const target = method === 'replyTo' ? 'm1' : 'm2';
+
+      try {
+        await ctx[method]('Текст', { attachmentIds: ['f1'] }, options);
+        await ctx[method](messageInput, options);
+        await ctx[method](builder, options);
+        await ctx[method]((draft) => draft.text('Функция').attachId('f4').replyTo('m2'), options);
+        await ctx[method](build, options);
+
+        expect(fetch.mock.calls.map(([, request]) => JSON.parse(String(request?.body)))).toEqual([
+          {
+            text: 'Текст',
+            attachments: ['f1'],
+            reply_to_id: method === 'replyTo' ? 'm1' : null,
+          },
+          { text: 'Объект', attachments: ['f2'], reply_to_id: target },
+          {
+            text: 'Билдер',
+            attachments: ['f3'],
+            reply_to_id: target,
+            entities: [{ type: 'post', post_id: 'p1' }],
+          },
+          { text: 'Функция', attachments: ['f4'], reply_to_id: target },
+          { text: 'Объект', attachments: ['f2'], reply_to_id: target },
+        ]);
+        expect(
+          fetch.mock.calls.map(([, request]) => new Headers(request?.headers).get('x-reply-test')),
+        ).toEqual(['yes', 'yes', 'yes', 'yes', 'yes']);
+        expect(build).toHaveBeenCalledOnce();
+        expect(messageInput.replyToId).toBe('m2');
+        expect(builder.build().replyToId).toBe('m2');
+      } finally {
+        await itd.close();
+      }
+    },
+  );
+
   it('загружает файлы до отправки текста и добавляет их к уже готовым вложениям', async () => {
     let uploaded = 0;
     const fetch = vi.fn<typeof globalThis.fetch>(async (input, request) => {
