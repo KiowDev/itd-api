@@ -12,12 +12,14 @@ export interface ChatBotClient extends Pick<ItdClient, 'install'> {
     | 'events'
     | 'list'
     | 'get'
+    | 'reactions'
     | 'sendMessage'
     | 'editMessage'
     | 'forwardMessages'
     | 'markRead'
     | 'acceptRequest'
     | 'sendAction'
+    | 'setReactions'
     | 'uploadFile'
   >;
 }

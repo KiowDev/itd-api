@@ -5,6 +5,8 @@ import {
   type ChatForwardedMessages,
   type ChatMessage,
   type ChatMessageContent,
+  type ChatMessageReactions,
+  type ChatReaction,
   type ChatReadResult,
   type ChatSentMessage,
   type ChatSummary,
@@ -16,10 +18,11 @@ import {
   type SendChatMessageInput,
 } from 'itd-api';
 
+import { addReaction } from './actions/reaction.js';
+import { runWithTyping } from './actions/typing.js';
+import type { ChatTypingControl, ChatTypingOptions } from './actions/typing.types.js';
 import type { ChatBotClient, ChatReplyOptions } from './context.types.js';
 import { withContextSignal } from './request-signal.js';
-import { runWithTyping } from './typing.js';
-import type { ChatTypingControl, ChatTypingOptions } from './typing.types.js';
 
 /** Контексты входящих сообщений из `chat_created`. @internal */
 export const incomingChatCreatedContexts = new WeakSet<ChatContext>();
@@ -173,6 +176,22 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     const input = { sourceChatId, messageIds: [messageId] };
     return withContextSignal(this.signal, options, (request) =>
       this.chats.forwardMessages(targetChatId, input, request),
+    );
+  }
+
+  /**
+   * Добавляет реакцию к сообщению события, сохраняя остальные реакции бота.
+   * Если реакция уже выбрана, возвращает текущее состояние. `deadline` охватывает все запросы.
+   *
+   * @param reaction эмодзи или объект реакции, в том числе с ID пользовательского эмодзи.
+   * @returns реакции на сообщение и их актуальная версия.
+   */
+  react(reaction: string | ChatReaction, options?: RequestOptions): Promise<ChatMessageReactions> {
+    const chatId = this.#requireChat();
+    const { messageId } = this;
+    if (!messageId) throw new Error('У события нет идентификатора сообщения');
+    return withContextSignal(this.signal, options, (request) =>
+      addReaction(this.chats, chatId, messageId, reaction, this.message, request),
     );
   }
 

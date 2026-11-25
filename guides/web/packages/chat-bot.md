@@ -130,6 +130,9 @@ await ctx.send(message('Готово').attach(file));
 `await ctx.forwardTo(targetChatId)` пересылает текущее сообщение в другой чат. Проверьте `ok` и
 `failed` в результате пересылки.
 
+`await ctx.react('👍')` добавляет реакцию к сообщению и сохраняет уже выбранные реакции бота.
+Для пользовательского эмодзи передайте `{ type: ChatReactionType.Custom, fileId }`.
+
 `ctx.withTyping()` поддерживает статус «печатает», пока выполняется задача.
 
 ```ts
