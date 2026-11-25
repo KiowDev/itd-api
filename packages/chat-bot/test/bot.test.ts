@@ -5,19 +5,25 @@ import {
   ItdClient,
   type Logger,
   MemoryKeyValueStore,
+  type ReconnectOptions,
 } from 'itd-api';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { hydrateClient } from '../../hydrate/src/index.js';
 import {
   ChatBot,
   ChatBotError,
   ChatBotFilter,
+  ChatBotLifecycleEvent,
   ChatContext,
   type SessionFlavor,
   session,
 } from '../src/index.js';
 
-function setup(fetch: typeof globalThis.fetch = vi.fn(), logger?: Logger) {
+function setup(
+  fetch: typeof globalThis.fetch = vi.fn(),
+  logger?: Logger,
+  reconnect?: ReconnectOptions,
+) {
   const sockets: TestSocket[] = [];
 
   class TestSocket extends EventTarget {
@@ -52,7 +58,7 @@ function setup(fetch: typeof globalThis.fetch = vi.fn(), logger?: Logger) {
     retry: false,
     rateLimit: false,
     logger,
-    events: { chats: { webSocketImpl: TestSocket } },
+    events: { chats: { ...reconnect, webSocketImpl: TestSocket } },
   });
   const nextSocket = (index = 0) =>
     vi.waitFor(() => {
@@ -68,6 +74,88 @@ function message(text: string, id = 'm1') {
 }
 
 describe('ChatBot', () => {
+  it('сообщает об открытии сокета, переподключении и остановке после последней попытки', async () => {
+    const { itd, nextSocket } = setup(undefined, undefined, { backoff: [0], maxAttempts: 1 });
+    const bot = new ChatBot(itd);
+    const seen = vi.fn();
+    const command = vi.fn();
+    const connected = withGate();
+    bot
+      .on(ChatBotLifecycleEvent.Connect, async () => {
+        seen('connect', bot.isRunning, bot.isReady);
+        await connected.promise;
+      })
+      .on(ChatBotLifecycleEvent.Reconnect, (info) => {
+        expectTypeOf(info).toEqualTypeOf<{ attempt: number; delay: number }>();
+        seen('reconnect', info.attempt, info.delay, bot.isReady);
+      })
+      .on(ChatBotLifecycleEvent.Error, (error) => seen('error', error, bot.isRunning))
+      .on(ChatBotLifecycleEvent.Stop, () => seen('stop', bot.isRunning, bot.isReady));
+    bot.command('hello', command);
+    try {
+      expect(bot.isRunning).toBe(false);
+      expect(bot.isReady).toBe(false);
+      const started = bot.start();
+      const first = await nextSocket();
+      expect(bot.isRunning).toBe(true);
+      expect(bot.isReady).toBe(false);
+      expect(seen).not.toHaveBeenCalled();
+      first.open();
+      await started;
+      expect(seen.mock.calls).toEqual([['connect', true, true]]);
+      first.update({ type: ChatUpdateType.NewMessage, chat_id: 'c1', message: message('/hello') });
+      await vi.waitFor(() => expect(command).toHaveBeenCalledOnce());
+
+      first.close();
+      const second = await nextSocket(1);
+      expect(seen.mock.calls.at(-1)).toEqual(['reconnect', 1, 0, false]);
+      expect(bot.isRunning).toBe(true);
+      second.open();
+      await vi.waitFor(() => expect(seen.mock.calls.at(-1)).toEqual(['connect', true, true]));
+      second.close();
+      (await nextSocket(2)).close();
+      await vi.waitFor(() => expect(bot.isRunning).toBe(false));
+      expect(seen.mock.calls.slice(2)).toEqual([
+        ['connect', true, true],
+        ['reconnect', 1, 0, false],
+        ['error', expect.any(Error), false],
+        ['stop', false, false],
+      ]);
+      expect(bot.isReady).toBe(false);
+    } finally {
+      connected.resolve();
+      await itd.close();
+    }
+  });
+
+  it('передаёт ошибку восстановления из start() и в событие жизненного цикла', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/chats')) return Response.json({ chats: [] });
+      return Response.json({ events: [], reset_required: true, next_event_seq: 10 });
+    });
+    const { itd, nextSocket } = setup(fetch);
+    const bot = new ChatBot(itd);
+    const failed = vi.fn();
+    const stopped = vi.fn();
+    bot.on('error', failed).on('stop', stopped);
+    try {
+      const starting = bot.start(10);
+      const error = expect.objectContaining({
+        message: 'В списке чатов нет номера события для восстановления',
+      });
+      const rejected = expect(starting).rejects.toEqual(error);
+      (await nextSocket()).open();
+      await rejected;
+      expect(failed).toHaveBeenCalledExactlyOnceWith(error);
+      expect(stopped).toHaveBeenCalledOnce();
+      expect(bot.isRunning).toBe(false);
+      expect(bot.isReady).toBe(false);
+    } finally {
+      await itd.close();
+    }
+  });
+
   it.each(['checkpoint', 'stop'] as const)(
     'сохраняет открытый канал и не принимает события во время чтения checkpoint (%s)',
     async (mode) => {
@@ -113,8 +201,12 @@ describe('ChatBot', () => {
         expect(events.active).toBe(true);
 
         const liveBot = new ChatBot(itd);
+        const ready = vi.fn();
+        liveBot.on('connect', ready);
         liveBot.use(handled);
         await liveBot.start();
+        expect(liveBot.isReady).toBe(true);
+        expect(ready).toHaveBeenCalledOnce();
         await expect(liveBot.start(0)).rejects.toMatchObject({ name: 'ItdStateError' });
         socket.update({ type: ChatUpdateType.NewMessage, chat_id: 'c1', event_seq: 22 });
         await vi.waitFor(() => expect(handled).toHaveBeenCalledOnce());
@@ -553,6 +645,9 @@ describe('ChatBot', () => {
     const entered = vi.fn();
     const received = vi.fn();
     const { promise, resolve } = withGate();
+    const connected = vi.fn();
+    const stopped = vi.fn();
+    bot.on('connect', connected).on('stop', stopped);
     bot.stream.on('update', received);
     bot.command('hold', async (ctx) => {
       entered();
@@ -577,17 +672,25 @@ describe('ChatBot', () => {
       await vi.waitFor(() => expect(received).toHaveBeenCalledTimes(2));
       await itd.setSession({ accessToken: 'another-test-token' });
       expect(socket.readyState).toBe(3);
+      expect(bot.isRunning).toBe(false);
+      expect(stopped).toHaveBeenCalledOnce();
       resolve();
       await bot.drain();
       expect(fetch).not.toHaveBeenCalled();
       expect(queued).not.toHaveBeenCalled();
 
-      const restarted = bot.start();
+      const reopened = bot.stream.connect();
       const next = await nextSocket(1);
       next.open();
-      await restarted;
+      await reopened;
+      expect(connected).toHaveBeenCalledOnce();
+      await bot.start();
+      expect(connected).toHaveBeenCalledTimes(2);
       next.update({ type: ChatUpdateType.NewMessage, chat_id: 'c1', message: message('/queued') });
       await vi.waitFor(() => expect(queued).toHaveBeenCalledOnce());
+      bot.stop();
+      bot.stop();
+      await vi.waitFor(() => expect(stopped).toHaveBeenCalledTimes(2));
     } finally {
       resolve();
       bot.stop();

@@ -1,4 +1,5 @@
 import {
+  type ChatEventMap,
   type ChatEvents,
   type ChatMessage,
   type ChatUpdate,
@@ -55,6 +56,36 @@ export type ChatBotErrorHandler<C extends ChatContext = ChatContext> = (
   context: C,
 ) => unknown | Promise<unknown>;
 
+/** Имена событий жизненного цикла для `bot.on()`. */
+export const ChatBotLifecycleEvent = Object.freeze({
+  /** WebSocket открыт. */
+  Connect: 'connect',
+  /** Запланировано переподключение. */
+  Reconnect: 'reconnect',
+  /** Бот остановлен. */
+  Stop: 'stop',
+  /** Бот остановлен из-за ошибки. */
+  Error: 'error',
+} as const);
+
+/** Значение из `ChatBotLifecycleEvent`. */
+export type ChatBotLifecycleEvent =
+  (typeof ChatBotLifecycleEvent)[keyof typeof ChatBotLifecycleEvent];
+
+/** Полезная нагрузка событий жизненного цикла. */
+export interface ChatBotLifecycleEvents {
+  /** Сокет открыт или бот подключился к уже открытому каналу. */
+  [ChatBotLifecycleEvent.Connect]: undefined;
+  /** Канал запланировал повторную попытку подключения. Задержка указана в миллисекундах. */
+  [ChatBotLifecycleEvent.Reconnect]: ChatEventMap['reconnect'];
+  /** Бот остановлен. Для ожидания обработчиков используйте `drain()`. */
+  [ChatBotLifecycleEvent.Stop]: undefined;
+  /** Ошибка, после которой бот остановился. */
+  [ChatBotLifecycleEvent.Error]: unknown;
+}
+
+type LifecycleHandler = (payload: never) => unknown;
+
 /** Настройки обработки событий и создания контекста. */
 export type ChatBotOptions<
   Client extends ChatBotClient = ItdClient,
@@ -85,6 +116,11 @@ interface BotRun {
 }
 
 const FEATURES = new WeakMap<ChatEvents, Pick<FeatureContext, 'manage' | 'logger'>>();
+const lifecycleEventNames: readonly string[] = Object.values(ChatBotLifecycleEvent);
+
+function isLifecycleEvent(value: unknown): value is ChatBotLifecycleEvent {
+  return typeof value === 'string' && lifecycleEventNames.includes(value);
+}
 
 function isSequence(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -123,6 +159,7 @@ export class ChatBot<
   /** Клиент бота. Доступен в обработчиках как `ctx.itd`. */
   readonly itd: Client;
   readonly #composer = new EventComposer<C>();
+  readonly #lifecycle = new Map<ChatBotLifecycleEvent, LifecycleHandler[]>();
   readonly #queue: ChatDispatchQueue;
   readonly #checkpoint: ChatCheckpoint | undefined;
   readonly #commandPrefixes: readonly string[];
@@ -179,6 +216,16 @@ export class ChatBot<
     return this.itd.chats.events;
   }
 
+  /** Бот запущен, включая подготовку, подключение и повторные попытки. */
+  get isRunning(): boolean {
+    return this.#run !== undefined;
+  }
+
+  /** У активного бота открыт WebSocket. Догрузка пропущенных событий может ещё выполняться. */
+  get isReady(): boolean {
+    return !!this.#run?.unsubscribe && this.stream.status === EventChannelStatus.Connected;
+  }
+
   /** Добавляет middleware в общую цепочку. */
   use(...middleware: readonly ChatMiddlewareLike<C>[]): this {
     this.#composer.use(...middleware.map(adaptMiddleware));
@@ -196,17 +243,49 @@ export class ChatBot<
     return this;
   }
 
-  /** Добавляет обработчики для типа события или фильтра по сообщению. */
+  /** Добавляет обработчики жизненного цикла. Они выполняются вне очереди сообщений. */
+  on<E extends ChatBotLifecycleEvent>(
+    event: E,
+    ...handlers: readonly ((payload: ChatBotLifecycleEvents[E]) => unknown)[]
+  ): this;
+  /** Добавляет обработчики для типа события чата или фильтра по сообщению. */
   on<F extends ChatBotFilter>(
     query: F | readonly F[],
     ...middleware: readonly ChatMiddlewareLike<ChatFilterContext<C, F>>[]
+  ): this;
+  on(
+    query: ChatBotFilter | readonly ChatBotFilter[] | ChatBotLifecycleEvent,
+    ...handlers: readonly (ChatMiddlewareLike<C> | LifecycleHandler)[]
   ): this {
+    if (isLifecycleEvent(query)) {
+      const listeners = this.#lifecycle.get(query) ?? [];
+      listeners.push(...(handlers as readonly LifecycleHandler[]));
+      this.#lifecycle.set(query, listeners);
+      return this;
+    }
     const filters = typeof query === 'string' ? [query] : [...query];
     if (!filters.length) throw new ItdConfigError('Укажите хотя бы один фильтр для on()');
     return this.filter(
-      (context): context is ChatFilterContext<C, F> => matchesChatFilter(context, filters),
-      ...middleware,
+      (context) => matchesChatFilter(context, filters),
+      ...(handlers as readonly ChatMiddlewareLike<C>[]),
     );
+  }
+
+  /** Откладывает вызов, чтобы обработчик мог остановить бота после завершения перехода канала. */
+  #emitLifecycle<E extends ChatBotLifecycleEvent>(
+    event: E,
+    payload: ChatBotLifecycleEvents[E],
+    run?: BotRun,
+  ): void {
+    for (const handler of this.#lifecycle.get(event) ?? []) {
+      void Promise.resolve()
+        .then(() => {
+          if (!run || this.#run === run) return handler(payload as never);
+        })
+        .catch((error: unknown) =>
+          this.#logger.error('Ошибка обработчика жизненного цикла чат-бота', error),
+        );
+    }
   }
 
   /** Распознаёт команду без учёта регистра и передаёт её аргументы в `ctx.args`. */
@@ -330,10 +409,25 @@ export class ChatBot<
       }
     });
     const offStatus = events.on('status', (status) => {
+      if (this.#run !== run) return;
+      if (status === EventChannelStatus.Connected) {
+        this.#emitLifecycle(ChatBotLifecycleEvent.Connect, undefined, run);
+      }
       if (status !== EventChannelStatus.Disconnected || run.reconnect) return;
       // SDK сообщает resetRequired сразу после статуса Disconnected.
       queueMicrotask(() => {
-        if (this.#run === run && !run.reconnect) this.#detach();
+        if (this.#run === run && !run.reconnect && !run.connecting) this.#detach();
+      });
+    });
+    const offReconnect = events.on('reconnect', (info) => {
+      if (this.#run === run) this.#emitLifecycle(ChatBotLifecycleEvent.Reconnect, info, run);
+    });
+    const offError = events.on('error', ({ error, willReconnect }) => {
+      if (willReconnect) return;
+      queueMicrotask(() => {
+        if (this.#run !== run) return;
+        this.#emitLifecycle(ChatBotLifecycleEvent.Error, error);
+        this.#detach();
       });
     });
     const offReset = events.on('resetRequired', () => {
@@ -344,6 +438,8 @@ export class ChatBot<
     return () => {
       offUpdate();
       offStatus();
+      offReconnect();
+      offError();
       offReset();
     };
   }
@@ -396,7 +492,10 @@ export class ChatBot<
         );
       }
       if (initial || since !== undefined) run.position = since;
-      run.unsubscribe ??= this.#subscribe(run);
+      if (initial) {
+        run.unsubscribe = this.#subscribe(run);
+        if (this.isReady) this.#emitLifecycle(ChatBotLifecycleEvent.Connect, undefined, run);
+      }
       do {
         signal.throwIfAborted();
         const reconnect = run.reconnect;
@@ -428,8 +527,13 @@ export class ChatBot<
         run.reconnect = undefined;
         await this.stream.connect(since);
       } while (run.reconnect);
+      if (this.#run === run && this.stream.status === EventChannelStatus.Disconnected)
+        this.#detach();
     } catch (error) {
-      if (this.#run === run) this.stop();
+      if (this.#run === run) {
+        this.#emitLifecycle(ChatBotLifecycleEvent.Error, error);
+        this.stop();
+      }
       throw error;
     } finally {
       run.connecting = undefined;
@@ -446,6 +550,7 @@ export class ChatBot<
     this.#checkpoint?.reset();
     const reason = new ItdAbortError('Обработка событий чат-бота остановлена');
     run.controller.abort(reason);
+    this.#emitLifecycle(ChatBotLifecycleEvent.Stop, undefined);
   }
 
   /** Запускает обработчики для каждого сообщения из события по порядку. */

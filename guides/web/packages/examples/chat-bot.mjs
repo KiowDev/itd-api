@@ -1,4 +1,4 @@
-import { ChatBot, ChatBotFilter } from '@itd-api/chat-bot';
+import { ChatBot, ChatBotFilter, ChatBotLifecycleEvent } from '@itd-api/chat-bot';
 import { fromUrl, isItdNotFoundError, ItdClient, message } from 'itd-api';
 
 const token = process.env.ITD_TOKEN;
@@ -57,9 +57,10 @@ async function stop() {
 process.once('SIGINT', () => void stop());
 process.once('SIGTERM', () => void stop());
 
+bot.on(ChatBotLifecycleEvent.Connect, () => console.log('Бот подключён. Отправьте ему /помощь.'));
+
 try {
   await bot.start();
-  console.log('Бот запущен. Отправьте ему /помощь.');
 } catch (error) {
   await stop();
   throw error;
