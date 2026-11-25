@@ -6,30 +6,18 @@ import {
   type ChatMessageContent,
   type ChatReadResult,
   type ChatSentMessage,
-  type ChatsApi,
   type ChatUpdate,
   type FileInput,
-  type ItdClient,
   type MessageInput,
   type RequestOptions,
   type SendChatMessageInput,
-  type UserId,
 } from 'itd-api';
 
-/** Клиент с ресурсом и каналом событий чатов. */
-export interface ChatBotClient extends Pick<ItdClient, 'install'> {
-  /** Позволяет отличить сообщения бота от сообщений собеседника. */
-  readonly getUserId?: () => Promise<UserId | undefined>;
-  /** Загружает текущий профиль, когда ID нельзя прочитать из токена. */
-  readonly users?: Pick<ItdClient['users'], 'me'>;
-  readonly chats: Pick<
-    ChatsApi,
-    'events' | 'list' | 'sendMessage' | 'editMessage' | 'markRead' | 'sendAction' | 'uploadFile'
-  >;
-}
+import type { ChatBotClient, ChatReplyOptions } from './context.types.js';
+import { withContextSignal } from './request-signal.js';
 
-/** Дополнительные поля текстового ответа. */
-export type ChatReplyOptions = Omit<SendChatMessageInput, 'text' | 'replyToId'>;
+/** Контексты входящих сообщений из `chat_created`. @internal */
+export const incomingChatCreatedContexts = new WeakSet<ChatContext>();
 
 /** Контекст события. Для пакета сообщений создаётся отдельный контекст на каждое сообщение. */
 export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
@@ -37,9 +25,9 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
   readonly itd: Client;
   /** Обновление, полученное от SDK. */
   readonly update: ChatUpdate;
-  /** Сообщение, выбранное из обновления. */
+  /** Сообщение текущего обработчика. Для событий без сообщения равно `undefined`. */
   readonly message: ChatMessage | undefined;
-  /** Сигнал для прямых вызовов SDK, связанных с обработкой сообщения. */
+  /** Сигнал отмены обработки обновления. Методы контекста передают его в запросы автоматически. */
   readonly signal: AbortSignal | undefined;
   /** @internal */
   readonly raw = undefined;
@@ -87,7 +75,10 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
 
   /** Отправляет сообщение в текущий чат. Принимает объект, билдер или функцию сборки. */
   send(input: MessageInput, options?: RequestOptions): Promise<ChatSentMessage> {
-    return this.chats.sendMessage(this.#requireChat(), input, this.#requestOptions(options));
+    const chatId = this.#requireChat();
+    return withContextSignal(this.signal, options, (request) =>
+      this.chats.sendMessage(chatId, input, request),
+    );
   }
 
   /** Отправляет текст в текущий чат. */
@@ -99,7 +90,7 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return this.send({ ...input, text }, options);
   }
 
-  /** Цитирует текущее сообщение в ответе. */
+  /** Отправляет текстовый ответ на `ctx.message` в текущий чат. */
   replyTo(
     text: string,
     input?: ChatReplyOptions,
@@ -108,7 +99,12 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
     return this.send({ ...input, text, replyToId: this.#requireMessage() }, options);
   }
 
-  /** Загружает файлы и отправляет сообщение в текущий чат. `deadline` охватывает всю отправку. */
+  /**
+   * Загружает файлы и отправляет сообщение в текущий чат. `deadline` охватывает загрузку и отправку.
+   *
+   * @param input текст и другие поля сообщения. Готовые вложения сохраняются.
+   * @param files файлы, которые нужно загрузить перед отправкой.
+   */
   async sendWithAttachments(
     input: SendChatMessageInput,
     files: readonly FileInput[],
@@ -119,45 +115,37 @@ export class ChatContext<Client extends ChatBotClient = ChatBotClient> {
 
   /** Редактирует текущее сообщение. */
   edit(input: ChatMessageContent, options?: RequestOptions): Promise<ChatEditedMessage> {
-    return this.chats.editMessage(
-      this.#requireChat(),
-      this.#requireMessage(),
-      input,
-      this.#requestOptions(options),
+    const chatId = this.#requireChat();
+    const messageId = this.#requireMessage();
+    return withContextSignal(this.signal, options, (request) =>
+      this.chats.editMessage(chatId, messageId, input, request),
     );
   }
 
   /** Отмечает чат прочитанным до текущего сообщения включительно. */
   markRead(options?: RequestOptions): Promise<ChatReadResult> {
-    return this.chats.markRead(
-      this.#requireChat(),
-      this.#requireMessage(),
-      this.#requestOptions(options),
+    const chatId = this.#requireChat();
+    const messageId = this.#requireMessage();
+    return withContextSignal(this.signal, options, (request) =>
+      this.chats.markRead(chatId, messageId, request),
     );
   }
 
-  /** Показывает действие бота в текущем чате. По умолчанию показывает «печатает…». */
+  /**
+   * Показывает собеседнику действие бота.
+   *
+   * @param type действие. По умолчанию `ChatActionType.Typing`.
+   * @param progress доля загруженного файла от 0 до 1 для действий загрузки.
+   */
   sendAction(
     type: ChatActionType = ChatActionType.Typing,
     progress?: number,
     options?: RequestOptions,
   ): Promise<void> {
-    return this.chats.sendAction(
-      this.#requireChat(),
-      type,
-      progress,
-      this.#requestOptions(options),
+    const chatId = this.#requireChat();
+    return withContextSignal(this.signal, options, (request) =>
+      this.chats.sendAction(chatId, type, progress, request),
     );
-  }
-
-  /** Объединяет отмену запроса с отменой обработки сообщения. */
-  #requestOptions(options?: RequestOptions): RequestOptions | undefined {
-    if (!this.signal) return options;
-    this.signal.throwIfAborted();
-    return {
-      ...options,
-      signal: options?.signal ? AbortSignal.any([this.signal, options.signal]) : this.signal,
-    };
   }
 
   #requireChat(): string {

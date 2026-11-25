@@ -1,21 +1,28 @@
 import { ItdConfigError } from 'itd-api';
-import type { ChatContext } from './context.js';
-import { type ChatMessageContext, isIncomingMessage } from './filters.js';
+import type { ChatContext } from '../context/context.js';
+import { isIncomingMessage } from './filters.js';
+import type { ChatMessageContext } from './filters.types.js';
 
 /** Точное текстовое совпадение, регулярное выражение или список условий. */
 export type HearsTrigger = string | RegExp | readonly (string | RegExp)[];
 
 /** Контекст обработчика команды. */
 export type ChatCommandContext<C extends ChatContext = ChatContext> = ChatMessageContext<C> & {
+  /** Полный текст входящего сообщения. */
   text: string;
+  /** Имя команды без префикса, в нижнем регистре. */
   command: string;
+  /** Текст после команды или пустая строка. */
   args: string;
+  /** Аргументы команды, совпадают с `args`. */
   match: string;
 };
 
 /** Контекст обработчика текста. */
 export type ChatHearsContext<C extends ChatContext = ChatContext> = ChatMessageContext<C> & {
+  /** Полный текст входящего сообщения. */
   text: string;
+  /** Совпавшая строка или результат вызова `RegExp.exec()`. */
   match: string | RegExpMatchArray;
 };
 

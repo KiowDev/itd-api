@@ -4,24 +4,26 @@ import {
   type KeyValueStore,
   MemoryKeyValueStore,
 } from 'itd-api';
-import type { ChatContext } from './context.js';
+import type { ChatContext } from '../context/context.js';
 import type { ChatMiddleware } from './middleware.js';
 
 /** Дополнение контекста данными диалога. */
 export interface SessionFlavor<S> {
+  /** Состояние для текущего ключа сессии. */
   get session(): S | undefined;
+  /** Устанавливает состояние. `null` и `undefined` удаляют запись. */
   set session(value: S | null | undefined);
 }
 
 /** Настройки session middleware. */
 export interface SessionOptions<S, C extends ChatContext = ChatContext> {
-  /** Создаёт состояние при первом обращении к ключу. */
+  /** Создаёт состояние при чтении `ctx.session`, если записи ещё нет. */
   initial?: (() => S) | undefined;
   /** Хранилище состояния. По умолчанию используется память процесса. */
   storage?: KeyValueStore<S> | undefined;
-  /** Префикс записей в общем хранилище. */
+  /** Префикс ключей в хранилище. По умолчанию `chat-bot:`. */
   prefix?: string | undefined;
-  /** Вычисляет ключ по контексту. По умолчанию используется ID чата. */
+  /** Вычисляет ключ по контексту. По умолчанию используется ID чата. При `undefined` обращение к `ctx.session` вызовет ошибку. */
   getSessionKey?: ((context: C) => string | undefined | Promise<string | undefined>) | undefined;
 }
 
@@ -38,9 +40,10 @@ function missingSession(context: ChatContext): void {
 }
 
 /**
- * Загружает и сохраняет сессию поверх общего `KeyValueStore` ядра.
+ * Добавляет в контекст состояние диалога через `ctx.session`.
  *
- * Обработчики с одинаковым ключом выполняются последовательно.
+ * Обработчики с одинаковым ключом выполняются последовательно. Состояние сохраняется,
+ * если к нему обращались и цепочка завершилась успешно.
  */
 export function session<S, C extends ChatContext = ChatContext>(
   options: SessionOptions<S, C> = {},
