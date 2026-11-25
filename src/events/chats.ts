@@ -96,6 +96,11 @@ export class ChatEvents {
     return this.#channel.status;
   }
 
+  /** Канал подключён, подключается или ожидает переподключения. */
+  get active(): boolean {
+    return this.#channel.active;
+  }
+
   /**
    * Подписывается на обновления или события подключения.
    *

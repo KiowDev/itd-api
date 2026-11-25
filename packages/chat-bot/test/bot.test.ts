@@ -68,6 +68,63 @@ function message(text: string, id = 'm1') {
 }
 
 describe('ChatBot', () => {
+  it.each(['checkpoint', 'stop'] as const)(
+    'сохраняет открытый канал и не принимает события во время чтения checkpoint (%s)',
+    async (mode) => {
+      const { itd, nextSocket } = setup();
+      const gate = withGate();
+      const storage = {
+        get: vi.fn(async () => {
+          await gate.promise;
+          return 10;
+        }),
+        set: vi.fn(),
+        delete: vi.fn(),
+      };
+      const events = itd.chats.events;
+      const external = vi.fn();
+      events.on('update', external);
+      const bot = new ChatBot(itd, { checkpoint: { storage, key: 'bot' } });
+      const handled = vi.fn();
+      bot.use(handled);
+      try {
+        const opened = events.connect();
+        const socket = await nextSocket();
+        socket.open();
+        await opened;
+
+        const started = bot.start();
+        const failed = expect(started).rejects.toMatchObject({
+          name: mode === 'stop' ? 'ItdAbortError' : 'ItdStateError',
+        });
+        expect(bot.start()).toBe(started);
+        await vi.waitFor(() => expect(storage.get).toHaveBeenCalledOnce());
+        socket.update({ type: ChatUpdateType.NewMessage, chat_id: 'c1', event_seq: 21 });
+        await vi.waitFor(() => expect(external).toHaveBeenCalledOnce());
+
+        if (mode === 'stop') bot.stop();
+        gate.resolve();
+        await failed;
+        expect(events.active).toBe(true);
+        expect(handled).not.toHaveBeenCalled();
+        expect(storage.set).not.toHaveBeenCalled();
+
+        await expect(bot.start(0)).rejects.toThrow('Канал чатов уже активен');
+        expect(events.active).toBe(true);
+
+        const liveBot = new ChatBot(itd);
+        liveBot.use(handled);
+        await liveBot.start();
+        await expect(liveBot.start(0)).rejects.toMatchObject({ name: 'ItdStateError' });
+        socket.update({ type: ChatUpdateType.NewMessage, chat_id: 'c1', event_seq: 22 });
+        await vi.waitFor(() => expect(handled).toHaveBeenCalledOnce());
+      } finally {
+        gate.resolve();
+        await itd.close();
+      }
+    },
+  );
+
   it('сохраняет позицию после завершения обработчиков и читает её при новом запуске', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
       const since = new URL(String(input)).searchParams.get('since');

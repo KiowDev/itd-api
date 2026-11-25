@@ -76,11 +76,12 @@ type BotReconnect = { kind: 'reset' } | { kind: 'resume'; since: number } | { ki
 
 interface BotRun {
   readonly controller: AbortController;
+  readonly release: Unsubscribe;
   userId?: Promise<string | undefined> | undefined;
   position: number | undefined;
   reconnect?: BotReconnect | undefined;
   connecting?: Promise<void> | undefined;
-  readonly unsubscribe: Unsubscribe;
+  unsubscribe?: Unsubscribe;
 }
 
 const FEATURES = new WeakMap<ChatEvents, Pick<FeatureContext, 'manage' | 'logger'>>();
@@ -238,7 +239,8 @@ export class ChatBot<
   /**
    * Подписывается на события и подключает канал. Повторный вызов использует ту же подписку.
    *
-   * @param since номер последнего события для нового подключения. Имеет приоритет над сохранённым номером.
+   * @param since номер последнего события. Имеет приоритет над сохранённым номером.
+   * @throws {ItdStateError} если для активного канала задан номер события.
    */
   start(since?: number): Promise<void> {
     if (this.#run?.connecting) return this.#run.connecting;
@@ -247,15 +249,23 @@ export class ChatBot<
         new ItdConfigError('Номер события должен быть целым неотрицательным числом'),
       );
     }
-    if (this.#run) return this.#connect(this.#run, since);
-    return this.#connect(this.#subscribe(this.stream, since), since, true);
+    if (this.#run) {
+      if (since !== undefined && this.#streamActive) {
+        return Promise.reject(
+          new ItdStateError('Остановите бота перед запуском с другим номером события'),
+        );
+      }
+      return this.#connect(this.#run, since);
+    }
+    return this.#connect(this.#createRun(), since);
   }
 
   /** Отключает канал и отменяет запросы текущего запуска. Можно вызвать внутри обработчика. */
   stop(): void {
-    if (!this.#run) return;
+    const run = this.#run;
+    if (!run) return;
     this.#detach();
-    this.stream.disconnect();
+    if (run.unsubscribe) this.stream.disconnect();
   }
 
   /** После `stop()` ждёт обработчики и канал. Вызывайте вне цепочки обработчиков. */
@@ -265,7 +275,8 @@ export class ChatBot<
   }
 
   /** Регистрирует запуск у клиента, чтобы смена сессии останавливала и восстановление. */
-  #subscribe(events: ChatEvents, since: number | undefined): BotRun {
+  #createRun(): BotRun {
+    const events = this.stream;
     let feature = FEATURES.get(events);
     if (!feature) {
       feature = this.itd.install({
@@ -275,15 +286,26 @@ export class ChatBot<
       });
       FEATURES.set(events, feature);
     }
-    const { logger, manage } = feature;
-    this.#logger = logger ?? console;
-    const release = manage({
-      kind: 'chat-bot',
-      stop: () => {
-        if (this.#run === run) this.stop();
-      },
-      drain: () => this.drain(),
-    });
+    this.#logger = feature.logger ?? console;
+    const run: BotRun = {
+      controller: new AbortController(),
+      position: undefined,
+      release: feature.manage({
+        kind: 'chat-bot',
+        stop: () => {
+          if (this.#run === run) this.stop();
+        },
+        drain: () => this.drain(),
+      }),
+    };
+    this.#run = run;
+    return run;
+  }
+
+  /** Подписывается до подключения, чтобы принять события, полученные при догрузке. */
+  #subscribe(run: BotRun): Unsubscribe {
+    const events = this.stream;
+    const logger = FEATURES.get(events)?.logger;
     const offUpdate = events.on('update', (update) => {
       if (this.#run !== run || run.reconnect) return;
       const { eventSeq } = update;
@@ -319,18 +341,11 @@ export class ChatBot<
       run.reconnect = { kind: 'reset' };
       this.#scheduleReconnect(run);
     });
-    const run: BotRun = {
-      controller: new AbortController(),
-      position: since,
-      unsubscribe: () => {
-        offUpdate();
-        offStatus();
-        offReset();
-        release();
-      },
+    return () => {
+      offUpdate();
+      offStatus();
+      offReset();
     };
-    this.#run = run;
-    return run;
   }
 
   #scheduleReconnect(run: BotRun): void {
@@ -342,18 +357,22 @@ export class ChatBot<
     });
   }
 
-  #connect(run: BotRun, since?: number, initial = false): Promise<void> {
-    const connecting = this.#connectUntilReady(run, since, initial);
+  #connect(run: BotRun, since?: number): Promise<void> {
+    const connecting = this.#connectUntilReady(run, since);
     run.connecting = connecting;
     return connecting;
   }
 
-  async #connectUntilReady(
-    run: BotRun,
-    since: number | undefined,
-    initial: boolean,
-  ): Promise<void> {
+  /** Различает ожидающее переподключение и канал, который исчерпал попытки. */
+  get #streamActive(): boolean {
+    const stream = this.stream;
+    // В старых версиях SDK активность доступна только через статус.
+    return stream.active ?? stream.status !== EventChannelStatus.Disconnected;
+  }
+
+  async #connectUntilReady(run: BotRun, since: number | undefined): Promise<void> {
     const { signal } = run.controller;
+    const initial = !run.unsubscribe;
     let reset = false;
     // Подписчики SDK должны увидеть run.connecting до первого вызова connect().
     await Promise.resolve();
@@ -369,8 +388,15 @@ export class ChatBot<
         } else {
           await this.#checkpoint.drain();
         }
-        run.position = since;
       }
+      signal.throwIfAborted();
+      if (initial && since !== undefined && this.#streamActive) {
+        throw new ItdStateError(
+          'Канал чатов уже активен. Отключите его перед запуском с номера события',
+        );
+      }
+      if (initial || since !== undefined) run.position = since;
+      run.unsubscribe ??= this.#subscribe(run);
       do {
         signal.throwIfAborted();
         const reconnect = run.reconnect;
@@ -414,7 +440,8 @@ export class ChatBot<
     const run = this.#run;
     if (!run) return;
     this.#run = undefined;
-    run.unsubscribe();
+    run.unsubscribe?.();
+    run.release();
     this.#queue.clear();
     this.#checkpoint?.reset();
     const reason = new ItdAbortError('Обработка событий чат-бота остановлена');
