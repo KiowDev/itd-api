@@ -228,9 +228,43 @@ export const deepWikiQuestions: Readonly<Record<string, readonly string[]>> = Ob
     'Покажи пример работы с гидратированным постом.',
   ],
   'packages/chat-bot': [
-    'Как обработать команду и ответить на сообщение?',
-    'Как научить бота запоминать данные между сообщениями?',
-    'Покажи пример отправки вложения в ответе бота.',
+    'Как запустить бота на @itd-api/chat-bot?',
+    'Покажи пример команды и ответа в @itd-api/chat-bot.',
+  ],
+  'packages/chat-bot/configuration': [
+    'Как задать несколько префиксов команд ChatBot?',
+    'Как настроить параллельную обработку чатов в ChatBot?',
+    'Как добавить своё поле в ChatContext через createContext()?',
+  ],
+  'packages/chat-bot/handlers': [
+    'Как зарегистрировать команду с алиасами в ChatBot?',
+    'Как поймать пересланное голосовое через ChatBotFilter?',
+    'Как распознать фразу через bot.hears() и RegExp?',
+  ],
+  'packages/chat-bot/actions': [
+    'Как поставить реакцию через ctx.react() в чат-боте?',
+    'Как отложить статус «печатает» в ctx.withTyping()?',
+    'Как отправить файл в ответе чат-бота через ctx.send()?',
+  ],
+  'packages/chat-bot/routing': [
+    'Как вынести команды в модуль ChatComposer?',
+    'Как перехватить ошибки одной ветки ChatComposer?',
+    'Как задать команды для разных чатов через bot.router()?',
+  ],
+  'packages/chat-bot/state': [
+    'Как хранить данные чата через ctx.session?',
+    'Как выбрать ключ сессии чат-бота по отправителю?',
+    'Как сохранить ctx.session в файл через FileKeyValueStore?',
+  ],
+  'packages/chat-bot/runtime': [
+    'Как восстановить обработку событий ChatBot через checkpoint?',
+    'Как настроить очередь событий ChatBot?',
+    'Как обработать ошибки команд через bot.catch()?',
+  ],
+  'packages/chat-bot/extras': [
+    'Как ограничить одну команду бота через RateLimiter?',
+    'Как ограничить обработку реакций по чату в RateLimiter?',
+    'Как отправить ответ из onLimit в RateLimiter чат-бота?',
   ],
   'packages/proxy': [
     'Как задать прокси для HTTP-запросов клиента?',
