@@ -14,6 +14,7 @@ type UncachedRead =
   | 'auth.phone.reverseOptions'
   | 'auth.phone.reverseStatus'
   | 'account.getInfo'
+  | 'account.termsAcceptance'
   | 'account.phone.reverseOptions'
   | 'account.phone.reverseStatus'
   | 'account.changes.pending'
@@ -84,6 +85,7 @@ describe('каталог мутаций', () => {
     'auth.qrStart',
     'auth.qrClaim',
     'auth.phone.resume',
+    'account.acceptTerms',
     'shop.consents.record',
   ] as const)('%s не затрагивает читающие операции', (operationId) => {
     expect(cacheMutation(operationId)?.invalidates).toEqual([]);

@@ -1,5 +1,39 @@
 import type { Loose } from '../types/enums.js';
 
+/** Редакция документа, включённая в контекст согласия. */
+export interface ConsentDocument {
+  scope: string;
+  slug: string;
+  version: string;
+  contentSha256: string;
+  url: string;
+}
+
+/** Текст, редакции документов и подписанный контекст согласия. */
+export interface ConsentContext<Flow extends string> {
+  protocolVersion: number;
+  contextToken: string;
+  id: string;
+  /** Время выдачи контекста, Unix-время в миллисекундах. */
+  issuedAt: number;
+  /** Срок действия контекста, Unix-время в миллисекундах. */
+  expiresAt: number;
+  bundle: {
+    id: string;
+    flow: Flow;
+    documents: ConsentDocument[];
+    actions: Record<string, string>;
+    actionVersion: string;
+    submitLabel: string;
+    text: { text: string; document?: string }[];
+  };
+}
+
+/** Редакция условий и необходимость согласия для текущего аккаунта. */
+export type TermsAcceptance =
+  | { version: string; required: false }
+  | { version: string; required: true; consent: ConsentContext<'account_terms'> };
+
 /** Область действия документа. */
 export const LegalDocumentScope = Object.freeze({ Social: 'social' } as const);
 export type LegalDocumentScope = Loose<

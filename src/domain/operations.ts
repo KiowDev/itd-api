@@ -32,6 +32,8 @@ export const OPERATIONS = freezeOperations({
   'auth.captchaProvider': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'auth' },
   'auth.captchaPage': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'auth' },
   'account.getInfo': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'auth' },
+  'account.termsAcceptance': { method: 'GET', retrySafety: RetrySafety.Safe, bucket: 'auth' },
+  'account.acceptTerms': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
   'account.password.set': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
   'account.email.attach': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },
   'account.phone.attach': { method: 'POST', retrySafety: RetrySafety.Unsafe, bucket: 'auth' },

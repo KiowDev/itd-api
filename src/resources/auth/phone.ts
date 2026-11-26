@@ -57,7 +57,10 @@ export class PhoneAuthResource extends BaseResource {
 
   /** Разрешённые регионы, примеры номеров и доступные способы подтверждения. */
   config(options: RequestOptions = {}): Promise<PhoneConfig> {
-    return this.#request(AUTH_PHONE_CONFIG, '/phone/config', undefined, options);
+    return this.#request(AUTH_PHONE_CONFIG, '/phone/config', undefined, {
+      ...options,
+      headers: { ...options.headers, 'X-ITD-Phone-Message': '1' },
+    });
   }
 
   /**
@@ -101,7 +104,7 @@ export class PhoneAuthResource extends BaseResource {
           ...options.headers,
           ...(input.method === PhoneVerificationMethod.Reverse
             ? { 'X-ITD-Phone-Method': PhoneVerificationMethod.Reverse }
-            : {}),
+            : { 'X-ITD-Phone-Message': '1' }),
         },
       },
     );

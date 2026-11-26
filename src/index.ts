@@ -366,10 +366,12 @@ export type {
 } from './models/content.js';
 export { isMyProfile } from './models/guards.js';
 export type {
+  ConsentContext,
   LegalDocument,
   LegalDocumentBlock,
   LegalDocumentSummary,
   LegalDocumentVersion,
+  TermsAcceptance,
 } from './models/legal.js';
 export { LegalDocumentBlockType, LegalDocumentScope } from './models/legal.js';
 export type { Notification, NotificationSettings } from './models/notifications.js';

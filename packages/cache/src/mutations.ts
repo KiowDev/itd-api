@@ -170,7 +170,8 @@ const CACHE_MUTATIONS = Object.freeze([
     scope: CachePolicyScope.Account,
   },
 
-  // Способы входа текущего аккаунта.
+  // Настройки текущего аккаунта.
+  { operationId: 'account.acceptTerms', invalidates: NOTHING },
   { operationId: 'account.password.change', invalidates: CacheInvalidation.All },
   { operationId: 'account.deactivate', invalidates: PROFILE },
   { operationId: 'account.restore', invalidates: PROFILE },

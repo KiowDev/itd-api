@@ -59,6 +59,7 @@ describe('телефонный вход', () => {
           callingCode: '993',
           example: '66123456',
           methods: [PhoneVerificationMethod.Reverse],
+          message: true,
         },
       ],
       defaultRegion: 'RU',
@@ -73,6 +74,7 @@ describe('телефонный вход', () => {
     ]);
     expect(mock.calls.every((c) => c.headers.get('authorization') === null)).toBe(true);
     expect(mock.calls.every((c) => c.headers.get('X-ITD-Phone-Reverse') === null)).toBe(true);
+    expect(mock.calls.map((c) => c.headers.get('X-ITD-Phone-Message'))).toEqual(['1', null]);
     expect((await api.getSession())?.accessToken).toBe('old-token');
   });
 
@@ -93,6 +95,7 @@ describe('телефонный вход', () => {
       legal: { protocolVersion: 2, contextToken: 'consent-token' },
     });
     expect(mock.calls[0]?.headers.get('X-ITD-Phone-Method')).toBe(PhoneVerificationMethod.Reverse);
+    expect(mock.calls[0]?.headers.get('X-ITD-Phone-Message')).toBeNull();
     expect(mock.calls[0]?.headers.get('X-ITD-Phone-Reverse')).toBe('1');
     expect(mock.calls[0]?.headers.get('X-ITD-Flow-Expiry')).toBe('1');
     expect(mock.calls[0]?.headers.get('X-Test')).toBe('test');
@@ -144,10 +147,33 @@ describe('телефонный вход', () => {
     expect(mock.calls[1]?.headers.get('X-ITD-Phone-Reverse')).toBe('1');
     expect(mock.calls[1]?.headers.get('X-ITD-Flow-Expiry')).toBe('1');
     expect(mock.calls[1]?.headers.get('X-ITD-Phone-Method')).toBeNull();
+    expect(mock.calls[1]?.headers.get('X-ITD-Phone-Message')).toBe('1');
     expect(JSON.parse(mock.calls[1]?.body ?? '{}').captcha).toEqual({
       provider: CaptchaType.Itd,
       token: 'proof',
     });
+  });
+
+  it('читает канал сообщения и параметры следующего способа доставки', async () => {
+    const { api, mock } = makeClient([
+      json({
+        flowToken: flow.flowToken,
+        delivery: { type: 'message', codeLength: 6 },
+        next: 'voice_call',
+        retryIn: 60,
+      }),
+      json(delivery),
+    ]);
+
+    await expect(api.auth.phone.start({ phone: flow.phone, consent: consent() })).resolves.toEqual({
+      flowToken: flow.flowToken,
+      channel: PhoneDeliveryChannel.Message,
+      codeLength: 6,
+      nextChannel: PhoneDeliveryChannel.VoiceCall,
+      retryIn: 60,
+    });
+    await api.auth.phone.resend(flow);
+    expect(mock.calls[1]?.url).toBe('https://itd.test/api/v1/auth/resend-otp');
   });
 
   it('передаёт проверку срока согласия серверу', async () => {

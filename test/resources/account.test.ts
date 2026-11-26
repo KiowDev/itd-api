@@ -3,6 +3,7 @@ import { ItdClient } from '../../src/client.js';
 import { ItdConfigError, ItdStateError } from '../../src/core/errors.js';
 import { redactBody } from '../../src/core/redact.js';
 import { ContactProofMethod } from '../../src/models/account-access.js';
+import type { TermsAcceptance } from '../../src/models/legal.js';
 import { PhoneVerificationMethod } from '../../src/models/phone-auth.js';
 import { createRestClient } from '../../src/rest.js';
 import { CaptchaType } from '../../src/types/enums.js';
@@ -21,7 +22,79 @@ function setup(responses: Response[]) {
   return { account: api.account, api, mock };
 }
 
+describe('согласие с условиями аккаунта', () => {
+  it('получает состояние и передаёт согласие с текущим Bearer', async () => {
+    const version = '2026-04-03';
+    const required = {
+      version,
+      required: true,
+      consent: {
+        protocolVersion: 2,
+        contextToken: 'consent-token',
+        id: 'context',
+        issuedAt: 0,
+        expiresAt: 60_000,
+        bundle: {
+          id: 'bundle',
+          flow: 'account_terms',
+          documents: [
+            { scope: 'social', slug: 'terms', version, contentSha256: 'sha256', url: '/terms' },
+          ],
+          actions: {},
+          actionVersion: '1',
+          submitLabel: 'Принять',
+          text: [{ text: 'Условия' }],
+        },
+      },
+    } satisfies TermsAcceptance;
+    const accepted = { version, required: false };
+    const { account, mock } = setup([
+      json(required),
+      new Response(null, { status: 204 }),
+      json(accepted),
+    ]);
+
+    await expect(account.termsAcceptance()).resolves.toEqual(required);
+    await account.acceptTerms(required.consent.contextToken);
+    await expect(account.termsAcceptance()).resolves.toEqual(accepted);
+
+    expect(mock.calls.map(({ method }) => method)).toEqual(['GET', 'POST', 'GET']);
+    expect(
+      mock.calls.every(
+        ({ url, headers }) =>
+          new URL(url).pathname === '/api/v1/auth/terms-acceptance' &&
+          headers.get('authorization') === 'Bearer current-token',
+      ),
+    ).toBe(true);
+    expect(JSON.parse(mock.calls[1]?.body ?? '{}')).toEqual({
+      accepted: true,
+      contextToken: required.consent.contextToken,
+    });
+  });
+});
+
 describe('способы входа текущего аккаунта', () => {
+  it('запрашивает повторную отправку кода на почту через отдельный маршрут', async () => {
+    const input = { email: 'user@example.com', flowToken: 'flow' };
+    const { account, api, mock } = setup([
+      new Response(null, { status: 204 }),
+      new Response(null, { status: 204 }),
+    ]);
+
+    await api.auth.resendOtp(input);
+    await account.email.resendOtp(input);
+
+    expect(mock.calls.map(({ method, url }) => [method, new URL(url).pathname])).toEqual([
+      ['POST', '/api/v1/auth/email/resend-otp'],
+      ['POST', '/api/v1/auth/email/resend-otp'],
+    ]);
+    expect(mock.calls.map(({ headers }) => headers.get('authorization'))).toEqual([
+      null,
+      'Bearer current-token',
+    ]);
+    expect(mock.calls.map(({ body }) => JSON.parse(body ?? '{}'))).toEqual([input, input]);
+  });
+
   it('получает сведения о доступе к аккаунту с текущим Bearer', async () => {
     const info = { email: null, phone: '+79991234567', hasPassword: false };
     const { account, mock } = setup([json(info)]);

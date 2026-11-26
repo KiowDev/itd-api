@@ -44,6 +44,13 @@ const { email, phone, hasPassword } = await itd.account.getInfo();
 `wait(changeToken)` создаёт отложенную заявку. `pending()` возвращает заявки на смену номера
 и почты, а `cancelPending(id)` отменяет выбранную заявку.
 
+## Согласие с условиями
+
+| Метод | Назначение |
+| --- | --- |
+| `itd.account.termsAcceptance()` | Возвращает редакцию условий (`version`) и признак необходимости согласия (`required`). При `required: true` ответ содержит контекст согласия `consent`. |
+| `itd.account.acceptTerms(contextToken)` | Записывает согласие текущего аккаунта с редакцией условий. Аргумент `contextToken` берётся из `consent.contextToken`. |
+
 ## Деактивация и восстановление
 
 `itd.account.deactivate()` деактивирует текущий аккаунт, а `itd.account.restore()`

@@ -204,7 +204,7 @@ export const AUTH_PATHS = {
   signUp: '/api/v1/auth/sign-up',
   signIn: '/api/v1/auth/sign-in',
   verifyOtp: '/api/v1/auth/verify-otp',
-  resendOtp: '/api/v1/auth/resend-otp',
+  resendOtp: '/api/v1/auth/email/resend-otp',
   refresh: '/api/v1/auth/refresh',
   logout: '/api/v1/auth/logout',
   forgotPassword: '/api/v1/auth/forgot-password',

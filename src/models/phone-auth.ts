@@ -1,4 +1,7 @@
 import type { Loose } from '../types/enums.js';
+import type { ConsentContext } from './legal.js';
+
+export type { ConsentDocument } from './legal.js';
 
 /** Назначение контекста согласия телефонного входа. @internal */
 export const PHONE_CONSENT_FLOW = 'phone_entry';
@@ -16,6 +19,8 @@ export interface PhoneRegion {
   example: string;
   /** Способы подтверждения, доступные в регионе. */
   methods: PhoneVerificationMethod[];
+  /** Код может прийти в сообщении ИТД. */
+  message?: boolean;
 }
 
 /** Серверный список регионов, доступных для телефонного входа. */
@@ -24,36 +29,8 @@ export interface PhoneConfig {
   defaultRegion: string;
 }
 
-/** Редакция документа, включённая в контекст согласия. */
-export interface ConsentDocument {
-  scope: string;
-  slug: string;
-  version: string;
-  contentSha256: string;
-  url: string;
-}
-
 /** Текст и редакции документов, с которыми пользователь соглашается при входе. */
-export interface PhoneConsent {
-  /** Версия протокола из consent(); передаётся серверу вместе с contextToken. */
-  protocolVersion: number;
-  /** Подписанный контекст; в start() передаётся без изменения. */
-  contextToken: string;
-  id: string;
-  /** Время выдачи контекста, Unix-время в миллисекундах. */
-  issuedAt: number;
-  /** Срок действия контекста, Unix-время в миллисекундах. */
-  expiresAt: number;
-  bundle: {
-    id: string;
-    flow: typeof PHONE_CONSENT_FLOW;
-    documents: ConsentDocument[];
-    actions: Record<string, string>;
-    actionVersion: string;
-    submitLabel: string;
-    text: { text: string; document?: string }[];
-  };
-}
+export interface PhoneConsent extends ConsentContext<typeof PHONE_CONSENT_FLOW> {}
 
 /** Серверные каналы доставки кода. */
 export const PhoneDeliveryChannel = Object.freeze({
@@ -61,6 +38,7 @@ export const PhoneDeliveryChannel = Object.freeze({
   VoiceCall: 'voice_call',
   Sms: 'sms',
   Push: 'push',
+  Message: 'message',
 } as const);
 export type PhoneDeliveryChannel = Loose<
   (typeof PhoneDeliveryChannel)[keyof typeof PhoneDeliveryChannel]

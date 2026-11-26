@@ -72,6 +72,6 @@ export class AccountEmailResource extends BaseResource {
     input: { email: string; flowToken: string },
     options: RequestOptions = {},
   ): Promise<void> {
-    return requestAccount(this.http, ACCOUNT_EMAIL_RESEND_OTP, '/resend-otp', input, options);
+    return requestAccount(this.http, ACCOUNT_EMAIL_RESEND_OTP, '/email/resend-otp', input, options);
   }
 }

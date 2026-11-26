@@ -31,12 +31,14 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 | `POST /api/v1/auth/phone/reverse/complete` | `itd.auth.phone.reverseComplete()` | нет | access token либо шаг пароля | — |
 | `POST /api/v1/auth/sign-in` | `itd.auth.signIn()` | нет | `email`, `password`, подтверждение капчи → access token или `flowToken` | — |
 | `POST /api/v1/auth/verify-otp` | `itd.auth.verifyOtp()` | нет | `email`, `password`, `otp`, `flowToken` → access token | — |
-| `POST /api/v1/auth/resend-otp` | `itd.auth.resendOtp()` | нет | `email`, `flowToken` | — |
+| `POST /api/v1/auth/email/resend-otp` | `itd.auth.resendOtp()` | нет | `email`, `flowToken` | — |
 | `POST /api/v1/auth/refresh` | `itd.auth.refresh()` | refresh cookie | ответ: access token | — |
 | `POST /api/v1/auth/logout` | `itd.auth.logout()`, `itd.auth.logoutAll()` | Bearer + refresh cookie | body отсутствует | — |
 | `POST /api/v1/auth/forgot-password` | `itd.auth.forgotPassword()` | нет | `email`, подтверждение капчи → `flowToken` | — |
 | `POST /api/v1/auth/reset-password` | `itd.auth.resetPassword()` | нет | `email`, `newPassword`, `otp`, `flowToken` | — |
 | `GET /api/v1/auth/methods` | `itd.account.getInfo()` | Bearer | привязанные номер и почта, наличие облачного пароля | 2026-11-17, `200` |
+| `GET /api/v1/auth/terms-acceptance` | `itd.account.termsAcceptance()` | Bearer | редакция условий, необходимость согласия и контекст | — |
+| `POST /api/v1/auth/terms-acceptance` | `itd.account.acceptTerms(contextToken)` | Bearer | `accepted: true`, `contextToken` | — |
 | `POST /api/v1/auth/set-password` | `itd.account.password.set()` | Bearer | создание облачного пароля | — |
 | `POST /api/v1/auth/email/attach` | `itd.account.email.attach()` | Bearer | отправка кода на почту для привязки | — |
 | `POST /api/v1/auth/phone/attach` | `itd.account.phone.attach()` | Bearer | подтверждение номера для привязки | — |
@@ -44,7 +46,7 @@ description: "Маршруты API итд.com и методы itd-api: пара�
 | `POST /api/v1/auth/phone/change` | `itd.account.phone.startChange()` | Bearer | подтверждение нового номера | — |
 | `POST /api/v1/auth/verify-otp` | `itd.account.phone.verifyAttach()`, `itd.account.email.verifyAttach()` | Bearer | код привязки почты или номера | — |
 | `POST /api/v1/auth/verify-otp` | `itd.account.phone.verifyChange()`, `itd.account.email.verifyChange()` | Bearer | код подтверждения нового номера или почты → способы завершить смену | — |
-| `POST /api/v1/auth/resend-otp` | `itd.account.email.resendOtp()` | Bearer | повторная отправка кода на почту | — |
+| `POST /api/v1/auth/email/resend-otp` | `itd.account.email.resendOtp()` | Bearer | повторная отправка кода на почту | — |
 | `POST /api/v1/auth/resend-otp` | `itd.account.phone.resendOtp()` | Bearer | повторная доставка кода на номер | — |
 | `POST /api/v1/auth/phone/sync` | `itd.account.phone.sync()` | Bearer | синхронизация привязанного номера с профилем | — |
 | `POST /api/v1/auth/phone/reverse/options` | `itd.account.phone.reverseOptions()` | Bearer | доступность исходящего звонка | — |

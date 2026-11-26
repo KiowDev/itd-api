@@ -1,7 +1,12 @@
 import type { HttpClient } from '../core/execution/http.js';
 import type { RequestOptions } from '../core/options.js';
 import type { AccountInfo } from '../models/account-access.js';
-import { ACCOUNT_GET_INFO } from '../operations/account.js';
+import type { TermsAcceptance } from '../models/legal.js';
+import {
+  ACCOUNT_ACCEPT_TERMS,
+  ACCOUNT_GET_INFO,
+  ACCOUNT_TERMS_ACCEPTANCE,
+} from '../operations/account.js';
 import type { AuthManager } from '../session/auth.js';
 import { AccountChangesResource } from './account/changes.js';
 import { AccountEmailResource } from './account/email.js';
@@ -46,5 +51,31 @@ export class AccountResource extends AccountLifecycleResource {
    */
   getInfo(options: RequestOptions = {}): Promise<AccountInfo> {
     return requestAccount(this.http, ACCOUNT_GET_INFO, '/methods', undefined, options);
+  }
+
+  /** Возвращает текущую редакцию условий и контекст, если аккаунту требуется согласие. */
+  termsAcceptance(options: RequestOptions = {}): Promise<TermsAcceptance> {
+    return requestAccount(
+      this.http,
+      ACCOUNT_TERMS_ACCEPTANCE,
+      '/terms-acceptance',
+      undefined,
+      options,
+    );
+  }
+
+  /**
+   * Записывает согласие текущего аккаунта с редакцией условий.
+   *
+   * @param contextToken токен из контекста согласия, полученного через {@link termsAcceptance}
+   */
+  acceptTerms(contextToken: string, options: RequestOptions = {}): Promise<void> {
+    return requestAccount(
+      this.http,
+      ACCOUNT_ACCEPT_TERMS,
+      '/terms-acceptance',
+      { accepted: true, contextToken },
+      options,
+    );
   }
 }
