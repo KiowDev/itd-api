@@ -246,8 +246,10 @@ export class BucketQueue {
   readonly #pacing: RateLimitPacing;
   readonly #concurrency: number;
   readonly #minGap: number;
-  /** Ровный темп. Требует раздельных бакетов: без них ёмкость счётчика неизвестна. */
-  readonly #smooth: boolean;
+  readonly #trackTokens: boolean;
+  readonly #burst: number | undefined;
+  #reportedBalance = false;
+  #tokenSlot = 0;
   /**
    * Пауза на исчерпанный остаток в режиме `buckets: false`; `undefined` — бакеты разделены.
    *
@@ -272,10 +274,9 @@ export class BucketQueue {
   readonly #waiting = new WaitingList();
 
   /**
-   * Оценка остатка для режима `smooth`.
+   * Локальная оценка остатка при включённом учёте токенов.
    *
-   * Начинается с единицы, а не с полной ёмкости: где сейчас граница минутного окна,
-   * из ответа не вывести, и считать бакет нетронутым нельзя.
+   * В react начальный запас задаёт burst, в smooth первый запрос получает один токен.
    */
   #tokens = 1;
   #tokensAt: number | undefined;
@@ -293,12 +294,18 @@ export class BucketQueue {
     this.#clock = clock;
     this.#definition = definition;
     this.#pacing = options.pacing;
-    this.#smooth = options.buckets && options.pacing === RateLimitPacing.Smooth;
     this.#flatPause = options.buckets ? undefined : (options.retryDelays[0] ?? 0);
     // Поправка из настроек клиента важнее начального ограничения из каталога.
     const override = options.buckets ? options.bucketOverrides[bucket] : undefined;
     this.#seedLimit = options.buckets ? (override?.limit ?? definition?.limit) : undefined;
+    this.#burst =
+      options.buckets && this.#pacing === RateLimitPacing.React
+        ? (override?.burst ?? definition?.burst)
+        : undefined;
+    this.#trackTokens =
+      this.#burst !== undefined || (options.buckets && this.#pacing === RateLimitPacing.Smooth);
     this.#maxTokens = definition?.maxTokens ?? Number.POSITIVE_INFINITY;
+    this.#tokens = this.#burst ?? 1;
     this.#concurrency = options.buckets
       ? (override?.concurrency ?? definition?.concurrency ?? options.bucketConcurrency)
       : options.concurrency;
@@ -333,18 +340,22 @@ export class BucketQueue {
 
   /** Момент, раньше которого локальное ограничение не разрешает следующий старт. */
   get readyAt(): number {
-    return this.#nextSlot;
+    return this.#reportedBalance ? this.#nextSlot : Math.max(this.#nextSlot, this.#tokenSlot);
+  }
+
+  get usesBurst(): boolean {
+    return this.#burst !== undefined;
   }
 
   /** Проверяет, можно ли освободить очередь без потери паузы или невосполненной квоты. */
   canExpire(now: number): boolean {
-    if (this.#active > 0 || this.#waiting.size > 0 || this.#nextSlot > now) return false;
+    if (this.#active > 0 || this.#waiting.size > 0 || this.readyAt > now) return false;
 
     const capacity = this.#capacity();
-    if (!this.#smooth || capacity === undefined || this.#tokensAt === undefined) return true;
+    if (!this.#trackTokens || capacity === undefined || this.#tokensAt === undefined) return true;
 
     const restored = ((now - this.#tokensAt) * capacity) / RATE_LIMIT_WINDOW;
-    return this.#tokens + restored >= Math.min(capacity, this.#maxTokens);
+    return this.#tokens + restored >= (this.#burst ?? Math.min(capacity, this.#maxTokens));
   }
 
   /** Ставит запрос в очередь единого планировщика направления. */
@@ -387,7 +398,7 @@ export class BucketQueue {
     }
 
     this.#active += 1;
-    if (this.#smooth) this.#spend(task.cost);
+    if (this.#trackTokens) this.#spend(task.cost);
     if (this.#minGap > 0) this.#nextSlot = Math.max(this.#nextSlot, now + this.#minGap);
     task.start(() => {
       this.#active -= 1;
@@ -404,12 +415,35 @@ export class BucketQueue {
    * @returns на сколько миллисекунд придержан бакет; `0` — темп не ограничен
    */
   observe(limit: number | undefined, remaining: number | undefined, pace = true): number {
+    if (limit === undefined && remaining === undefined && !this.#reportedBalance) return 0;
     // Основной транспорт уже отбрасывает некорректный заголовок, но очередь остаётся
     // самостоятельным внутренним примитивом: не позволяем прямому вызову записать
     // нулевую ёмкость и получить бесконечный таймер в режиме smooth.
-    if (limit !== undefined && Number.isFinite(limit) && limit > 0) this.#limit = limit;
+    let rateChanged = false;
+    if (limit !== undefined && Number.isFinite(limit) && limit > 0) {
+      const previous = this.#capacity();
+      rateChanged = this.usesBurst && previous !== limit;
+      if (rateChanged && previous !== undefined) this.#refill(previous);
+      this.#limit = limit;
+      if (rateChanged) this.#tokenSlot = this.#tokenReadyAt(this.#tokens, limit);
+    }
     if (remaining !== undefined) this.#remaining = remaining;
-    if (!pace || this.#pacing === RateLimitPacing.Off || remaining === undefined) return 0;
+    if (!pace || this.#pacing === RateLimitPacing.Off) return 0;
+
+    if (this.#burst !== undefined) {
+      const reported = limit !== undefined && remaining !== undefined;
+      if (reported && this.#tokensAt !== undefined && this.#tokensAt > this.#clock.now()) return 0;
+      if (reported) {
+        this.#reportedBalance = true;
+        this.#tokens = Math.min(this.#burst, remaining);
+        this.#tokensAt = this.#clock.now();
+        this.#tokenSlot = 0;
+      } else if (this.#reportedBalance || rateChanged) {
+        this.#reportedBalance = false;
+        if (remaining === undefined) this.#scheduler.changed(this);
+      }
+    }
+    if (remaining === undefined) return 0;
 
     if (this.#flatPause !== undefined) {
       if (remaining > 0) return 0;
@@ -419,7 +453,7 @@ export class BucketQueue {
 
     const capacity = this.#capacity();
 
-    if (this.#smooth) {
+    if (this.#trackTokens && !this.#reportedBalance) {
       if (capacity === undefined) return 0;
       this.#refill(capacity);
       // Заголовок только опускает оценку: большое `remaining` в начале окна не значит,
@@ -431,7 +465,10 @@ export class BucketQueue {
       return wait;
     }
 
-    if (remaining > 0) return 0;
+    if (remaining > 0) {
+      if (this.#reportedBalance) this.#scheduler.changed(this);
+      return 0;
+    }
 
     // Нижняя оценка ожидания: столько нужно серверу, чтобы вернуть одну единицу квоты,
     // если он возвращает её линейно. Граница окна из ответа не выводится, поэтому ждать
@@ -444,9 +481,31 @@ export class BucketQueue {
     return wait;
   }
 
-  /** Придерживает бакет на названное время — путь ответа `429`. Оценка остатка обнуляется. */
+  /** После локального отказа первый разрешённый старт расходует начальный токен. */
+  adaptAfterRejection(delay: number | undefined, rejectedCost = 0): void {
+    const capacity = this.#capacity();
+    if (this.#burst !== undefined && capacity !== undefined) {
+      const now = this.#clock.now();
+      // В срок сервера доступен первый токен; дальнейший простой пополняет запас.
+      const firstTokenAt = Math.max(
+        now + (delay ?? Math.ceil(RATE_LIMIT_WINDOW / capacity)),
+        this.#tokensAt ?? 0,
+        // Неуспешная попытка не расходует квоту. Сохраняем долг других запросов.
+        this.#tokens < 0 ? this.#tokenReadyAt(this.#tokens + rejectedCost, capacity) : 0,
+      );
+      this.#reportedBalance = false;
+      this.#tokens = 1;
+      this.#tokensAt = firstTokenAt;
+      this.#tokenSlot = firstTokenAt;
+      this.#hold(firstTokenAt - now);
+    } else if (delay !== undefined) {
+      this.pause(delay);
+    }
+  }
+
+  /** Придерживает бакет на названное время — путь ответа `429`. */
   pause(ms: number): void {
-    if (this.#smooth) {
+    if (this.#trackTokens && this.#pacing === RateLimitPacing.Smooth) {
       this.#tokens = 0;
       this.#tokensAt = this.#clock.now();
     }
@@ -495,19 +554,28 @@ export class BucketQueue {
   #refill(capacity: number): void {
     const now = this.#clock.now();
     if (this.#tokensAt !== undefined) {
+      if (now < this.#tokensAt) return;
       const restored = ((now - this.#tokensAt) * capacity) / RATE_LIMIT_WINDOW;
-      this.#tokens = Math.min(capacity, this.#maxTokens, this.#tokens + restored);
+      this.#tokens = Math.min(
+        this.#burst ?? Math.min(capacity, this.#maxTokens),
+        this.#tokens + restored,
+      );
     }
     this.#tokensAt = now;
   }
 
+  /** Срок восстановления первого токена из остатка на момент последнего учёта. */
+  #tokenReadyAt(balance: number, capacity: number): number {
+    if (balance >= 1 || this.#tokensAt === undefined) return 0;
+    return this.#tokensAt + Math.ceil(((1 - balance) * RATE_LIMIT_WINDOW) / capacity);
+  }
+
   /** Держит бакет, пока не накопится хотя бы один токен. */
   #armPause(capacity: number): number {
-    if (this.#tokens >= 1) return 0;
-
-    const wait = Math.ceil(((1 - this.#tokens) * RATE_LIMIT_WINDOW) / capacity);
-    this.#nextSlot = Math.max(this.#nextSlot, this.#clock.now() + wait);
-    return wait;
+    const readyAt = this.#tokenReadyAt(this.#tokens, capacity);
+    if (this.#burst !== undefined) this.#tokenSlot = readyAt;
+    else this.#nextSlot = Math.max(this.#nextSlot, readyAt);
+    return readyAt === 0 ? 0 : Math.max(0, readyAt - this.#clock.now());
   }
 
   /** Отодвигает ближайший допустимый старт и перепланирует общее пробуждение. */
@@ -526,6 +594,7 @@ function sameDefinition(
   return (
     left?.limit === right?.limit &&
     left?.maxTokens === right?.maxTokens &&
+    left?.burst === right?.burst &&
     left?.concurrency === right?.concurrency &&
     left?.rps === right?.rps
   );
@@ -537,6 +606,7 @@ function describeDefinition(definition: Readonly<RateLimitBucketDefinition> | un
     definition?.limit === undefined ? [] : [`limit ${definition.limit}`],
     definition?.maxTokens === undefined ? [] : [`maxTokens ${definition.maxTokens}`],
     definition?.concurrency === undefined ? [] : [`concurrency ${definition.concurrency}`],
+    definition?.burst === undefined ? [] : [`burst ${definition.burst}`],
     definition?.rps === undefined ? [] : [`rps ${definition.rps}`],
   ].flat();
   return parts.length > 0 ? parts.join(', ') : 'без ограничений';

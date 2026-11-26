@@ -78,6 +78,7 @@ export class ExtensibleOperationCatalog implements OperationCatalog {
     this.#buckets.set(name, {
       owner,
       definition: Object.freeze({
+        ...(definition.burst === undefined ? {} : { burst: definition.burst }),
         ...(definition.limit === undefined ? {} : { limit: definition.limit }),
         ...(definition.concurrency === undefined ? {} : { concurrency: definition.concurrency }),
         ...(definition.rps === undefined ? {} : { rps: definition.rps }),

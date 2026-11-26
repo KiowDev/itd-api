@@ -129,6 +129,8 @@ describe('resolveConfig — проверки', () => {
       { rateLimit: { bucketOverrides: { 'posts.craete': { limit: 9 } } } },
     ],
     ['нулевая ёмкость бакета', { rateLimit: { bucketOverrides: { feed: { limit: 0 } } } }],
+    ['нулевой burst', { rateLimit: { bucketOverrides: { feed: { burst: 0 } } } }],
+    ['дробный burst', { rateLimit: { bucketOverrides: { feed: { burst: 1.5 } } } }],
     ['нулевой rps бакета', { rateLimit: { bucketOverrides: { feed: { rps: 0 } } } }],
     ['неизвестный mode', { mode: 'proxy' as never }],
     ['fetch не функция', { fetch: 'fetch' as never }],

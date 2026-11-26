@@ -8,6 +8,14 @@ const PARTITIONED_BUCKET_LIMITS = Object.freeze({
   'chats.deleteForMe': 20,
 } as const);
 
+/** Запас токенов после полного восстановления квоты чата. @internal */
+export const CHAT_BUCKET_BURSTS: Readonly<Partial<Record<string, number>>> = Object.freeze({
+  'chats.send': 5,
+  'chats.reactions': 15,
+  'chats.edit': 5,
+  'chats.deleteForMe': 10,
+} satisfies Record<keyof typeof PARTITIONED_BUCKET_LIMITS, number>);
+
 /**
  * Начальные лимиты бакетов в токенах за минуту.
  *

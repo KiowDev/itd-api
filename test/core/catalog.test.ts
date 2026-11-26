@@ -268,6 +268,14 @@ describe('динамические бакеты каталога', () => {
   it('встроенные бакеты отвечают ёмкостью таблицы вместе со встроенной поправкой', () => {
     expect(ITD_CATALOG.bucketDefinitionOf('posts.create')).toEqual({ limit: 5 });
     expect(ITD_CATALOG.bucketDefinitionOf('files.upload')).toMatchObject({ concurrency: 1 });
+    for (const [name, burst] of Object.entries({
+      'chats.send': 5,
+      'chats.reactions': 15,
+      'chats.edit': 5,
+      'chats.deleteForMe': 10,
+    })) {
+      expect(ITD_CATALOG.bucketDefinitionOf(name)?.burst).toBe(burst);
+    }
     expect(ITD_CATALOG.bucketDefinitionOf('нет такого')).toBeUndefined();
   });
 });

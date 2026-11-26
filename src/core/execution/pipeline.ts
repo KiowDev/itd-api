@@ -2,6 +2,7 @@ import type { OperationId } from '../../domain/operations.js';
 import type { RateLimitBucketDefinition } from '../catalog.js';
 import type { CookieJar } from '../cookies.js';
 import type { OperationRequestOptions } from '../options.js';
+import type { BucketQueue } from '../scheduling/rate-limit.js';
 
 /*
  * Служебное состояние одной логической операции лежит в объекте запроса под перечислимым
@@ -257,6 +258,8 @@ export function currentTransportAttempt(request: PipelineRequest): number {
 
 /** Куда встаёт запрос: направление и бакет. @internal */
 export interface RequestQueueKey {
+  /** Очередь, в которой запущена текущая попытка. Повтор разрешает её заново. */
+  scheduledQueue?: BucketQueue;
   /** Origin разрешённого URL. `undefined` — направление неизвестно. */
   destination: string | undefined;
   bucket: string;

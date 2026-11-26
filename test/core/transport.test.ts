@@ -458,7 +458,11 @@ describe('Transport: cookie и rate-limit', () => {
           }),
         ],
         {},
-        { onRateLimit, rateLimitPauseTarget: ITD_CATALOG.rateLimitPauseTarget },
+        {
+          onRateLimit,
+          rateLimitPauseTarget: (request, scope) =>
+            ITD_CATALOG.rateLimitPauseTarget?.(request.operationId, scope),
+        },
       );
       const result = expect(
         transport.send({ operationId: 'posts.get', method: 'GET', path: '/api/posts/1' }),

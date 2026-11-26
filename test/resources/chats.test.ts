@@ -408,6 +408,12 @@ describe('chats', () => {
       retryDelays: [90_000],
     },
     {
+      operation: 'reaction',
+      headers: { 'Retry-After': '1', 'X-RateLimit-Scope': RateLimitErrorScope.Chat },
+      delay: 1000,
+      retryDelays: [],
+    },
+    {
       operation: 'edit',
       headers: { 'Retry-After': '6' },
       delay: 6000,
@@ -433,8 +439,14 @@ describe('chats', () => {
           rateLimit: { concurrency: 1, retryDelays },
         });
         const run = (id: string) => {
+          if (operation === 'reaction')
+            return itd.chats.setReactions(id, 'm', {
+              reactions: [],
+              expectedVersion: '1',
+              operationId: 'op',
+            });
           if (operation === 'edit') return itd.chats.editMessage(id, 'm', { text: 'test' });
-          if (operation === 'delete') return itd.chats.deleteMessagesForMe(id, ['m']);
+          if (operation === 'delete') return itd.chats.deleteMessagesForMe(id, ['m', 'n', 'o']);
           return itd.chats.sendMessage(id, { text: 'test' });
         };
 
@@ -450,6 +462,242 @@ describe('chats', () => {
         await vi.advanceTimersByTimeAsync(1);
         await pending;
         expect(mock.calls.at(-1)?.url).toContain('/chats/target/');
+        const following = run('target');
+        const interval = operation === 'send' ? 2000 : delay;
+        await vi.advanceTimersByTimeAsync(interval - 1);
+        expect(mock.callCount).toBe(3);
+        await vi.advanceTimersByTimeAsync(1);
+        await following;
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('paces only the exhausted chat after its initial burst and retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockFetch((_request, index) =>
+        index === 2
+          ? json(
+              {},
+              {
+                status: 429,
+                headers: {
+                  'X-RateLimit-Scope': RateLimitErrorScope.Chat,
+                  'X-RateLimit-Retry-After-Ms': '663',
+                  'X-RateLimit-Remaining': '0',
+                },
+              },
+            )
+          : json({ message_id: 'm' }),
+      );
+      await using client = createRestClient({ ...clientOptions, fetch: mock.fetch, rateLimit: {} });
+      const send = (chat = 'a') => client.chats.sendMessage(chat, { text: 'test' });
+      await send();
+      await send();
+      const retry = send();
+      await vi.advanceTimersByTimeAsync(662);
+      expect(mock.callCount).toBe(3);
+      await vi.advanceTimersByTimeAsync(1);
+      await retry;
+
+      await vi.advanceTimersByTimeAsync(10);
+      const next = send();
+      await send('b');
+      await client.chats.editMessage('a', 'm', { text: 'edited' });
+      await vi.advanceTimersByTimeAsync(1989);
+      expect(mock.callCount).toBe(6);
+      await vi.advanceTimersByTimeAsync(1);
+      await next;
+      expect(mock.callCount).toBe(7);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the refill interval when a local rejection has no delay and retries are disabled', async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockFetch((_request, index) =>
+        index === 0
+          ? json(
+              {},
+              {
+                status: 429,
+                headers: {
+                  'X-RateLimit-Scope': RateLimitErrorScope.Chat,
+                  'X-RateLimit-Limit': '60',
+                },
+              },
+            )
+          : json({ message_id: 'm' }),
+      );
+      await using client = createRestClient({
+        ...clientOptions,
+        fetch: mock.fetch,
+        rateLimit: { retryDelays: [] },
+      });
+      const send = () => client.chats.sendMessage('a', { text: 'test' });
+      await expect(send()).rejects.toMatchObject({ status: 429 });
+      const two = Promise.all([send(), send()]);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mock.callCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mock.callCount).toBe(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await two;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resumes a manually selected static bucket without adaptive pacing', async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockFetch((_request, index) =>
+        index === 0
+          ? json({}, { status: 429, headers: { 'X-RateLimit-Scope': 'chat', 'Retry-After': '1' } })
+          : json({ message_id: 'm' }),
+      );
+      await using client = createRestClient({
+        ...clientOptions,
+        fetch: mock.fetch,
+        rateLimit: { retryDelays: [] },
+      });
+      const send = () =>
+        client.chats.sendMessage('a', { text: 'test' }, { rateLimitBucket: 'feed' });
+      await expect(send()).rejects.toMatchObject({ status: 429 });
+      const pending = Promise.all([send(), send()]);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mock.callCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(mock.callCount).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('restores the configured burst after a rejection using the rate from the server', async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockFetch((_request, i) =>
+        i === 2
+          ? json(
+              {},
+              {
+                status: 429,
+                headers: {
+                  'X-RateLimit-Scope': 'chat',
+                  'X-RateLimit-Limit': '60',
+                  'X-RateLimit-Remaining': '0',
+                  'Retry-After': '5',
+                },
+              },
+            )
+          : json({ message_id: 'm' }),
+      );
+      await using client = createRestClient({
+        ...clientOptions,
+        fetch: mock.fetch,
+        rateLimit: { retryDelays: [], bucketOverrides: { 'chats.send': { burst: 3 } } },
+      });
+      const send = () => client.chats.sendMessage('chat', { text: 'test' });
+      await send();
+      await send();
+      await expect(send()).rejects.toMatchObject({ status: 429 });
+      // После конца паузы успел восстановиться ещё один токен.
+      await vi.advanceTimersByTimeAsync(6000);
+      const first = Promise.all([send(), send(), send()]);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mock.callCount).toBe(5);
+      await vi.advanceTimersByTimeAsync(1);
+      await first;
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      const second = Promise.all([send(), send(), send(), send()]);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mock.callCount).toBe(9);
+      await vi.advanceTimersByTimeAsync(1);
+      await second;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refunds a rejected batch forward when the server also changes the refill rate', async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockFetch((_request, i) =>
+        i === 0
+          ? json(
+              {},
+              {
+                status: 429,
+                headers: {
+                  'X-RateLimit-Scope': 'chat',
+                  'X-RateLimit-Limit': '60',
+                  'Retry-After': '1',
+                },
+              },
+            )
+          : json({ message_id: 'm' }),
+      );
+      await using client = createRestClient({
+        ...clientOptions,
+        fetch: mock.fetch,
+        rateLimit: { retryDelays: [] },
+      });
+      await expect(
+        client.chats.forwardMessages('target', {
+          sourceChatId: 'source',
+          messageIds: Array.from({ length: 60 }, (_, i) => String(i)),
+        }),
+      ).rejects.toMatchObject({ status: 429 });
+      const next = client.chats.sendMessage('target', { text: 'test' });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mock.callCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await next;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { initial: 60, updated: 6, elapsed: 0, wait: 10_000 },
+    { initial: 60, updated: 6, elapsed: 250, wait: 7500 },
+    { initial: 6, updated: 60, elapsed: 2500, wait: 750 },
+  ])(
+    'reschedules a waiting send when only Limit changes from $initial to $updated',
+    async ({ initial, updated, elapsed, wait }) => {
+      vi.useFakeTimers();
+      try {
+        let respond!: (response: Response) => void;
+        const firstResponse = new Promise<Response>((resolve) => {
+          respond = resolve;
+        });
+        const mock = createMockFetch((_request, i) =>
+          i === 0 ? firstResponse : json({ message_id: 'm' }),
+        );
+        await using client = createRestClient({
+          ...clientOptions,
+          fetch: mock.fetch,
+          rateLimit: { bucketOverrides: { 'chats.send': { limit: initial, burst: 1 } } },
+        });
+        const send = () => client.chats.sendMessage('target', { text: 'test' });
+        const first = send();
+        const second = send();
+        await vi.advanceTimersByTimeAsync(elapsed);
+        expect(mock.callCount).toBe(1);
+        respond(json({ message_id: 'm' }, { headers: { 'X-RateLimit-Limit': String(updated) } }));
+        await first;
+        await vi.advanceTimersByTimeAsync(wait - 1);
+        expect(mock.callCount).toBe(1);
+        await vi.advanceTimersByTimeAsync(1);
+        await second;
+        expect(mock.callCount).toBe(2);
       } finally {
         vi.useRealTimers();
       }

@@ -272,6 +272,14 @@ function resolveBucketOverrides(
           `получено: ${override.limit}`,
       );
     }
+    if (
+      override.burst !== undefined &&
+      (!Number.isSafeInteger(override.burst) || override.burst < 1)
+    ) {
+      throw new ItdConfigError(
+        `rateLimit.bucketOverrides.${name}.burst должен быть целым числом от 1`,
+      );
+    }
     if (override.rps !== undefined) {
       requireRps(override.rps, `rateLimit.bucketOverrides.${name}.rps`);
     }
@@ -281,6 +289,7 @@ function resolveBucketOverrides(
       concurrency: override.concurrency ?? built?.concurrency,
       rps: override.rps ?? built?.rps,
       limit: override.limit ?? built?.limit,
+      burst: override.burst ?? built?.burst,
     });
   }
   return Object.freeze(resolved);

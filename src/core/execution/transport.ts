@@ -1,4 +1,4 @@
-import type { OperationCatalog, RateLimitPauseTarget } from '../catalog.js';
+import type { RateLimitPauseTarget } from '../catalog.js';
 import type { ItdClock } from '../clock.js';
 import type { CookieJar } from '../cookies.js';
 import { createApiError, readRateLimit, readRetryDelay } from '../error-factory.js';
@@ -9,6 +9,7 @@ import {
   ItdError,
   ItdNetworkError,
   ItdTimeoutError,
+  type RateLimitErrorScope,
   TimeoutBudget,
 } from '../errors.js';
 import { isLevelEnabled, type Logger, LogLevel } from '../logger.js';
@@ -67,7 +68,12 @@ export interface TransportDeps {
    */
   getDeviceId: (() => Promise<string>) | undefined;
   /** Выбирает область серверной паузы при HTTP 429. */
-  rateLimitPauseTarget: OperationCatalog['rateLimitPauseTarget'];
+  rateLimitPauseTarget:
+    | ((
+        request: PipelineRequest,
+        scope: RateLimitErrorScope | undefined,
+      ) => RateLimitPauseTarget | undefined)
+    | undefined;
   /**
    * Передаёт лимиты из заголовков и уточняет паузу HTTP 429 по телу ответа.
    */
@@ -83,6 +89,7 @@ export interface TransportDeps {
 
 /** Область и срок серверной паузы при HTTP 429. */
 interface RateLimitRejection {
+  readonly extension?: true;
   readonly useRetryDelay?: boolean;
   readonly target: RateLimitPauseTarget;
   readonly waitUntil: number | undefined;
@@ -282,7 +289,7 @@ export class Transport {
         const target =
           response.status === 429
             ? this.#deps.rateLimitPauseTarget?.(
-                request.operationId,
+                request,
                 response.headers.get('X-RateLimit-Scope') ?? undefined,
               )
             : undefined;
@@ -307,6 +314,7 @@ export class Transport {
                 onRateLimit(undefined, undefined, request, {
                   target,
                   waitUntil: headersAt + delay,
+                  extension: true,
                 });
               }
             };

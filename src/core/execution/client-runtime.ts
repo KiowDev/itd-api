@@ -184,33 +184,45 @@ export function createClientRuntime<A extends AuthProvider>(
     return origin;
   };
 
-  const queueKeyFor = (request: PipelineRequest) =>
-    requestQueueKey(request, (target) => {
-      const quota = useBuckets ? operationRateLimitOf(target) : undefined;
-      if (quota) queueOwner ??= createUuidV4();
-      const override =
-        target.rateLimitBucket ??
-        config.rateLimit?.bucket?.({
-          operationId: target.operationId,
-          method: target.method,
-          path: target.path,
-        });
-      const instance = override === undefined ? quota?.instance || undefined : undefined;
-      const bucket = override ?? catalog.bucketOf(target.operationId, instance);
-      return {
-        destination: destinationOf(target.baseUrl ?? config.baseUrl),
-        bucket,
-        instance,
-        owner: quota ? queueOwner : undefined,
-        definition: catalog.bucketDefinitionOf(bucket),
-      };
-    });
+  const computeQueueKey = (target: PipelineRequest): RequestQueueKey => {
+    const quota = useBuckets ? operationRateLimitOf(target) : undefined;
+    if (quota) queueOwner ??= createUuidV4();
+    const override =
+      target.rateLimitBucket ??
+      config.rateLimit?.bucket?.({
+        operationId: target.operationId,
+        method: target.method,
+        path: target.path,
+      });
+    const instance = override === undefined ? quota?.instance || undefined : undefined;
+    const bucket = override ?? catalog.bucketOf(target.operationId, instance);
+    return {
+      destination: destinationOf(target.baseUrl ?? config.baseUrl),
+      bucket,
+      instance,
+      owner: quota ? queueOwner : undefined,
+      definition: catalog.bucketDefinitionOf(bucket),
+    };
+  };
+  const queueKeyFor = (request: PipelineRequest) => requestQueueKey(request, computeQueueKey);
 
   const queueFor = queues
     ? (key: RequestQueueKey) =>
         queues.for(key.destination, key.bucket, key.definition, key.instance, key.owner)
     : undefined;
-  const rateLimitPauseTarget = queueFor ? catalog.rateLimitPauseTarget?.bind(catalog) : undefined;
+  const responseQueue =
+    queueFor &&
+    ((request: PipelineRequest) => {
+      const key = queueKeyFor(request);
+      return key.scheduledQueue ?? queueFor(key);
+    });
+  const rateLimitPauseTarget: TransportDeps['rateLimitPauseTarget'] =
+    responseQueue &&
+    ((request, scope) =>
+      catalog.rateLimitPauseTarget?.(request.operationId, scope) ??
+      (scope === undefined && responseQueue(request).usesBurst
+        ? RateLimitPauseTarget.Bucket
+        : undefined));
 
   /** Проверяет владельца при постановке в очередь и перед отправкой. */
   const assertQueueOwner = (owner: string | undefined): void => {
@@ -218,7 +230,7 @@ export function createClientRuntime<A extends AuthProvider>(
   };
 
   /** Обновляет остаток бакета и применяет серверную паузу к её области действия. */
-  const observeRateLimit: TransportDeps['onRateLimit'] = queueFor
+  const observeRateLimit: TransportDeps['onRateLimit'] = responseQueue
     ? (limit, remaining, request, rejection) => {
         if (lifetime.signal.aborted) return;
         const target = rejection?.target;
@@ -235,16 +247,19 @@ export function createClientRuntime<A extends AuthProvider>(
           return;
         }
 
+        const queue = responseQueue(request);
         const bucketDelay = target === RateLimitPauseTarget.Bucket ? delay : undefined;
-        if (
-          !request.skipQueue &&
-          limit === undefined &&
-          remaining === undefined &&
-          bucketDelay === undefined
-        ) {
+        if (target === RateLimitPauseTarget.Bucket && queue.usesBurst) {
+          queue.observe(limit, remaining, false);
+          if (!rejection?.extension || (bucketDelay !== undefined && bucketDelay > 0)) {
+            const cost =
+              rejection?.extension || request.skipQueue
+                ? 0
+                : (operationRateLimitOf(request)?.cost ?? 1);
+            queue.adaptAfterRejection(bucketDelay, cost);
+          }
           return;
         }
-        const queue = queueFor(queueKeyFor(request));
         const waited = queue.observe(limit, remaining, bucketDelay === undefined);
         if (bucketDelay !== undefined && bucketDelay > 0) queue.pause(bucketDelay);
         if (waited > 0) {
@@ -291,9 +306,7 @@ export function createClientRuntime<A extends AuthProvider>(
         onRateLimitRetry: queueFor
           ? (ms, request, error) => {
               const target =
-                error.status === 429
-                  ? rateLimitPauseTarget?.(request.operationId, error.scope)
-                  : undefined;
+                error.status === 429 ? rateLimitPauseTarget?.(request, error.scope) : undefined;
               if (target === RateLimitPauseTarget.None) return false;
               if (target === undefined) {
                 queueFor(queueKeyFor(request)).pause(ms);
@@ -329,9 +342,10 @@ export function createClientRuntime<A extends AuthProvider>(
       name: ClientRuntimeStage.Queue,
       middleware: createQueueMiddleware((request, task) => {
         const key = queueKeyFor(request);
-        if (key.owner === undefined) return queueFor(key).schedule(task, request.signal);
-        assertQueueOwner(key.owner);
+        if (key.owner !== undefined) assertQueueOwner(key.owner);
         const queue = queueFor(key);
+        key.scheduledQueue = queue;
+        if (key.owner === undefined) return queue.schedule(task, request.signal);
 
         const scope = createRequestAbortScope(request.signal, undefined, config.clock);
         pendingScopedAttempts ??= new Set();

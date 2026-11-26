@@ -34,6 +34,8 @@ export interface RetryDecisionContext {
 
 /** Поправка к одному бакету. */
 export interface RateLimitBucketOverride {
+  /** Максимальный запас токенов для локального расчёта в режиме `react`. */
+  burst?: number | undefined;
   /** Одновременных запросов внутри бакета. */
   concurrency?: number | undefined;
   /** Верхняя граница стартов внутри бакета в секунду. */

@@ -140,6 +140,55 @@ describe('RequestQueuePool', () => {
     expect(paused.readyAt).toBe(Date.now() + 60_000);
   });
 
+  it('react сохраняет долг за пересылку после локального отказа и close до восстановления', async () => {
+    const pool = new RequestQueuePool(poolOptions());
+    const instance = () => pool.for('host', 'chats.send', { limit: 30, burst: 5 }, 'a');
+    const queue = instance();
+    queue.adaptAfterRejection(663);
+    pool.stop();
+    const start = vi.fn(async () => {});
+    const forward = queue.schedule(start, undefined, 60);
+    await vi.advanceTimersByTimeAsync(662);
+    expect(start).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await forward;
+
+    const next = queue.schedule(start);
+    queue.adaptAfterRejection(1000);
+    await vi.advanceTimersByTimeAsync(119_999);
+    expect(start).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await next;
+    expect(start).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(300_000);
+    const fresh = instance();
+    expect(fresh).not.toBe(queue);
+    await Promise.all([fresh.schedule(start), fresh.schedule(start)]);
+  });
+
+  it('react использует остаток сервера и возвращается к локальному запасу при пропуске заголовков', async () => {
+    const queue = new RequestQueuePool(poolOptions()).for('host', 'work', { limit: 30, burst: 2 });
+    const start = vi.fn(async () => {});
+    await queue.schedule(start);
+    await queue.schedule(start);
+    expect(queue.readyAt).toBe(Date.now() + 2000);
+    queue.observe(60, 5);
+    await Promise.all([queue.schedule(start), queue.schedule(start), queue.schedule(start)]);
+    expect(start).toHaveBeenCalledTimes(5);
+    queue.observe(60, 0);
+    const next = queue.schedule(start);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(start).toHaveBeenCalledTimes(5);
+    await vi.advanceTimersByTimeAsync(1);
+    await next;
+    queue.observe(undefined, undefined);
+    const last = queue.schedule(start);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(start).toHaveBeenCalledTimes(6);
+    await vi.advanceTimersByTimeAsync(1);
+    await last;
+  });
+
   it('ждёт полного восстановления квоты перед удалением экземпляра', async () => {
     const pool = new RequestQueuePool(poolOptions({ pacing: RateLimitPacing.Smooth }));
     const host = 'https://itd.test';

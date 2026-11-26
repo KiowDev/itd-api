@@ -6,6 +6,7 @@ import {
 import { RateLimitErrorScope } from '../core/errors.js';
 import {
   BUCKET_LIMITS,
+  CHAT_BUCKET_BURSTS,
   DEFAULT_BUCKET_OVERRIDES,
   DEFAULT_RATE_LIMIT_BUCKET,
   isKnownBucket,
@@ -22,7 +23,9 @@ const BUCKET_DEFINITIONS: Readonly<Record<string, Readonly<RateLimitBucketDefini
         Object.freeze({
           limit,
           ...DEFAULT_BUCKET_OVERRIDES[name],
-          ...(requiresBucketInstance(name) ? { maxTokens: 1 } : {}),
+          ...(requiresBucketInstance(name)
+            ? { maxTokens: 1, burst: CHAT_BUCKET_BURSTS[name] }
+            : {}),
         }),
       ]),
     ),

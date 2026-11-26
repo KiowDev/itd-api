@@ -94,6 +94,32 @@ describe('createRestClient — авторизация', () => {
     },
   );
 
+  it('смена аккаунта освобождает нового владельца от паузы получателя в react', async () => {
+    vi.useFakeTimers();
+    try {
+      let token = makeJwt({ sub: 'a' });
+      const { api, mock } = makeClient(
+        [
+          json({}, { status: 429, headers: { 'X-RateLimit-Scope': 'chat', 'Retry-After': '3' } }),
+          json({ message_id: 'm' }),
+        ],
+        { auth: tokenProvider(() => token), rateLimit: { retryDelays: [] } },
+      );
+      await using client = api;
+      const send = () => client.chats.sendMessageToUser('recipient', { text: 'test' });
+      await expect(send()).rejects.toMatchObject({ status: 429 });
+      const old = expect(send()).rejects.toBeInstanceOf(ItdAbortError);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mock.callCount).toBe(1);
+      token = makeJwt({ sub: 'b' });
+      await send();
+      await old;
+      expect(mock.calls[1]?.headers.get('authorization')).toBe(`Bearer ${token}`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('отменяет запрос прежнего аккаунта в явно выбранном бакете', async () => {
     vi.useFakeTimers();
     try {
