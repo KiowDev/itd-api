@@ -94,7 +94,9 @@ interface YatzItdSession extends YatzSession {
 | Маршрут | Основной контракт |
 | --- | --- |
 | `GET /api/v1/awards/award` | → `YatzAward`. Настройки, номинации и итоги. |
-| `GET /api/v1/awards/channels/search` | `q`, необязательные `deep=1` и `kind=video` → `{ channels: YatzChannel[] }`. Для поиска каналов `kind` опускается. |
+| `GET /api/v1/awards/channels/search` | `q`, необязательные `deep=1` и `kind=video` → `YatzSearchResult`. Для поиска каналов `kind` опускается. |
+
+Для обложек роликов веб-клиент использует `GET /awards-media/youtube/{videoId}.jpg`, где `videoId` — 11-символьный идентификатор видео YouTube.
 
 <details>
 <summary>Модели</summary>
@@ -116,6 +118,15 @@ interface YatzChannel {
   handle: string;
   /** Аватар канала или обложка ролика. */
   avatar?: string | null;
+}
+
+/** Результат поиска на YouTube. */
+interface YatzSearchResult {
+  channels: YatzChannel[];
+  /** Поиск по YouTube недоступен. Веб-клиент предлагает вставить прямую ссылку. */
+  isYouTubeMissed?: boolean;
+  /** Ролик вышел раньше 2026 года и не подходит для премии. */
+  isTooOld?: boolean;
 }
 
 /** Номинант из списка премии. */
@@ -306,6 +317,15 @@ interface YatzChannel {
   avatar?: string | null;
 }
 
+/** Результат поиска на YouTube. */
+interface YatzSearchResult {
+  channels: YatzChannel[];
+  /** Поиск по YouTube недоступен. Веб-клиент предлагает вставить прямую ссылку. */
+  isYouTubeMissed?: boolean;
+  /** Ролик вышел раньше 2026 года и не подходит для премии. */
+  isTooOld?: boolean;
+}
+
 /** Номинант из списка премии. */
 interface YatzNominee {
   /** Идентификатор для `nomineeId` в бюллетене. */
@@ -409,7 +429,7 @@ interface YatzApi {
    * @param query Название канала, его ссылка или ссылка на видео.
    * @param options По умолчанию ищет каналы. `deep` включает расширенный поиск.
    */
-  search(query: string, options?: { kind?: YatzSearchKind; deep?: boolean }): Promise<YatzChannel[]>;
+  search(query: string, options?: { kind?: YatzSearchKind; deep?: boolean }): Promise<YatzSearchResult>;
   /** Загружает принятые голоса текущего участника по номинациям. */
   ballot(): Promise<YatzVotes>;
   /** Получает данные проверки. Поле `challenge` передаётся в `submitBallot()`. */
@@ -455,13 +475,12 @@ const yatzFeature: ClientFeature<YatzApi> = {
         award: () => context.request<YatzAward>('award', {
           path: path('/award'), raw: true,
         }),
-        async search(q, { kind = YatzSearchKind.Channel, deep = false } = {}) {
-          const { channels } = await context.request<{ channels: YatzChannel[] }>('search', {
+        search(q, { kind = YatzSearchKind.Channel, deep = false } = {}) {
+          return context.request<YatzSearchResult>('search', {
             path: path('/channels/search'),
             query: { q, deep: deep ? 1 : undefined, kind: kind === YatzSearchKind.Video ? kind : undefined },
             raw: true,
           });
-          return channels;
         },
         async ballot() {
           const { votes } = await context.request<{ votes: YatzVotes }>('ballot', {
